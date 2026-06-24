@@ -1,0 +1,300 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  COORDINATOR
+  CAREGIVER
+  FAMILY
+  PATIENT
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+model User {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  email         String    @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  role          Role
+  phone         String?
+  avatarUrl     String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  patientProfile      Patient?            @relation("UserPatient")
+  familyProfile       FamilyMember?       @relation("UserFamily")
+  caregiverProfile    Caregiver?          @relation("UserCaregiver")
+  coordinatorProfile  MedicalCoordinator? @relation("UserCoordinator")
+
+  auditLogs           AuditLog[]
+  messagesSent        Message[]           @relation("Sender")
+  conversations       ConversationParticipant[]
+  notifications       Notification[]
+  aiConversations     AIConversation[]
+}
+
+model Patient {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @unique @db.ObjectId
+  user            User     @relation("UserPatient", fields: [userId], references: [id])
+  
+  dateOfBirth     DateTime
+  address         String
+  emergencyContact String?
+  dependencyLevel Int      @default(1)
+
+  pathologies     String[]
+  allergies       String[]
+
+  familyMembers   FamilyMember[]
+  carePlans       CarePlan[]
+  appointments    Appointment[]
+  incidents       Incident[]
+  medicalRecords  MedicalRecord[]
+  aiAnalyses      AIAnalysis[]
+  contracts       Contract[]
+  aiConversations AIConversation[]
+}
+
+model FamilyMember {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @unique @db.ObjectId
+  user            User     @relation("UserFamily", fields: [userId], references: [id])
+  
+  patientId       String   @db.ObjectId
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  relationship    String
+}
+
+model Caregiver {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @unique @db.ObjectId
+  user            User     @relation("UserCaregiver", fields: [userId], references: [id])
+  
+  specialties     String[]
+  certifications  String[]
+  isAvailable     Boolean  @default(true)
+
+  tasks           CareTask[]
+  appointments    Appointment[]
+  contracts       Contract[]
+}
+
+model MedicalCoordinator {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @unique @db.ObjectId
+  user            User     @relation("UserCoordinator", fields: [userId], references: [id])
+  
+  managedPlans    CarePlan[]
+}
+
+model MedicalRecord {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String   @db.ObjectId
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  
+  title           String
+  description     String
+  documentUrl     String?
+  createdAt       DateTime @default(now())
+}
+
+model CarePlan {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String   @db.ObjectId
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  coordinatorId   String   @db.ObjectId
+  coordinator     MedicalCoordinator @relation(fields: [coordinatorId], references: [id])
+  
+  title           String
+  startDate       DateTime
+  endDate         DateTime?
+  status          String   @default("ACTIVE")
+  
+  tasks           CareTask[]
+  medications     Medication[]
+}
+
+model CareTask {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  carePlanId      String   @db.ObjectId
+  carePlan        CarePlan @relation(fields: [carePlanId], references: [id])
+  caregiverId     String?  @db.ObjectId
+  caregiver       Caregiver? @relation(fields: [caregiverId], references: [id])
+  
+  title           String
+  description     String?
+  scheduledFor    DateTime
+  status          String   @default("PENDING")
+  completedAt     DateTime?
+}
+
+model Medication {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  carePlanId      String   @db.ObjectId
+  carePlan        CarePlan @relation(fields: [carePlanId], references: [id])
+  
+  name            String
+  dosage          String
+  frequency       String
+  instructions    String?
+}
+
+model Appointment {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String   @db.ObjectId
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  caregiverId     String?  @db.ObjectId
+  caregiver       Caregiver? @relation(fields: [caregiverId], references: [id])
+  
+  title           String
+  scheduledAt     DateTime
+  durationMinutes Int
+  type            String
+  status          String   @default("SCHEDULED")
+}
+
+model Incident {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String   @db.ObjectId
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  reportedById    String   @db.ObjectId
+  
+  title           String
+  description     String
+  priority        Priority @default(MEDIUM)
+  status          IncidentStatus @default(OPEN)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Message {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId  String   @db.ObjectId
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  senderId        String   @db.ObjectId
+  sender          User     @relation("Sender", fields: [senderId], references: [id])
+  
+  content         String
+  attachmentUrl   String?
+  createdAt       DateTime @default(now())
+}
+
+model Conversation {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  title           String?
+  createdAt       DateTime @default(now())
+  
+  participants    ConversationParticipant[]
+  messages        Message[]
+}
+
+model ConversationParticipant {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId  String   @db.ObjectId
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  userId          String   @db.ObjectId
+  user            User     @relation(fields: [userId], references: [id])
+}
+
+model AIAnalysis {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String   @db.ObjectId
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  
+  riskScore       Int
+  riskFactors     String[]
+  summary         String
+  recommendations String[]
+  createdAt       DateTime @default(now())
+}
+
+model AuditLog {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId          String   @db.ObjectId
+  user            User     @relation(fields: [userId], references: [id])
+  action          String
+  entityType      String
+  entityId        String
+  details         String?
+  createdAt       DateTime @default(now())
+}
+
+model Permission {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  description String?
+  roles       Role[]
+}
+
+model Notification {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+  title       String
+  message     String
+  isRead      Boolean  @default(false)
+  type        String   @default("INFO")
+  createdAt   DateTime @default(now())
+}
+
+model Contract {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId   String   @db.ObjectId
+  patient     Patient  @relation(fields: [patientId], references: [id])
+  caregiverId String?  @db.ObjectId
+  caregiver   Caregiver? @relation(fields: [caregiverId], references: [id])
+  
+  title       String
+  status      String   @default("ACTIVE")
+  startDate   DateTime
+  endDate     DateTime?
+  hourlyRate  Float
+  hoursPerWeek Int
+  documentUrl String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AIConversation {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+  patientId   String?  @db.ObjectId
+  patient     Patient? @relation(fields: [patientId], references: [id])
+  
+  title       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  messages    AIMessage[]
+}
+
+model AIMessage {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String   @db.ObjectId
+  conversation   AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  role           String
+  content        String
+  createdAt      DateTime @default(now())
+}

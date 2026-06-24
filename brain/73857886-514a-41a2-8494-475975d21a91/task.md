@@ -1,0 +1,21 @@
+# Dashboard Pages Implementation
+
+- `[x]` **Patients Page** (`/dashboard/patients`)
+  - `[x]` UI with shadcn/ui components
+  - `[x]` Fetch patients directly via Server Components (Prisma)
+  - `[x]` Added NewPatientDialog and createPatient Server Action
+- `[x]` **Appointments Page** (`/dashboard/appointments`)
+  - `[x]` UI Cards/List
+  - `[x]` Data fetching via Prisma
+  - `[x]` Added NewAppointmentDialog and createAppointment Server Action
+- `[x]` **Incidents Page** (`/dashboard/incidents`)
+  - `[x]` Incidents Table and server-side filtering
+  - `[x]` Added CreateIncidentDialog, updateIncidentStatus Server Actions, and inline row actions
+- `[x]` **Messages Page** (`/dashboard/messages`)
+  - `[x]` Chat interface with split panel
+  - `[x]` Added ChatPanel client component, sendMessage, and createConversation Server Actions
+- `[x]` **Settings Page** (`/dashboard/settings`)
+  - `[x]` User Profile form
+  - `[x]` Added ProfileForm and updateProfile Server Action
+- `[x]` **AI Integration**
+  - `[x]` Added generateAIAnalysis Server Action and RunAiButton component calling Gemini
