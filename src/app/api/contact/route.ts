@@ -23,7 +23,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const validatedData = contactSchema.parse(body);
 
-    console.log("Nouveau message de contact reçu :", validatedData);
 
     return NextResponse.json({
       success: true,

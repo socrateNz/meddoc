@@ -17,7 +17,6 @@ async function main() {
     { name: 'VIEW_REPORTS', description: 'Visualiser les rapports et statistiques' },
   ];
 
-  console.log('Seeding permissions...');
   for (const perm of permissionsList) {
     await prisma.permission.upsert({
       where: { name: perm.name },
@@ -42,7 +41,6 @@ async function main() {
       role: Role.ADMIN,
     },
   });
-  console.log('Admin créé :', adminUser.email);
 
   // 3. Coordinator User & Profile
   const coordUser = await prisma.user.upsert({
@@ -60,7 +58,6 @@ async function main() {
     },
     include: { coordinatorProfile: true }
   });
-  console.log('Coordinateur créé :', coordUser.email);
 
   // 4. Caregiver User & Profile
   const caregiverUser = await prisma.user.upsert({
@@ -82,7 +79,6 @@ async function main() {
     },
     include: { caregiverProfile: true }
   });
-  console.log('Soignant créé :', caregiverUser.email);
 
   // 5. Patient User, Profile & clinical data
   const patientUser = await prisma.user.upsert({
@@ -107,7 +103,6 @@ async function main() {
     },
     include: { patientProfile: true }
   });
-  console.log('Patient créé :', patientUser.email);
 
   const patientProfile = patientUser.patientProfile!;
   const caregiverProfile = caregiverUser.caregiverProfile!;
@@ -131,7 +126,6 @@ async function main() {
       }
     }
   });
-  console.log('Membre de la famille créé :', familyUser.email);
 
   // 7. Contract
   await prisma.contract.create({
@@ -199,8 +193,6 @@ async function main() {
       description: 'Consultation annuelle chez le Dr. Lemoine. Insuffisance cardiaque stable. Fraction d\'éjection mesurée à 45%. Poursuivre le traitement actuel avec Metoprolol.',
     }
   });
-
-  console.log('Seeding complété avec succès !');
 }
 
 main()

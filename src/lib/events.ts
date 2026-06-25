@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { prisma } from "./db";
 import { Role } from "@prisma/client";
 
-class AppEventEmitter extends EventEmitter {}
+class AppEventEmitter extends EventEmitter { }
 
 export const appEvents = new AppEventEmitter();
 
@@ -33,7 +33,6 @@ appEvents.on("incident.created", async (data: { incidentId: string; patientId: s
       data: notificationsData,
     });
 
-    console.log(`[Event Triggered] incident.created - Notifications envoyées à ${coordinators.length} coordinateurs.`);
   } catch (error) {
     console.error("Error handling incident.created event:", error);
   }
@@ -66,8 +65,6 @@ appEvents.on("appointment.scheduled", async (data: { appointmentId: string; pati
         type: "APPOINTMENT",
       },
     });
-
-    console.log(`[Event Triggered] appointment.scheduled - Notification envoyée au soignant: ${caregiver.user.email}`);
   } catch (error) {
     console.error("Error handling appointment.scheduled event:", error);
   }
