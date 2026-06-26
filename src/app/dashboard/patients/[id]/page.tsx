@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, User as UserIcon, Calendar, Clock, AlertTriangle, FileText, Activity, ShieldAlert, BrainCircuit, HeartPulse } from "lucide-react";
+import { ArrowLeft, User as UserIcon, Calendar, Clock, AlertTriangle, FileText, Activity, ShieldAlert, BrainCircuit, HeartPulse, Stethoscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AddRecordDialog from "./add-record-dialog";
 import AddIncidentDialog from "./add-incident-dialog";
 import RunAiButton from "./run-ai-button";
+import CreateCarePlanDialog from "./create-care-plan-dialog";
+import CreateCareTaskDialog from "./create-care-task-dialog";
+import TaskStatusToggle from "./task-status-toggle";
+import ReassignPatientDialog from "../reassign-patient-dialog";
+import { getClinics } from "@/actions/organizations";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -21,6 +26,20 @@ export default async function PatientDetailPage({ params }: PageProps) {
 
   if (!currentUser) {
     redirect("/login");
+  }
+
+  const hasAccess = await verifyPatientAccess(id, currentUser);
+  if (!hasAccess) {
+    notFound(); // Using notFound to hide the existence of the patient
+  }
+
+  const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
+  let clinics: { id: string; name: string }[] = [];
+  if (isHoldingAdmin) {
+    const clinicsRes = await getClinics();
+    if (clinicsRes.clinics) {
+      clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
+    }
   }
 
   const patient = await prisma.patient.findUnique({
@@ -99,6 +118,21 @@ export default async function PatientDetailPage({ params }: PageProps) {
           </Button>
         </Link>
         <div className="flex gap-2">
+          <Button asChild variant="outline" className="gap-2 border-primary/20 text-primary hover:bg-primary/5">
+            <Link href={`/dashboard/patients/${patient.id}/consultation`}>
+              <Stethoscope className="h-4 w-4" />
+              Nouvelle consultation
+            </Link>
+          </Button>
+          {isHoldingAdmin && (
+            <ReassignPatientDialog
+              patientId={patient.id}
+              patientName={`${patient.user.firstName} ${patient.user.lastName}`}
+              currentOrganizationId={patient.organizationId || ""}
+              holdingId={currentUser.organizationId || ""}
+              clinics={clinics}
+            />
+          )}
           <AddIncidentDialog patientId={patient.id} reportedById={currentUser.id} />
           <AddRecordDialog patientId={patient.id} />
         </div>
@@ -278,11 +312,19 @@ export default async function PatientDetailPage({ params }: PageProps) {
 
         {/* Tab Content: Plan de Soins */}
         <TabsContent value="careplans" className="pt-6">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-semibold tracking-tight">Plans de Soins & Interventions</h3>
+            <CreateCarePlanDialog patientId={patient.id} />
+          </div>
+
           {patient.carePlans.length === 0 ? (
             <div className="border border-dashed rounded-xl p-12 text-center bg-card">
               <HeartPulse className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium text-base">Aucun plan de soins actif</h4>
               <p className="text-sm text-muted-foreground mt-1">Les plans de soins coordonnent les interventions et les traitements.</p>
+              <div className="mt-4">
+                <CreateCarePlanDialog patientId={patient.id} />
+              </div>
             </div>
           ) : (
             <div className="space-y-6">
@@ -325,22 +367,28 @@ export default async function PatientDetailPage({ params }: PageProps) {
 
                     {/* Tasks */}
                     <div className="space-y-4">
-                      <h4 className="font-semibold text-base flex items-center gap-2 border-b pb-2">
-                        <FileText className="h-5 w-5 text-primary" />
-                        Tâches et protocole de soins
-                      </h4>
+                      <div className="flex items-center justify-between border-b pb-2">
+                        <h4 className="font-semibold text-base flex items-center gap-2">
+                          <FileText className="h-5 w-5 text-primary" />
+                          Tâches et protocole de soins
+                        </h4>
+                        <CreateCareTaskDialog carePlanId={plan.id} patientId={patient.id} />
+                      </div>
                       {plan.tasks.length === 0 ? (
                         <p className="text-sm text-muted-foreground">Aucune tâche planifiée dans ce plan.</p>
                       ) : (
                         <ul className="space-y-3">
                           {plan.tasks.map((task) => (
-                            <li key={task.id} className="text-sm p-3 bg-muted/40 rounded-lg border border-border/50 flex justify-between items-start gap-4">
-                              <div>
-                                <p className="font-medium text-foreground">{task.title}</p>
+                            <li key={task.id} className="text-sm p-3 bg-muted/40 rounded-lg border border-border/50 flex items-start gap-3">
+                              <TaskStatusToggle taskId={task.id} patientId={patient.id} initialStatus={task.status} />
+                              <div className="flex-1">
+                                <p className={`font-medium ${task.status === "COMPLETED" ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                                  {task.title}
+                                </p>
                                 {task.description && <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>}
                                 <p className="text-[11px] text-muted-foreground mt-1">Planifié pour le {formatDateTime(task.scheduledFor)}</p>
                               </div>
-                              <Badge variant={task.status === "COMPLETED" ? "default" : "secondary"}>
+                              <Badge variant={task.status === "COMPLETED" ? "default" : "secondary"} className="shrink-0">
                                 {task.status === "COMPLETED" ? "Terminée" : "En attente"}
                               </Badge>
                             </li>

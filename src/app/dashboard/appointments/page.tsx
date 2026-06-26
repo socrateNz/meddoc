@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, Clock, User as UserIcon } from "lucide-react";
 import NewAppointmentDialog from "./new-appointment-dialog";
 import { Prisma } from "@prisma/client";
+import Link from "next/link";
 
 type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
   include: {
@@ -75,7 +77,7 @@ export default async function AppointmentsPage() {
         <NewAppointmentDialog patients={patients} caregivers={caregivers} />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {appointments.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center p-12 text-center border rounded-xl bg-card border-dashed">
             <CalendarIcon className="h-10 w-10 text-muted-foreground mb-4" />
@@ -128,6 +130,15 @@ export default async function AppointmentsPage() {
                     </div>
                   )}
                 </div>
+
+                {apt.status !== "COMPLETED" && (
+                  <Button asChild variant="outline" size="sm" className="flex flex-row gap-2 w-full mt-4 bg-primary/5 hover:bg-primary/10 text-primary border-primary/20">
+                    <Link href={`/dashboard/appointments/${apt.id}/consultation`}>
+                      <CalendarIcon className="h-4 w-4" />
+                      Ouvrir l'espace consultation
+                    </Link>
+                  </Button>
+                )}
               </div>
             </div>
           ))

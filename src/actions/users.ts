@@ -31,3 +31,28 @@ export async function updateProfile(data: {
     return { success: false, error: error.message || "Erreur lors de la mise à jour du profil" };
   }
 }
+
+export async function updateInitialPassword(newPassword: string) {
+  try {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      throw new Error("Non authentifié.");
+    }
+
+    const { default: bcrypt } = await import("bcryptjs");
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: currentUser.id },
+      data: {
+        passwordHash,
+        requiresPasswordChange: false,
+      },
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error updating initial password:", error);
+    return { success: false, error: error.message || "Erreur lors de la mise à jour du mot de passe" };
+  }
+}

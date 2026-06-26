@@ -8,6 +8,7 @@ datasource db {
 }
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   COORDINATOR
   CAREGIVER
@@ -28,6 +29,47 @@ enum IncidentStatus {
   RESOLVED
 }
 
+enum OrgType {
+  HOLDING
+  CLINIC
+}
+
+enum SubscriptionPlan {
+  TRIAL
+  BASIC
+  PREMIUM
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  CANCELLED
+  TRIALING
+}
+
+model Organization {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  type      OrgType
+  parentId  String?  @db.ObjectId
+  parent    Organization?  @relation("OrgHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children  Organization[] @relation("OrgHierarchy")
+  
+  users     User[]
+  patients  Patient[]
+  
+  plan                SubscriptionPlan @default(TRIAL)
+  subscriptionStatus  SubscriptionStatus @default(TRIALING)
+  licenseExpiresAt    DateTime?
+  stripeCustomerId    String?
+  maxClinics          Int @default(1)
+  maxUsers            Int @default(10)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model User {
   id            String    @id @default(auto()) @map("_id") @db.ObjectId
   email         String    @unique
@@ -37,8 +79,9 @@ model User {
   role          Role
   phone         String?
   avatarUrl     String?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
+  isActive               Boolean   @default(true)
+  requiresPasswordChange Boolean   @default(false)
+  createdAt              DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   patientProfile      Patient?            @relation("UserPatient")
@@ -51,6 +94,9 @@ model User {
   conversations       ConversationParticipant[]
   notifications       Notification[]
   aiConversations     AIConversation[]
+
+  organizationId      String?   @db.ObjectId
+  organization        Organization? @relation(fields: [organizationId], references: [id])
 }
 
 model Patient {
@@ -74,6 +120,9 @@ model Patient {
   aiAnalyses      AIAnalysis[]
   contracts       Contract[]
   aiConversations AIConversation[]
+
+  organizationId  String?   @db.ObjectId
+  organization    Organization? @relation(fields: [organizationId], references: [id])
 }
 
 model FamilyMember {

@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { revalidatePath } from "next/cache";
 
@@ -8,6 +9,16 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export async function generateAIAnalysis(patientId: string) {
   try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) {
+      throw new Error("Non authentifié.");
+    }
+
+    const hasAccess = await verifyPatientAccess(patientId, activeUser);
+    if (!hasAccess) {
+      throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+    }
+
     const patient = await prisma.patient.findUnique({
       where: { id: patientId },
       include: {

@@ -85,7 +85,7 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="gap-2 bg-primary hover:bg-primary/95 text-primary-foreground shadow-lg transition-all hover:scale-[1.02] duration-200" />}>
+      <DialogTrigger render={<Button className="flex flex-row gap-2 bg-primary hover:bg-primary/95 text-primary-foreground shadow-lg transition-all hover:scale-[1.02] duration-200" />}>
         <Plus className="h-4 w-4" />
         Planifier
       </DialogTrigger>
@@ -103,7 +103,13 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
             <Label>Patient *</Label>
             <Select onValueChange={(val) => val && setPatientId(val)} value={patientId}>
               <SelectTrigger>
-                <SelectValue placeholder="Sélectionner un patient" />
+                <SelectValue placeholder="Sélectionner un patient">
+                  {(val: any) => {
+                    if (!val) return "Sélectionner un patient";
+                    const p = patients.find(p => p.id === val);
+                    return p ? `${p.user.lastName} ${p.user.firstName}` : val;
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {patients.map((p) => (
@@ -120,7 +126,14 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
             <Label>Intervenant (Soignant) *</Label>
             <Select onValueChange={(val) => val && setCaregiverId(val)} value={caregiverId}>
               <SelectTrigger>
-                <SelectValue placeholder="Sélectionner un soignant" />
+                <SelectValue placeholder="Sélectionner un soignant">
+                  {(val: any) => {
+                    if (!val) return "Sélectionner un soignant";
+                    if (val === "unassigned") return "Non assigné (À définir)";
+                    const c = caregivers.find(c => c.id === val);
+                    return c ? `${c.user.lastName} ${c.user.firstName}` : val;
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="unassigned">Non assigné (À définir)</SelectItem>
@@ -151,7 +164,9 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
               <Label>Type d'acte *</Label>
               <Select onValueChange={(val) => val && setType(val)} value={type}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Type d'acte" />
+                  <SelectValue placeholder="Type d'acte">
+                    {(val: any) => val || "Type d'acte"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Soins infirmiers">Soins infirmiers</SelectItem>
@@ -169,7 +184,20 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
               <Label>Durée *</Label>
               <Select onValueChange={(val) => val && setDurationMinutes(val)} value={durationMinutes}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Durée" />
+                  <SelectValue placeholder="Durée">
+                    {(val: any) => {
+                      if (!val) return "Durée";
+                      const labels: Record<string, string> = {
+                        "30": "30 minutes",
+                        "45": "45 minutes",
+                        "60": "1 heure",
+                        "90": "1h30",
+                        "120": "2 heures",
+                        "180": "3 heures"
+                      };
+                      return labels[val] || val;
+                    }}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="30">30 minutes</SelectItem>
@@ -218,7 +246,7 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
             >
               Annuler
             </Button>
-            <Button type="submit" disabled={loading} className="min-w-[100px]">
+            <Button type="submit" disabled={loading} className="flex flex-row gap-2 min-w-[100px]">
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

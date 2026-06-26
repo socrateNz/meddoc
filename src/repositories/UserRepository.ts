@@ -57,6 +57,11 @@ export class UserRepository extends BaseRepository {
   async findByEmail(email: string) {
     return this.db.user.findUnique({
       where: { email },
+      include: { 
+        organization: {
+          include: { parent: true }
+        } 
+      },
     });
   }
 

@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Activity, Users, Calendar, AlertCircle, Sparkles, Bell } from "lucide-react";
+import { Activity, Users, Calendar, AlertCircle, Sparkles, Bell, Building2 } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -11,16 +11,105 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
+  const orgFilter: any = {};
+  const isHoldingAdmin = currentUser.organization?.type === "HOLDING";
+  const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
+
+  if (isSuperAdmin) {
+    // For Super Admin, we just show a totally different layout early return
+    const holdingsCount = await prisma.organization.count({ where: { type: "HOLDING" } });
+    const clinicsCount = await prisma.organization.count({ where: { type: "CLINIC" } });
+    const usersCount = await prisma.user.count({ where: { role: { not: "SUPER_ADMIN" } } });
+    const patientsCount = await prisma.patient.count();
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-2 animate-fade-up">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-4xl">
+            Tableau de bord Système
+          </h1>
+          <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl">
+            Vue globale de l'infrastructure SaaS MedDoc.
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 animate-fade-up" style={{ animationDelay: "150ms" } as React.CSSProperties}>
+          <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200">Total Holdings</CardTitle>
+              <Building2 className="h-4 w-4 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">{holdingsCount}</div>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200">Total Cliniques</CardTitle>
+              <Building2 className="h-4 w-4 text-slate-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">{clinicsCount}</div>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200">Utilisateurs</CardTitle>
+              <Users className="h-4 w-4 text-blue-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">{usersCount}</div>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200">Patients Globaux</CardTitle>
+              <Activity className="h-4 w-4 text-emerald-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">{patientsCount}</div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (isHoldingAdmin) {
+    orgFilter.OR = [
+      { organizationId: currentUser.organizationId },
+      { organization: { parentId: currentUser.organizationId } }
+    ];
+  } else if (currentUser.organization?.type === "CLINIC") {
+    orgFilter.organizationId = currentUser.organizationId;
+  } else {
+    orgFilter.organizationId = "NO_ACCESS";
+  }
+
   // Query database for actual stats
-  const patientsCount = await prisma.patient.count();
+  const patientsCount = await prisma.patient.count({
+    where: orgFilter,
+  });
+  
   const appointmentsCount = await prisma.appointment.count({
-    where: { status: "SCHEDULED" },
+    where: { 
+      status: "SCHEDULED",
+      patient: orgFilter
+    },
   });
+  
   const openIncidentsCount = await prisma.incident.count({
-    where: { status: "OPEN" },
+    where: { 
+      status: "OPEN",
+      patient: orgFilter
+    },
   });
+  
   const activePlansCount = await prisma.carePlan.count({
-    where: { status: "ACTIVE" },
+    where: { 
+      status: "ACTIVE",
+      patient: orgFilter
+    },
   });
 
   // Query recent notifications for current user
@@ -32,6 +121,9 @@ export default async function DashboardPage() {
 
   // Query recent AI analyses
   const aiAnalyses = await prisma.aIAnalysis.findMany({
+    where: {
+      patient: orgFilter
+    },
     include: {
       patient: {
         include: { user: true },
@@ -40,6 +132,31 @@ export default async function DashboardPage() {
     orderBy: { createdAt: "desc" },
     take: 3,
   });
+
+  let clinicStats: any[] = [];
+  if (isHoldingAdmin) {
+    const clinics = await prisma.organization.findMany({
+      where: { parentId: currentUser.organizationId, type: "CLINIC" },
+      select: { id: true, name: true }
+    });
+
+    // Group patients by organization
+    const patientsGroupByOrg = await prisma.patient.groupBy({
+      by: ['organizationId'],
+      _count: true,
+      where: orgFilter
+    });
+
+    const holdingPatientsCount = patientsGroupByOrg.find(g => g.organizationId === currentUser.organizationId)?._count || 0;
+    
+    clinicStats = [
+      { id: currentUser.organizationId, name: "Siège (Holding)", count: holdingPatientsCount },
+      ...clinics.map(clinic => {
+        const count = patientsGroupByOrg.find(g => g.organizationId === clinic.id)?._count || 0;
+        return { id: clinic.id, name: clinic.name, count };
+      })
+    ].sort((a, b) => b.count - a.count);
+  }
 
   return (
     <div className="space-y-6">
@@ -191,6 +308,26 @@ export default async function DashboardPage() {
         </Card>
 
       </div>
+
+      {isHoldingAdmin && clinicStats.length > 0 && (
+        <div className="animate-fade-up" style={{ animationDelay: "450ms" } as React.CSSProperties}>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white mb-4 mt-2">Répartition des patients par établissement</h2>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {clinicStats.map(stat => (
+              <Card key={stat.id} className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200 line-clamp-1" title={stat.name}>{stat.name}</CardTitle>
+                  <Building2 className="h-4 w-4 text-slate-400" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">{stat.count}</div>
+                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1">Patients suivis</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -48,11 +48,69 @@ export async function getCurrentUser() {
         role: true,
         phone: true,
         avatarUrl: true,
+        organizationId: true,
+        organization: {
+          select: { 
+            type: true,
+            subscriptionStatus: true,
+            licenseExpiresAt: true,
+            parent: {
+              select: {
+                subscriptionStatus: true,
+                licenseExpiresAt: true,
+              }
+            }
+          }
+        }
       },
     });
+
+    if (user?.organization) {
+      const holding = user.organization.type === "HOLDING" ? user.organization : user.organization.parent;
+      if (holding) {
+        if (holding.subscriptionStatus === "INACTIVE" || holding.subscriptionStatus === "CANCELLED") {
+          return null;
+        }
+        if (holding.licenseExpiresAt && new Date(holding.licenseExpiresAt) < new Date()) {
+          return null;
+        }
+      }
+    }
 
     return user;
   } catch (error) {
     return null;
   }
+}
+
+export async function verifyPatientAccess(patientId: string, currentUser?: any) {
+  if (!currentUser) {
+    currentUser = await getCurrentUser();
+  }
+  
+  if (!currentUser) return false;
+
+  // Super Admins do not have access to patient medical data
+  if (currentUser.role === "SUPER_ADMIN") return false;
+
+  const orgFilter: any = {};
+  if (currentUser.organization?.type === "HOLDING") {
+    orgFilter.OR = [
+      { organizationId: currentUser.organizationId },
+      { organization: { parentId: currentUser.organizationId } }
+    ];
+  } else if (currentUser.organization?.type === "CLINIC") {
+    orgFilter.organizationId = currentUser.organizationId;
+  } else {
+    return false;
+  }
+
+  const patient = await prisma.patient.findFirst({
+    where: {
+      id: patientId,
+      ...orgFilter
+    }
+  });
+
+  return !!patient;
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
   ArrowRight,
   Activity,
@@ -882,15 +883,17 @@ export default function LandingPage() {
                       )}
                     </button>
                     {status.type && (
-                      <div
-                        className={`p-4 rounded-xl text-sm font-semibold border ${
-                          status.type === "success"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : "bg-red-50 text-red-700 border-red-200"
-                        }`}
-                      >
-                        {status.msg}
-                      </div>
+                      <Alert variant={status.type === "success" ? "success" : "destructive"}>
+                        {status.type === "success" ? (
+                          <CheckCircle2 className="h-4 w-4" />
+                        ) : (
+                          <AlertTriangle className="h-4 w-4" />
+                        )}
+                        <AlertTitle>
+                          {status.type === "success" ? "Succès" : "Erreur"}
+                        </AlertTitle>
+                        <AlertDescription>{status.msg}</AlertDescription>
+                      </Alert>
                     )}
                   </form>
                 </div>

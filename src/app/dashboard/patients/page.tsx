@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,9 +8,35 @@ import { Search, User as UserIcon } from "lucide-react";
 import NewPatientDialog from "./new-patient-dialog";
 import Link from "next/link";
 import { Patient, User } from "@prisma/client";
+import { getClinics } from "@/actions/organizations";
 
 export default async function PatientsPage() {
+  const activeUser = await getCurrentUser();
+  if (!activeUser) return null;
+
+  const isHoldingAdmin = activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING";
+  let clinics: { id: string; name: string }[] = [];
+  if (isHoldingAdmin) {
+    const clinicsRes = await getClinics();
+    if (clinicsRes.clinics) {
+      clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
+    }
+  }
+
+  const whereClause: any = {};
+  if (activeUser.organization?.type === "HOLDING") {
+    whereClause.OR = [
+      { organizationId: activeUser.organizationId },
+      { organization: { parentId: activeUser.organizationId } }
+    ];
+  } else if (activeUser.organization?.type === "CLINIC") {
+    whereClause.organizationId = activeUser.organizationId;
+  } else {
+    whereClause.organizationId = "NO_ACCESS"; // Fallback to avoid exposing all data
+  }
+
   const patients = await prisma.patient.findMany({
+    where: whereClause,
     include: {
       user: true,
     },
@@ -37,7 +64,11 @@ export default async function PatientsPage() {
             Gerez la liste de vos patients et leurs informations médicales.
           </p>
         </div>
-        <NewPatientDialog />
+        <NewPatientDialog 
+          isHoldingAdmin={isHoldingAdmin} 
+          holdingId={activeUser.organizationId || ""} 
+          clinics={clinics} 
+        />
       </div>
 
       <div className="flex items-center gap-2 animate-fade-up" style={{ animationDelay: "75ms" } as React.CSSProperties}>

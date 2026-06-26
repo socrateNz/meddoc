@@ -4,6 +4,8 @@ export interface JwtPayload {
   userId: string;
   email: string;
   role: Role;
+  organizationId?: string | null;
+  organizationType?: string | null;
 }
 
 export interface AuthResponse {
@@ -16,5 +18,7 @@ export interface AuthResponse {
     lastName: string;
     role: Role;
     avatarUrl: string | null;
+    requiresPasswordChange?: boolean;
+    organizationId?: string | null;
   };
 }

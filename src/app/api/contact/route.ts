@@ -10,10 +10,34 @@ const contactSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
   try {
-    const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
     const limitCheck = rateLimit(ip, 10, 60000); // 10 soumissions par minute max
     if (!limitCheck.success) {
+      // Create a warning notification for coordinators/admins about rate limit hit on contact form
+      try {
+        const { prisma } = await import("@/lib/db");
+        const { Role } = await import("@prisma/client");
+        
+        const staff = await prisma.user.findMany({
+          where: {
+            role: { in: [Role.COORDINATOR, Role.ADMIN] },
+            isActive: true
+          }
+        });
+        
+        await prisma.notification.createMany({
+          data: staff.map(user => ({
+            userId: user.id,
+            title: `Alerte Système : Spam formulaire de contact`,
+            message: `L'adresse IP ${ip} a dépassé la limite autorisée d'envoi de messages de contact.`,
+            type: "INFO"
+          }))
+        });
+      } catch (e) {
+        console.error("Failed to create contact rate limit alert notification:", e);
+      }
+
       return NextResponse.json(
         { error: "Trop de requêtes. Veuillez réessayer plus tard." },
         { status: 429 }

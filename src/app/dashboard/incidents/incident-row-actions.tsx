@@ -51,7 +51,7 @@ export default function IncidentRowActions({ incidentId, currentStatus }: Incide
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs font-medium" disabled={loading} />}>
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="flex flex-row gap-2 h-8 text-xs font-medium" disabled={loading} />}>
         {loading ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (

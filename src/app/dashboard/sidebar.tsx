@@ -15,7 +15,10 @@ import {
   Sparkles,
   Bell,
   Menu,
-  X
+  X,
+  Stethoscope,
+  Building2,
+  Server
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -28,10 +31,19 @@ interface SidebarProps {
     role: string;
     phone: string | null;
     avatarUrl: string | null;
+    organizationId?: string | null;
+    organization?: { type: string } | null;
   } | null;
+  unreadCounts: {
+    total: number;
+    incident: number;
+    appointment: number;
+    message: number;
+    ai: number;
+  };
 }
 
-export default function Sidebar({ currentUser }: SidebarProps) {
+export default function Sidebar({ currentUser, unreadCounts }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
 
@@ -63,32 +75,67 @@ export default function Sidebar({ currentUser }: SidebarProps) {
       name: "Patients",
       href: "/dashboard/patients",
       icon: Users,
+      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+    },
+    {
+      name: "Équipe médicale",
+      href: "/dashboard/team",
+      icon: Stethoscope,
+      roles: ['ADMIN', 'COORDINATOR'],
+    },
+    {
+      name: "Cliniques",
+      href: "/dashboard/clinics",
+      icon: Building2,
+      roles: ['ADMIN'],
+      isHoldingOnly: true,
     },
     {
       name: "Rendez-vous",
       href: "/dashboard/appointments",
       icon: Calendar,
+      count: unreadCounts?.appointment || 0,
+      badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
     },
     {
       name: "Incidents",
       href: "/dashboard/incidents",
       icon: AlertCircle,
+      count: unreadCounts?.incident || 0,
+      badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
+      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
     },
     {
       name: "Messagerie",
       href: "/dashboard/messages",
       icon: MessageSquare,
+      count: unreadCounts?.message || 0,
+      badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
     },
     {
       name: "Notifications",
       href: "/dashboard/notifications",
       icon: Bell,
+      count: unreadCounts?.total || 0,
+      badgeColor: "bg-primary text-primary-foreground font-bold shadow-xs",
+      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'SUPER_ADMIN'],
     },
     {
       name: "Assistant Clinique IA",
       href: "/dashboard/ai-assistant",
       icon: Sparkles,
       iconClassName: "text-violet-500",
+      count: unreadCounts?.ai || 0,
+      badgeColor: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
+      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+    },
+    {
+      name: "Toutes les Holdings",
+      href: "/dashboard/holdings",
+      icon: Server,
+      roles: ['SUPER_ADMIN'],
     },
   ];
 
@@ -108,28 +155,42 @@ export default function Sidebar({ currentUser }: SidebarProps) {
     }`;
   };
 
-  const renderNavLinks = () => (
-    <nav className="grid items-start gap-1">
-      {navItems.map((item) => {
-        const active = isActive(item);
-        const Icon = item.icon;
-        return (
-          <Link key={item.href} href={item.href} className={getLinkClass(item)}>
-            {/* Visual active left border accent */}
-            {active && (
-              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-r-full shadow-md shadow-blue-500/50" />
-            )}
-            <Icon 
-              className={`h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 ${
-                item.iconClassName || ""
-              }`} 
-            />
-            <span>{item.name}</span>
-          </Link>
-        );
-      })}
-    </nav>
-  );
+  const renderNavLinks = () => {
+    const filteredNavItems = navItems.filter((item: any) => {
+      if (!currentUser) return !item.roles;
+      if (item.roles && !item.roles.includes(currentUser.role)) return false;
+      if (item.isHoldingOnly && currentUser.organization?.type !== 'HOLDING') return false;
+      return true;
+    });
+
+    return (
+      <nav className="grid items-start gap-1">
+        {filteredNavItems.map((item) => {
+          const active = isActive(item);
+          const Icon = item.icon;
+          return (
+            <Link key={item.href} href={item.href} className={getLinkClass(item)}>
+              {/* Visual active left border accent */}
+              {active && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-r-full shadow-md shadow-blue-500/50" />
+              )}
+              <Icon 
+                className={`h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 ${
+                  item.iconClassName || ""
+                }`} 
+              />
+              <span>{item.name}</span>
+              {item.count !== undefined && item.count > 0 && (
+                <span className={`ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold border transition-all duration-300 ${item.badgeColor}`}>
+                  {item.count}
+                </span>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+    );
+  };
 
   const renderUserSection = () => {
     if (!currentUser) return null;
@@ -181,13 +242,13 @@ export default function Sidebar({ currentUser }: SidebarProps) {
               <Settings className="h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:rotate-12" />
               <span>Paramètres</span>
             </Link>
-            <Link
-              href="/login"
+            <a
+              href="/api/auth/logout"
               className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-500/10 dark:hover:bg-red-500/15 hover:translate-x-1 transition-all duration-300 ease-out group"
             >
               <LogOut className="h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:translate-x-0.5" />
               <span>Déconnexion</span>
-            </Link>
+            </a>
           </nav>
         </div>
       </aside>
@@ -197,24 +258,44 @@ export default function Sidebar({ currentUser }: SidebarProps) {
         <div className="flex items-center gap-4">
           <button 
             onClick={() => setIsOpen(true)}
-            className="p-1 rounded-md text-muted-foreground hover:bg-muted/50 hover:text-primary focus:outline-none transition-colors"
+            className="p-1 rounded-md text-muted-foreground hover:bg-muted/50 hover:text-primary focus:outline-none transition-colors relative"
             aria-label="Ouvrir le menu"
           >
             <Menu className="h-6 w-6" />
+            {unreadCounts?.total > 0 && (
+              <span className="absolute top-1.5 right-1.5 flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+              </span>
+            )}
           </button>
           <Link className="flex items-center gap-2 font-bold" href="/dashboard">
             <Activity className="h-5 w-5 text-primary" />
             <span className="text-lg font-bold">MedDoc</span>
           </Link>
         </div>
-        {currentUser && (
-          <Avatar className="h-8 w-8 border border-border">
-            <AvatarImage src={currentUser.avatarUrl || ""} />
-            <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
-              {currentUser.lastName[0] || ""}{currentUser.firstName[0] || ""}
-            </AvatarFallback>
-          </Avatar>
-        )}
+        <div className="flex items-center gap-3">
+          <Link 
+            href="/dashboard/notifications" 
+            className="p-1.5 rounded-xl hover:bg-slate-100/60 dark:hover:bg-slate-800/60 text-slate-500 hover:text-primary relative transition-all"
+            title="Notifications"
+          >
+            <Bell className="h-5 w-5" />
+            {unreadCounts?.total > 0 && (
+              <span className="absolute -top-1 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-white text-[8px] font-bold">
+                {unreadCounts.total}
+              </span>
+            )}
+          </Link>
+          {currentUser && (
+            <Avatar className="h-8 w-8 border border-border">
+              <AvatarImage src={currentUser.avatarUrl || ""} />
+              <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                {currentUser.lastName[0] || ""}{currentUser.firstName[0] || ""}
+              </AvatarFallback>
+            </Avatar>
+          )}
+        </div>
       </header>
 
       {/* Mobile Drawer (Backdrop & Sidebar panel) */}

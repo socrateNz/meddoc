@@ -42,6 +42,8 @@ export async function middleware(request: NextRequest) {
           userId: refreshPayload.userId,
           email: refreshPayload.email,
           role: refreshPayload.role,
+          organizationId: refreshPayload.organizationId,
+          organizationType: refreshPayload.organizationType,
         })
           .setProtectedHeader({ alg: 'HS256' })
           .setExpirationTime('15m')
@@ -66,10 +68,31 @@ export async function middleware(request: NextRequest) {
 
   try {
     const { payload } = await jwtVerify(token!, JWT_SECRET);
+    const role = payload.role as string;
     
+    // RBAC: Filtrage des pages en fonction du rôle
+    const restrictedRoutes = [
+      { path: '/dashboard/patients', roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'] },
+      { path: '/dashboard/team', roles: ['ADMIN', 'COORDINATOR'] },
+      { path: '/dashboard/incidents', roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'] },
+      { path: '/dashboard/ai-assistant', roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'] },
+    ];
+
+    for (const route of restrictedRoutes) {
+      if (pathname.startsWith(route.path) && !route.roles.includes(role)) {
+        return NextResponse.redirect(new URL('/dashboard', request.url));
+      }
+    }
+
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-user-id', payload.userId as string);
-    requestHeaders.set('x-user-role', payload.role as string);
+    requestHeaders.set('x-user-role', role);
+    if (payload.organizationId) {
+      requestHeaders.set('x-organization-id', payload.organizationId as string);
+    }
+    if (payload.organizationType) {
+      requestHeaders.set('x-organization-type', payload.organizationType as string);
+    }
 
     const response = NextResponse.next({
       request: {

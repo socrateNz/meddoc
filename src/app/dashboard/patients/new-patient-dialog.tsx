@@ -9,8 +9,17 @@ import { Plus, X, Loader2 } from "lucide-react";
 import { createPatient } from "@/actions/patients";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-export default function NewPatientDialog() {
+export default function NewPatientDialog({ 
+  isHoldingAdmin = false, 
+  holdingId = "", 
+  clinics = [] 
+}: { 
+  isHoldingAdmin?: boolean;
+  holdingId?: string;
+  clinics?: {id: string, name: string}[];
+}) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -23,7 +32,8 @@ export default function NewPatientDialog() {
   const [address, setAddress] = useState("");
   const [emergencyContact, setEmergencyContact] = useState("");
   const [dependencyLevel, setDependencyLevel] = useState(1);
-  
+  const [organizationId, setOrganizationId] = useState(holdingId);
+
   // Tag input states
   const [pathologyInput, setPathologyInput] = useState("");
   const [pathologies, setPathologies] = useState<string[]>([]);
@@ -78,6 +88,7 @@ export default function NewPatientDialog() {
         dependencyLevel,
         pathologies,
         allergies,
+        organizationId: isHoldingAdmin ? organizationId : undefined,
       });
 
       if (response.success) {
@@ -94,6 +105,7 @@ export default function NewPatientDialog() {
         setDependencyLevel(1);
         setPathologies([]);
         setAllergies([]);
+        if (isHoldingAdmin) setOrganizationId(holdingId);
       } else {
         toast.error(response.error || "Erreur lors de la création du patient.");
       }
@@ -106,7 +118,7 @@ export default function NewPatientDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="gap-2 bg-primary hover:bg-primary/95 text-primary-foreground shadow-lg transition-all hover:scale-[1.02] duration-200" />}>
+      <DialogTrigger render={<Button className="flex fle-row gap-2gap-2 bg-primary hover:bg-primary/95 text-primary-foreground shadow-lg transition-all hover:scale-[1.02] duration-200" />}>
         <Plus className="h-4 w-4" />
         Nouveau patient
       </DialogTrigger>
@@ -185,11 +197,10 @@ export default function NewPatientDialog() {
                     key={level}
                     type="button"
                     onClick={() => setDependencyLevel(level)}
-                    className={`flex-1 h-9 rounded-lg font-medium text-sm transition-all border ${
-                      dependencyLevel === level
+                    className={`flex-1 h-9 rounded-lg font-medium text-sm transition-all border ${dependencyLevel === level
                         ? "bg-primary border-primary text-primary-foreground shadow-md scale-105"
                         : "bg-background hover:bg-accent border-border text-muted-foreground"
-                    }`}
+                      }`}
                   >
                     {level}
                   </button>
@@ -197,6 +208,23 @@ export default function NewPatientDialog() {
               </div>
             </div>
           </div>
+
+          {isHoldingAdmin && (
+            <div className="space-y-2">
+              <Label>Établissement de rattachement</Label>
+              <Select value={organizationId} onValueChange={(val: any) => val && setOrganizationId(val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionnez un établissement" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={holdingId}>Siège (Holding)</SelectItem>
+                  {clinics.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="address">Adresse du domicile *</Label>

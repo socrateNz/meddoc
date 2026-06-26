@@ -26,7 +26,7 @@ interface CreateIncidentDialogProps {
 export default function CreateIncidentDialog({ patients, reportedById }: CreateIncidentDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  
+
   // Form states
   const [patientId, setPatientId] = useState("");
   const [title, setTitle] = useState("");
@@ -69,7 +69,7 @@ export default function CreateIncidentDialog({ patients, reportedById }: CreateI
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="destructive" className="gap-2 bg-destructive hover:bg-destructive/95 text-destructive-foreground shadow-lg transition-all hover:scale-[1.02] duration-200" />}>
+      <DialogTrigger render={<Button variant="destructive" className="flex flex-row gap-2 bg-destructive hover:bg-destructive/95 text-destructive-foreground shadow-lg transition-all hover:scale-[1.02] duration-200" />}>
         <AlertTriangle className="h-4 w-4" />
         Signaler un incident
       </DialogTrigger>
@@ -90,7 +90,13 @@ export default function CreateIncidentDialog({ patients, reportedById }: CreateI
             <Label>Patient concerné *</Label>
             <Select onValueChange={(val) => val && setPatientId(val)} value={patientId}>
               <SelectTrigger>
-                <SelectValue placeholder="Sélectionner le patient" />
+                <SelectValue placeholder="Sélectionner le patient">
+                  {(val: any) => {
+                    if (!val) return "Sélectionner le patient";
+                    const p = patients.find(p => p.id === val);
+                    return p ? `${p.user.lastName} ${p.user.firstName}` : val;
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {patients.map((p) => (
@@ -117,7 +123,18 @@ export default function CreateIncidentDialog({ patients, reportedById }: CreateI
             <Label>Priorité *</Label>
             <Select onValueChange={(val) => val && setPriority(val as Priority)} value={priority}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Choisir une priorité" />
+                <SelectValue placeholder="Choisir une priorité">
+                  {(val: any) => {
+                    if (!val) return "Choisir une priorité";
+                    const labels: Record<string, string> = {
+                      [Priority.LOW]: "Faible (LOW)",
+                      [Priority.MEDIUM]: "Moyenne (MEDIUM)",
+                      [Priority.HIGH]: "Élevée (HIGH)",
+                      [Priority.CRITICAL]: "Critique (CRITICAL)"
+                    };
+                    return labels[val] || val;
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={Priority.LOW}>Faible (LOW)</SelectItem>
@@ -149,7 +166,7 @@ export default function CreateIncidentDialog({ patients, reportedById }: CreateI
             >
               Annuler
             </Button>
-            <Button type="submit" disabled={loading} variant="destructive" className="min-w-[100px]">
+            <Button type="submit" disabled={loading} variant="destructive" className="flex flex-row gap-2 min-w-[100px]">
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

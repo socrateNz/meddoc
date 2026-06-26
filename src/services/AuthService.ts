@@ -12,6 +12,18 @@ export class AuthService {
       throw new Error("Identifiants invalides ou compte inactif");
     }
 
+    if (user.organization) {
+      const holding = user.organization.type === "HOLDING" ? user.organization : user.organization.parent;
+      if (holding) {
+        if (holding.subscriptionStatus === "INACTIVE" || holding.subscriptionStatus === "CANCELLED") {
+          throw new Error("L'abonnement de votre organisation est inactif ou annulé.");
+        }
+        if (holding.licenseExpiresAt && new Date(holding.licenseExpiresAt) < new Date()) {
+          throw new Error("La licence de votre organisation a expiré.");
+        }
+      }
+    }
+
     const isValidPassword = await bcrypt.compare(data.password, user.passwordHash);
     if (!isValidPassword) {
       throw new Error("Identifiants invalides");
@@ -22,6 +34,8 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       role: user.role,
+      organizationId: user.organizationId,
+      organizationType: user.organization?.type,
     }, { expiresIn: "15m" });
 
     // Refresh token (7 days)
@@ -29,6 +43,8 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       role: user.role,
+      organizationId: user.organizationId,
+      organizationType: user.organization?.type,
     }, { expiresIn: "7d" });
 
     return {
@@ -41,6 +57,8 @@ export class AuthService {
         lastName: user.lastName,
         role: user.role,
         avatarUrl: user.avatarUrl,
+        requiresPasswordChange: user.requiresPasswordChange,
+        organizationId: user.organizationId,
       },
     };
   }

@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/db";
 import { Role, Priority, IncidentStatus } from "@prisma/client";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
@@ -18,11 +18,26 @@ export async function createPatient(data: {
   dependencyLevel: number;
   pathologies: string[];
   allergies: string[];
+  organizationId?: string;
 }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
+    }
+
+    let targetOrgId = activeUser.organizationId;
+    if (data.organizationId && activeUser.organization?.type === "HOLDING") {
+      // Validate target organization belongs to the holding
+      if (data.organizationId !== activeUser.organizationId) {
+        const targetOrg = await prisma.organization.findFirst({
+          where: { id: data.organizationId, parentId: activeUser.organizationId }
+        });
+        if (!targetOrg) {
+          throw new Error("Établissement cible invalide ou non autorisé.");
+        }
+      }
+      targetOrgId = data.organizationId;
     }
 
     const hashedPassword = await bcrypt.hash("patient123", 10); // default password for new patients
@@ -44,6 +59,7 @@ export async function createPatient(data: {
           lastName: data.lastName,
           role: Role.PATIENT,
           phone: data.phone,
+          organizationId: targetOrgId,
         },
       });
 
@@ -56,6 +72,7 @@ export async function createPatient(data: {
           dependencyLevel: Number(data.dependencyLevel),
           pathologies: data.pathologies,
           allergies: data.allergies,
+          organizationId: targetOrgId,
         },
       });
 
@@ -89,6 +106,11 @@ export async function createMedicalRecord(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
+    }
+
+    const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
+    if (!hasAccess) {
+      throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
     }
 
     const record = await prisma.medicalRecord.create({
@@ -128,6 +150,11 @@ export async function createIncident(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
+    }
+
+    const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
+    if (!hasAccess) {
+      throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
     }
 
     const incident = await prisma.incident.create({
@@ -178,6 +205,17 @@ export async function updateIncidentStatus(incidentId: string, status: IncidentS
       throw new Error("Non authentifié.");
     }
 
+    // Verify incident belongs to a patient the user can access
+    const existingIncident = await prisma.incident.findUnique({ where: { id: incidentId } });
+    if (!existingIncident) {
+      throw new Error("Incident introuvable.");
+    }
+
+    const hasAccess = await verifyPatientAccess(existingIncident.patientId, activeUser);
+    if (!hasAccess) {
+      throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+    }
+
     const updated = await prisma.incident.update({
       where: { id: incidentId },
       data: { status },
@@ -200,5 +238,94 @@ export async function updateIncidentStatus(incidentId: string, status: IncidentS
   } catch (error: any) {
     console.error("Error updating incident status:", error);
     return { success: false, error: error.message || "Erreur lors de la mise à jour de l'incident" };
+  }
+}
+
+export async function getClinicPatients(clinicId: string) {
+  const activeUser = await getCurrentUser();
+  if (!activeUser || activeUser.role !== "ADMIN" || activeUser.organization?.type !== "HOLDING") {
+    throw new Error("Non authentifié ou non autorisé.");
+  }
+
+  // Verify clinic ownership
+  const clinic = await prisma.organization.findFirst({
+    where: { id: clinicId, parentId: activeUser.organizationId, type: "CLINIC" }
+  });
+
+  if (!clinic) {
+    throw new Error("Clinique introuvable ou non autorisée.");
+  }
+
+  const patients = await prisma.patient.findMany({
+    where: { organizationId: clinicId },
+    include: {
+      user: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          avatarUrl: true,
+        }
+      },
+      incidents: {
+        where: { status: { not: "RESOLVED" } },
+        orderBy: { createdAt: "desc" },
+        take: 1
+      }
+    },
+    orderBy: {
+      user: { lastName: "asc" }
+    }
+  });
+
+  return { success: true, data: patients, clinicName: clinic.name };
+}
+
+export async function reassignPatient(patientId: string, newOrganizationId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser || activeUser.role !== "ADMIN" || activeUser.organization?.type !== "HOLDING") {
+      throw new Error("Non autorisé. Seul un administrateur de Holding peut réaffecter un patient.");
+    }
+
+    // Verify the target organization belongs to the holding (or IS the holding)
+    let isTargetValid = false;
+    if (newOrganizationId === activeUser.organizationId) {
+      isTargetValid = true;
+    } else {
+      const targetOrg = await prisma.organization.findUnique({
+        where: { id: newOrganizationId }
+      });
+      if (targetOrg && targetOrg.parentId === activeUser.organizationId) {
+        isTargetValid = true;
+      }
+    }
+
+    if (!isTargetValid) {
+      throw new Error("L'organisation cible n'appartient pas à votre holding.");
+    }
+
+    // Update patient and its user record
+    const updatedPatient = await prisma.$transaction(async (tx) => {
+      const p = await tx.patient.update({
+        where: { id: patientId },
+        data: { organizationId: newOrganizationId }
+      });
+      await tx.user.update({
+        where: { id: p.userId },
+        data: { organizationId: newOrganizationId }
+      });
+      return p;
+    });
+
+    await logAuditAction(activeUser.id, "REASSIGN_PATIENT", "Patient", patientId, { newOrganizationId });
+    
+    revalidatePath("/dashboard/patients");
+    revalidatePath(`/dashboard/patients/${patientId}`);
+
+    return { success: true, data: updatedPatient };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Erreur lors de la réaffectation." };
   }
 }

@@ -138,7 +138,7 @@ export default function ChatPanel({
         <div className="p-4 border-b flex items-center justify-between bg-card">
           <h2 className="font-semibold text-lg">Discussions</h2>
           <Dialog open={openNewChat} onOpenChange={setOpenNewChat}>
-            <DialogTrigger render={<Button size="icon" variant="outline" className="h-8 w-8 rounded-lg" />}>
+            <DialogTrigger render={<Button size="icon" variant="outline" className="flex flex-row gap-2 h-8 w-8 rounded-lg" />}>
               <Plus className="h-4 w-4" />
             </DialogTrigger>
             <DialogContent className="bg-card border shadow-2xl rounded-2xl sm:max-w-[400px]">
@@ -153,7 +153,13 @@ export default function ChatPanel({
                   <Label>Destinataire *</Label>
                   <Select onValueChange={(val) => val && setNewChatUser(val)} value={newChatUser}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Choisir un destinataire" />
+                      <SelectValue placeholder="Choisir un destinataire">
+                        {(val: any) => {
+                          if (!val) return "Choisir un destinataire";
+                          const u = otherUsers.find(user => user.id === val);
+                          return u ? `${u.lastName} ${u.firstName} (${u.role.toLowerCase()})` : val;
+                        }}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {otherUsers.map((u) => (
@@ -165,7 +171,7 @@ export default function ChatPanel({
                   </Select>
                 </div>
                 <div className="flex justify-end gap-3 pt-3 border-t">
-                  <Button type="button" variant="outline" onClick={() => setOpenNewChat(false)} disabled={newChatLoading}>
+                  <Button type="button" variant="outline" className="flex flex-row gap-2" onClick={() => setOpenNewChat(false)} disabled={newChatLoading}>
                     Annuler
                   </Button>
                   <Button type="submit" disabled={newChatLoading}>
@@ -201,9 +207,8 @@ export default function ChatPanel({
                 <Link
                   key={conv.id}
                   href={`/dashboard/messages?id=${conv.id}`}
-                  className={`flex items-start gap-3 p-4 text-left transition-all hover:bg-muted/40 ${
-                    isSelected ? "bg-primary/5 hover:bg-primary/5 border-l-2 border-primary" : ""
-                  }`}
+                  className={`flex items-start gap-3 p-4 text-left transition-all hover:bg-muted/40 ${isSelected ? "bg-primary/5 hover:bg-primary/5 border-l-2 border-primary" : ""
+                    }`}
                 >
                   <Avatar className="h-10 w-10 border">
                     <AvatarImage src={other.avatarUrl || ""} />
@@ -271,11 +276,10 @@ export default function ChatPanel({
                           </AvatarFallback>
                         </Avatar>
                         <div>
-                          <div className={`rounded-2xl px-4 py-2.5 text-sm ${
-                            isMe 
-                              ? "bg-primary text-primary-foreground rounded-tr-none shadow-sm" 
-                              : "bg-muted text-foreground rounded-tl-none border"
-                          }`}>
+                          <div className={`rounded-2xl px-4 py-2.5 text-sm ${isMe
+                            ? "bg-primary text-primary-foreground rounded-tr-none shadow-sm"
+                            : "bg-muted text-foreground rounded-tl-none border"
+                            }`}>
                             <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                           </div>
                           <span className={`text-[10px] text-muted-foreground mt-1 block ${isMe ? "text-right" : "text-left"}`}>
@@ -319,7 +323,7 @@ export default function ChatPanel({
             <p className="text-sm mt-1 text-center max-w-sm">
               Sélectionnez une discussion à gauche, ou ouvrez-en une nouvelle avec un membre de l'équipe de soins.
             </p>
-            <Button className="mt-4 gap-2" variant="outline" onClick={() => setOpenNewChat(true)}>
+            <Button className="flex flex-row gap-2 mt-4" variant="outline" onClick={() => setOpenNewChat(true)}>
               <Plus className="h-4 w-4" />
               Nouvelle discussion
             </Button>
