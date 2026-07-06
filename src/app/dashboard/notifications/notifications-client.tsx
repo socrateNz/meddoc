@@ -39,6 +39,7 @@ interface NotificationsClientProps {
   notifications: Notification[];
   unreadCount: number;
   currentFilter: string;
+  clinicId?: string;
 }
 
 const TYPE_CONFIG: Record<
@@ -118,6 +119,7 @@ export default function NotificationsClient({
   notifications,
   unreadCount,
   currentFilter,
+  clinicId,
 }: NotificationsClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -220,7 +222,11 @@ export default function NotificationsClient({
         {FILTERS.map((f) => (
           <Link
             key={f.key}
-            href={`/dashboard/notifications${f.key !== "all" ? `?filter=${f.key}` : ""}`}
+            href={
+              clinicId
+                ? `/dashboard/clinics/${clinicId}/notifications${f.key !== "all" ? `?filter=${f.key}` : ""}`
+                : `/dashboard/notifications${f.key !== "all" ? `?filter=${f.key}` : ""}`
+            }
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
               currentFilter === f.key
                 ? "bg-background shadow text-foreground"

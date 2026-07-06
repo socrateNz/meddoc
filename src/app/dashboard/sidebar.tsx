@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useParams, useRouter } from "next/navigation";
 import { 
   Activity, 
   LayoutDashboard, 
@@ -41,11 +41,14 @@ interface SidebarProps {
     message: number;
     ai: number;
   };
+  clinics?: { id: string; name: string }[];
 }
 
-export default function Sidebar({ currentUser, unreadCounts }: SidebarProps) {
+export default function Sidebar({ currentUser, unreadCounts, clinics = [] }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+  const params = useParams();
+  const router = useRouter();
 
   // Close mobile drawer when pathname changes
   useEffect(() => {
@@ -64,72 +67,90 @@ export default function Sidebar({ currentUser, unreadCounts }: SidebarProps) {
     };
   }, [isOpen]);
 
+  const urlClinicId = params?.id as string | undefined;
+
+  const isHoldingUser = currentUser?.organization?.type === "HOLDING";
+  const isClinicUser = currentUser?.organization?.type === "CLINIC";
+
+  let activeClinicId = "";
+  if (isClinicUser) {
+    activeClinicId = currentUser?.organizationId || "";
+  } else if (isHoldingUser && urlClinicId) {
+    activeClinicId = urlClinicId;
+  }
+
+  // Dynamic Navigation Items based on the active clinic context
   const navItems = [
     {
       name: "Tableau de bord",
-      href: "/dashboard",
+      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}` : "/dashboard",
       icon: LayoutDashboard,
       exact: true,
     },
-    {
-      name: "Patients",
-      href: "/dashboard/patients",
-      icon: Users,
-      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
-    },
-    {
-      name: "Équipe médicale",
-      href: "/dashboard/team",
-      icon: Stethoscope,
-      roles: ['ADMIN', 'COORDINATOR'],
-    },
-    {
-      name: "Cliniques",
-      href: "/dashboard/clinics",
-      icon: Building2,
-      roles: ['ADMIN'],
-      isHoldingOnly: true,
-    },
-    {
-      name: "Rendez-vous",
-      href: "/dashboard/appointments",
-      icon: Calendar,
-      count: unreadCounts?.appointment || 0,
-      badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
-    },
-    {
-      name: "Incidents",
-      href: "/dashboard/incidents",
-      icon: AlertCircle,
-      count: unreadCounts?.incident || 0,
-      badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
-      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
-    },
-    {
-      name: "Messagerie",
-      href: "/dashboard/messages",
-      icon: MessageSquare,
-      count: unreadCounts?.message || 0,
-      badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
-    },
+    // If a clinic is active, render clinic-specific items
+    ...(activeClinicId ? [
+      {
+        name: "Patients",
+        href: `/dashboard/clinics/${activeClinicId}/patients`,
+        icon: Users,
+        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+      },
+      {
+        name: "Équipe médicale",
+        href: `/dashboard/clinics/${activeClinicId}/team`,
+        icon: Stethoscope,
+        roles: ['ADMIN', 'COORDINATOR'],
+      },
+      {
+        name: "Rendez-vous",
+        href: `/dashboard/clinics/${activeClinicId}/appointments`,
+        icon: Calendar,
+        count: unreadCounts?.appointment || 0,
+        badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+      },
+      {
+        name: "Incidents",
+        href: `/dashboard/clinics/${activeClinicId}/incidents`,
+        icon: AlertCircle,
+        count: unreadCounts?.incident || 0,
+        badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
+        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+      },
+      {
+        name: "Messagerie",
+        href: `/dashboard/clinics/${activeClinicId}/messages`,
+        icon: MessageSquare,
+        count: unreadCounts?.message || 0,
+        badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+      },
+      {
+        name: "Assistant Clinique IA",
+        href: `/dashboard/clinics/${activeClinicId}/ai-assistant`,
+        icon: Sparkles,
+        iconClassName: "text-violet-500",
+        count: unreadCounts?.ai || 0,
+        badgeColor: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
+        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+      },
+    ] : []),
+    ...(!activeClinicId ? [
+      {
+        name: "Cliniques",
+        href: "/dashboard/clinics",
+        icon: Building2,
+        roles: ['ADMIN'],
+        isHoldingOnly: true,
+      }
+    ] : []),
     {
       name: "Notifications",
-      href: "/dashboard/notifications",
+      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/notifications` : "/dashboard/notifications",
       icon: Bell,
       count: unreadCounts?.total || 0,
       badgeColor: "bg-primary text-primary-foreground font-bold shadow-xs",
       roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'SUPER_ADMIN'],
-    },
-    {
-      name: "Assistant Clinique IA",
-      href: "/dashboard/ai-assistant",
-      icon: Sparkles,
-      iconClassName: "text-violet-500",
-      count: unreadCounts?.ai || 0,
-      badgeColor: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
-      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
     },
     {
       name: "Toutes les Holdings",
@@ -153,6 +174,47 @@ export default function Sidebar({ currentUser, unreadCounts }: SidebarProps) {
         ? "bg-gradient-to-r from-blue-500/10 to-indigo-500/10 text-blue-600 dark:text-blue-400 font-semibold shadow-xs"
         : "text-slate-500 dark:text-slate-400 hover:bg-slate-100/60 dark:hover:bg-slate-800/60 hover:text-blue-600 dark:hover:text-blue-400 hover:translate-x-1"
     }`;
+  };
+
+  const handleClinicChange = (newId: string) => {
+    if (!newId) {
+      router.push("/dashboard");
+    } else {
+      // If we are currently inside a nested page segment like patients, team, appointments etc.
+      // preserve the segment during switch, otherwise default to detail page.
+      const segments = pathname.split("/");
+      // Path format: /dashboard/clinics/[oldId]/[tab]
+      if (segments.includes("clinics") && segments.length >= 5) {
+        const tab = segments[4];
+        router.push(`/dashboard/clinics/${newId}/${tab}`);
+      } else {
+        router.push(`/dashboard/clinics/${newId}`);
+      }
+    }
+  };
+
+  const renderClinicSwitcher = () => {
+    if (!isHoldingUser || clinics.length === 0) return null;
+
+    return (
+      <div className="mb-4 space-y-1.5">
+        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block px-2">
+          Clinique active
+        </label>
+        <select
+          value={activeClinicId}
+          onChange={(e) => handleClinicChange(e.target.value)}
+          className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-background/50 text-slate-800 dark:text-slate-200 px-3 py-2 text-xs font-semibold shadow-xs focus:ring-1 focus:ring-primary focus:outline-none transition-all cursor-pointer"
+        >
+          <option value="">-- Toutes les cliniques --</option>
+          {clinics.map((c) => (
+            <option key={c.id} value={c.id}>
+              🏥 {c.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
   };
 
   const renderNavLinks = () => {
@@ -225,6 +287,7 @@ export default function Sidebar({ currentUser, unreadCounts }: SidebarProps) {
           </Link>
         </div>
         <div className="flex-1 overflow-auto py-4 px-4">
+          {renderClinicSwitcher()}
           {renderNavLinks()}
         </div>
 
@@ -299,7 +362,6 @@ export default function Sidebar({ currentUser, unreadCounts }: SidebarProps) {
       </header>
 
       {/* Mobile Drawer (Backdrop & Sidebar panel) */}
-      {/* Backdrop */}
       <div 
         onClick={() => setIsOpen(false)}
         className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-xs transition-opacity duration-300 lg:hidden ${
@@ -307,7 +369,6 @@ export default function Sidebar({ currentUser, unreadCounts }: SidebarProps) {
         }`}
       />
 
-      {/* Slide-out Sidebar Panel */}
       <div 
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-white/95 dark:bg-slate-900/95 border-r border-slate-200/50 dark:border-slate-800/50 flex flex-col p-4 shadow-xl transition-transform duration-300 ease-in-out lg:hidden ${
           isOpen ? "translate-x-0" : "-translate-x-full"
@@ -328,6 +389,7 @@ export default function Sidebar({ currentUser, unreadCounts }: SidebarProps) {
         </div>
 
         <div className="flex-1 overflow-auto">
+          {renderClinicSwitcher()}
           {renderNavLinks()}
         </div>
 

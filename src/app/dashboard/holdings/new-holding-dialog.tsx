@@ -39,6 +39,7 @@ export default function NewHoldingDialog() {
   });
 
   const isUnlimited = watch("isUnlimited");
+  const selectedPlan = watch("plan");
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setLoading(true);
@@ -90,7 +91,7 @@ export default function NewHoldingDialog() {
               </div>
               <div className="space-y-2">
                 <Label>Forfait *</Label>
-                <Select onValueChange={(val: any) => setValue("plan", val)} defaultValue="TRIAL">
+                <Select onValueChange={(val: any) => setValue("plan", val)} value={selectedPlan}>
                   <SelectTrigger>
                     <SelectValue placeholder="Sélectionnez un forfait" />
                   </SelectTrigger>

@@ -11,6 +11,10 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
+  if (currentUser.organization?.type === "CLINIC") {
+    redirect(`/dashboard/clinics/${currentUser.organizationId}`);
+  }
+
   const orgFilter: any = {};
   const isHoldingAdmin = currentUser.organization?.type === "HOLDING";
   const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
@@ -80,7 +84,7 @@ export default async function DashboardPage() {
       { organizationId: currentUser.organizationId },
       { organization: { parentId: currentUser.organizationId } }
     ];
-  } else if (currentUser.organization?.type === "CLINIC") {
+  } else if ((currentUser.organization?.type as string) === "CLINIC") {
     orgFilter.organizationId = currentUser.organizationId;
   } else {
     orgFilter.organizationId = "NO_ACCESS";

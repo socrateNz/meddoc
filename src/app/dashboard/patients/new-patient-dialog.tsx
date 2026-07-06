@@ -14,11 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 export default function NewPatientDialog({ 
   isHoldingAdmin = false, 
   holdingId = "", 
-  clinics = [] 
+  clinics = [],
+  defaultOrganizationId = "",
 }: { 
   isHoldingAdmin?: boolean;
   holdingId?: string;
   clinics?: {id: string, name: string}[];
+  defaultOrganizationId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -32,7 +34,7 @@ export default function NewPatientDialog({
   const [address, setAddress] = useState("");
   const [emergencyContact, setEmergencyContact] = useState("");
   const [dependencyLevel, setDependencyLevel] = useState(1);
-  const [organizationId, setOrganizationId] = useState(holdingId);
+  const [organizationId, setOrganizationId] = useState(defaultOrganizationId || holdingId);
 
   // Tag input states
   const [pathologyInput, setPathologyInput] = useState("");
@@ -105,7 +107,7 @@ export default function NewPatientDialog({
         setDependencyLevel(1);
         setPathologies([]);
         setAllergies([]);
-        if (isHoldingAdmin) setOrganizationId(holdingId);
+        if (isHoldingAdmin) setOrganizationId(defaultOrganizationId || holdingId);
       } else {
         toast.error(response.error || "Erreur lors de la création du patient.");
       }

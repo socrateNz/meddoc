@@ -7,29 +7,30 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import AddRecordDialog from "./add-record-dialog";
-import AddIncidentDialog from "./add-incident-dialog";
-import RunAiButton from "./run-ai-button";
-import CreateCarePlanDialog from "./create-care-plan-dialog";
-import CreateCareTaskDialog from "./create-care-task-dialog";
-import TaskStatusToggle from "./task-status-toggle";
-import ReassignPatientDialog from "../reassign-patient-dialog";
+import AddRecordDialog from "@/app/dashboard/patients/[id]/add-record-dialog";
+import AddIncidentDialog from "@/app/dashboard/patients/[id]/add-incident-dialog";
+import CreateCarePlanDialog from "@/app/dashboard/patients/[id]/create-care-plan-dialog";
+import CreateCareTaskDialog from "@/app/dashboard/patients/[id]/create-care-task-dialog";
+import TaskStatusToggle from "@/app/dashboard/patients/[id]/task-status-toggle";
+import ReassignPatientDialog from "@/app/dashboard/patients/reassign-patient-dialog";
 import { getClinics } from "@/actions/organizations";
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 
 interface PageProps {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string; patientId: string }>;
 }
 
 export default async function PatientDetailPage({ params }: PageProps) {
-  const { id } = await params;
+  const resolvedParams = await params;
+  const clinicId = resolvedParams.id;
+  const patientId = resolvedParams.patientId;
   const currentUser = await getCurrentUser();
 
   if (!currentUser) {
     redirect("/login");
   }
 
-  const hasAccess = await verifyPatientAccess(id, currentUser);
+  const hasAccess = await verifyPatientAccess(patientId, currentUser);
   if (!hasAccess) {
     notFound(); // Using notFound to hide the existence of the patient
   }
@@ -44,7 +45,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
   }
 
   const patient = await prisma.patient.findUnique({
-    where: { id },
+    where: { id: patientId },
     include: {
       user: true,
       medicalRecords: {
@@ -112,7 +113,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
     <div className="space-y-6">
       {/* Header Navigation */}
       <div className="flex items-center justify-between">
-        <Link href="/dashboard/patients">
+        <Link href={`/dashboard/clinics/${clinicId}/patients`}>
           <Button variant="ghost" className="gap-2 pl-2">
             <ArrowLeft className="h-4 w-4" />
             Retour aux patients
@@ -120,7 +121,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
         </Link>
         <div className="flex gap-2 flex-wrap">
           <Button asChild variant="outline" className="gap-2 border-primary/20 text-primary hover:bg-primary/5">
-            <Link href={`/dashboard/patients/${patient.id}/consultation`}>
+            <Link href={`/dashboard/clinics/${clinicId}/patients/${patient.id}/consultation`}>
               <Stethoscope className="h-4 w-4" />
               Nouvelle consultation
             </Link>
@@ -218,13 +219,6 @@ export default async function PatientDetailPage({ params }: PageProps) {
             className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
           >
             Incidents ({patient.incidents.length})
-          </TabsTrigger>
-          <TabsTrigger
-            value="ai"
-            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none gap-1.5"
-          >
-            <BrainCircuit className="h-4 w-4 text-indigo-500" />
-            Analyse IA
           </TabsTrigger>
         </TabsList>
 
@@ -429,188 +423,88 @@ export default async function PatientDetailPage({ params }: PageProps) {
           )}
         </TabsContent>
 
-        {/* Tab Content: Rendez-vous */}
-        <TabsContent value="appointments" className="pt-6">
-          {patient.appointments.length === 0 ? (
-            <div className="border border-dashed rounded-xl p-12 text-center bg-card">
-              <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
-              <h4 className="font-medium text-base">Aucun rendez-vous</h4>
-              <p className="text-sm text-muted-foreground mt-1">Aucune intervention n'a été planifiée.</p>
+          {/* Tab Content: Rendez-vous */}
+          <TabsContent value="appointments" className="pt-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold tracking-tight">Historique des visites</h3>
             </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {patient.appointments.map((apt) => (
-                <Card key={apt.id} className="hover:shadow-sm transition-all">
-                  <CardHeader className="pb-3">
-                    <div className="flex justify-between items-center">
-                      <Badge variant={apt.status === "SCHEDULED" ? "default" : "secondary"}>
-                        {apt.status === "SCHEDULED" ? "Planifié" : apt.status}
-                      </Badge>
-                      <Badge variant="outline">{apt.type}</Badge>
-                    </div>
-                    <CardTitle className="text-base font-semibold mt-3">{apt.title}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm text-muted-foreground space-y-2">
-                    <p className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-primary" />
-                      {formatDateTime(apt.scheduledAt)}
-                    </p>
-                    <p className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-primary" />
-                      {apt.durationMinutes} minutes
-                    </p>
-                    {apt.caregiver && (
-                      <div className="pt-3 border-t mt-3 flex items-center gap-2">
-                        <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-                          {apt.caregiver.user.lastName[0]}{apt.caregiver.user.firstName[0]}
+            {patient.appointments.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Aucun rendez-vous planifié.</p>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {patient.appointments.map((apt) => (
+                  <Card key={apt.id}>
+                    <CardHeader className="py-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="text-base font-bold">{apt.title}</CardTitle>
+                          <CardDescription className="mt-1 flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5" />
+                            {formatDate(apt.scheduledAt)}
+                          </CardDescription>
                         </div>
-                        <span className="text-xs text-foreground font-medium">
-                          Soignant : {apt.caregiver.user.lastName} {apt.caregiver.user.firstName}
-                        </span>
+                        <Badge variant={apt.status === "SCHEDULED" ? "default" : "secondary"}>
+                          {apt.status === "SCHEDULED" ? "Planifié" : apt.status === "COMPLETED" ? "Terminé" : apt.status}
+                        </Badge>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
+                    </CardHeader>
+                    <CardContent className="pb-4 text-sm space-y-2">
+                      <p className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3.5 w-3.5" />
+                        {formatDateTime(apt.scheduledAt)} ({apt.durationMinutes} min)
+                      </p>
+                      <p className="text-xs text-muted-foreground">Type : {apt.type}</p>
+                      {apt.caregiver && (
+                        <p className="text-xs font-medium">Soignant : {apt.caregiver.user.firstName} {apt.caregiver.user.lastName}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
 
-        {/* Tab Content: Incidents */}
-        <TabsContent value="incidents" className="pt-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold tracking-tight">Historique des Incidents & Alertes</h3>
-            <AddIncidentDialog patientId={patient.id} reportedById={currentUser.id} />
-          </div>
-
-          {patient.incidents.length === 0 ? (
-            <div className="border border-dashed rounded-xl p-12 text-center bg-card">
-              <AlertTriangle className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
-              <h4 className="font-medium text-base">Aucun incident signalé</h4>
-              <p className="text-sm text-muted-foreground mt-1">Tous les indicateurs sont au vert pour ce patient.</p>
+          {/* Tab Content: Incidents */}
+          <TabsContent value="incidents" className="pt-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold tracking-tight">Alertes & Incidents signalés</h3>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {patient.incidents.map((incident) => (
-                <Card key={incident.id} className="border-l-4 border-l-destructive">
-                  <CardHeader className="py-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-base font-bold text-destructive">{incident.title}</CardTitle>
-                          <Badge variant="destructive" className="text-[10px] px-2 py-0.5">
+            {patient.incidents.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Aucun incident à signaler.</p>
+            ) : (
+              <div className="space-y-4">
+                {patient.incidents.map((incident) => (
+                  <Card key={incident.id} className={incident.status === "OPEN" ? "border-red-200 bg-red-50/5" : ""}>
+                    <CardHeader className="py-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <CardTitle className="text-base font-bold flex items-center gap-2">
+                            {incident.status === "OPEN" && <AlertTriangle className="h-4 w-4 text-red-500 animate-pulse" />}
+                            {incident.title}
+                          </CardTitle>
+                          <CardDescription className="mt-1">
+                            Signalé le {formatDateTime(incident.createdAt)}
+                          </CardDescription>
+                        </div>
+                        <div className="flex gap-2">
+                          <Badge variant="outline" className={incident.priority === "CRITICAL" || incident.priority === "HIGH" ? "bg-red-500/10 text-red-600 border-red-500/20" : ""}>
                             {incident.priority}
                           </Badge>
-                          <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+                          <Badge variant={incident.status === "RESOLVED" ? "default" : "secondary"}>
                             {incident.status}
                           </Badge>
                         </div>
-                        <CardDescription className="mt-1">
-                          Signalé le {formatDateTime(incident.createdAt)}
-                        </CardDescription>
                       </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pb-4">
-                    <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
-                      {incident.description}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* Tab Content: Analyse IA */}
-        <TabsContent value="ai" className="pt-6">
-          <div className="grid md:grid-cols-3 gap-6">
-            <Card className="md:col-span-1 bg-gradient-to-br from-indigo-50/40 via-purple-50/20 to-transparent">
-              <CardHeader>
-                <div className="h-10 w-10 rounded-lg bg-indigo-500/10 flex items-center justify-center mb-2">
-                  <BrainCircuit className="h-6 w-6 text-indigo-500" />
-                </div>
-                <CardTitle className="text-lg">Score de risque IA</CardTitle>
-                <CardDescription>
-                  Évaluation algorithmique du niveau de risque patient.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col items-center justify-center py-6">
-                {patient.aiAnalyses.length === 0 ? (
-                  <div className="text-center space-y-2">
-                    <span className="text-5xl font-extrabold text-zinc-300">--</span>
-                    <p className="text-sm text-muted-foreground">Aucune analyse disponible.</p>
-                  </div>
-                ) : (
-                  <div className="text-center space-y-2">
-                    <span className={`text-6xl font-extrabold ${
-                      patient.aiAnalyses[0].riskScore > 70 
-                        ? "text-rose-500 animate-pulse" 
-                        : patient.aiAnalyses[0].riskScore > 40 
-                          ? "text-amber-500" 
-                          : "text-emerald-500"
-                    }`}>
-                      {patient.aiAnalyses[0].riskScore}%
-                    </span>
-                    <p className="text-sm font-semibold mt-2">Niveau de vigilance recommandé</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <div className="md:col-span-2 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold tracking-tight">Recommandations Cliniques IA</h3>
-                <RunAiButton patientId={patient.id} />
-              </div>
-
-              {patient.aiAnalyses.length === 0 ? (
-                <div className="border border-dashed rounded-xl p-12 text-center bg-card">
-                  <BrainCircuit className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
-                  <h4 className="font-medium text-base">Aucun rapport d'analyse</h4>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Générez instantanément des diagnostics de risque et des recommandations d'accompagnement basés sur le profil médical complet du patient.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base font-bold">Résumé clinique prédictif</CardTitle>
-                      <CardDescription>Analyse générée le {formatDateTime(patient.aiAnalyses[0].createdAt)}</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-foreground/90 leading-relaxed">
-                        {patient.aiAnalyses[0].summary}
-                      </p>
-                      
-                      <div className="space-y-2">
-                        <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Facteurs de risque identifiés :</h5>
-                        <div className="flex flex-wrap gap-2">
-                          {patient.aiAnalyses[0].riskFactors.map((factor, idx) => (
-                            <Badge key={idx} variant="outline" className="border-rose-500/20 text-rose-600 bg-rose-500/5">
-                              {factor}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 pt-2">
-                        <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Recommandations de suivi :</h5>
-                        <ul className="list-disc pl-4 space-y-1.5 text-sm text-foreground/90">
-                          {patient.aiAnalyses[0].recommendations.map((rec, idx) => (
-                            <li key={idx}>{rec}</li>
-                          ))}
-                        </ul>
-                      </div>
+                    <CardContent className="pb-4">
+                      <p className="text-sm text-foreground/90 leading-relaxed">{incident.description}</p>
                     </CardContent>
                   </Card>
-                </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
     </div>
   );
 }

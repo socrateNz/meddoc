@@ -48,6 +48,7 @@ export async function getCurrentUser() {
         role: true,
         phone: true,
         avatarUrl: true,
+        requiresPasswordChange: true,
         organizationId: true,
         organization: {
           select: { 

@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Sidebar from "./sidebar";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,10 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const currentUser = await getCurrentUser();
+
+  if (currentUser && currentUser.requiresPasswordChange) {
+    redirect("/setup-password");
+  }
 
   let unreadCounts = {
     total: 0,
@@ -39,6 +44,23 @@ export default async function DashboardLayout({
     };
   }
 
+  let clinics: { id: string; name: string }[] = [];
+  if (currentUser && currentUser.organization?.type === "HOLDING") {
+    clinics = await prisma.organization.findMany({
+      where: {
+        parentId: currentUser.organizationId,
+        type: "CLINIC",
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: {
+        name: "asc",
+      },
+    });
+  }
+
   return (
     <div className="flex flex-col lg:flex-row h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-slate-50/80 to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/20 relative">
       {/* Decorative background glow circles */}
@@ -46,7 +68,7 @@ export default async function DashboardLayout({
       <div className="absolute -bottom-[20%] left-[20%] w-[500px] h-[500px] rounded-full bg-violet-400/10 dark:bg-violet-600/5 blur-[120px] pointer-events-none z-0" />
 
       {/* Responsive & Dynamic Sidebar */}
-      <Sidebar currentUser={currentUser} unreadCounts={unreadCounts} />
+      <Sidebar currentUser={currentUser} unreadCounts={unreadCounts} clinics={clinics} />
 
       {/* Main Content */}
       <main className="flex flex-1 flex-col h-full min-h-0 overflow-hidden relative z-10">

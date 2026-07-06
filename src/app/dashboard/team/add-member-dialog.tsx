@@ -41,11 +41,13 @@ const formSchema = z.object({
 export default function AddMemberDialog({
   isHoldingAdmin = false,
   holdingId = "",
-  clinics = []
+  clinics = [],
+  defaultOrganizationId = "",
 }: {
   isHoldingAdmin?: boolean;
   holdingId?: string;
   clinics?: {id: string, name: string}[];
+  defaultOrganizationId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -61,11 +63,12 @@ export default function AddMemberDialog({
     resolver: zodResolver(formSchema),
     defaultValues: {
       role: "CAREGIVER",
-      organizationId: holdingId,
+      organizationId: defaultOrganizationId || holdingId,
     },
   });
 
   const selectedRole = watch("role");
+  const selectedOrgId = watch("organizationId");
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setLoading(true);
@@ -122,7 +125,7 @@ export default function AddMemberDialog({
 
           <div className="space-y-2">
             <Label>Rôle</Label>
-            <Select onValueChange={(val: any) => setValue("role", val)} defaultValue={selectedRole}>
+            <Select onValueChange={(val: any) => setValue("role", val)} value={selectedRole}>
               <SelectTrigger>
                 <SelectValue placeholder="Sélectionnez un rôle" />
               </SelectTrigger>
@@ -144,7 +147,7 @@ export default function AddMemberDialog({
           {isHoldingAdmin && (
             <div className="space-y-2">
               <Label>Établissement de rattachement</Label>
-              <Select onValueChange={(val: any) => setValue("organizationId", val)} defaultValue={holdingId}>
+              <Select onValueChange={(val: any) => setValue("organizationId", val)} value={selectedOrgId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Sélectionnez un établissement" />
                 </SelectTrigger>
