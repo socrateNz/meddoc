@@ -69,7 +69,7 @@ export default async function ClinicTeamPage({ params }: PageProps) {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Équipe Médicale</h1>
           <p className="text-muted-foreground mt-1">
-            Gérez le personnel, les spécialités et la disponibilité des soignants pour cette clinique.
+            Gérez le personnel, les spécialités et la disponibilité des praticiens et soignants pour cette clinique.
           </p>
         </div>
         <AddMemberDialog

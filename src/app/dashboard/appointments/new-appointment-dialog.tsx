@@ -93,7 +93,7 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold tracking-tight">Planifier un Rendez-vous</DialogTitle>
           <DialogDescription>
-            Créez une nouvelle intervention à domicile pour un patient.
+            Créez une nouvelle consultation ou un rendez-vous en clinique pour un patient.
           </DialogDescription>
         </DialogHeader>
 

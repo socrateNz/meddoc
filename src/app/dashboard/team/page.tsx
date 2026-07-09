@@ -33,7 +33,7 @@ export default async function TeamPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Équipe Médicale</h1>
           <p className="text-muted-foreground mt-1">
-            Gérez le personnel, les spécialités et la disponibilité des soignants.
+            Gérez le personnel, les spécialités et la disponibilité des praticiens et soignants.
           </p>
         </div>
         <AddMemberDialog

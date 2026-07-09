@@ -198,7 +198,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-3xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight mt-1">{appointmentsCount}</div>
-            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1.5">Interventions à venir</p>
+            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1.5">Rendez-vous à venir</p>
           </CardContent>
         </Card>
 

@@ -58,6 +58,7 @@ model Organization {
   
   users     User[]
   patients  Patient[]
+  wards     Ward[]
   
   plan                SubscriptionPlan @default(TRIAL)
   subscriptionStatus  SubscriptionStatus @default(TRIALING)
@@ -123,6 +124,9 @@ model Patient {
 
   organizationId  String?   @db.ObjectId
   organization    Organization? @relation(fields: [organizationId], references: [id])
+
+  wardId          String?   @db.ObjectId
+  ward            Ward?     @relation("PatientWard", fields: [wardId], references: [id])
 }
 
 model FamilyMember {
@@ -346,4 +350,18 @@ model AIMessage {
   role           String
   content        String
   createdAt      DateTime @default(now())
+}
+
+model Ward {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  name           String       // Nom d'affichage: "Urgences", "Soins Intensifs", etc.
+  code           String       // Code unique: "EMERGENCY", "ICU", "SURGERY"
+  capacity       Int          // Capacité maximale en lits
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  patients       Patient[]    @relation("PatientWard")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, code])
 }

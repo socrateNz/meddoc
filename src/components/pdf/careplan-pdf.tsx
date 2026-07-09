@@ -194,7 +194,7 @@ export default function CarePlanPDFDocument({ patient, plan }: CarePlanPDFDocume
             {plan.title}
           </Text>
           <Text style={{ color: "#475569" }}>
-            Ce plan de soins régit l'ensemble des interventions quotidiennes, des soins de confort et des prises médicamenteuses requises pour le maintien à domicile du patient dans des conditions de sécurité optimales.
+            Ce plan de soins régit l'ensemble des interventions quotidiennes, des soins et des prises médicamenteuses requises pour la prise en charge clinique du patient au sein de l'établissement dans des conditions de sécurité optimales.
           </Text>
         </View>
 

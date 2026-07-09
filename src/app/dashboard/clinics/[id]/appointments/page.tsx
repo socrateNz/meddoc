@@ -91,7 +91,7 @@ export default async function ClinicAppointmentsPage({ params }: PageProps) {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
           <p className="text-muted-foreground">
-            Visualisez et planifiez les interventions à domicile pour cette clinique.
+            Visualisez et planifiez les rendez-vous et consultations cliniques pour cette clinique.
           </p>
         </div>
         <NewAppointmentDialog patients={patients} caregivers={caregivers} />

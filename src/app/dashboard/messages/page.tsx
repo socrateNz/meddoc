@@ -97,7 +97,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Messagerie d'Équipe</h1>
         <p className="text-muted-foreground">
-          Communiquez en temps réel avec les coordinateurs et les soignants intervenant sur le terrain.
+          Communiquez en temps réel avec les coordinateurs et les soignants de l'établissement.
         </p>
       </div>
 

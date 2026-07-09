@@ -98,7 +98,7 @@ export class AiRAGService {
 
     // Construct prompt
     const systemPrompt = `
-Vous êtes un assistant clinique virtuel expert en soins à domicile pour MedDoc. Votre rôle est d'aider les soignants et coordinateurs médicaux à analyser le dossier d'un patient et de répondre de façon claire, précise, professionnelle et sécurisée, en français.
+Vous êtes un assistant clinique virtuel expert en gestion hospitalière et clinique pour MedDoc. Votre rôle est d'aider les médecins, praticiens et soignants à analyser le dossier d'un patient et de répondre de façon claire, précise, professionnelle et sécurisée, en français.
 
 ---
 DOSSIER CLINIQUE DE CONTEXTE :

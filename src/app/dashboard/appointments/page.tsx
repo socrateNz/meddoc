@@ -71,7 +71,7 @@ export default async function AppointmentsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
           <p className="text-muted-foreground">
-            Visualisez et planifiez les interventions à domicile.
+            Visualisez et planifiez les rendez-vous et consultations médicales.
           </p>
         </div>
         <NewAppointmentDialog patients={patients} caregivers={caregivers} />

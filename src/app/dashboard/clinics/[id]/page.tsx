@@ -2,25 +2,38 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Users, FileText, Settings } from "lucide-react";
+import { ArrowLeft, Building2, Users, FileText, Settings, Bed, Clock, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getOrCreateClinicWards } from "@/actions/wards";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClinicDetailsPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login");
+  }
 
-  if (!user || user.role !== "ADMIN" || user.organization?.type !== "HOLDING") {
+  const isHoldingAdmin = user.role === "ADMIN" && user.organization?.type === "HOLDING";
+  const isClinicUser = user.organizationId === params.id;
+  const isSuperAdmin = user.role === "SUPER_ADMIN";
+
+  if (!isHoldingAdmin && !isClinicUser && !isSuperAdmin) {
     redirect("/dashboard");
   }
 
+  const queryFilter: any = {
+    id: params.id,
+    type: "CLINIC"
+  };
+
+  if (isHoldingAdmin) {
+    queryFilter.parentId = user.organizationId;
+  }
+
   const clinic = await prisma.organization.findFirst({
-    where: {
-      id: params.id,
-      parentId: user.organizationId,
-      type: "CLINIC"
-    },
+    where: queryFilter,
     include: {
       _count: {
         select: { users: true, patients: true }
@@ -29,8 +42,56 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   });
 
   if (!clinic) {
-    redirect("/dashboard/clinics");
+    redirect("/dashboard");
   }
+
+  // Fetch staff members of this clinic for the shift widget
+  const staffMembers = await prisma.user.findMany({
+    where: {
+      organizationId: clinic.id,
+      role: { in: ["CAREGIVER", "COORDINATOR"] }
+    },
+    take: 3,
+  });
+
+  // Fetch or initialize structural wards from the database
+  const wardsResult = await getOrCreateClinicWards(clinic.id);
+  const wards = wardsResult.success ? wardsResult.wards || [] : [];
+
+  // Query actual patients inside each ward from the database
+  const wardsWithOccupancy = await Promise.all(
+    wards.map(async (ward) => {
+      const patientCount = await prisma.patient.count({
+        where: { wardId: ward.id }
+      });
+      const occupancyRate = ward.capacity > 0 ? Math.min(100, Math.round((patientCount / ward.capacity) * 100)) : 0;
+      return {
+        ...ward,
+        patientCount,
+        occupancyRate
+      };
+    })
+  );
+
+  const occupiedBeds = wardsWithOccupancy.reduce((acc, curr) => acc + curr.patientCount, 0);
+  const totalCapacity = wardsWithOccupancy.reduce((acc, curr) => acc + curr.capacity, 0);
+  const globalOccupancyRate = totalCapacity > 0 ? Math.min(100, Math.round((occupiedBeds / totalCapacity) * 100)) : 0;
+
+  const emergencyWard = wardsWithOccupancy.find(w => w.code === "EMERGENCY");
+  const icuWard = wardsWithOccupancy.find(w => w.code === "ICU");
+  const surgeryWard = wardsWithOccupancy.find(w => w.code === "SURGERY");
+
+  const emergencyPatientsCount = emergencyWard?.patientCount || 0;
+  const emergencyCapacity = emergencyWard?.capacity || 20;
+  const emergencyPercentage = emergencyWard?.occupancyRate || 0;
+
+  const icuPatientsCount = icuWard?.patientCount || 0;
+  const icuCapacity = icuWard?.capacity || 10;
+  const icuPercentage = icuWard?.occupancyRate || 0;
+
+  const surgeryPatientsCount = surgeryWard?.patientCount || 0;
+  const surgeryCapacity = surgeryWard?.capacity || 30;
+  const surgeryPercentage = surgeryWard?.occupancyRate || 0;
 
   return (
     <div className="space-y-6">
@@ -85,6 +146,88 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
           <Link href={`/dashboard/clinics/${clinic.id}/settings`} className="w-full mt-6">
             <Button className="w-full" variant="outline">Modifier</Button>
           </Link>
+        </div>
+      </div>
+
+      {/* Supervision Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8 animate-fade-up" style={{ animationDelay: "200ms" } as React.CSSProperties}>
+        {/* Bed Occupancy Card */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex items-center justify-between border-b pb-4 mb-4">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+              <Bed className="h-5 w-5 text-blue-500" />
+              Occupation des Lits & Capacité
+            </h3>
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              Global : {globalOccupancyRate}%
+            </span>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Urgences</span>
+                <span className="text-slate-500">{emergencyPatientsCount} / {emergencyCapacity} lits ({emergencyPercentage}%)</span>
+              </div>
+              <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-red-500 rounded-full" style={{ width: `${emergencyPercentage}%` }} />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Soins Intensifs (Réanimation)</span>
+                <span className="text-slate-500">{icuPatientsCount} / {icuCapacity} lits ({icuPercentage}%)</span>
+              </div>
+              <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-amber-500 rounded-full" style={{ width: `${icuPercentage}%` }} />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Chirurgie & Ambulatoire</span>
+                <span className="text-slate-500">{surgeryPatientsCount} / {surgeryCapacity} lits ({surgeryPercentage}%)</span>
+              </div>
+              <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${surgeryPercentage}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* On-Duty Staff Card */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+          <div className="flex items-center justify-between border-b pb-4 mb-4">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+              <Clock className="h-5 w-5 text-violet-500" />
+              Garde & Astreintes du Jour
+            </h3>
+            <span className="text-xs text-slate-500">Équipe active</span>
+          </div>
+          <div className="space-y-4">
+            {staffMembers.length === 0 ? (
+              <p className="text-sm text-slate-500 py-6 text-center">Aucun soignant configuré pour cette clinique.</p>
+            ) : (
+              staffMembers.map((member) => (
+                <div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                  <div className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                      {member.lastName[0]}{member.firstName[0]}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-850 dark:text-slate-200">{member.firstName} {member.lastName}</p>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                        {member.role === "CAREGIVER" ? "Praticien / Soignant" : "Coordinateur Clinique"}
+                      </p>
+                    </div>
+                  </div>
+                  {member.phone && (
+                    <a href={`tel:${member.phone}`} className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors">
+                      <Phone className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    </a>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>

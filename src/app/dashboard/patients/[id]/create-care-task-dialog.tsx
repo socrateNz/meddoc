@@ -75,7 +75,7 @@ export default function CreateCareTaskDialog({ carePlanId, patientId }: { carePl
               <Label htmlFor="title">Titre de la tâche</Label>
               <Input
                 id="title"
-                placeholder="Ex: Prise de sang à domicile"
+                placeholder="Ex: Prise de sang / Bilan biologique"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 disabled={loading}

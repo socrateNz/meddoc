@@ -9,16 +9,29 @@ import ClinicSettingsForm from "./settings-form";
 export default async function ClinicSettingsPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const currentUser = await getCurrentUser();
-  if (!currentUser || currentUser.role !== "ADMIN" || currentUser.organization?.type !== "HOLDING") {
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
+  const isClinicAdmin = currentUser.role === "ADMIN" && currentUser.organizationId === params.id;
+  const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
+
+  if (!isHoldingAdmin && !isClinicAdmin && !isSuperAdmin) {
     redirect("/dashboard");
   }
 
+  const queryFilter: any = {
+    id: params.id,
+    type: "CLINIC"
+  };
+
+  if (isHoldingAdmin) {
+    queryFilter.parentId = currentUser.organizationId;
+  }
+
   const clinic = await prisma.organization.findFirst({
-    where: {
-      id: params.id,
-      parentId: currentUser.organizationId,
-      type: "CLINIC"
-    }
+    where: queryFilter
   });
 
   if (!clinic) {

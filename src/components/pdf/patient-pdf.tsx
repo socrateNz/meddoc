@@ -205,7 +205,7 @@ export default function PatientPDFDocument({ patient }: PatientPDFDocumentProps)
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.logo}>MedDoc</Text>
-            <Text style={styles.subtitle}>Solution de Coordination de Soins à Domicile</Text>
+            <Text style={styles.subtitle}>Plateforme de Gestion Clinique & Hospitalière</Text>
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.title}>DOSSIER MÉDICAL</Text>

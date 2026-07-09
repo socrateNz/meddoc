@@ -182,24 +182,24 @@ export default function LandingPage() {
 
   const faqs = [
     {
-      q: "Comment puis-je inscrire un proche sur MedDoc ?",
-      a: "L'inscription se fait exclusivement via nos coordinateurs médicaux lors d'une évaluation à domicile. Cela garantit une modélisation précise du plan de soins personnalisé.",
+      q: "Comment inscrire notre hôpital ou clinique sur MedDoc ?",
+      a: "L'inscription de votre établissement se fait en contactant notre équipe commerciale. Nous configurons vos départements, services et comptes praticiens sur mesure.",
     },
     {
       q: "Qui a accès aux données de santé du patient ?",
-      a: "Seuls les soignants officiellement assignés au patient, le coordinateur médical responsable, et les membres de la famille autorisés par contrat disposent d'un accès sécurisé.",
+      a: "Seuls les médecins et soignants autorisés de votre établissement, ainsi que le personnel administratif habilité, disposent d'un accès sécurisé.",
     },
     {
       q: "Comment fonctionne l'intelligence artificielle clinique ?",
-      a: "Notre IA basée sur une architecture RAG analyse les rapports de visite, les antécédents et les traitements pour détecter des facteurs de risque (chute, déshydratation, observance) et générer des résumés cliniques.",
+      a: "Notre IA basée sur une architecture RAG analyse les comptes rendus médicaux, les antécédents et les traitements pour détecter des facteurs de risque (interactions, complications) et générer des résumés cliniques.",
     },
     {
       q: "Les documents médicaux sont-ils stockés de manière sécurisée ?",
       a: "Oui. Tous les documents sont hébergés sur une infrastructure conforme HDS (Hébergeur de Données de Santé) avec chiffrement de bout en bout et accès strictement contrôlé par rôles (RBAC).",
     },
     {
-      q: "Quel est le délai de mise en place d'une prise en charge ?",
-      a: "Après validation de l'évaluation initiale, un plan de soins est opérationnel sous 48 à 72 heures avec affectation des soignants qualifiés correspondant aux pathologies du patient.",
+      q: "Quel est le délai de déploiement dans notre établissement ?",
+      a: "MedDoc peut être déployé dans vos services cliniques sous 5 à 10 jours ouvrés, incluant la configuration de la plateforme, la formation de vos équipes et l'import de vos dossiers patients.",
     },
   ];
 
@@ -220,13 +220,13 @@ export default function LandingPage() {
       icon: Users,
       color: "bg-emerald-100 text-emerald-600",
       title: "Coordination d'Équipe",
-      desc: "Messagerie temps réel, assignation de tâches de soins et suivi en direct de l'activité terrain entre soignants et coordinateurs.",
+      desc: "Messagerie temps réel, assignation de tâches et suivi en direct de l'activité au sein des différents services cliniques.",
     },
     {
       icon: Calendar,
       color: "bg-amber-100 text-amber-600",
       title: "Gestion des Rendez-vous",
-      desc: "Planification intelligente des interventions à domicile avec rappels automatiques, gestion des créneaux et synchronisation des équipes.",
+      desc: "Planification intelligente des consultations et interventions cliniques, avec rappels automatiques et gestion des gardes médicales.",
     },
     {
       icon: AlertTriangle,
@@ -250,15 +250,15 @@ export default function LandingPage() {
       stars: 5,
     },
     {
-      quote: "En tant que soignant, j'ai accès à tout le dossier de mon patient en quelques secondes. Les plans de soins sont clairs et les tâches bien définies.",
+      quote: "En tant que soignant hospitalier, j'ai accès à tout le dossier de mon patient en quelques secondes. Les plans de soins sont clairs et les tâches bien définies.",
       name: "Karim B.",
-      role: "Infirmier à Domicile",
+      role: "Infirmier Chef — Clinique Pasteur",
       stars: 5,
     },
     {
-      quote: "Je peux suivre les visites de maman en temps réel depuis l'application. Cette transparence nous rassuré énormément au quotidien.",
-      name: "Isabelle T.",
-      role: "Famille de patient",
+      quote: "MedDoc a fluidifié la communication inter-services. Le suivi des lits et des admissions se fait en temps réel, améliorant grandement notre efficacité opérationnelle.",
+      name: "Jean-Marc L.",
+      role: "Directeur de Clinique",
       stars: 5,
     },
   ];
@@ -365,13 +365,13 @@ export default function LandingPage() {
                 </div>
 
                 <h1 className="animate-fade-up-d1 text-5xl lg:text-6xl font-black text-white leading-[1.05] tracking-tight">
-                  La coordination de{" "}
-                  <span className="text-gradient">soins à domicile</span>{" "}
+                  La gestion des{" "}
+                  <span className="text-gradient">hôpitaux et des cliniques</span>{" "}
                   réinventée
                 </h1>
 
                 <p className="animate-fade-up-d2 text-slate-400 text-lg leading-relaxed max-w-xl">
-                  MedDoc connecte patients, familles et professionnels de santé sur une plateforme clinique de classe entreprise, augmentée par l&apos;intelligence artificielle Gemini.
+                  MedDoc connecte praticiens, lits, plannings et dossiers médicaux au sein d'une plateforme de gestion clinique moderne et intelligente, propulsée par l'IA Gemini.
                 </p>
 
                 <div className="animate-fade-up-d3 flex flex-col sm:flex-row gap-4">
@@ -450,9 +450,9 @@ export default function LandingPage() {
                 </div>
 
                 {/* Floating mini-cards */}
-                <HeroCard icon={CheckCircle2} title="Visite validée" sub="Mme. Bernard · il y a 12 min" className="top-4 -right-8 animate-float-slow" />
-                <HeroCard icon={AlertTriangle} title="Incident signalé" sub="Mr. Rousseau · HAUTE priorité" className="bottom-24 -left-8 animate-float" style={{ animationDelay: "1s" } as React.CSSProperties} />
-                <HeroCard icon={MessageSquare} title="Nouveau message" sub="Dr. Chen → équipe soins" className="bottom-4 right-4 animate-float-slow" style={{ animationDelay: "2s" } as React.CSSProperties} />
+                <HeroCard icon={CheckCircle2} title="Admission validée" sub="Service Cardiologie · il y a 12 min" className="top-4 -right-8 animate-float-slow" />
+                <HeroCard icon={AlertTriangle} title="Incident signalé" sub="Urgences · HAUTE priorité" className="bottom-24 -left-8 animate-float" style={{ animationDelay: "1s" } as React.CSSProperties} />
+                <HeroCard icon={MessageSquare} title="Nouveau message" sub="Dr. Chen → Service Chirurgie" className="bottom-4 right-4 animate-float-slow" style={{ animationDelay: "2s" } as React.CSSProperties} />
               </div>
             </div>
           </div>
@@ -470,10 +470,10 @@ export default function LandingPage() {
           <div className="container mx-auto px-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
               {[
-                { val: 99, suffix: ".8%", label: "Satisfaction famille", icon: Heart, color: "text-rose-500" },
+                { val: 99, suffix: ".8%", label: "Satisfaction patients", icon: Heart, color: "text-rose-500" },
                 { val: 40, suffix: "%", label: "Temps administratif réduit", icon: TrendingUp, color: "text-emerald-500", prefix: "-" },
-                { val: 150, suffix: "k+", label: "Soins administrés", icon: Activity, color: "text-blue-500" },
-                { val: 5, suffix: " min", label: "Délai d'alerte moyen", icon: Clock, color: "text-amber-500", prefix: "<" },
+                { val: 150, suffix: "k+", label: "Consultations & admissions", icon: Activity, color: "text-blue-500" },
+                { val: 5, suffix: " min", label: "Prise en charge moyenne", icon: Clock, color: "text-amber-500", prefix: "<" },
               ].map(({ val, suffix, label, icon: Icon, color, prefix }) => (
                 <div key={label} className="flex flex-col items-center gap-2 animate-fade-up">
                   <Icon className={`h-6 w-6 ${color} mb-1`} />
@@ -496,10 +496,10 @@ export default function LandingPage() {
                 <Sparkles className="h-3.5 w-3.5" /> Nos Services Cliniques
               </span>
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                Une plateforme complète pour le <span className="text-gradient">soin à domicile</span>
+                Une plateforme complète pour vos <span className="text-gradient">hôpitaux et cliniques</span>
               </h2>
               <p className="mt-4 text-slate-500 leading-relaxed">
-                Tous les outils dont une équipe de soins à domicile a besoin, réunis dans une interface clinique unifiée.
+                Tous les outils dont vos équipes médicales et administratives ont besoin, réunis au sein d'une interface clinique performante.
               </p>
             </div>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -543,8 +543,8 @@ export default function LandingPage() {
                     {
                       icon: Heart,
                       color: "bg-rose-100 text-rose-600",
-                      title: "Transparence familiale",
-                      desc: "Un portail dédié permet aux proches de suivre le planning des soins, les visites validées et les rapports cliniques en temps réel.",
+                      title: "Gestion des lits & ressources",
+                      desc: "Visualisation en temps réel de l'occupation des lits, de la disponibilité des blocs et de l'affectation du personnel.",
                     },
                     {
                       icon: Lock,
@@ -581,10 +581,10 @@ export default function LandingPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-5">
                     {[
-                      { val: "99.8%", label: "Satisfaction famille", color: "text-rose-400" },
+                      { val: "99.8%", label: "Satisfaction patients", color: "text-rose-400" },
                       { val: "-40%", label: "Temps administratif", color: "text-emerald-400" },
-                      { val: "150k+", label: "Soins administrés", color: "text-blue-400" },
-                      { val: "< 5 min", label: "Délai d'alerte moyen", color: "text-amber-400" },
+                      { val: "150k+", label: "Admissions gérées", color: "text-blue-400" },
+                      { val: "< 5 min", label: "Prise en charge moyenne", color: "text-amber-400" },
                       { val: "24/7", label: "Supervision disponible", color: "text-violet-400" },
                       { val: "HDS", label: "Certification sécurité", color: "text-indigo-400" },
                     ].map(({ val, label, color }) => (
@@ -608,10 +608,10 @@ export default function LandingPage() {
                 <Clock className="h-3.5 w-3.5" /> Notre Processus
               </span>
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">
-                De l&apos;évaluation au suivi continu en <span className="text-gradient">4 étapes</span>
+                Du déploiement au pilotage en <span className="text-gradient">4 étapes</span>
               </h2>
               <p className="mt-4 text-slate-500 leading-relaxed">
-                Une transition en douceur pour un accompagnement médical optimal à domicile.
+                Une intégration fluide pour moderniser votre établissement de santé sans perturber vos services.
               </p>
             </div>
 
@@ -624,29 +624,29 @@ export default function LandingPage() {
                   {
                     n: "01",
                     icon: Users,
-                    title: "Évaluation initiale",
-                    desc: "Visite à domicile par un coordinateur médical qualifié pour évaluer les besoins et niveau de dépendance du patient.",
+                    title: "Audit & Cadrage",
+                    desc: "Analyse des besoins de votre établissement et définition des modules requis (Urgences, Ambulatoire, Hospitalisation).",
                     color: "from-blue-500 to-blue-600",
                   },
                   {
                     n: "02",
                     icon: FileText,
-                    title: "Plan de soins",
-                    desc: "Création du dossier patient, plan de soins personnalisé, prescriptions et protocoles médicaux sur la plateforme.",
+                    title: "Intégration & Config",
+                    desc: "Importation sécurisée des données existantes (dossiers patients, personnel) et configuration personnalisée de la plateforme.",
                     color: "from-indigo-500 to-indigo-600",
                   },
                   {
                     n: "03",
                     icon: CheckCircle2,
-                    title: "Affectation soignants",
-                    desc: "Sélection et affectation des soignants agréés en fonction des pathologies, compétences et disponibilités.",
+                    title: "Formation des équipes",
+                    desc: "Prise en main rapide par le personnel médical, soignant et administratif avec nos sessions de formation dédiées.",
                     color: "from-violet-500 to-violet-600",
                   },
                   {
                     n: "04",
                     icon: Brain,
-                    title: "Suivi IA continu",
-                    desc: "Accès permanent au dashboard famille, surveillance IA préventive des risques et rapports cliniques automatisés.",
+                    title: "Pilotage & IA",
+                    desc: "Lancement de la plateforme avec suivi en temps réel de l'activité, rapports de performance et assistance IA active.",
                     color: "from-blue-500 to-indigo-600",
                   },
                 ].map(({ n, icon: Icon, title, desc, color }, i) => (
@@ -747,10 +747,10 @@ export default function LandingPage() {
                 <Sparkles className="h-3 w-3" /> Démarrez maintenant
               </span>
               <h2 className="text-4xl lg:text-5xl font-black text-white mb-6 leading-tight">
-                Prêt à moderniser votre coordination de soins ?
+                Prêt à moderniser la gestion de votre établissement ?
               </h2>
               <p className="text-slate-400 text-lg mb-10 leading-relaxed">
-                Rejoignez les équipes soignantes qui font confiance à MedDoc pour assurer la sécurité et le bien-être de leurs patients.
+                Rejoignez les hôpitaux et cliniques d'avant-garde qui automatisent leurs processus pour se concentrer sur la santé des patients.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link
@@ -781,10 +781,10 @@ export default function LandingPage() {
                     <Mail className="h-3.5 w-3.5" /> Contact
                   </span>
                   <h2 className="text-4xl font-black text-slate-900 tracking-tight leading-tight">
-                    Contactez notre direction médicale
+                    Contactez notre équipe de déploiement
                   </h2>
                   <p className="mt-4 text-slate-500 leading-relaxed">
-                    Vous souhaitez planifier une évaluation ou en savoir plus sur notre accompagnement ? Un coordinateur vous répondra sous 24 heures.
+                    Vous souhaitez équiper votre établissement ou planifier une démonstration en direct de nos fonctionnalités ? Nos experts vous répondent sous 24 heures.
                   </p>
                 </div>
 
@@ -916,7 +916,7 @@ export default function LandingPage() {
                 <span className="text-xl font-extrabold">Med<span className="text-blue-400">Doc</span></span>
               </div>
               <p className="text-slate-400 text-sm leading-relaxed max-w-xs">
-                La plateforme de coordination de soins à domicile de référence, augmentée par l&apos;intelligence artificielle clinique.
+                La plateforme moderne de gestion et de coordination pour hôpitaux et cliniques, augmentée par l&apos;intelligence artificielle clinique.
               </p>
               <div className="flex gap-3">
                 {["HDS", "RGPD", "ISO 27001"].map((b) => (

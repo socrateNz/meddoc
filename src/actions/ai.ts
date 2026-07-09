@@ -57,7 +57,7 @@ export async function generateAIAnalysis(patientId: string) {
       .join("\n\n");
 
     const prompt = `
-Vous êtes un assistant clinique expert spécialisé dans l'accompagnement et la gestion de soins à domicile.
+Vous êtes un assistant clinique expert spécialisé dans la gestion hospitalière et clinique.
 Analysez le profil du patient suivant pour évaluer son score de risque de santé global, identifier les facteurs de risque clés et proposer des recommandations de soins.
 
 ---
@@ -80,7 +80,7 @@ Générez votre rapport d'analyse clinique au format JSON strict. Le JSON doit s
   "summary": "Résumé de l'état de santé globale et points de vigilance majeurs (en français, environ 100 mots)",
   "riskScore": 75, // Un nombre entier entre 0 et 100 représentant le risque d'incident/détérioration
   "riskFactors": ["Facteur de risque 1", "Facteur de risque 2"], // Liste textuelle des causes principales du risque
-  "recommendations": ["Recommandation 1", "Recommandation 2"] // Actions concrètes à mener par l'équipe de soignants à domicile
+  "recommendations": ["Recommandation 1", "Recommandation 2"] // Actions concrètes à mener par l'équipe médicale de l'établissement
 }
     `;
 
