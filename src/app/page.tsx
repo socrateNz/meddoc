@@ -268,9 +268,8 @@ export default function LandingPage() {
 
       {/* ─── Navbar ──────────────────────────────────────────────────────── */}
       <header
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          scrolled ? "glass shadow-sm py-3" : "bg-transparent py-5"
-        }`}
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "glass shadow-sm py-3" : "bg-transparent py-5"
+          }`}
       >
         <div className="container mx-auto px-6 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
@@ -360,7 +359,6 @@ export default function LandingPage() {
               {/* Left: Text */}
               <div className="space-y-8">
                 <div className="animate-fade-up inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold px-4 py-1.5 rounded-full uppercase tracking-wider">
-                  <Sparkles className="h-3 w-3" />
                   Plateforme Médicale IA · Agréée HDS
                 </div>
 
@@ -493,7 +491,7 @@ export default function LandingPage() {
           <div className="container mx-auto px-6">
             <div className="text-center max-w-2xl mx-auto mb-16 animate-fade-up">
               <span className="inline-flex items-center gap-2 text-blue-600 text-xs font-bold uppercase tracking-widest mb-4">
-                <Sparkles className="h-3.5 w-3.5" /> Nos Services Cliniques
+                Nos Services Cliniques
               </span>
               <h2 className="text-4xl font-black text-slate-900 tracking-tight">
                 Une plateforme complète pour vos <span className="text-gradient">hôpitaux et cliniques</span>
@@ -719,9 +717,8 @@ export default function LandingPage() {
                       {faq.q}
                     </span>
                     <ChevronDown
-                      className={`h-5 w-5 text-slate-400 group-hover:text-blue-500 transition-transform duration-200 shrink-0 ${
-                        openFaq === idx ? "rotate-180" : ""
-                      }`}
+                      className={`h-5 w-5 text-slate-400 group-hover:text-blue-500 transition-transform duration-200 shrink-0 ${openFaq === idx ? "rotate-180" : ""
+                        }`}
                     />
                   </button>
                   {openFaq === idx && (
@@ -744,7 +741,7 @@ export default function LandingPage() {
           <div className="container mx-auto px-6 text-center relative z-10">
             <div className="animate-fade-up max-w-2xl mx-auto">
               <span className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold px-4 py-1.5 rounded-full uppercase tracking-wider mb-6">
-                <Sparkles className="h-3 w-3" /> Démarrez maintenant
+                Démarrez maintenant
               </span>
               <h2 className="text-4xl lg:text-5xl font-black text-white mb-6 leading-tight">
                 Prêt à moderniser la gestion de votre établissement ?

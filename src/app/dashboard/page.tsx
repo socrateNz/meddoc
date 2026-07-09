@@ -94,23 +94,23 @@ export default async function DashboardPage() {
   const patientsCount = await prisma.patient.count({
     where: orgFilter,
   });
-  
+
   const appointmentsCount = await prisma.appointment.count({
-    where: { 
+    where: {
       status: "SCHEDULED",
       patient: orgFilter
     },
   });
-  
+
   const openIncidentsCount = await prisma.incident.count({
-    where: { 
+    where: {
       status: "OPEN",
       patient: orgFilter
     },
   });
-  
+
   const activePlansCount = await prisma.carePlan.count({
-    where: { 
+    where: {
       status: "ACTIVE",
       patient: orgFilter
     },
@@ -152,7 +152,7 @@ export default async function DashboardPage() {
     });
 
     const holdingPatientsCount = patientsGroupByOrg.find(g => g.organizationId === currentUser.organizationId)?._count || 0;
-    
+
     clinicStats = [
       { id: currentUser.organizationId, name: "Siège (Holding)", count: holdingPatientsCount },
       ...clinics.map(clinic => {
@@ -173,7 +173,7 @@ export default async function DashboardPage() {
 
       {/* Stats grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        
+
         {/* Patients actifs */}
         <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md hover:border-slate-300/50 dark:hover:border-slate-700/50 hover:bg-white dark:hover:bg-slate-900 animate-fade-up" style={{ animationDelay: "0ms" } as React.CSSProperties}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -233,7 +233,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
-        
+
         {/* Notifications list */}
         <Card className="col-span-4 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs animate-fade-up" style={{ animationDelay: "300ms" } as React.CSSProperties}>
           <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-4">
@@ -278,9 +278,6 @@ export default async function DashboardPage() {
               <CardTitle className="text-lg font-bold bg-gradient-to-r from-violet-600 to-indigo-600 dark:from-violet-400 dark:to-indigo-400 bg-clip-text text-transparent">Vigilance IA Clinique</CardTitle>
               <CardDescription className="text-xs text-slate-500 dark:text-slate-400 mt-1">Derniers rapports préventifs Gemini.</CardDescription>
             </div>
-            <div className="h-8 w-8 rounded-lg bg-violet-500/10 dark:bg-violet-500/20 flex items-center justify-center animate-pulse">
-              <Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
-            </div>
           </CardHeader>
           <CardContent className="pt-5 space-y-4">
             {aiAnalyses.length === 0 ? (
@@ -294,11 +291,10 @@ export default async function DashboardPage() {
                     <span className="font-bold text-xs text-violet-850 dark:text-violet-300">
                       {a.patient.user.lastName} {a.patient.user.firstName}
                     </span>
-                    <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
-                      a.riskScore > 70 
-                        ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20" 
+                    <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${a.riskScore > 70
+                        ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
                         : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
-                    }`}>
+                      }`}>
                       Risque {a.riskScore}%
                     </span>
                   </div>

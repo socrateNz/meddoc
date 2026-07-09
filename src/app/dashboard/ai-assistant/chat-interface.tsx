@@ -189,7 +189,6 @@ export default function ChatInterface({ patients }: { patients: Patient[] }) {
                   onClick={() => handleSend(p.text)}
                   disabled={loading}
                 >
-                  <Sparkles className="h-3.5 w-3.5 mr-2 text-violet-500 shrink-0" />
                   {p.label}
                 </Button>
               ))}
@@ -233,9 +232,8 @@ export default function ChatInterface({ patients }: { patients: Patient[] }) {
             messages.map((m, idx) => (
               <div
                 key={idx}
-                className={`flex gap-3 max-w-[85%] ${
-                  m.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
-                }`}
+                className={`flex gap-3 max-w-[85%] ${m.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
+                  }`}
               >
                 <Avatar className="h-8 w-8 border border-border">
                   <AvatarFallback className={m.role === "user" ? "bg-primary text-primary-foreground font-bold" : "bg-violet-600 text-white font-bold"}>
@@ -243,11 +241,10 @@ export default function ChatInterface({ patients }: { patients: Patient[] }) {
                   </AvatarFallback>
                 </Avatar>
                 <div
-                  className={`p-4 rounded-2xl text-sm border shadow-sm leading-relaxed ${
-                    m.role === "user"
+                  className={`p-4 rounded-2xl text-sm border shadow-sm leading-relaxed ${m.role === "user"
                       ? "bg-primary text-primary-foreground border-primary"
                       : "bg-card text-foreground border-border/80"
-                  }`}
+                    }`}
                 >
                   <p className="whitespace-pre-line">{m.content}</p>
                 </div>
@@ -281,8 +278,8 @@ export default function ChatInterface({ patients }: { patients: Patient[] }) {
               rateLimitCountdown > 0
                 ? `⏳ Quota atteint — disponible dans ${rateLimitCountdown}s...`
                 : selectedPatientId
-                ? `Posez votre question sur ${selectedPatient?.user.lastName} ${selectedPatient?.user.firstName}...`
-                : "Sélectionnez d'abord un patient pour lui poser une question..."
+                  ? `Posez votre question sur ${selectedPatient?.user.lastName} ${selectedPatient?.user.firstName}...`
+                  : "Sélectionnez d'abord un patient pour lui poser une question..."
             }
             className="flex-1 rounded-xl bg-background border focus-visible:ring-primary focus-visible:outline-none"
           />
