@@ -12,6 +12,8 @@ import { completeConsultation } from "@/actions/appointments";
 import { Loader2, FileText, Activity, Stethoscope, Pill, Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
+import PDFDownloadButton from "@/components/pdf/pdf-download-button";
+
 export default function ConsultationWorkspace({ patient, appointment }: { patient: any, appointment?: any }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -230,11 +232,28 @@ export default function ConsultationWorkspace({ patient, appointment }: { patien
 
           <TabsContent value="prescriptions" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle>Prescriptions & Médicaments</CardTitle>
-                <CardDescription>
-                  Ajoutez les médicaments prescrits. Ils seront ajoutés au Plan de Soins du patient et figureront sur l'ordonnance.
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Prescriptions & Médicaments</CardTitle>
+                  <CardDescription>
+                    Ajoutez les médicaments prescrits. Génération automatique de l'ordonnance médicale PDF.
+                  </CardDescription>
+                </div>
+                {medications.length > 0 && (
+                  <PDFDownloadButton
+                    documentName={`Ordonnance_${patient.user.lastName}`}
+                    type="prescription"
+                    data={{
+                      patient,
+                      medications,
+                      date: new Date(),
+                      organizationName: patient.organization?.name || "MEDDOC - CENTRE MÉDICAL"
+                    }}
+                    buttonText="Télécharger Ordonnance (PDF)"
+                    variant="outline"
+                    className="rounded-xl border-blue-200 text-blue-700 dark:border-blue-900 dark:text-blue-300"
+                  />
+                )}
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 items-end">

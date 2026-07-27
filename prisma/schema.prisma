@@ -415,6 +415,10 @@ model PharmacyItem {
   stockQuantity  Int      @default(0)
   reorderLevel   Int      @default(10)
   unitPrice      Float    // Prix unitaire en FCFA
+  batchNumber    String?  // Numéro de lot
+  expiryDate     DateTime? // Date de péremption
+  supplier       String?  // Fournisseur
+  location       String?  // Rayon / Emplacement
   organizationId String?  @db.ObjectId
   organization   Organization? @relation(fields: [organizationId], references: [id])
 

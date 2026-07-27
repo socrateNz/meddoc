@@ -18,6 +18,9 @@ function formatMongoDoc(doc: any) {
   if (formatted.updatedAt && formatted.updatedAt.$date) {
     formatted.updatedAt = new Date(formatted.updatedAt.$date);
   }
+  if (formatted.expiryDate && formatted.expiryDate.$date) {
+    formatted.expiryDate = new Date(formatted.expiryDate.$date);
+  }
   if (formatted.organizationId && formatted.organizationId.$oid) {
     formatted.organizationId = formatted.organizationId.$oid;
   }
@@ -41,25 +44,6 @@ export async function getPharmacyItems(organizationId?: string) {
 
     const targetOrgId = organizationId || activeUser.organizationId;
 
-    if ((prisma as any).pharmacyItem) {
-      const whereClause: any = {};
-      if (activeUser.organization?.type === "HOLDING" && !organizationId) {
-        whereClause.OR = [
-          { organizationId: activeUser.organizationId },
-          { organization: { parentId: activeUser.organizationId } }
-        ];
-      } else if (targetOrgId) {
-        whereClause.organizationId = targetOrgId;
-      }
-
-      const items = await (prisma as any).pharmacyItem.findMany({
-        where: whereClause,
-        orderBy: { name: "asc" }
-      });
-      return { success: true, data: items };
-    }
-
-    // Fallback using raw MongoDB command if @prisma/client hasn't loaded PharmacyItem
     const filter: any = {};
     if (targetOrgId) {
       filter.organizationId = { "$oid": targetOrgId };
@@ -86,6 +70,10 @@ export async function createOrUpdatePharmacyItem(data: {
   stockQuantity: number;
   reorderLevel: number;
   unitPrice: number;
+  batchNumber?: string;
+  expiryDate?: string;
+  supplier?: string;
+  location?: string;
   organizationId?: string;
 }) {
   try {
@@ -94,72 +82,53 @@ export async function createOrUpdatePharmacyItem(data: {
 
     const targetOrgId = data.organizationId || activeUser.organizationId;
     const nowISO = new Date().toISOString();
+    const expiryISO = data.expiryDate ? new Date(data.expiryDate).toISOString() : null;
 
+    // Direct MongoDB raw command execution to support new fields seamlessly
     let item: any;
-    if ((prisma as any).pharmacyItem) {
-      if (data.id) {
-        item = await (prisma as any).pharmacyItem.update({
-          where: { id: data.id },
-          data: {
-            name: data.name,
-            dosage: data.dosage || null,
-            category: data.category || "MEDICATION",
-            stockQuantity: Number(data.stockQuantity),
-            reorderLevel: Number(data.reorderLevel),
-            unitPrice: Number(data.unitPrice),
-          }
-        });
-      } else {
-        item = await (prisma as any).pharmacyItem.create({
-          data: {
-            name: data.name,
-            dosage: data.dosage || null,
-            category: data.category || "MEDICATION",
-            stockQuantity: Number(data.stockQuantity),
-            reorderLevel: Number(data.reorderLevel),
-            unitPrice: Number(data.unitPrice),
-            organizationId: targetOrgId,
-          }
-        });
-      }
-    } else {
-      // Fallback MongoDB raw command
-      if (data.id) {
-        await prisma.$runCommandRaw({
-          update: "PharmacyItem",
-          updates: [{
-            q: { _id: { "$oid": data.id } },
-            u: {
-              "$set": {
-                name: data.name,
-                dosage: data.dosage || null,
-                category: data.category || "MEDICATION",
-                stockQuantity: Number(data.stockQuantity),
-                reorderLevel: Number(data.reorderLevel),
-                unitPrice: Number(data.unitPrice),
-                updatedAt: { "$date": nowISO }
-              }
+    if (data.id) {
+      await prisma.$runCommandRaw({
+        update: "PharmacyItem",
+        updates: [{
+          q: { _id: { "$oid": data.id } },
+          u: {
+            "$set": {
+              name: data.name,
+              dosage: data.dosage || null,
+              category: data.category || "MEDICATION",
+              stockQuantity: Number(data.stockQuantity),
+              reorderLevel: Number(data.reorderLevel),
+              unitPrice: Number(data.unitPrice),
+              batchNumber: data.batchNumber || null,
+              expiryDate: expiryISO ? { "$date": expiryISO } : null,
+              supplier: data.supplier || null,
+              location: data.location || null,
+              updatedAt: { "$date": nowISO }
             }
-          }]
-        });
-        item = { id: data.id, name: data.name };
-      } else {
-        const rawRes: any = await prisma.$runCommandRaw({
-          insert: "PharmacyItem",
-          documents: [{
-            name: data.name,
-            dosage: data.dosage || null,
-            category: data.category || "MEDICATION",
-            stockQuantity: Number(data.stockQuantity),
-            reorderLevel: Number(data.reorderLevel),
-            unitPrice: Number(data.unitPrice),
-            organizationId: targetOrgId ? { "$oid": targetOrgId } : null,
-            createdAt: { "$date": nowISO },
-            updatedAt: { "$date": nowISO }
-          }]
-        });
-        item = { id: "created", name: data.name };
-      }
+          }
+        }]
+      });
+      item = { id: data.id, name: data.name };
+    } else {
+      await prisma.$runCommandRaw({
+        insert: "PharmacyItem",
+        documents: [{
+          name: data.name,
+          dosage: data.dosage || null,
+          category: data.category || "MEDICATION",
+          stockQuantity: Number(data.stockQuantity),
+          reorderLevel: Number(data.reorderLevel),
+          unitPrice: Number(data.unitPrice),
+          batchNumber: data.batchNumber || null,
+          expiryDate: expiryISO ? { "$date": expiryISO } : null,
+          supplier: data.supplier || null,
+          location: data.location || null,
+          organizationId: targetOrgId ? { "$oid": targetOrgId } : null,
+          createdAt: { "$date": nowISO },
+          updatedAt: { "$date": nowISO }
+        }]
+      });
+      item = { id: "created", name: data.name };
     }
 
     await logAuditAction(activeUser.id, data.id ? "UPDATE_PHARMACY_ITEM" : "CREATE_PHARMACY_ITEM", "PharmacyItem", item.id || "new");
@@ -532,26 +501,16 @@ export async function getFinanceSummary(organizationId?: string) {
         orderBy: { createdAt: "desc" }
       });
 
-      pharmacyItems = await (prisma as any).pharmacyItem.findMany({
-        where: whereClause
-      });
-    } else {
-      // Fallback MongoDB raw commands
-      const filter: any = {};
-      if (targetOrgId) filter.organizationId = { "$oid": targetOrgId };
+    // Fetch pharmacy items directly via raw MongoDB command to return all custom fields
+    const pFilter: any = {};
+    if (targetOrgId) pFilter.organizationId = { "$oid": targetOrgId };
 
-      const txRes: any = await prisma.$runCommandRaw({
-        find: "FinancialTransaction",
-        filter: filter,
-        sort: { createdAt: -1 }
-      });
-      transactions = (txRes.cursor?.firstBatch || []).map(formatMongoDoc);
-
-      const itemsRes: any = await prisma.$runCommandRaw({
-        find: "PharmacyItem",
-        filter: filter
-      });
-      pharmacyItems = (itemsRes.cursor?.firstBatch || []).map(formatMongoDoc);
+    const itemsRes: any = await prisma.$runCommandRaw({
+      find: "PharmacyItem",
+      filter: pFilter,
+      sort: { name: 1 }
+    });
+    pharmacyItems = (itemsRes.cursor?.firstBatch || []).map(formatMongoDoc);
 
       // Populate user names if available
       const users = await prisma.user.findMany({

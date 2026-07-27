@@ -19,7 +19,8 @@ import {
   Stethoscope,
   Building2,
   Server,
-  Wallet
+  Wallet,
+  BookOpen
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -165,6 +166,12 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [] }: Sid
       count: unreadCounts?.total || 0,
       badgeColor: "bg-primary text-primary-foreground font-bold shadow-xs",
       roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'SUPER_ADMIN'],
+    },
+    {
+      name: "Manuel d'utilisation",
+      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/manual` : "/dashboard/manual",
+      icon: BookOpen,
+      roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'CAREGIVER', 'FAMILY', 'PATIENT'],
     },
     {
       name: "Toutes les Holdings",

@@ -26,6 +26,10 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
     stockQuantity: item?.stockQuantity ?? 0,
     reorderLevel: item?.reorderLevel ?? 10,
     unitPrice: item?.unitPrice ?? 500,
+    batchNumber: item?.batchNumber || "",
+    expiryDate: item?.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : "",
+    supplier: item?.supplier || "",
+    location: item?.location || "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,6 +46,10 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
         stockQuantity: Number(formData.stockQuantity),
         reorderLevel: Number(formData.reorderLevel),
         unitPrice: Number(formData.unitPrice),
+        batchNumber: formData.batchNumber || undefined,
+        expiryDate: formData.expiryDate || undefined,
+        supplier: formData.supplier || undefined,
+        location: formData.location || undefined,
         organizationId,
       });
 
@@ -55,6 +63,10 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
             stockQuantity: 0,
             reorderLevel: 10,
             unitPrice: 500,
+            batchNumber: "",
+            expiryDate: "",
+            supplier: "",
+            location: "",
           });
         }
       } else {
@@ -79,14 +91,14 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
           Nouveau produit
         </DialogTrigger>
       )}
-      <DialogContent className="sm:max-w-[480px] rounded-2xl">
+      <DialogContent className="sm:max-w-[540px] max-h-[90vh] overflow-y-auto rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Package className="h-5 w-5 text-blue-600" />
             {item ? "Modifier le produit / stock" : "Ajouter un produit en pharmacie"}
           </DialogTitle>
           <DialogDescription>
-            Renseignez les détails du médicament ou matériel médical pour le suivi du stock.
+            Renseignez les détails du médicament, N° de lot et traçabilité de péremption.
           </DialogDescription>
         </DialogHeader>
 
@@ -145,6 +157,54 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
                 placeholder="50"
                 value={formData.stockQuantity}
                 onChange={(e) => setFormData({ ...formData, stockQuantity: Number(e.target.value) })}
+                className="rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="batchNumber">Numéro de lot (Traçabilité)</Label>
+              <Input
+                id="batchNumber"
+                placeholder="ex: LOT-2026-08A"
+                value={formData.batchNumber}
+                onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })}
+                className="rounded-xl"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="expiryDate">Date de péremption</Label>
+              <Input
+                id="expiryDate"
+                type="date"
+                value={formData.expiryDate}
+                onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                className="rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="supplier">Fournisseur / Grossiste</Label>
+              <Input
+                id="supplier"
+                placeholder="ex: Labo Pharmacie Centrale"
+                value={formData.supplier}
+                onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
+                className="rounded-xl"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="location">Rayon / Emplacement</Label>
+              <Input
+                id="location"
+                placeholder="ex: Rayon B3, Armoire A"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 className="rounded-xl"
               />
             </div>

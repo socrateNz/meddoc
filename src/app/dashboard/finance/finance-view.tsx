@@ -154,6 +154,67 @@ export default function FinanceView({ summary, patients, organizationId, organiz
     setCartItems((prev) => prev.filter((i) => i.id !== id));
   };
 
+  const handleLoadPatientPrescriptions = () => {
+    if (!cartPatientId) {
+      setCartMsg({ type: "error", text: "Veuillez sélectionner un patient ci-dessous avant d'importer une ordonnance." });
+      return;
+    }
+    const patient = patients.find((p) => p.id === cartPatientId);
+    if (!patient) return;
+
+    const prescribedList: Array<{ name: string; dosage?: string }> = [];
+
+    if (Array.isArray(patient.carePlans)) {
+      patient.carePlans.forEach((plan: any) => {
+        if (Array.isArray(plan.medications)) {
+          plan.medications.forEach((med: any) => {
+            prescribedList.push({ name: med.name, dosage: med.dosage });
+          });
+        }
+      });
+    }
+
+    if (prescribedList.length === 0) {
+      setCartMsg({ type: "error", text: `Aucune ordonnance/prescription active enregistrée pour ${patient.user?.lastName || "ce patient"}.` });
+      return;
+    }
+
+    let addedCount = 0;
+    const newItems = [...cartItems];
+
+    prescribedList.forEach((med) => {
+      const match = summary.pharmacyItems.find((p) =>
+        p.name.toLowerCase().includes(med.name.toLowerCase()) ||
+        med.name.toLowerCase().includes(p.name.toLowerCase())
+      );
+
+      if (match) {
+        newItems.push({
+          id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          type: "PHARMACY",
+          pharmacyItemId: match.id,
+          description: `${match.name}${match.dosage ? ` (${match.dosage})` : ''}`,
+          quantity: 1,
+          unitPrice: match.unitPrice,
+          amount: match.unitPrice,
+        });
+      } else {
+        newItems.push({
+          id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          type: "SERVICE",
+          description: `Prescription: ${med.name}${med.dosage ? ` (${med.dosage})` : ''}`,
+          quantity: 1,
+          unitPrice: 1000,
+          amount: 1000,
+        });
+      }
+      addedCount++;
+    });
+
+    setCartItems(newItems);
+    setCartMsg({ type: "success", text: `${addedCount} produit(s) d'ordonnance chargé(s) dans le panier avec succès !` });
+  };
+
   const cartGrandTotal = cartItems.reduce((sum, item) => sum + item.amount, 0);
 
   const handleValidateCart = async () => {
@@ -632,8 +693,19 @@ export default function FinanceView({ summary, patients, organizationId, organiz
               {/* Pied du Panier : Patient & Grand Total */}
               <div className="p-6 pt-3 border-t border-slate-200/60 dark:border-slate-800/60 space-y-4">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-                  <div className="flex-1 max-w-sm space-y-1">
-                    <Label htmlFor="cartPatientId" className="text-xs">Patient (Optionnel)</Label>
+                  <div className="flex-1 max-w-md space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="cartPatientId" className="text-xs">Patient (Optionnel)</Label>
+                      {cartPatientId && (
+                        <button
+                          type="button"
+                          onClick={handleLoadPatientPrescriptions}
+                          className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        >
+                          ⚡ Importer Ordonnance Patient
+                        </button>
+                      )}
+                    </div>
                     <select
                       id="cartPatientId"
                       value={cartPatientId}
@@ -865,17 +937,18 @@ export default function FinanceView({ summary, patients, organizationId, organiz
               <TableHeader className="bg-slate-50/50 dark:bg-slate-900/40">
                 <TableRow>
                   <TableHead className="text-xs uppercase tracking-wider font-bold">Produit / Médicament</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Dosage / Forme</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold">Dosage & Emplacement</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold">N° Lot & Péremption</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-bold">Prix unitaire (FCFA)</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-bold">Stock actuel</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">État du stock</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold">État & Traçabilité</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {summary.pharmacyItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center text-slate-500 font-medium">
+                    <TableCell colSpan={7} className="h-32 text-center text-slate-500 font-medium">
                       Aucun produit en stock. Cliquez sur "Nouveau produit" pour ajouter des médicaments.
                     </TableCell>
                   </TableRow>
@@ -884,6 +957,12 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                     const isOutOfStock = item.stockQuantity <= 0;
                     const isLowStock = item.stockQuantity <= item.reorderLevel;
 
+                    const now = new Date();
+                    const expDate = item.expiryDate ? new Date(item.expiryDate) : null;
+                    const isExpired = expDate ? expDate < now : false;
+                    const daysUntilExp = expDate ? Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 3600 * 24)) : null;
+                    const isExpiringSoon = daysUntilExp !== null && daysUntilExp >= 0 && daysUntilExp <= 30;
+
                     return (
                       <TableRow key={item.id} className="border-b border-slate-100 dark:border-slate-800/40 hover:bg-slate-50/50">
                         <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5">
@@ -891,11 +970,33 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                             <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0">
                               <Package className="h-4 w-4" />
                             </div>
-                            <span>{item.name}</span>
+                            <div>
+                              <span>{item.name}</span>
+                              {item.supplier && (
+                                <p className="text-[10px] text-slate-400 font-normal">Fournisseur: {item.supplier}</p>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                         <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
-                          {item.dosage || "-"}
+                          <div>{item.dosage || "-"}</div>
+                          {item.location && (
+                            <div className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">{item.location}</div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
+                          {item.batchNumber ? (
+                            <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300 block">{item.batchNumber}</span>
+                          ) : (
+                            <span className="text-slate-400 block">-</span>
+                          )}
+                          {expDate ? (
+                            <span className={`text-[10px] ${isExpired ? "text-rose-600 font-bold" : isExpiringSoon ? "text-amber-600 font-bold" : "text-slate-500"}`}>
+                              Exp: {new Intl.DateTimeFormat("fr-FR", { month: "short", year: "numeric" }).format(expDate)}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">Pas de date</span>
+                          )}
                         </TableCell>
                         <TableCell className="font-bold text-slate-800 dark:text-slate-200 py-3.5">
                           {formatFCFA(item.unitPrice)}
@@ -903,23 +1004,33 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                         <TableCell className="font-extrabold py-3.5">
                           {item.stockQuantity} unités
                         </TableCell>
-                        <TableCell className="py-3.5">
+                        <TableCell className="py-3.5 space-y-1">
                           {isOutOfStock ? (
-                            <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20 gap-1 text-xs">
+                            <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20 gap-1 text-[11px]">
                               <XCircle className="h-3 w-3" />
                               Rupture de stock
                             </Badge>
                           ) : isLowStock ? (
-                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-xs">
+                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-[11px]">
                               <AlertTriangle className="h-3 w-3" />
-                              Stock faible (Seuil: {item.reorderLevel})
+                              Stock faible ({item.reorderLevel})
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1 text-xs">
+                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1 text-[11px]">
                               <CheckCircle2 className="h-3 w-3" />
                               En stock
                             </Badge>
                           )}
+
+                          {isExpired ? (
+                            <Badge variant="outline" className="bg-rose-600 text-white border-rose-600 gap-1 text-[10px] font-bold block w-fit">
+                              ⚠️ Périmé !
+                            </Badge>
+                          ) : isExpiringSoon ? (
+                            <Badge variant="outline" className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-[10px] font-bold block w-fit">
+                              ⏳ Péremption ({daysUntilExp}j)
+                            </Badge>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-right py-3.5">
                           <PharmacyDialog item={item} organizationId={organizationId} />
