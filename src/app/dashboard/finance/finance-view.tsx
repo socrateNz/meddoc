@@ -791,7 +791,7 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                 <TableRow>
                   <TableHead className="text-xs uppercase tracking-wider font-bold">Date & Heure</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-bold">Type</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Motif / Description</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold max-w-[280px]">Motif / Description</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-bold">Patient / Rattaché</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-bold">Enregistré par</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Montant (FCFA)</TableHead>
@@ -826,7 +826,7 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5">
+                        <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5 max-w-[280px] truncate" title={t.description}>
                           {t.description}
                         </TableCell>
                         <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
