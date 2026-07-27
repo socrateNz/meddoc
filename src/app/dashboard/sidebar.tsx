@@ -18,7 +18,8 @@ import {
   X,
   Stethoscope,
   Building2,
-  Server
+  Server,
+  Wallet
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -134,7 +135,20 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [] }: Sid
         badgeColor: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
         roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
       },
-    ] : []),
+      {
+        name: "Finance & Pharmacie",
+        href: `/dashboard/clinics/${activeClinicId}/finance`,
+        icon: Wallet,
+        roles: ['ADMIN', 'COORDINATOR'],
+      },
+    ] : [
+      {
+        name: "Finance & Pharmacie",
+        href: "/dashboard/finance",
+        icon: Wallet,
+        roles: ['ADMIN', 'COORDINATOR'],
+      },
+    ]),
     ...(!activeClinicId ? [
       {
         name: "Cliniques",

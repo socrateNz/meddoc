@@ -76,6 +76,7 @@ export async function middleware(request: NextRequest) {
       { path: '/dashboard/team', roles: ['ADMIN', 'COORDINATOR'] },
       { path: '/dashboard/incidents', roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'] },
       { path: '/dashboard/ai-assistant', roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'] },
+      { path: '/dashboard/finance', roles: ['ADMIN', 'COORDINATOR'] },
     ];
 
     for (const route of restrictedRoutes) {

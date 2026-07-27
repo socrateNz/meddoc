@@ -48,6 +48,18 @@ enum SubscriptionStatus {
   TRIALING
 }
 
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionCategory {
+  PHARMACY_SALE
+  SERVICE_FEE
+  OPERATIONAL_EXPENSE
+  OTHER
+}
+
 model Organization {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   name      String
@@ -59,6 +71,8 @@ model Organization {
   users     User[]
   patients  Patient[]
   wards     Ward[]
+  pharmacyItems PharmacyItem[]
+  financialTransactions FinancialTransaction[]
   
   plan                SubscriptionPlan @default(TRIAL)
   subscriptionStatus  SubscriptionStatus @default(TRIALING)
@@ -95,6 +109,8 @@ model User {
   conversations       ConversationParticipant[]
   notifications       Notification[]
   aiConversations     AIConversation[]
+  vitalsRecorded      VitalSign[]         @relation("RecordedVitals")
+  financialTransactions FinancialTransaction[] @relation("RecordedTransactions")
 
   organizationId      String?   @db.ObjectId
   organization        Organization? @relation(fields: [organizationId], references: [id])
@@ -110,6 +126,8 @@ model Patient {
   emergencyContact String?
   dependencyLevel Int      @default(1)
 
+  status          String   @default("ADMITTED") // ADMITTED, DISCHARGED, ARCHIVED
+
   pathologies     String[]
   allergies       String[]
 
@@ -121,6 +139,8 @@ model Patient {
   aiAnalyses      AIAnalysis[]
   contracts       Contract[]
   aiConversations AIConversation[]
+  vitalSigns      VitalSign[]
+  financialTransactions FinancialTransaction[]
 
   organizationId  String?   @db.ObjectId
   organization    Organization? @relation(fields: [organizationId], references: [id])
@@ -173,19 +193,22 @@ model MedicalRecord {
 }
 
 model CarePlan {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId       String   @db.ObjectId
-  patient         Patient  @relation(fields: [patientId], references: [id])
-  coordinatorId   String   @db.ObjectId
-  coordinator     MedicalCoordinator @relation(fields: [coordinatorId], references: [id])
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId        String   @db.ObjectId
+  patient          Patient  @relation(fields: [patientId], references: [id])
+  coordinatorId    String   @db.ObjectId
+  coordinator      MedicalCoordinator @relation(fields: [coordinatorId], references: [id])
   
-  title           String
-  startDate       DateTime
-  endDate         DateTime?
-  status          String   @default("ACTIVE")
+  title            String
+  startDate        DateTime
+  endDate          DateTime?
+  status           String   @default("ACTIVE") // ACTIVE, COMPLETED, ARCHIVED
+  dischargeSummary String?
+  completedAt      DateTime?
+  closedById       String?  @db.ObjectId
   
-  tasks           CareTask[]
-  medications     Medication[]
+  tasks            CareTask[]
+  medications      Medication[]
 }
 
 model CareTask {
@@ -364,4 +387,62 @@ model Ward {
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, code])
+}
+
+model VitalSign {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId        String   @db.ObjectId
+  patient          Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  recordedById     String   @db.ObjectId
+  recordedBy       User     @relation("RecordedVitals", fields: [recordedById], references: [id])
+  
+  temperature      Float?   // Degrés Celsius (ex: 37.5)
+  bloodPressure    String?  // Systolique/Diastolique (ex: "120/80")
+  heartRate        Int?     // BPM (ex: 72)
+  oxygenSaturation Int?     // SpO2 % (ex: 98)
+  bloodSugar       Float?   // g/L (ex: 1.05)
+  weight           Float?   // kg (ex: 70.5)
+  painScore        Int?     // Échelle 0-10
+  notes            String?
+  createdAt        DateTime @default(now())
+}
+
+model PharmacyItem {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  dosage         String?  // ex: "500mg, Comprimé"
+  category       String   @default("MEDICATION")
+  stockQuantity  Int      @default(0)
+  reorderLevel   Int      @default(10)
+  unitPrice      Float    // Prix unitaire en FCFA
+  organizationId String?  @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  transactions   FinancialTransaction[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model FinancialTransaction {
+  id             String              @id @default(auto()) @map("_id") @db.ObjectId
+  type           TransactionType
+  category       TransactionCategory @default(OTHER)
+  amount         Float               // Montant en FCFA
+  description    String              // Motif / Libellé de l'opération
+  
+  patientId      String?             @db.ObjectId
+  patient        Patient?            @relation(fields: [patientId], references: [id])
+  
+  pharmacyItemId String?             @db.ObjectId
+  pharmacyItem   PharmacyItem?       @relation(fields: [pharmacyItemId], references: [id])
+  quantity       Int?                // Pour les ventes de pharmacie
+
+  recordedById   String              @db.ObjectId
+  recordedBy     User                @relation("RecordedTransactions", fields: [recordedById], references: [id])
+
+  organizationId String?             @db.ObjectId
+  organization   Organization?       @relation(fields: [organizationId], references: [id])
+
+  createdAt      DateTime            @default(now())
 }

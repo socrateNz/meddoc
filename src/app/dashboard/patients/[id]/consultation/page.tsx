@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import ConsultationWorkspace from "@/app/dashboard/appointments/[appointmentId]/consultation/consultation-workspace";
 
 export const metadata = {
@@ -20,6 +20,7 @@ export default async function PatientConsultationPage({ params }: PatientConsult
     where: { id: patientId },
     include: {
       user: true,
+      carePlans: true,
       medicalRecords: {
         orderBy: { createdAt: 'desc' }
       }
@@ -28,6 +29,11 @@ export default async function PatientConsultationPage({ params }: PatientConsult
 
   if (!patient) {
     notFound();
+  }
+
+  const isDischarged = (patient as any).status === "DISCHARGED" || (patient.carePlans && patient.carePlans.length > 0 && !patient.carePlans.some((cp: any) => cp.status === "ACTIVE"));
+  if (isDischarged) {
+    redirect(`/dashboard/patients/${patientId}`);
   }
 
   return (

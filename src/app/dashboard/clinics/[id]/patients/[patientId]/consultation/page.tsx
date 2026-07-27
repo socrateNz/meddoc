@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import ConsultationWorkspace from "@/app/dashboard/appointments/[appointmentId]/consultation/consultation-workspace";
 
 export const metadata = {
@@ -15,12 +15,14 @@ interface PatientConsultationPageProps {
 
 export default async function PatientConsultationPage({ params }: PatientConsultationPageProps) {
   const resolvedParams = await params;
+  const clinicId = resolvedParams.id;
   const patientId = resolvedParams.patientId;
 
   const patient = await prisma.patient.findUnique({
     where: { id: patientId },
     include: {
       user: true,
+      carePlans: true,
       medicalRecords: {
         orderBy: { createdAt: 'desc' }
       }
@@ -29,6 +31,11 @@ export default async function PatientConsultationPage({ params }: PatientConsult
 
   if (!patient) {
     notFound();
+  }
+
+  const isDischarged = (patient as any).status === "DISCHARGED" || (patient.carePlans && patient.carePlans.length > 0 && !patient.carePlans.some((cp: any) => cp.status === "ACTIVE"));
+  if (isDischarged) {
+    redirect(`/dashboard/clinics/${clinicId}/patients/${patientId}`);
   }
 
   return (

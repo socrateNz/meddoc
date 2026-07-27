@@ -1,0 +1,187 @@
+"use client";
+
+import { useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Plus, Package, Edit, Loader2 } from "lucide-react";
+import { createOrUpdatePharmacyItem } from "@/actions/finance";
+
+interface PharmacyDialogProps {
+  item?: any;
+  organizationId?: string;
+  triggerBtn?: React.ReactNode;
+}
+
+export default function PharmacyDialog({ item, organizationId, triggerBtn }: PharmacyDialogProps) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [formData, setFormData] = useState({
+    name: item?.name || "",
+    dosage: item?.dosage || "",
+    category: item?.category || "MEDICATION",
+    stockQuantity: item?.stockQuantity ?? 0,
+    reorderLevel: item?.reorderLevel ?? 10,
+    unitPrice: item?.unitPrice ?? 500,
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await createOrUpdatePharmacyItem({
+        id: item?.id,
+        name: formData.name,
+        dosage: formData.dosage,
+        category: formData.category,
+        stockQuantity: Number(formData.stockQuantity),
+        reorderLevel: Number(formData.reorderLevel),
+        unitPrice: Number(formData.unitPrice),
+        organizationId,
+      });
+
+      if (res.success) {
+        setOpen(false);
+        if (!item) {
+          setFormData({
+            name: "",
+            dosage: "",
+            category: "MEDICATION",
+            stockQuantity: 0,
+            reorderLevel: 10,
+            unitPrice: 500,
+          });
+        }
+      } else {
+        setError(res.error || "Erreur lors de l'enregistrement.");
+      }
+    } catch (err: any) {
+      setError(err.message || "Une erreur est survenue.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {item ? (
+        <DialogTrigger render={<Button variant="ghost" size="sm" className="h-8 text-blue-600 hover:text-blue-700 font-semibold" />}>
+          Modifier / Recharger
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger render={<Button className="gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs" />}>
+          <Plus className="h-4 w-4" />
+          Nouveau produit
+        </DialogTrigger>
+      )}
+      <DialogContent className="sm:max-w-[480px] rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            <Package className="h-5 w-5 text-blue-600" />
+            {item ? "Modifier le produit / stock" : "Ajouter un produit en pharmacie"}
+          </DialogTitle>
+          <DialogDescription>
+            Renseignez les détails du médicament ou matériel médical pour le suivi du stock.
+          </DialogDescription>
+        </DialogHeader>
+
+        {error && (
+          <div className="p-3 text-xs font-medium bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-xl border border-red-200 dark:border-red-900/30">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="name">Nom du produit / Médicament *</Label>
+            <Input
+              id="name"
+              required
+              placeholder="ex: Paracétamol, Amoxicilline, Seringues 5ml..."
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="rounded-xl"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="dosage">Dosage / Forme</Label>
+            <Input
+              id="dosage"
+              placeholder="ex: 500mg, Boîte de 16 comprimés, Flacon..."
+              value={formData.dosage}
+              onChange={(e) => setFormData({ ...formData, dosage: e.target.value })}
+              className="rounded-xl"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="unitPrice">Prix unitaire (FCFA) *</Label>
+              <Input
+                id="unitPrice"
+                type="number"
+                min="0"
+                required
+                placeholder="500"
+                value={formData.unitPrice}
+                onChange={(e) => setFormData({ ...formData, unitPrice: Number(e.target.value) })}
+                className="rounded-xl"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="stockQuantity">Stock initial disponible *</Label>
+              <Input
+                id="stockQuantity"
+                type="number"
+                min="0"
+                required
+                placeholder="50"
+                value={formData.stockQuantity}
+                onChange={(e) => setFormData({ ...formData, stockQuantity: Number(e.target.value) })}
+                className="rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="reorderLevel">Seuil d'alerte (Stock faible) *</Label>
+            <Input
+              id="reorderLevel"
+              type="number"
+              min="1"
+              required
+              placeholder="10"
+              value={formData.reorderLevel}
+              onChange={(e) => setFormData({ ...formData, reorderLevel: Number(e.target.value) })}
+              className="rounded-xl"
+            />
+            <p className="text-[11px] text-muted-foreground">Une alerte sera déclenchée si le stock descend à ce niveau ou en-dessous.</p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">
+              Annuler
+            </Button>
+            <Button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl">
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Enregistrement...
+                </>
+              ) : (
+                "Enregistrer"
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
+import { OfflineBanner } from "@/components/ui/offline-banner";
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -72,6 +74,7 @@ export default async function DashboardLayout({
 
       {/* Main Content */}
       <main className="flex flex-1 flex-col h-full min-h-0 overflow-hidden relative z-10">
+        <OfflineBanner />
         <div className="flex-1 p-6 lg:p-8 flex flex-col overflow-y-auto min-h-0">
           {children}
         </div>

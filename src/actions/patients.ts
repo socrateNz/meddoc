@@ -113,6 +113,15 @@ export async function createMedicalRecord(data: {
       throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
     }
 
+    const patient = await prisma.patient.findUnique({
+      where: { id: data.patientId },
+      include: { carePlans: true }
+    });
+    const isDischarged = (patient as any)?.status === "DISCHARGED" || (patient?.carePlans && patient.carePlans.length > 0 && !patient.carePlans.some((cp: any) => cp.status === "ACTIVE"));
+    if (isDischarged) {
+      throw new Error("Ce dossier patient est clôturé. Veuillez réouvrir les soins pour ajouter des documents.");
+    }
+
     const record = await prisma.medicalRecord.create({
       data: {
         patientId: data.patientId,
@@ -155,6 +164,15 @@ export async function createIncident(data: {
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
       throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+    }
+
+    const patient = await prisma.patient.findUnique({
+      where: { id: data.patientId },
+      include: { carePlans: true }
+    });
+    const isDischarged = (patient as any)?.status === "DISCHARGED" || (patient?.carePlans && patient.carePlans.length > 0 && !patient.carePlans.some((cp: any) => cp.status === "ACTIVE"));
+    if (isDischarged) {
+      throw new Error("Ce dossier patient est clôturé. Veuillez réouvrir les soins pour enregistrer un incident.");
     }
 
     const incident = await prisma.incident.create({

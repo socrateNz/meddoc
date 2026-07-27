@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 interface PDFDownloadButtonProps {
   documentName: string;
-  type: "patient" | "consultation" | "careplan";
+  type: "patient" | "consultation" | "careplan" | "invoice";
   data: any;
   buttonText?: string;
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
@@ -41,6 +41,9 @@ export default function PDFDownloadButton({
       } else if (type === "careplan") {
         const CarePlanPDFDocument = (await import("./careplan-pdf")).default;
         element = <CarePlanPDFDocument patient={data.patient} plan={data.plan} />;
+      } else if (type === "invoice") {
+        const InvoicePDFDocument = (await import("./invoice-pdf")).default;
+        element = <InvoicePDFDocument transaction={data.transaction} organizationName={data.organizationName} format={data.format} />;
       } else {
         throw new Error("Type de document PDF non pris en charge");
       }

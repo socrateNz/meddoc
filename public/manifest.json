@@ -1,0 +1,17 @@
+{
+  "name": "MedDoc - Care Management & Coordination",
+  "short_name": "MedDoc",
+  "description": "Plateforme SaaS de gestion médicale et coordination des soins",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
