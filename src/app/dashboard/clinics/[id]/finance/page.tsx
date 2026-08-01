@@ -56,7 +56,7 @@ export default async function ClinicFinancePage({ params }: ClinicFinancePagePro
         </p>
       </div>
 
-      <FinanceView summary={summary} patients={patients} organizationId={clinicId} organizationName={orgName} />
+      <FinanceView summary={summary} patients={patients} organizationId={clinicId} organizationName={orgName} currentUserRole={activeUser.role} />
     </div>
   );
 }

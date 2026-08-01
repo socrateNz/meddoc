@@ -9,12 +9,22 @@ import { recordStockPurchaseSchema, saveInventoryCountsSchema } from "@/validato
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-const FINANCE_ROLES = ["ADMIN", "COORDINATOR"];
+const STOCK_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST"];
+const STOCK_WRITE_ROLES = ["COORDINATOR", "PHARMACIST"];
 
-async function assertFinanceAccess(activeUser: any) {
+// ADMIN (holding) garde une vue lecture seule du stock/pharmacie ; seuls COORDINATOR
+// et PHARMACIST peuvent enregistrer des mouvements (achats, inventaire).
+async function assertStockRead(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
-  if (!FINANCE_ROLES.includes(activeUser.role)) {
-    throw new Error("Non autorisé. Réservé aux administrateurs et coordinateurs.");
+  if (!STOCK_READ_ROLES.includes(activeUser.role)) {
+    throw new Error("Non autorisé.");
+  }
+}
+
+async function assertStockWrite(activeUser: any) {
+  if (!activeUser) throw new Error("Non authentifié.");
+  if (!STOCK_WRITE_ROLES.includes(activeUser.role)) {
+    throw new Error("Non autorisé. Réservé aux coordinateurs et pharmaciens.");
   }
   await requirePermission(activeUser.role, "MANAGE_STOCK");
 }
@@ -83,7 +93,7 @@ export async function recordStockPurchase(data: {
   try {
     recordStockPurchaseSchema.parse(data);
     const activeUser = await getCurrentUser();
-    await assertFinanceAccess(activeUser);
+    await assertStockWrite(activeUser);
 
     const targetOrgId = data.organizationId || activeUser!.organizationId;
     const quantity = Number(data.quantity);
@@ -171,7 +181,7 @@ export async function recordStockPurchase(data: {
 export async function getStockPurchaseHistory(organizationId?: string, pharmacyItemId?: string) {
   try {
     const activeUser = await getCurrentUser();
-    await assertFinanceAccess(activeUser);
+    await assertStockRead(activeUser);
 
     const where: any = {};
     if (pharmacyItemId) where.pharmacyItemId = pharmacyItemId;
@@ -197,7 +207,7 @@ export async function getStockPurchaseHistory(organizationId?: string, pharmacyI
 export async function getStockValuation(organizationId?: string) {
   try {
     const activeUser = await getCurrentUser();
-    await assertFinanceAccess(activeUser);
+    await assertStockRead(activeUser);
 
     const targetOrgId = organizationId || activeUser!.organizationId;
     const orgFilter = targetOrgId ? { organizationId: targetOrgId } : {};
@@ -239,7 +249,7 @@ export async function startInventoryCount(organizationId: string) {
   try {
     z.string().min(1, "Établissement requis").parse(organizationId);
     const activeUser = await getCurrentUser();
-    await assertFinanceAccess(activeUser);
+    await assertStockWrite(activeUser);
 
     const existing = await prisma.inventoryCount.findFirst({
       where: { organizationId, status: "IN_PROGRESS" },
@@ -281,7 +291,7 @@ export async function startInventoryCount(organizationId: string) {
 export async function getActiveInventoryCount(organizationId: string) {
   try {
     const activeUser = await getCurrentUser();
-    await assertFinanceAccess(activeUser);
+    await assertStockRead(activeUser);
 
     const inventoryCount = await prisma.inventoryCount.findFirst({
       where: { organizationId, status: "IN_PROGRESS" },
@@ -306,7 +316,7 @@ export async function saveInventoryCounts(
   try {
     saveInventoryCountsSchema.parse({ inventoryCountId, lines });
     const activeUser = await getCurrentUser();
-    await assertFinanceAccess(activeUser);
+    await assertStockWrite(activeUser);
 
     const count = await prisma.inventoryCount.findUnique({ where: { id: inventoryCountId } });
     if (!count || count.status !== "IN_PROGRESS") {
@@ -333,7 +343,7 @@ export async function completeInventoryCount(inventoryCountId: string) {
   try {
     z.string().min(1).parse(inventoryCountId);
     const activeUser = await getCurrentUser();
-    await assertFinanceAccess(activeUser);
+    await assertStockWrite(activeUser);
 
     const count = await prisma.inventoryCount.findUnique({
       where: { id: inventoryCountId },
@@ -441,7 +451,7 @@ export async function completeInventoryCount(inventoryCountId: string) {
 export async function getInventoryHistory(organizationId: string) {
   try {
     const activeUser = await getCurrentUser();
-    await assertFinanceAccess(activeUser);
+    await assertStockRead(activeUser);
 
     const counts = await prisma.inventoryCount.findMany({
       where: { organizationId, status: "COMPLETED" },

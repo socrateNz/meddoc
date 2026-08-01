@@ -116,7 +116,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Calendar,
         count: unreadCounts?.appointment || 0,
         badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
       },
       {
         name: "Incidents",
@@ -132,7 +132,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: MessageSquare,
         count: unreadCounts?.message || 0,
         badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
       },
       {
         name: "Assistant Clinique IA",
@@ -147,14 +147,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         name: "Finance & Pharmacie",
         href: `/dashboard/clinics/${activeClinicId}/finance`,
         icon: Wallet,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
       },
     ] : [
       {
         name: "Finance & Pharmacie",
         href: "/dashboard/finance",
         icon: Wallet,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
       },
     ]),
     ...(!activeClinicId ? [
@@ -172,13 +172,13 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       icon: Bell,
       count: unreadCounts?.total || 0,
       badgeColor: "bg-primary text-primary-foreground font-bold shadow-xs",
-      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'SUPER_ADMIN'],
+      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST', 'SUPER_ADMIN'],
     },
     {
       name: "Manuel d'utilisation",
       href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/manual` : "/dashboard/manual",
       icon: BookOpen,
-      roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'CAREGIVER', 'FAMILY', 'PATIENT'],
+      roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST', 'FAMILY', 'PATIENT'],
     },
     {
       name: "Journal d'audit",

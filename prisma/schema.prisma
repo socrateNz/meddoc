@@ -12,6 +12,7 @@ enum Role {
   ADMIN
   COORDINATOR
   CAREGIVER
+  PHARMACIST
   FAMILY
   PATIENT
 }
@@ -89,6 +90,7 @@ model Organization {
   stripeCustomerId    String?
   maxClinics          Int @default(1)
   maxUsers            Int @default(10)
+  isActive            Boolean @default(true)   // Permet à un ADMIN (holding) de suspendre une clinique
 
   paymentAmount       Float?              // Tarif actuel (FCFA), éditable à tout moment
   paymentFrequency    PaymentFrequency?

@@ -12,6 +12,13 @@ import { createIncident } from "@/actions/patients";
 import { toast } from "sonner";
 import { Priority } from "@prisma/client";
 
+const PRIORITY_OPTIONS = [
+  { value: Priority.LOW, label: "Faible (LOW)" },
+  { value: Priority.MEDIUM, label: "Moyenne (MEDIUM)" },
+  { value: Priority.HIGH, label: "Élevée (HIGH)" },
+  { value: Priority.CRITICAL, label: "Critique (CRITICAL)" },
+];
+
 interface AddIncidentDialogProps {
   patientId: string;
   reportedById: string;
@@ -88,7 +95,7 @@ export default function AddIncidentDialog({ patientId, reportedById }: AddIncide
 
           <div className="space-y-2">
             <Label>Priorité *</Label>
-            <Select onValueChange={(val) => val && setPriority(val as Priority)} value={priority}>
+            <Select items={PRIORITY_OPTIONS} onValueChange={(val) => val && setPriority(val as Priority)} value={priority}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Choisir une priorité" />
               </SelectTrigger>

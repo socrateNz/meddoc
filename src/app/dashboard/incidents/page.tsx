@@ -38,7 +38,8 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
   } else if (currentUser.organization?.type === "CLINIC") {
     orgFilter.organizationId = currentUser.organizationId;
   } else {
-    orgFilter.organizationId = "NO_ACCESS";
+    // Tableau `in` vide : ne matche jamais, sans faire planter Prisma sur un ObjectId invalide.
+    orgFilter.organizationId = { in: [] };
   }
 
   // Build filter query

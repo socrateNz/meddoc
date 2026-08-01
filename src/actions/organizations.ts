@@ -67,18 +67,53 @@ export async function createClinic(data: { name: string }) {
   }
 }
 
-export async function updateClinic(id: string, data: { name: string }) {
+export async function setClinicActive(id: string, isActive: boolean) {
   try {
-    updateClinicSchema.parse({ id, name: data.name });
     const user = await getCurrentUser();
     if (!user || user.role !== "ADMIN" || user.organization?.type !== "HOLDING") {
       throw new Error("Unauthorized");
     }
 
-    // Verify ownership
     const existing = await prisma.organization.findFirst({
       where: { id, parentId: user.organizationId, type: "CLINIC" }
     });
+
+    if (!existing) {
+      throw new Error("Clinic not found or unauthorized");
+    }
+
+    const clinic = await prisma.organization.update({
+      where: { id },
+      data: { isActive }
+    });
+
+    revalidatePath(`/dashboard/clinics/${id}`);
+    revalidatePath("/dashboard/clinics");
+    return { clinic, error: null };
+  } catch (error: any) {
+    console.error("Error updating clinic status:", error);
+    return { clinic: null, error: toErrorMessage(error, "Failed to update clinic status") };
+  }
+}
+
+export async function updateClinic(id: string, data: { name: string }) {
+  try {
+    updateClinicSchema.parse({ id, name: data.name });
+    const user = await getCurrentUser();
+    if (!user) throw new Error("Unauthorized");
+
+    // Le coordinateur gère les paramètres de sa propre clinique ; l'admin de
+    // holding garde la main sur toutes les cliniques qu'il détient.
+    let existing;
+    if (user.role === "ADMIN" && user.organization?.type === "HOLDING") {
+      existing = await prisma.organization.findFirst({
+        where: { id, parentId: user.organizationId, type: "CLINIC" }
+      });
+    } else if (user.role === "COORDINATOR" && user.organizationId === id) {
+      existing = await prisma.organization.findFirst({ where: { id, type: "CLINIC" } });
+    } else {
+      throw new Error("Unauthorized");
+    }
 
     if (!existing) {
       throw new Error("Clinic not found or unauthorized");

@@ -21,6 +21,25 @@ import { SubscriptionPlan, SubscriptionStatus, PaymentFrequency } from "@prisma/
 import { updateHoldingSubscription } from "@/actions/super-admin";
 import { toast } from "sonner";
 
+const PLAN_OPTIONS = [
+  { value: "TRIAL", label: "Essai (Trial)" },
+  { value: "BASIC", label: "Basique" },
+  { value: "PREMIUM", label: "Premium" },
+  { value: "ENTERPRISE", label: "Entreprise" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "TRIALING", label: "En essai (Trialing)" },
+  { value: "ACTIVE", label: "Actif" },
+  { value: "INACTIVE", label: "Inactif" },
+  { value: "CANCELLED", label: "Annulé" },
+];
+
+const FREQUENCY_OPTIONS = [
+  { value: "MONTHLY", label: "Mensuelle" },
+  { value: "YEARLY", label: "Annuelle" },
+];
+
 interface HoldingActionsMenuProps {
   holding: {
     id: string;
@@ -106,7 +125,7 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Forfait</Label>
-              <Select value={plan} onValueChange={(val) => { if (val) setPlan(val as SubscriptionPlan); }}>
+              <Select items={PLAN_OPTIONS} value={plan} onValueChange={(val) => { if (val) setPlan(val as SubscriptionPlan); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Sélectionnez un forfait" />
                 </SelectTrigger>
@@ -120,7 +139,7 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
             </div>
             <div className="space-y-2">
               <Label>Statut</Label>
-              <Select value={status} onValueChange={(val) => { if (val) setStatus(val as SubscriptionStatus); }}>
+              <Select items={STATUS_OPTIONS} value={status} onValueChange={(val) => { if (val) setStatus(val as SubscriptionStatus); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Sélectionnez un statut" />
                 </SelectTrigger>
@@ -176,7 +195,7 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
               </div>
               <div className="space-y-2">
                 <Label>Fréquence</Label>
-                <Select value={paymentFrequency} onValueChange={(val) => { if (val) setPaymentFrequency(val as PaymentFrequency); }}>
+                <Select items={FREQUENCY_OPTIONS} value={paymentFrequency} onValueChange={(val) => { if (val) setPaymentFrequency(val as PaymentFrequency); }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Fréquence" />
                   </SelectTrigger>

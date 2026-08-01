@@ -25,9 +25,10 @@ function formatDate(date: string | Date) {
 
 interface InventoryPanelProps {
   organizationId?: string;
+  canWrite?: boolean;
 }
 
-export default function InventoryPanel({ organizationId }: InventoryPanelProps) {
+export default function InventoryPanel({ organizationId, canWrite = true }: InventoryPanelProps) {
   const [loading, setLoading] = useState(true);
   const [count, setCount] = useState<any>(null);
   const [countedValues, setCountedValues] = useState<Record<string, string>>({});
@@ -200,13 +201,17 @@ export default function InventoryPanel({ organizationId }: InventoryPanelProps) 
         <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center">
           <ClipboardList className="h-8 w-8 mx-auto mb-3 opacity-40" />
           <p className="text-sm text-muted-foreground mb-4">
-            Aucun inventaire en cours pour cette clinique. Démarrer un inventaire fige le stock système de chaque
-            produit ; vous n'aurez plus qu'à saisir la quantité réellement comptée.
+            Aucun inventaire en cours pour cette clinique.{" "}
+            {canWrite
+              ? "Démarrer un inventaire fige le stock système de chaque produit ; vous n'aurez plus qu'à saisir la quantité réellement comptée."
+              : "Seuls le coordinateur ou le pharmacien peuvent démarrer un inventaire."}
           </p>
-          <Button onClick={handleStart} disabled={starting} className="gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white">
-            {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
-            Démarrer l'inventaire
-          </Button>
+          {canWrite && (
+            <Button onClick={handleStart} disabled={starting} className="gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white">
+              {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+              Démarrer l'inventaire
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -214,16 +219,18 @@ export default function InventoryPanel({ organizationId }: InventoryPanelProps) 
             <p className="text-xs text-muted-foreground">
               Inventaire démarré le {formatDate(count.createdAt)} — {count.lines.length} produit(s) à compter.
             </p>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => handleSaveDraft(false)} disabled={saving} className="gap-2 rounded-xl">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Enregistrer le comptage
-              </Button>
-              <Button onClick={() => setConfirmOpen(true)} disabled={completing} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
-                {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                Clôturer l'inventaire
-              </Button>
-            </div>
+            {canWrite && (
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => handleSaveDraft(false)} disabled={saving} className="gap-2 rounded-xl">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Enregistrer le comptage
+                </Button>
+                <Button onClick={() => setConfirmOpen(true)} disabled={completing} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+                  {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Clôturer l'inventaire
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 overflow-hidden">
@@ -258,6 +265,7 @@ export default function InventoryPanel({ organizationId }: InventoryPanelProps) 
                           onChange={(e) =>
                             setCountedValues((prev) => ({ ...prev, [line.id]: e.target.value }))
                           }
+                          disabled={!canWrite}
                           className="w-24 h-8 rounded-lg"
                         />
                       </TableCell>

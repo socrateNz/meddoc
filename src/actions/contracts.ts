@@ -8,12 +8,22 @@ import { requirePermission } from "@/lib/permissions";
 import { createContractSchema, updateContractStatusSchema } from "@/validators/contracts";
 import { revalidatePath } from "next/cache";
 
-const CONTRACT_ROLES = ["ADMIN", "COORDINATOR"];
+const CONTRACT_READ_ROLES = ["ADMIN", "COORDINATOR"];
+const CONTRACT_WRITE_ROLES = ["COORDINATOR"];
 
-async function assertContractAccess(activeUser: any) {
+// ADMIN (holding) garde une vue lecture seule des contrats des aidants ; seul
+// COORDINATOR (le véritable gestionnaire RH de sa clinique) peut les créer/modifier.
+async function assertContractRead(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
-  if (!CONTRACT_ROLES.includes(activeUser.role)) {
-    throw new Error("Non autorisé. Réservé aux administrateurs et coordinateurs.");
+  if (!CONTRACT_READ_ROLES.includes(activeUser.role)) {
+    throw new Error("Non autorisé.");
+  }
+}
+
+async function assertContractWrite(activeUser: any) {
+  if (!activeUser) throw new Error("Non authentifié.");
+  if (!CONTRACT_WRITE_ROLES.includes(activeUser.role)) {
+    throw new Error("Non autorisé. Réservé aux coordinateurs.");
   }
   await requirePermission(activeUser.role, "MANAGE_CONTRACTS");
 }
@@ -21,7 +31,7 @@ async function assertContractAccess(activeUser: any) {
 export async function listContracts(organizationId?: string) {
   try {
     const activeUser = await getCurrentUser();
-    await assertContractAccess(activeUser);
+    await assertContractRead(activeUser);
 
     const whereClause: any = {};
 
@@ -68,7 +78,7 @@ export async function createContract(data: {
   try {
     createContractSchema.parse(data);
     const activeUser = await getCurrentUser();
-    await assertContractAccess(activeUser);
+    await assertContractWrite(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -104,7 +114,7 @@ export async function updateContractStatus(contractId: string, status: string) {
   try {
     updateContractStatusSchema.parse({ contractId, status });
     const activeUser = await getCurrentUser();
-    await assertContractAccess(activeUser);
+    await assertContractWrite(activeUser);
 
     const contract = await prisma.contract.findUnique({ where: { id: contractId } });
     if (!contract) throw new Error("Contrat introuvable.");

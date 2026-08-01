@@ -14,12 +14,15 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
   }
 
   const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
-  const isClinicAdmin = currentUser.role === "ADMIN" && currentUser.organizationId === params.id;
+  const isClinicCoordinator = currentUser.role === "COORDINATOR" && currentUser.organizationId === params.id;
   const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
 
-  if (!isHoldingAdmin && !isClinicAdmin && !isSuperAdmin) {
+  if (!isHoldingAdmin && !isClinicCoordinator && !isSuperAdmin) {
     redirect("/dashboard");
   }
+
+  // Le coordinateur gère les paramètres de sa clinique ; admin/super-admin consultent en lecture seule.
+  const canEdit = isClinicCoordinator;
 
   const queryFilter: any = {
     id: params.id,
@@ -58,7 +61,7 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
       </div>
 
       <div className="max-w-3xl">
-        <ClinicSettingsForm clinic={{ id: clinic.id, name: clinic.name }} />
+        <ClinicSettingsForm clinic={{ id: clinic.id, name: clinic.name }} readOnly={!canEdit} />
       </div>
     </div>
   );

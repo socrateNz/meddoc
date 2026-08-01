@@ -214,7 +214,11 @@ export default function NewPatientDialog({
           {isHoldingAdmin && (
             <div className="space-y-2">
               <Label>Établissement de rattachement</Label>
-              <Select value={organizationId} onValueChange={(val: any) => val && setOrganizationId(val)}>
+              <Select
+                items={[{ value: holdingId, label: "Siège (Holding)" }, ...clinics.map((c) => ({ value: c.id, label: c.name }))]}
+                value={organizationId}
+                onValueChange={(val: any) => val && setOrganizationId(val)}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Sélectionnez un établissement" />
                 </SelectTrigger>

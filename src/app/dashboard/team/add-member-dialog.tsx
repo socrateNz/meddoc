@@ -33,11 +33,18 @@ const formSchema = z.object({
   lastName: z.string().min(2, "Nom trop court"),
   email: z.string().email("Email invalide"),
   phone: z.string().optional(),
-  role: z.enum(["CAREGIVER", "COORDINATOR", "ADMIN"]),
+  role: z.enum(["CAREGIVER", "PHARMACIST", "COORDINATOR"]),
   specialties: z.string().optional(),
   organizationId: z.string().optional(),
 });
 
+const ROLE_OPTIONS = [
+  { value: "CAREGIVER", label: "Soignant" },
+  { value: "PHARMACIST", label: "Pharmacien(ne)" },
+];
+
+// Un admin de holding ne fait plus que désigner le coordinateur d'une clinique ;
+// un coordinateur recrute le personnel (soignant/pharmacien) de sa propre clinique.
 export default function AddMemberDialog({
   isHoldingAdmin = false,
   holdingId = "",
@@ -62,8 +69,8 @@ export default function AddMemberDialog({
   } = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      role: "CAREGIVER",
-      organizationId: defaultOrganizationId || holdingId,
+      role: isHoldingAdmin ? "COORDINATOR" : "CAREGIVER",
+      organizationId: defaultOrganizationId,
     },
   });
 
@@ -88,13 +95,16 @@ export default function AddMemberDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="gap-2" />}>
         <Plus className="h-4 w-4" />
-        Ajouter un membre
+        {isHoldingAdmin ? "Désigner un coordinateur" : "Ajouter un membre"}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Nouveau membre</DialogTitle>
+          <DialogTitle>{isHoldingAdmin ? "Désigner un coordinateur" : "Nouveau membre"}</DialogTitle>
           <DialogDescription>
-            Ajoutez un nouveau membre à l'équipe médicale. Un mot de passe par défaut lui sera attribué.
+            {isHoldingAdmin
+              ? "Affectez le coordinateur qui administrera au quotidien l'une de vos cliniques."
+              : "Ajoutez un soignant ou un pharmacien à l'équipe de votre clinique."}{" "}
+            Un mot de passe par défaut lui sera attribué.
           </DialogDescription>
         </DialogHeader>
 
@@ -123,19 +133,25 @@ export default function AddMemberDialog({
             <Input id="phone" {...register("phone")} />
           </div>
 
-          <div className="space-y-2">
-            <Label>Rôle</Label>
-            <Select onValueChange={(val: any) => setValue("role", val)} value={selectedRole}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sélectionnez un rôle" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="CAREGIVER">Soignant</SelectItem>
-                <SelectItem value="COORDINATOR">Coordinateur</SelectItem>
-                <SelectItem value="ADMIN">Administrateur</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {!isHoldingAdmin && (
+            <div className="space-y-2">
+              <Label>Rôle</Label>
+              <Select
+                items={ROLE_OPTIONS}
+                onValueChange={(val: any) => setValue("role", val)}
+                value={selectedRole}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionnez un rôle" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_OPTIONS.map((r) => (
+                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {selectedRole === "CAREGIVER" && (
             <div className="space-y-2">
@@ -146,13 +162,16 @@ export default function AddMemberDialog({
 
           {isHoldingAdmin && (
             <div className="space-y-2">
-              <Label>Établissement de rattachement</Label>
-              <Select onValueChange={(val: any) => setValue("organizationId", val)} value={selectedOrgId}>
+              <Label>Clinique à affecter</Label>
+              <Select
+                items={clinics.map((c) => ({ value: c.id, label: c.name }))}
+                onValueChange={(val: any) => setValue("organizationId", val)}
+                value={selectedOrgId}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Sélectionnez un établissement" />
+                  <SelectValue placeholder="Sélectionnez une clinique" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={holdingId}>Siège (Holding)</SelectItem>
                   {clinics.map(c => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}

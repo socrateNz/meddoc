@@ -52,6 +52,7 @@ const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrateur",
   COORDINATOR: "Coordinateur",
   CAREGIVER: "Soignant",
+  PHARMACIST: "Pharmacien(ne)",
   PATIENT: "Patient",
   FAMILY: "Famille",
   SUPER_ADMIN: "Super administrateur",

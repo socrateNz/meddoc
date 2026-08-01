@@ -101,110 +101,147 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
     },
     {
       id: "ADMIN",
-      title: "Administrateur de Clinique",
-      subtitle: "Gestion de l'établissement, de l'équipe médicale, des stocks et finances",
+      title: "Administrateur de Holding",
+      subtitle: "Pilotage du réseau de cliniques, en lecture seule sur les opérations quotidiennes",
       icon: Building2,
       color: "from-emerald-600 to-teal-600",
-      badge: "Établissement",
+      badge: "Direction Régionale",
       badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
       items: [
         {
-          title: "1. Configuration de la Clinique & des Services (Wards)",
+          title: "1. Créer, Suspendre & Superviser les Cliniques",
           icon: Layers,
-          content: "Organisation interne des lits et des unités de soins.",
+          content: "L'admin agit comme un directeur régional : il structure le réseau, sans intervenir dans le quotidien.",
           details: [
-            "Créer des services médicaux (ex: Réanimation, Chirurgie, Gériatrie, Urgences).",
-            "Attribuer des chambres et gérer les capacités d'accueil.",
-            "Personnaliser les informations de contact et la signature de l'établissement."
+            "Créer une nouvelle clinique et l'attacher à la holding.",
+            "Suspendre ou réactiver une clinique (bloque l'accès de tout son personnel).",
+            "Consulter les indicateurs (personnel, patients) de chaque établissement."
           ],
-          link: clinicId ? `/dashboard/clinics/${clinicId}` : "/dashboard/clinics",
-          linkText: "Voir les services de la clinique"
+          link: "/dashboard/clinics",
+          linkText: "Voir les cliniques affiliées"
         },
         {
-          title: "2. Gestion du Personnel Médical & Comptes",
+          title: "2. Désigner le Coordinateur de chaque Clinique",
           icon: Users,
-          content: "Invitation, création et gestion des droits des collaborateurs.",
+          content: "Le coordinateur est le véritable administrateur opérationnel d'une clinique ; l'admin ne fait que le nommer ou le remplacer.",
           details: [
-            "Inviter des Coordinateurs Médicaux (COORDINATOR) et Soignants / Médecins (CAREGIVER).",
-            "Créer des comptes pour les Patients et Membres de la famille.",
-            "Activer / Désactiver les accès utilisateurs en un clic.",
-            "Réinitialiser le mot de passe d'un membre de l'équipe et exiger une modification à la première connexion."
+            "Affecter un coordinateur à une clinique du réseau.",
+            "Remplacer ou désactiver un coordinateur existant.",
+            "Le recrutement du reste de l'équipe (soignants, pharmaciens) revient ensuite au coordinateur."
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/team` : "/dashboard/team",
-          linkText: "Gérer l'Équipe Médicale"
+          linkText: "Gérer les coordinateurs"
         },
         {
-          title: "3. Finance & Stock Pharmacie",
+          title: "3. Consultation en lecture seule",
           icon: Wallet,
-          content: "Suivi comptable des actes, ventes de médicaments et dépenses de structure.",
+          content: "L'admin voit tout ce qui se passe dans ses cliniques, mais ne modifie jamais les données opérationnelles.",
           details: [
-            "Gestion du catalogue pharmacie (quantités, prix unitaires, alerte de stock bas).",
-            "Enregistrement des recettes : Ventes de pharmacie (PHARMACY_SALE), frais de consultation (SERVICE_FEE).",
-            "Enregistrement des dépenses : Coûts opérationnels (OPERATIONAL_EXPENSE).",
-            "Génération d'états financiers synthétiques."
+            "Consulter les patients, consultations, rendez-vous et incidents de chaque clinique (sans créer/modifier).",
+            "Consulter la caisse, le stock pharmacie et l'inventaire (sans enregistrer de vente, dépense ou achat).",
+            "Consulter les paramètres de chaque clinique (modifiables uniquement par son coordinateur)."
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/finance` : "/dashboard/finance",
-          linkText: "Accéder au Module Finance & Pharmacie"
-        },
-        {
-          title: "4. Supervision des Incidents",
-          icon: AlertCircle,
-          content: "Contrôle de la qualité des soins et des signalements d'urgence.",
-          details: [
-            "Filtrer les incidents déclarés par sévérité : CRITICAL, HIGH, MEDIUM, LOW.",
-            "Affecter un responsable de résolution et suivre le statut (OPEN, IN_PROGRESS, RESOLVED).",
-            "Consulter l'historique d'audit des événements indésirables."
-          ],
-          link: clinicId ? `/dashboard/clinics/${clinicId}/incidents` : "/dashboard/incidents",
-          linkText: "Superviser les Incidents"
+          linkText: "Consulter la Finance & Pharmacie"
         }
       ]
     },
     {
       id: "COORDINATOR",
       title: "Coordinateur Médical",
-      subtitle: "Admissions, élaboration des plans de soins et suivi des rendez-vous",
+      subtitle: "Administrateur opérationnel complet d'une clinique : personnel, patients, pharmacie et caisse",
       icon: Stethoscope,
       color: "from-violet-600 to-purple-600",
-      badge: "Coordination Clinique",
+      badge: "Administration de Clinique",
       badgeColor: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
       items: [
         {
-          title: "1. Admissions & Fiches Patients",
+          title: "1. Gestion du Personnel de la Clinique",
+          icon: Users,
+          content: "Le coordinateur recrute et gère toute l'équipe de sa clinique.",
+          details: [
+            "Ajouter des Soignants / Médecins (CAREGIVER) et des Pharmaciens (PHARMACIST).",
+            "Activer / Désactiver les accès du personnel de sa clinique.",
+            "Consulter les disponibilités et les affectations de l'équipe."
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/team` : "/dashboard/team",
+          linkText: "Gérer l'Équipe Médicale"
+        },
+        {
+          title: "2. Admissions, Fiches Patients & Plans de Soins",
           icon: UserCheck,
           content: "Prise en charge administrative et médicale des nouveaux entrants.",
           details: [
             "Enregistrer les nouveaux patients avec état civil, pathologies et allergies connues.",
             "Définir le score de dépendance (1 à 5) pour l'allocation des ressources soignantes.",
-            "Attribuer le patient à un service (Ward) et à une chambre disponible.",
+            "Concevoir les plans de soins et suivre l'exécution des tâches par l'équipe soignante.",
             "Changer le statut du patient (ADMITTED, DISCHARGED, ARCHIVED)."
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/patients` : "/dashboard/patients",
           linkText: "Consulter la liste des Patients"
         },
         {
-          title: "2. Élaboration des Plans de Soins (Care Plans)",
-          icon: FileText,
-          content: "Création et suivi des protocoles thérapeutiques personnalisés.",
-          details: [
-            "Concevoir un plan de soins global sur mesure pour chaque patient.",
-            "Programmer des tâches de soins récurrentes pour les infirmiers et soignants.",
-            "Suivre en temps réel l'exécution des tâches par l'équipe soignante."
-          ],
-          link: clinicId ? `/dashboard/clinics/${clinicId}/patients` : "/dashboard/patients",
-          linkText: "Gérer les dossiers & plans de soins"
-        },
-        {
-          title: "3. Planification des Rendez-vous & Consultations",
+          title: "3. Rendez-vous, Incidents & Pharmacie/Caisse",
           icon: Calendar,
-          content: "Organisation de l'agenda médical de l'établissement.",
+          content: "Organisation de l'agenda médical et suivi financier de l'établissement.",
           details: [
-            "Planifier les consultations médicales, examens et visites de contrôle.",
-            "Associer le soignant / médecin référent et le patient.",
-            "Mettre à jour les statuts : Programmée (SCHEDULED), Effectuée (COMPLETED), Annulée (CANCELLED)."
+            "Planifier les consultations, examens et visites de contrôle.",
+            "Superviser les incidents déclarés et leur résolution.",
+            "Gérer le catalogue pharmacie, les achats de stock, les ventes, dépenses et l'inventaire."
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/appointments` : "/dashboard/appointments",
           linkText: "Ouvrir l'Agenda des Rendez-vous"
+        },
+        {
+          title: "4. Paramètres de la Clinique",
+          icon: Layers,
+          content: "Configuration propre à l'établissement.",
+          details: [
+            "Modifier les informations générales de la clinique.",
+            "Consulter et ajuster les indicateurs opérationnels de son établissement."
+          ],
+          ...(clinicId ? { link: `/dashboard/clinics/${clinicId}/settings`, linkText: "Ouvrir les Paramètres de la Clinique" } : {})
+        }
+      ]
+    },
+    {
+      id: "PHARMACIST",
+      title: "Pharmacien(ne)",
+      subtitle: "Gestion de la pharmacie, du stock et de la caisse — sans accès aux dossiers cliniques",
+      icon: Wallet,
+      color: "from-amber-600 to-orange-600",
+      badge: "Pharmacie & Caisse",
+      badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+      items: [
+        {
+          title: "1. Catalogue Pharmacie & Lots",
+          icon: Layers,
+          content: "Gestion des médicaments, de leurs lots et de leurs dates de péremption.",
+          details: [
+            "Ajouter/modifier des médicaments (dosage, prix, fournisseur, numéro de lot, péremption).",
+            "Suivre les alertes de rupture, stock faible ou péremption proche."
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/finance` : "/dashboard/finance",
+          linkText: "Accéder au Module Finance & Pharmacie"
+        },
+        {
+          title: "2. Stock & Inventaire",
+          icon: FileText,
+          content: "Traçabilité complète des entrées et sorties de stock.",
+          details: [
+            "Enregistrer les achats de pharmacie (fournisseur, prix, quantité).",
+            "Démarrer, saisir et clôturer un inventaire physique du stock."
+          ]
+        },
+        {
+          title: "3. Caisse & Ventes",
+          icon: Wallet,
+          content: "Encaissement des ventes de médicaments et gestion de la caisse.",
+          details: [
+            "Enregistrer une vente ou une facture regroupée pour un patient.",
+            "Enregistrer une dépense / un retrait de caisse.",
+            "Imprimer les reçus et factures."
+          ]
         }
       ]
     },
@@ -296,10 +333,11 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
 
   // Role hierarchy filtering: Users can view their own role tab and all role tabs below them in hierarchy
   const roleHierarchy: Record<string, string[]> = {
-    SUPER_ADMIN: ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "CAREGIVER", "FAMILY"],
-    ADMIN: ["ADMIN", "COORDINATOR", "CAREGIVER", "FAMILY"],
-    COORDINATOR: ["COORDINATOR", "CAREGIVER", "FAMILY"],
+    SUPER_ADMIN: ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "CAREGIVER", "PHARMACIST", "FAMILY"],
+    ADMIN: ["ADMIN", "COORDINATOR", "CAREGIVER", "PHARMACIST", "FAMILY"],
+    COORDINATOR: ["COORDINATOR", "CAREGIVER", "PHARMACIST", "FAMILY"],
     CAREGIVER: ["CAREGIVER", "FAMILY"],
+    PHARMACIST: ["PHARMACIST", "FAMILY"],
     FAMILY: ["FAMILY"],
     PATIENT: ["FAMILY"]
   };

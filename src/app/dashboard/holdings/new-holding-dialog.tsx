@@ -15,6 +15,18 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { createHolding } from "@/actions/super-admin";
 import { SubscriptionPlan, PaymentFrequency } from "@prisma/client";
 
+const PLAN_OPTIONS = [
+  { value: "TRIAL", label: "Essai (Trial)" },
+  { value: "BASIC", label: "Basique" },
+  { value: "PREMIUM", label: "Premium" },
+  { value: "ENTERPRISE", label: "Entreprise" },
+];
+
+const FREQUENCY_OPTIONS = [
+  { value: "MONTHLY", label: "Mensuelle" },
+  { value: "YEARLY", label: "Annuelle" },
+];
+
 const formSchema = z.object({
   name: z.string().min(2, "Le nom doit contenir au moins 2 caractères"),
   plan: z.nativeEnum(SubscriptionPlan),
@@ -100,7 +112,7 @@ export default function NewHoldingDialog() {
               </div>
               <div className="space-y-2">
                 <Label>Forfait *</Label>
-                <Select onValueChange={(val: any) => setValue("plan", val)} value={selectedPlan}>
+                <Select items={PLAN_OPTIONS} onValueChange={(val: any) => setValue("plan", val)} value={selectedPlan}>
                   <SelectTrigger>
                     <SelectValue placeholder="Sélectionnez un forfait" />
                   </SelectTrigger>
@@ -153,7 +165,7 @@ export default function NewHoldingDialog() {
               </div>
               <div className="space-y-2">
                 <Label>Fréquence de facturation</Label>
-                <Select onValueChange={(val: any) => setValue("paymentFrequency", val)} value={selectedFrequency}>
+                <Select items={FREQUENCY_OPTIONS} onValueChange={(val: any) => setValue("paymentFrequency", val)} value={selectedFrequency}>
                   <SelectTrigger>
                     <SelectValue placeholder="Sélectionnez une fréquence" />
                   </SelectTrigger>

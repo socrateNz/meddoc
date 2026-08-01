@@ -15,8 +15,8 @@ async function main() {
     { name: 'RESOLVE_INCIDENTS', description: 'Traiter et résoudre des incidents' },
     { name: 'RUN_AI_ANALYSIS', description: 'Lancer des analyses cliniques IA' },
     { name: 'VIEW_REPORTS', description: 'Visualiser les rapports et statistiques' },
-    { name: 'MANAGE_STOCK', description: "Enregistrer des achats de pharmacie et réaliser l'inventaire" },
-    { name: 'MANAGE_CONTRACTS', description: 'Créer et gérer les contrats des aidants' },
+    { name: 'MANAGE_STOCK', description: "Enregistrer des achats de pharmacie et réaliser l'inventaire", roles: [Role.COORDINATOR, Role.PHARMACIST] },
+    { name: 'MANAGE_CONTRACTS', description: 'Créer et gérer les contrats des aidants', roles: [Role.COORDINATOR] },
     { name: 'VIEW_AUDIT_LOG', description: "Consulter le journal d'audit", roles: [Role.ADMIN] },
     { name: 'MANAGE_PERMISSIONS', description: 'Modifier les permissions par rôle', roles: [Role.ADMIN] },
   ];
@@ -112,6 +112,19 @@ async function main() {
   const patientProfile = patientUser.patientProfile!;
   const caregiverProfile = caregiverUser.caregiverProfile!;
   const coordinatorProfile = coordUser.coordinatorProfile!;
+
+  // 5b. Pharmacist User (pas de profil dédié)
+  await prisma.user.upsert({
+    where: { email: 'pharmacist@meddoc.com' },
+    update: {},
+    create: {
+      email: 'pharmacist@meddoc.com',
+      passwordHash: hashedPassword,
+      firstName: 'Fatima',
+      lastName: 'Nkomo',
+      role: Role.PHARMACIST,
+    },
+  });
 
   // 6. Family Member
   const familyUser = await prisma.user.upsert({

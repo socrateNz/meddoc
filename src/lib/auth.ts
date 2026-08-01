@@ -60,8 +60,9 @@ export async function getCurrentUser() {
         mutedNotificationTypes: true,
         organizationId: true,
         organization: {
-          select: { 
+          select: {
             type: true,
+            isActive: true,
             subscriptionStatus: true,
             licenseExpiresAt: true,
             parent: {
@@ -84,6 +85,10 @@ export async function getCurrentUser() {
         if (holding.licenseExpiresAt && new Date(holding.licenseExpiresAt) < new Date()) {
           return null;
         }
+      }
+      // Une clinique suspendue par l'admin de sa holding bloque l'accès de tout son personnel.
+      if (user.organization.type === "CLINIC" && user.organization.isActive === false) {
+        return null;
       }
     }
 

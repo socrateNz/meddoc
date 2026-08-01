@@ -56,7 +56,7 @@ export default async function FinancePage() {
         </p>
       </div>
 
-      <FinanceView summary={summary} patients={patients} organizationName={orgName} />
+      <FinanceView summary={summary} patients={patients} organizationName={orgName} currentUserRole={activeUser.role} />
     </div>
   );
 }

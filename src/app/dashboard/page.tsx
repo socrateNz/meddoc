@@ -225,7 +225,10 @@ export default async function DashboardPage() {
   } else if ((currentUser.organization?.type as string) === "CLINIC") {
     orgFilter.organizationId = currentUser.organizationId;
   } else {
-    orgFilter.organizationId = "NO_ACCESS";
+    // Sentinel garanti de ne renvoyer aucun résultat : contrairement à une chaîne
+    // arbitraire, un tableau `in` vide ne nécessite aucun cast en ObjectId côté
+    // Mongo et ne fait donc pas planter Prisma (P2023) pour un utilisateur sans organisation.
+    orgFilter.organizationId = { in: [] };
   }
 
   // Query database for actual stats

@@ -14,6 +14,23 @@ import {
 import { consumeStockLots } from "@/actions/stock";
 import { revalidatePath } from "next/cache";
 
+// ADMIN (holding) garde une vue lecture seule de la finance/pharmacie ; seuls
+// COORDINATOR et PHARMACIST peuvent enregistrer des ventes/dépenses/articles.
+const FINANCE_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST"];
+const FINANCE_WRITE_ROLES = ["COORDINATOR", "PHARMACIST"];
+
+function assertFinanceReadRole(role: string) {
+  if (!FINANCE_READ_ROLES.includes(role)) {
+    throw new Error("Non autorisé.");
+  }
+}
+
+function assertFinanceWriteRole(role: string) {
+  if (!FINANCE_WRITE_ROLES.includes(role)) {
+    throw new Error("Non autorisé. Réservé aux coordinateurs et pharmaciens.");
+  }
+}
+
 // Helper function to format raw MongoDB documents into standard JS objects
 function formatMongoDoc(doc: any) {
   if (!doc) return null;
@@ -50,6 +67,7 @@ export async function getPharmacyItems(organizationId?: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceReadRole(activeUser.role);
 
     const targetOrgId = organizationId || activeUser.organizationId;
 
@@ -88,6 +106,7 @@ export async function createOrUpdatePharmacyItem(data: {
     pharmacyItemSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceWriteRole(activeUser.role);
 
     const targetOrgId = data.organizationId || activeUser.organizationId;
     const nowISO = new Date().toISOString();
@@ -161,6 +180,7 @@ export async function recordPharmacySale(data: {
     recordPharmacySaleSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceWriteRole(activeUser.role);
 
     const targetOrgId = data.organizationId || activeUser.organizationId;
     const qty = Number(data.quantity);
@@ -260,6 +280,7 @@ export async function recordSpecifiedIncome(data: {
     recordSpecifiedIncomeSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceWriteRole(activeUser.role);
 
     const amount = Number(data.amount);
     const targetOrgId = data.organizationId || activeUser.organizationId;
@@ -314,6 +335,7 @@ export async function recordExpense(data: {
     recordExpenseSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceWriteRole(activeUser.role);
 
     const amount = Number(data.amount);
     const targetOrgId = data.organizationId || activeUser.organizationId;
@@ -373,6 +395,7 @@ export async function recordMultiItemInvoice(data: {
     recordMultiItemInvoiceSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceWriteRole(activeUser.role);
 
     const targetOrgId = data.organizationId || activeUser.organizationId;
     const nowISO = new Date().toISOString();
@@ -484,6 +507,7 @@ export async function getFinanceSummary(organizationId?: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceReadRole(activeUser.role);
 
     const targetOrgId = organizationId || activeUser.organizationId;
 

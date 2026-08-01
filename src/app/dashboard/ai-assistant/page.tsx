@@ -26,7 +26,8 @@ export default async function AIAssistantPage() {
   } else if (currentUser.organization?.type === "CLINIC") {
     orgFilter.organizationId = currentUser.organizationId;
   } else {
-    orgFilter.organizationId = "NO_ACCESS";
+    // Tableau `in` vide : ne matche jamais, sans faire planter Prisma sur un ObjectId invalide.
+    orgFilter.organizationId = { in: [] };
   }
 
   // Fetch patients with their user profile info, scoped to the current organization

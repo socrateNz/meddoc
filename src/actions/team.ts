@@ -18,7 +18,7 @@ export async function getTeamMembers() {
   if (!activeUser) throw new Error("Non authentifié.");
 
   const whereClause: any = {
-    role: { in: ["CAREGIVER", "COORDINATOR", "ADMIN"] },
+    role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
   };
 
   if (activeUser.organization?.type === "HOLDING") {
@@ -29,7 +29,8 @@ export async function getTeamMembers() {
   } else if (activeUser.organization?.type === "CLINIC") {
     whereClause.organizationId = activeUser.organizationId;
   } else {
-    whereClause.organizationId = "NO_ACCESS";
+    // Tableau `in` vide : ne matche jamais, sans faire planter Prisma sur un ObjectId invalide.
+    whereClause.organizationId = { in: [] };
   }
 
   const members = await prisma.user.findMany({
@@ -95,23 +96,35 @@ export async function createTeamMember(data: any) {
   try {
     createTeamMemberSchema.parse(data);
     const activeUser = await getCurrentUser();
-    if (!activeUser || activeUser.role !== "ADMIN") {
-      throw new Error("Non autorisé. Seul un administrateur peut ajouter du personnel.");
-    }
+    if (!activeUser) throw new Error("Non authentifié.");
 
     const { firstName, lastName, email, phone, role, specialties, organizationId } = data;
 
-    let targetOrgId = activeUser.organizationId;
-    if (organizationId && activeUser.organization?.type === "HOLDING") {
-      if (organizationId !== activeUser.organizationId) {
-        const targetOrg = await prisma.organization.findFirst({
-          where: { id: organizationId, parentId: activeUser.organizationId }
-        });
-        if (!targetOrg) {
-          throw new Error("Établissement cible invalide ou non autorisé.");
-        }
+    let targetOrgId: string | null | undefined;
+
+    if (activeUser.role === "COORDINATOR") {
+      // Le coordinateur ne recrute que pour sa propre clinique, jamais un autre coordinateur ou un admin.
+      if (role !== "CAREGIVER" && role !== "PHARMACIST") {
+        throw new Error("Un coordinateur ne peut ajouter que des soignants ou des pharmaciens.");
+      }
+      targetOrgId = activeUser.organizationId;
+    } else if (activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING") {
+      // L'admin de holding ne fait plus que désigner le coordinateur d'une clinique.
+      if (role !== "COORDINATOR") {
+        throw new Error("Un administrateur ne peut que désigner un coordinateur de clinique.");
+      }
+      if (!organizationId) {
+        throw new Error("Veuillez sélectionner la clinique à laquelle affecter ce coordinateur.");
+      }
+      const targetOrg = await prisma.organization.findFirst({
+        where: { id: organizationId, parentId: activeUser.organizationId, type: "CLINIC" }
+      });
+      if (!targetOrg) {
+        throw new Error("Établissement cible invalide ou non autorisé.");
       }
       targetOrgId = organizationId;
+    } else {
+      throw new Error("Non autorisé. Seul un coordinateur (pour son équipe) ou un administrateur (pour désigner un coordinateur) peut ajouter du personnel.");
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -151,6 +164,7 @@ export async function createTeamMember(data: any) {
         }
       });
     }
+    // PHARMACIST : pas de profil dédié, un User suffit (ventes/dépenses tracées via FinancialTransaction.recordedBy)
 
     await logAuditAction(activeUser.id, "CREATE_TEAM_MEMBER", "User", newUser.id);
     revalidatePath("/dashboard/team");
@@ -162,12 +176,38 @@ export async function createTeamMember(data: any) {
   }
 }
 
+// COORDINATOR gère le personnel de sa propre clinique (CAREGIVER/PHARMACIST) ; ADMIN (holding)
+// ne gère plus que les coordinateurs de ses cliniques enfants (désignation/remplacement).
+async function assertCanManageStaffMember(activeUser: any, target: { role: string; organizationId: string | null }) {
+  if (activeUser.role === "COORDINATOR") {
+    if (target.organizationId !== activeUser.organizationId || !["CAREGIVER", "PHARMACIST"].includes(target.role)) {
+      throw new Error("Vous ne pouvez gérer que le personnel (soignant ou pharmacien) de votre clinique.");
+    }
+    return;
+  }
+  if (activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING") {
+    if (target.role !== "COORDINATOR") {
+      throw new Error("Un administrateur ne peut gérer que les coordinateurs de clinique.");
+    }
+    const targetOrg = await prisma.organization.findFirst({
+      where: { id: target.organizationId ?? undefined, parentId: activeUser.organizationId }
+    });
+    if (!targetOrg) {
+      throw new Error("Ce coordinateur n'appartient pas à votre holding.");
+    }
+    return;
+  }
+  throw new Error("Non autorisé.");
+}
+
 export async function deactivateTeamMember(userId: string) {
   try {
     const activeUser = await getCurrentUser();
-    if (!activeUser || activeUser.role !== "ADMIN") {
-      throw new Error("Non autorisé. Seul un administrateur peut désactiver du personnel.");
-    }
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) throw new Error("Utilisateur introuvable.");
+    await assertCanManageStaffMember(activeUser, target);
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
@@ -196,9 +236,11 @@ export async function deactivateTeamMember(userId: string) {
 export async function reactivateTeamMember(userId: string) {
   try {
     const activeUser = await getCurrentUser();
-    if (!activeUser || activeUser.role !== "ADMIN") {
-      throw new Error("Non autorisé. Seul un administrateur peut réactiver du personnel.");
-    }
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) throw new Error("Utilisateur introuvable.");
+    await assertCanManageStaffMember(activeUser, target);
 
     const updatedUser = await prisma.user.update({
       where: { id: userId },
@@ -232,7 +274,7 @@ export async function getClinicTeam(clinicId: string) {
   const members = await prisma.user.findMany({
     where: {
       organizationId: clinicId,
-      role: { in: ["CAREGIVER", "COORDINATOR", "ADMIN"] },
+      role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
     },
     include: {
       caregiverProfile: {

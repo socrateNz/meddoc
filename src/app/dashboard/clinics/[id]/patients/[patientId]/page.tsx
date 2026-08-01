@@ -41,6 +41,9 @@ export default async function PatientDetailPage({ params }: PageProps) {
   }
 
   const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
+  // ADMIN (holding) consulte en lecture seule ; PHARMACIST n'a qu'un accès identité limité (cf. plan RBAC).
+  const canWrite = ["COORDINATOR", "CAREGIVER"].includes(currentUser.role);
+  const isPharmacist = currentUser.role === "PHARMACIST";
   let clinics: { id: string; name: string }[] = [];
   if (isHoldingAdmin) {
     const clinicsRes = await getClinics();
@@ -130,6 +133,40 @@ export default async function PatientDetailPage({ params }: PageProps) {
   const isDischarged = (patient as any).status === "DISCHARGED" || (patient.carePlans.length > 0 && !activeCarePlan);
   const patientFullName = `${patient.user.firstName} ${patient.user.lastName}`;
 
+  // Accès pharmacien : identité uniquement, aucun onglet clinique (dossier, consultations...).
+  if (isPharmacist) {
+    return (
+      <div className="space-y-6">
+        <Link href={`/dashboard/clinics/${clinicId}/patients`}>
+          <Button variant="ghost" className="gap-2 pl-2">
+            <ArrowLeft className="h-4 w-4" />
+            Retour aux patients
+          </Button>
+        </Link>
+        <div className="rounded-2xl border bg-card text-card-foreground shadow-md overflow-hidden relative">
+          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary via-indigo-500 to-purple-500" />
+          <div className="p-6 md:p-8 flex items-center gap-5">
+            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
+              <UserIcon className="h-8 w-8 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+                {patient.user.lastName} {patient.user.firstName}
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                {calculateAge(patient.dateOfBirth)} ans • Né(e) le {formatDate(patient.dateOfBirth)}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+          En tant que pharmacien(ne), vous n'avez pas accès au dossier médical de ce patient. Les informations
+          nécessaires à la délivrance des traitements sont disponibles depuis le journal des ventes en Finance & Pharmacie.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header Navigation */}
@@ -141,21 +178,21 @@ export default async function PatientDetailPage({ params }: PageProps) {
           </Button>
         </Link>
         <div className="flex gap-2 flex-wrap">
-          {!isDischarged && <VitalSignsDialog patientId={patient.id} />}
-          {activeCarePlan && !isDischarged && (
+          {canWrite && !isDischarged && <VitalSignsDialog patientId={patient.id} />}
+          {canWrite && activeCarePlan && !isDischarged && (
             <CloseCarePlanDialog
               carePlanId={activeCarePlan.id}
               patientId={patient.id}
               patientName={patientFullName}
             />
           )}
-          {isDischarged && (
+          {canWrite && isDischarged && (
             <ReopenCarePlanDialog
               patientId={patient.id}
               patientName={patientFullName}
             />
           )}
-          {!isDischarged && (
+          {canWrite && !isDischarged && (
             <Button asChild variant="outline" className="gap-2 border-primary/20 text-primary hover:bg-primary/5">
               <Link href={`/dashboard/clinics/${clinicId}/patients/${patient.id}/consultation`}>
                 <Stethoscope className="h-4 w-4" />
@@ -179,8 +216,8 @@ export default async function PatientDetailPage({ params }: PageProps) {
               clinics={clinics}
             />
           )}
-          {!isDischarged && <AddIncidentDialog patientId={patient.id} reportedById={currentUser.id} />}
-          {!isDischarged && <AddRecordDialog patientId={patient.id} />}
+          {canWrite && !isDischarged && <AddIncidentDialog patientId={patient.id} reportedById={currentUser.id} />}
+          {canWrite && !isDischarged && <AddRecordDialog patientId={patient.id} />}
         </div>
       </div>
 
@@ -198,7 +235,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
               </p>
             </div>
           </div>
-          <ReopenCarePlanDialog patientId={patient.id} patientName={patientFullName} />
+          {canWrite && <ReopenCarePlanDialog patientId={patient.id} patientName={patientFullName} />}
         </div>
       )}
 
@@ -351,7 +388,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
             <div className="md:col-span-2 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold tracking-tight">Historique des documents & comptes-rendus</h3>
-                {!isDischarged && <AddRecordDialog patientId={patient.id} />}
+                {canWrite && !isDischarged && <AddRecordDialog patientId={patient.id} />}
               </div>
 
               {patient.medicalRecords.length === 0 ? (
@@ -399,7 +436,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
         <TabsContent value="careplans" className="pt-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold tracking-tight">Plans de Soins & Interventions</h3>
-            {!isDischarged && <CreateCarePlanDialog patientId={patient.id} />}
+            {canWrite && !isDischarged && <CreateCarePlanDialog patientId={patient.id} />}
           </div>
 
           {patient.carePlans.length === 0 ? (
@@ -407,7 +444,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
               <HeartPulse className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium text-base">Aucun plan de soins actif</h4>
               <p className="text-sm text-muted-foreground mt-1">Les plans de soins coordonnent les interventions et les traitements.</p>
-              {!isDischarged && (
+              {canWrite && !isDischarged && (
                 <div className="mt-4">
                   <CreateCarePlanDialog patientId={patient.id} />
                 </div>
@@ -469,7 +506,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
                           <FileText className="h-5 w-5 text-primary" />
                           Tâches et protocole de soins
                         </h4>
-                        {!isDischarged && <CreateCareTaskDialog carePlanId={plan.id} patientId={patient.id} />}
+                        {canWrite && !isDischarged && <CreateCareTaskDialog carePlanId={plan.id} patientId={patient.id} />}
                       </div>
                       {plan.tasks.length === 0 ? (
                         <p className="text-sm text-muted-foreground">Aucune tâche planifiée dans ce plan.</p>
@@ -477,7 +514,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
                         <ul className="space-y-3">
                           {plan.tasks.map((task: any) => (
                             <li key={task.id} className="text-sm p-3 bg-muted/40 rounded-lg border border-border/50 flex items-start gap-3">
-                              <TaskStatusToggle taskId={task.id} patientId={patient.id} initialStatus={task.status} />
+                              {canWrite && <TaskStatusToggle taskId={task.id} patientId={patient.id} initialStatus={task.status} />}
                               <div className="flex-1">
                                 <p className={`font-medium ${task.status === "COMPLETED" ? "text-muted-foreground line-through" : "text-foreground"}`}>
                                   {task.title}

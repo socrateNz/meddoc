@@ -13,13 +13,24 @@ interface UserActionsMenuProps {
   isHoldingAdmin: boolean;
   holdingId: string;
   clinics: { id: string; name: string }[];
+  currentUserRole?: string;
 }
 
-export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, clinics }: UserActionsMenuProps) {
+export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, clinics, currentUserRole }: UserActionsMenuProps) {
   const [reassignOpen, setReassignOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
   const userName = `${member.firstName} ${member.lastName}`;
+
+  // COORDINATOR ne gère que le personnel (soignant/pharmacien) de sa clinique ;
+  // ADMIN (holding) ne gère plus que les coordinateurs — reflète team.ts:assertCanManageStaffMember.
+  const canManageStatus =
+    (currentUserRole === "COORDINATOR" && ["CAREGIVER", "PHARMACIST"].includes(member.role)) ||
+    (currentUserRole === "ADMIN" && member.role === "COORDINATOR");
+
+  if (!canManageStatus && !isHoldingAdmin) {
+    return null;
+  }
 
   return (
     <>
@@ -34,16 +45,18 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
               <span>Réaffecter</span>
             </DropdownMenuItem>
           )}
-          {member.isActive ? (
-            <DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer">
-              <UserX className="mr-2 h-4 w-4" />
-              <span>Désactiver</span>
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem onClick={() => setReactivateOpen(true)} className="text-emerald-600 focus:text-emerald-600 focus:bg-emerald-50 cursor-pointer">
-              <UserCheck className="mr-2 h-4 w-4" />
-              <span>Réactiver</span>
-            </DropdownMenuItem>
+          {canManageStatus && (
+            member.isActive ? (
+              <DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer">
+                <UserX className="mr-2 h-4 w-4" />
+                <span>Désactiver</span>
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onClick={() => setReactivateOpen(true)} className="text-emerald-600 focus:text-emerald-600 focus:bg-emerald-50 cursor-pointer">
+                <UserCheck className="mr-2 h-4 w-4" />
+                <span>Réactiver</span>
+              </DropdownMenuItem>
+            )
           )}
         </DropdownMenuContent>
       </DropdownMenu>

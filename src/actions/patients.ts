@@ -15,6 +15,16 @@ import {
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 
+// La prise en charge clinique (créer/modifier un patient, un dossier ou un incident) est réservée
+// au personnel opérationnel de la clinique — ADMIN (holding) et PHARMACIST restent en lecture seule.
+const CLINICAL_WRITE_ROLES = ["COORDINATOR", "CAREGIVER"];
+
+function assertClinicalWriteAccess(role: string) {
+  if (!CLINICAL_WRITE_ROLES.includes(role)) {
+    throw new Error("Non autorisé. Seuls un coordinateur ou un soignant peuvent effectuer cette action.");
+  }
+}
+
 export async function createPatient(data: {
   email: string;
   firstName: string;
@@ -34,6 +44,7 @@ export async function createPatient(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
+    assertClinicalWriteAccess(activeUser.role);
 
     let targetOrgId = activeUser.organizationId;
     if (data.organizationId && activeUser.organization?.type === "HOLDING") {
@@ -117,6 +128,7 @@ export async function createMedicalRecord(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -171,6 +183,7 @@ export async function createIncident(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -234,6 +247,7 @@ export async function updateIncidentStatus(incidentId: string, status: IncidentS
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
+    assertClinicalWriteAccess(activeUser.role);
 
     // Verify incident belongs to a patient the user can access
     const existingIncident = await prisma.incident.findUnique({ where: { id: incidentId } });

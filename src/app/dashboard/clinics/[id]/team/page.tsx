@@ -26,7 +26,7 @@ export default async function ClinicTeamPage({ params }: PageProps) {
   const members = await prisma.user.findMany({
     where: {
       organizationId: clinicId,
-      role: { in: ["CAREGIVER", "COORDINATOR", "ADMIN"] },
+      role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
     },
     include: {
       caregiverProfile: {
@@ -89,6 +89,7 @@ export default async function ClinicTeamPage({ params }: PageProps) {
           if (member.role === "CAREGIVER") roleLabel = "Soignant";
           if (member.role === "COORDINATOR") roleLabel = "Coordinateur";
           if (member.role === "ADMIN") roleLabel = "Administrateur";
+          if (member.role === "PHARMACIST") roleLabel = "Pharmacien(ne)";
 
           const specialty = isCaregiver
             ? member.caregiverProfile.specialties?.[0] || "Soignant"
@@ -117,6 +118,7 @@ export default async function ClinicTeamPage({ params }: PageProps) {
                         isHoldingAdmin={isHoldingAdmin}
                         holdingId={currentUser.organizationId || ""}
                         clinics={clinics}
+                        currentUserRole={currentUser.role}
                       />
                     )}
                   </div>

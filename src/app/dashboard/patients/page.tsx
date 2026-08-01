@@ -34,7 +34,8 @@ export default async function PatientsPage() {
   } else if (activeUser.organization?.type === "CLINIC") {
     whereClause.organizationId = activeUser.organizationId;
   } else {
-    whereClause.organizationId = "NO_ACCESS"; // Fallback to avoid exposing all data
+    // Tableau `in` vide : ne matche jamais, sans faire planter Prisma sur un ObjectId invalide.
+    whereClause.organizationId = { in: [] };
   }
 
   const patients = await prisma.patient.findMany({
@@ -64,11 +65,13 @@ export default async function PatientsPage() {
             Gérez la liste de vos patients, filtrez par statut de soins et consultez leurs dossiers.
           </p>
         </div>
-        <NewPatientDialog 
-          isHoldingAdmin={isHoldingAdmin} 
-          holdingId={activeUser.organizationId || ""} 
-          clinics={clinics} 
-        />
+        {["COORDINATOR", "CAREGIVER"].includes(activeUser.role) && (
+          <NewPatientDialog
+            isHoldingAdmin={isHoldingAdmin}
+            holdingId={activeUser.organizationId || ""}
+            clinics={clinics}
+          />
+        )}
       </div>
 
       <PatientTable patients={patients} />

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 
-export default function ClinicSettingsForm({ clinic }: { clinic: { id: string; name: string } }) {
+export default function ClinicSettingsForm({ clinic, readOnly = false }: { clinic: { id: string; name: string }; readOnly?: boolean }) {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [name, setName] = useState(clinic.name);
@@ -45,7 +45,9 @@ export default function ClinicSettingsForm({ clinic }: { clinic: { id: string; n
         <CardHeader>
           <CardTitle>Informations générales</CardTitle>
           <CardDescription>
-            Modifiez les informations de base de cette clinique.
+            {readOnly
+              ? "Consultation seule. Le coordinateur de cette clinique peut modifier ces paramètres."
+              : "Modifiez les informations de base de cette clinique."}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -58,30 +60,32 @@ export default function ClinicSettingsForm({ clinic }: { clinic: { id: string; n
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="h-11 max-w-md border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-950/50"
-              disabled={isSubmitting}
+              disabled={isSubmitting || readOnly}
               required
             />
           </div>
         </CardContent>
-        <CardFooter className="flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800/50 pt-6">
-          <Button 
-            type="submit" 
-            disabled={isSubmitting || !name.trim() || name === clinic.name}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Enregistrement...
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-2" />
-                Enregistrer
-              </>
-            )}
-          </Button>
-        </CardFooter>
+        {!readOnly && (
+          <CardFooter className="flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800/50 pt-6">
+            <Button
+              type="submit"
+              disabled={isSubmitting || !name.trim() || name === clinic.name}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Enregistrement...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Enregistrer
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        )}
       </form>
     </Card>
   );

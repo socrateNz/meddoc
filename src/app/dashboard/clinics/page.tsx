@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Plus, Building2, Users, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import ClinicStatusToggle from "./clinic-status-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -66,8 +67,8 @@ export default async function ClinicsPage() {
                   <div className="h-10 w-10 bg-blue-50 dark:bg-blue-900/30 rounded-xl flex items-center justify-center shadow-sm border border-blue-100/50 dark:border-blue-800/50">
                     <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                   </div>
-                  <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-800/50">
-                    Active
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border ${(clinic as any).isActive !== false ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-800/50" : "bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-200/50 dark:border-rose-800/50"}`}>
+                    {(clinic as any).isActive !== false ? "Active" : "Suspendue"}
                   </span>
                 </div>
                 <CardTitle className="text-xl mt-4 line-clamp-1">{clinic.name}</CardTitle>
@@ -95,12 +96,13 @@ export default async function ClinicsPage() {
                   </div>
                 </div>
               </CardContent>
-              <CardFooter className="bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800/50 py-3">
-                <Link href={`/dashboard/clinics/${clinic.id}`} className="w-full">
-                  <Button variant="ghost" size="sm" className="w-full text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 group-hover:translate-x-1 transition-transform">
+              <CardFooter className="bg-slate-50/50 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800/50 py-3 flex items-center justify-between gap-2">
+                <Link href={`/dashboard/clinics/${clinic.id}`} className="flex-1">
+                  <Button variant="ghost" size="sm" className="w-full justify-start text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 group-hover:translate-x-1 transition-transform">
                     Gérer la clinique →
                   </Button>
                 </Link>
+                <ClinicStatusToggle clinicId={clinic.id} isActive={(clinic as any).isActive !== false} />
               </CardFooter>
             </Card>
           ))}

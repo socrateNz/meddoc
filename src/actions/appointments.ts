@@ -7,6 +7,15 @@ import { toErrorMessage } from "@/lib/utils";
 import { createAppointmentSchema, completeConsultationSchema } from "@/validators/appointments";
 import { revalidatePath } from "next/cache";
 
+// Planifier/clôturer un RDV est une action clinique — ADMIN (holding) et PHARMACIST restent en lecture seule.
+const CLINICAL_WRITE_ROLES = ["COORDINATOR", "CAREGIVER"];
+
+function assertClinicalWriteAccess(role: string) {
+  if (!CLINICAL_WRITE_ROLES.includes(role)) {
+    throw new Error("Non autorisé. Seuls un coordinateur ou un soignant peuvent effectuer cette action.");
+  }
+}
+
 export async function createAppointment(data: {
   patientId: string;
   caregiverId?: string;
@@ -22,6 +31,7 @@ export async function createAppointment(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -86,6 +96,7 @@ export async function completeConsultation(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {

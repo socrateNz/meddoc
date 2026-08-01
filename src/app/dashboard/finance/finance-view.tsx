@@ -43,13 +43,17 @@ interface FinanceViewProps {
   patients: any[];
   organizationId?: string;
   organizationName?: string;
+  currentUserRole?: string;
 }
 
-export default function FinanceView({ summary, patients, organizationId, organizationName }: FinanceViewProps) {
+export default function FinanceView({ summary, patients, organizationId, organizationName, currentUserRole }: FinanceViewProps) {
   const [selectedInvoiceTransaction, setSelectedInvoiceTransaction] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState("journal");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | "INCOME" | "EXPENSE" | "PHARMACY">("ALL");
+
+  // ADMIN (holding) consulte la finance en lecture seule ; COORDINATOR/PHARMACIST gèrent.
+  const canWrite = currentUserRole !== "ADMIN";
 
   const formatFCFA = (val: number) => {
     const num = Math.round(Number(val) || 0);
@@ -181,15 +185,17 @@ export default function FinanceView({ summary, patients, organizationId, organiz
       </div>
 
       {/* Primary actions */}
-      <div className="flex flex-wrap gap-3 animate-fade-up">
-        <SaleInvoiceDialog
-          pharmacyItems={summary.pharmacyItems}
-          patients={patients}
-          organizationId={organizationId}
-          onSuccess={setSelectedInvoiceTransaction}
-        />
-        <ExpenseDialog organizationId={organizationId} onSuccess={setSelectedInvoiceTransaction} />
-      </div>
+      {canWrite && (
+        <div className="flex flex-wrap gap-3 animate-fade-up">
+          <SaleInvoiceDialog
+            pharmacyItems={summary.pharmacyItems}
+            patients={patients}
+            organizationId={organizationId}
+            onSuccess={setSelectedInvoiceTransaction}
+          />
+          <ExpenseDialog organizationId={organizationId} onSuccess={setSelectedInvoiceTransaction} />
+        </div>
+      )}
 
       {/* Overview: recent activity + stock alerts */}
       <div className="grid gap-6 lg:grid-cols-2 animate-fade-up">
@@ -291,7 +297,7 @@ export default function FinanceView({ summary, patients, organizationId, organiz
             </TabsTrigger>
           </TabsList>
 
-          {activeTab === "pharmacie" && (
+          {activeTab === "pharmacie" && canWrite && (
             <div className="flex gap-2">
               <StockPurchaseDialog pharmacyItems={summary.pharmacyItems} organizationId={organizationId} />
               <PharmacyDialog organizationId={organizationId} />
@@ -520,7 +526,7 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                           ) : null}
                         </TableCell>
                         <TableCell className="text-right py-3.5">
-                          <PharmacyDialog item={item} organizationId={organizationId} />
+                          {canWrite && <PharmacyDialog item={item} organizationId={organizationId} />}
                         </TableCell>
                       </TableRow>
                     );
@@ -533,7 +539,7 @@ export default function FinanceView({ summary, patients, organizationId, organiz
 
         {/* TAB: Inventaire (comptage physique vs stock système) */}
         <TabsContent value="inventaire" className="pt-6 space-y-4">
-          <InventoryPanel organizationId={organizationId} />
+          <InventoryPanel organizationId={organizationId} canWrite={canWrite} />
         </TabsContent>
       </Tabs>
 

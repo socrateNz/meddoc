@@ -36,7 +36,8 @@ export default async function AppointmentsPage() {
   } else if (currentUser.organization?.type === "CLINIC") {
     orgFilter.organizationId = currentUser.organizationId;
   } else {
-    orgFilter.organizationId = "NO_ACCESS";
+    // Tableau `in` vide : ne matche jamais, sans faire planter Prisma sur un ObjectId invalide.
+    orgFilter.organizationId = { in: [] };
   }
 
   const appointments = await prisma.appointment.findMany({

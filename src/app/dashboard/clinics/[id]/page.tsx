@@ -2,11 +2,15 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Users, FileText, Settings, Bed, Clock, Phone } from "lucide-react";
+import { ArrowLeft, Building2, Users, FileText, Settings, Bed, Clock, Phone, Wallet, AlertTriangle, Package, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getOrCreateClinicWards } from "@/actions/wards";
 
 export const dynamic = "force-dynamic";
+
+function formatFCFA(amount: number) {
+  return Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
+}
 
 export default async function ClinicDetailsPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -22,6 +26,14 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   if (!isHoldingAdmin && !isClinicUser && !isSuperAdmin) {
     redirect("/dashboard");
   }
+
+  // ADMIN (holding)/SUPER_ADMIN : consultation en lecture seule. COORDINATOR : administre
+  // totalement sa clinique. CAREGIVER/PHARMACIST : vue adaptée à leurs responsabilités propres.
+  const isReadOnlyOverview = isHoldingAdmin || isSuperAdmin;
+  const isCoordinator = user.role === "COORDINATOR";
+  const isCaregiver = user.role === "CAREGIVER";
+  const isPharmacist = user.role === "PHARMACIST";
+  const showWardsAndStaff = isReadOnlyOverview || isCoordinator || isCaregiver;
 
   const queryFilter: any = {
     id: params.id,
@@ -45,33 +57,31 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     redirect("/dashboard");
   }
 
-  // Fetch staff members of this clinic for the shift widget
-  const staffMembers = await prisma.user.findMany({
-    where: {
-      organizationId: clinic.id,
-      role: { in: ["CAREGIVER", "COORDINATOR"] }
-    },
-    take: 3,
-  });
+  // --- Lits & garde du jour : pertinent pour tout rôle clinique, pas pour PHARMACIST ---
+  let staffMembers: any[] = [];
+  let wardsWithOccupancy: any[] = [];
+  if (showWardsAndStaff) {
+    staffMembers = await prisma.user.findMany({
+      where: {
+        organizationId: clinic.id,
+        role: { in: ["CAREGIVER", "COORDINATOR"] }
+      },
+      take: 3,
+    });
 
-  // Fetch or initialize structural wards from the database
-  const wardsResult = await getOrCreateClinicWards(clinic.id);
-  const wards = wardsResult.success ? wardsResult.wards || [] : [];
+    const wardsResult = await getOrCreateClinicWards(clinic.id);
+    const wards = wardsResult.success ? wardsResult.wards || [] : [];
 
-  // Query actual patients inside each ward from the database
-  const wardsWithOccupancy = await Promise.all(
-    wards.map(async (ward) => {
-      const patientCount = await prisma.patient.count({
-        where: { wardId: ward.id }
-      });
-      const occupancyRate = ward.capacity > 0 ? Math.min(100, Math.round((patientCount / ward.capacity) * 100)) : 0;
-      return {
-        ...ward,
-        patientCount,
-        occupancyRate
-      };
-    })
-  );
+    wardsWithOccupancy = await Promise.all(
+      wards.map(async (ward) => {
+        const patientCount = await prisma.patient.count({
+          where: { wardId: ward.id }
+        });
+        const occupancyRate = ward.capacity > 0 ? Math.min(100, Math.round((patientCount / ward.capacity) * 100)) : 0;
+        return { ...ward, patientCount, occupancyRate };
+      })
+    );
+  }
 
   const occupiedBeds = wardsWithOccupancy.reduce((acc, curr) => acc + curr.patientCount, 0);
   const totalCapacity = wardsWithOccupancy.reduce((acc, curr) => acc + curr.capacity, 0);
@@ -93,14 +103,71 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   const surgeryCapacity = surgeryWard?.capacity || 30;
   const surgeryPercentage = surgeryWard?.occupancyRate || 0;
 
+  // --- Aperçu finance/pharmacie : COORDINATOR (gère) et PHARMACIST (son cœur de métier) ---
+  let todayIncome = 0;
+  let cashBalance = 0;
+  let lowStockCount = 0;
+  if (isCoordinator || isPharmacist) {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const [todayTransactions, allTransactions, pharmacyItems] = await Promise.all([
+      prisma.financialTransaction.findMany({
+        where: { organizationId: clinic.id, type: "INCOME", createdAt: { gte: startOfToday } },
+        select: { amount: true },
+      }),
+      prisma.financialTransaction.findMany({
+        where: { organizationId: clinic.id },
+        select: { amount: true, type: true },
+      }),
+      prisma.pharmacyItem.findMany({
+        where: { organizationId: clinic.id },
+        select: { stockQuantity: true, reorderLevel: true },
+      }),
+    ]);
+
+    todayIncome = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
+    cashBalance = allTransactions.reduce((sum, t) => sum + (t.type === "INCOME" ? t.amount : -t.amount), 0);
+    lowStockCount = pharmacyItems.filter((item) => item.stockQuantity <= item.reorderLevel).length;
+  }
+
+  // --- Incidents ouverts : COORDINATOR et CAREGIVER (soins de la clinique) ---
+  let openIncidentsCount = 0;
+  if (isCoordinator || isCaregiver) {
+    openIncidentsCount = await prisma.incident.count({
+      where: { status: "OPEN", patient: { organizationId: clinic.id } },
+    });
+  }
+
+  // --- Mes rendez-vous du jour : CAREGIVER uniquement ---
+  let myAppointmentsTodayCount = 0;
+  if (isCaregiver) {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfToday = new Date(startOfToday);
+    endOfToday.setDate(endOfToday.getDate() + 1);
+
+    const caregiverProfile = await prisma.caregiver.findUnique({ where: { userId: user.id } });
+    if (caregiverProfile) {
+      myAppointmentsTodayCount = await prisma.appointment.count({
+        where: {
+          caregiverId: caregiverProfile.id,
+          scheduledAt: { gte: startOfToday, lt: endOfToday },
+        },
+      });
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/dashboard/clinics">
-          <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
+        {isReadOnlyOverview && (
+          <Link href="/dashboard/clinics">
+            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+        )}
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50 flex items-center gap-3">
             <Building2 className="h-8 w-8 text-blue-500" />
@@ -112,124 +179,229 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
-          <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-4">
-            <Users className="h-6 w-6 text-blue-500" />
+      {/* Cartes de raccourci : SUPER_ADMIN / ADMIN (lecture seule) / COORDINATOR (gestion complète) */}
+      {(isReadOnlyOverview || isCoordinator) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-4">
+              <Users className="h-6 w-6 text-blue-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Personnel médical</h3>
+            <p className="text-3xl font-bold mt-2">{clinic._count.users}</p>
+            <p className="text-sm text-slate-500 mt-2">Membres rattachés</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/team`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">{isCoordinator ? "Gérer le personnel" : "Consulter l'équipe"}</Button>
+            </Link>
           </div>
-          <h3 className="text-lg font-semibold">Personnel médical</h3>
-          <p className="text-3xl font-bold mt-2">{clinic._count.users}</p>
-          <p className="text-sm text-slate-500 mt-2">Membres rattachés</p>
-          <Link href={`/dashboard/clinics/${clinic.id}/team`} className="w-full mt-6">
-            <Button className="w-full" variant="outline">Gérer le personnel</Button>
+
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mb-4">
+              <FileText className="h-6 w-6 text-emerald-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Patients</h3>
+            <p className="text-3xl font-bold mt-2">{clinic._count.patients}</p>
+            <p className="text-sm text-slate-500 mt-2">Dossiers actifs</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/patients`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">{isCoordinator ? "Voir les patients" : "Consulter les patients"}</Button>
+            </Link>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-violet-50 dark:bg-violet-900/20 rounded-full flex items-center justify-center mb-4">
+              <Settings className="h-6 w-6 text-violet-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Configuration</h3>
+            <p className="text-sm text-slate-500 mt-4 flex-1">Paramètres généraux, adresse et facturation.</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/settings`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">{isCoordinator ? "Modifier" : "Consulter les paramètres"}</Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Aperçu Finance & Pharmacie + Incidents : COORDINATOR uniquement */}
+      {isCoordinator && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 animate-fade-up">
+          <Link href={`/dashboard/clinics/${clinic.id}/finance`} className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Recettes du jour</p>
+            <p className="text-2xl font-extrabold mt-1 text-slate-800 dark:text-slate-100">{formatFCFA(todayIncome)}</p>
+          </Link>
+          <Link href={`/dashboard/clinics/${clinic.id}/finance`} className={`bg-white dark:bg-slate-900 rounded-2xl p-5 border shadow-sm hover:shadow-md transition-shadow ${lowStockCount > 0 ? "border-amber-300/60 dark:border-amber-900/40" : "border-slate-200 dark:border-slate-800"}`}>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Alertes stock</p>
+            <p className={`text-2xl font-extrabold mt-1 ${lowStockCount > 0 ? "text-amber-600 dark:text-amber-400" : "text-slate-800 dark:text-slate-100"}`}>{lowStockCount}</p>
+          </Link>
+          <Link href={`/dashboard/clinics/${clinic.id}/incidents`} className={`bg-white dark:bg-slate-900 rounded-2xl p-5 border shadow-sm hover:shadow-md transition-shadow ${openIncidentsCount > 0 ? "border-red-300/60 dark:border-red-950/40" : "border-slate-200 dark:border-slate-800"}`}>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Incidents ouverts</p>
+            <p className={`text-2xl font-extrabold mt-1 ${openIncidentsCount > 0 ? "text-red-600 dark:text-red-400" : "text-slate-800 dark:text-slate-100"}`}>{openIncidentsCount}</p>
           </Link>
         </div>
+      )}
 
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
-          <div className="h-12 w-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mb-4">
-            <FileText className="h-6 w-6 text-emerald-500" />
+      {/* Cartes CAREGIVER */}
+      {isCaregiver && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mb-4">
+              <FileText className="h-6 w-6 text-emerald-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Patients</h3>
+            <p className="text-3xl font-bold mt-2">{clinic._count.patients}</p>
+            <p className="text-sm text-slate-500 mt-2">Dossiers de la clinique</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/patients`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Voir mes patients</Button>
+            </Link>
           </div>
-          <h3 className="text-lg font-semibold">Patients</h3>
-          <p className="text-3xl font-bold mt-2">{clinic._count.patients}</p>
-          <p className="text-sm text-slate-500 mt-2">Dossiers actifs</p>
-          <Link href={`/dashboard/clinics/${clinic.id}/patients`} className="w-full mt-6">
-            <Button className="w-full" variant="outline">Voir les patients</Button>
-          </Link>
-        </div>
 
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
-          <div className="h-12 w-12 bg-violet-50 dark:bg-violet-900/20 rounded-full flex items-center justify-center mb-4">
-            <Settings className="h-6 w-6 text-violet-500" />
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-4">
+              <Calendar className="h-6 w-6 text-blue-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Mes rendez-vous du jour</h3>
+            <p className="text-3xl font-bold mt-2">{myAppointmentsTodayCount}</p>
+            <p className="text-sm text-slate-500 mt-2">Planifiés aujourd&apos;hui</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/appointments`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Voir l&apos;agenda</Button>
+            </Link>
           </div>
-          <h3 className="text-lg font-semibold">Configuration</h3>
-          <p className="text-sm text-slate-500 mt-4 flex-1">Paramètres généraux, adresse et facturation.</p>
-          <Link href={`/dashboard/clinics/${clinic.id}/settings`} className="w-full mt-6">
-            <Button className="w-full" variant="outline">Modifier</Button>
-          </Link>
-        </div>
-      </div>
 
-      {/* Supervision Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8 animate-fade-up" style={{ animationDelay: "200ms" } as React.CSSProperties}>
-        {/* Bed Occupancy Card */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between border-b pb-4 mb-4">
-            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-              <Bed className="h-5 w-5 text-blue-500" />
-              Occupation des Lits & Capacité
-            </h3>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              Global : {globalOccupancyRate}%
-            </span>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-semibold text-slate-700 dark:text-slate-300">Urgences</span>
-                <span className="text-slate-500">{emergencyPatientsCount} / {emergencyCapacity} lits ({emergencyPercentage}%)</span>
-              </div>
-              <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-red-500 rounded-full" style={{ width: `${emergencyPercentage}%` }} />
-              </div>
+          <div className={`bg-white dark:bg-slate-900 rounded-2xl p-6 border shadow-sm flex flex-col items-center text-center ${openIncidentsCount > 0 ? "border-red-300/60 dark:border-red-950/40" : "border-slate-200 dark:border-slate-800"}`}>
+            <div className="h-12 w-12 bg-red-50 dark:bg-red-900/20 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="h-6 w-6 text-red-500" />
             </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-semibold text-slate-700 dark:text-slate-300">Soins Intensifs (Réanimation)</span>
-                <span className="text-slate-500">{icuPatientsCount} / {icuCapacity} lits ({icuPercentage}%)</span>
-              </div>
-              <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-amber-500 rounded-full" style={{ width: `${icuPercentage}%` }} />
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="font-semibold text-slate-700 dark:text-slate-300">Chirurgie & Ambulatoire</span>
-                <span className="text-slate-500">{surgeryPatientsCount} / {surgeryCapacity} lits ({surgeryPercentage}%)</span>
-              </div>
-              <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${surgeryPercentage}%` }} />
-              </div>
-            </div>
+            <h3 className="text-lg font-semibold">Incidents ouverts</h3>
+            <p className={`text-3xl font-bold mt-2 ${openIncidentsCount > 0 ? "text-red-600 dark:text-red-400" : ""}`}>{openIncidentsCount}</p>
+            <p className="text-sm text-slate-500 mt-2">Nécessitent une action</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/incidents`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Voir les incidents</Button>
+            </Link>
           </div>
         </div>
+      )}
 
-        {/* On-Duty Staff Card */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div className="flex items-center justify-between border-b pb-4 mb-4">
-            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-              <Clock className="h-5 w-5 text-violet-500" />
-              Garde & Astreintes du Jour
-            </h3>
-            <span className="text-xs text-slate-500">Équipe active</span>
+      {/* Cartes PHARMACIST */}
+      {isPharmacist && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mb-4">
+              <Wallet className="h-6 w-6 text-emerald-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Ventes du jour</h3>
+            <p className="text-2xl font-bold mt-2">{formatFCFA(todayIncome)}</p>
+            <p className="text-sm text-slate-500 mt-2">Encaissements enregistrés aujourd&apos;hui</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/finance`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Ouvrir la caisse</Button>
+            </Link>
           </div>
-          <div className="space-y-4">
-            {staffMembers.length === 0 ? (
-              <p className="text-sm text-slate-500 py-6 text-center">Aucun soignant configuré pour cette clinique.</p>
-            ) : (
-              staffMembers.map((member) => (
-                <div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-                  <div className="flex items-center gap-3">
-                    <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
-                      {member.lastName[0]}{member.firstName[0]}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-850 dark:text-slate-200">{member.firstName} {member.lastName}</p>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
-                        {member.role === "CAREGIVER" ? "Praticien / Soignant" : "Coordinateur Clinique"}
-                      </p>
-                    </div>
-                  </div>
-                  {member.phone && (
-                    <a href={`tel:${member.phone}`} className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors">
-                      <Phone className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                    </a>
-                  )}
+
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-4">
+              <Wallet className="h-6 w-6 text-blue-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Solde de caisse</h3>
+            <p className="text-2xl font-bold mt-2">{formatFCFA(cashBalance)}</p>
+            <p className="text-sm text-slate-500 mt-2">Recettes − dépenses totales</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/finance`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Voir le journal</Button>
+            </Link>
+          </div>
+
+          <div className={`bg-white dark:bg-slate-900 rounded-2xl p-6 border shadow-sm flex flex-col items-center text-center ${lowStockCount > 0 ? "border-amber-300/60 dark:border-amber-900/40" : "border-slate-200 dark:border-slate-800"}`}>
+            <div className="h-12 w-12 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mb-4">
+              <Package className="h-6 w-6 text-amber-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Alertes stock</h3>
+            <p className={`text-3xl font-bold mt-2 ${lowStockCount > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>{lowStockCount}</p>
+            <p className="text-sm text-slate-500 mt-2">{lowStockCount > 0 ? "Produits en rupture ou stock faible" : "Tous les stocks sont suffisants"}</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/finance`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Gérer le stock</Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Supervision Section : occupation des lits + garde du jour */}
+      {showWardsAndStaff && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8 animate-fade-up" style={{ animationDelay: "200ms" } as React.CSSProperties}>
+          {/* Bed Occupancy Card */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center justify-between border-b pb-4 mb-4">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <Bed className="h-5 w-5 text-blue-500" />
+                Occupation des Lits & Capacité
+              </h3>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                Global : {globalOccupancyRate}%
+              </span>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">Urgences</span>
+                  <span className="text-slate-500">{emergencyPatientsCount} / {emergencyCapacity} lits ({emergencyPercentage}%)</span>
                 </div>
-              ))
-            )}
+                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-red-500 rounded-full" style={{ width: `${emergencyPercentage}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">Soins Intensifs (Réanimation)</span>
+                  <span className="text-slate-500">{icuPatientsCount} / {icuCapacity} lits ({icuPercentage}%)</span>
+                </div>
+                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-500 rounded-full" style={{ width: `${icuPercentage}%` }} />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">Chirurgie & Ambulatoire</span>
+                  <span className="text-slate-500">{surgeryPatientsCount} / {surgeryCapacity} lits ({surgeryPercentage}%)</span>
+                </div>
+                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${surgeryPercentage}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* On-Duty Staff Card */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center justify-between border-b pb-4 mb-4">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <Clock className="h-5 w-5 text-violet-500" />
+                Garde & Astreintes du Jour
+              </h3>
+              <span className="text-xs text-slate-500">Équipe active</span>
+            </div>
+            <div className="space-y-4">
+              {staffMembers.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">Aucun soignant configuré pour cette clinique.</p>
+              ) : (
+                staffMembers.map((member) => (
+                  <div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                        {member.lastName[0]}{member.firstName[0]}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-850 dark:text-slate-200">{member.firstName} {member.lastName}</p>
+                        <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                          {member.role === "CAREGIVER" ? "Praticien / Soignant" : "Coordinateur Clinique"}
+                        </p>
+                      </div>
+                    </div>
+                    {member.phone && (
+                      <a href={`tel:${member.phone}`} className="h-8 w-8 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors">
+                        <Phone className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                      </a>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

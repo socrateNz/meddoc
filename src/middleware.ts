@@ -18,16 +18,21 @@ const REFRESH_SECRET = new TextEncoder().encode(requireEnv('JWT_REFRESH_SECRET')
 const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password', '/api/health'];
 
 // RBAC par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...)
+// ADMIN (holding) est laissé en lecture seule par les pages/actions elles-mêmes sur
+// patients/team/finance/contracts — il reste dans la liste pour pouvoir consulter.
 const restrictedSections: Record<string, string[]> = {
-  patients: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+  patients: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
   team: ['ADMIN', 'COORDINATOR'],
   incidents: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+  appointments: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
   'ai-assistant': ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
-  finance: ['ADMIN', 'COORDINATOR'],
+  finance: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
   contracts: ['ADMIN', 'COORDINATOR'],
   permissions: ['ADMIN'],
   'audit-log': ['ADMIN'],
   'contact-messages': ['SUPER_ADMIN'],
+  holdings: ['SUPER_ADMIN'],
+  messages: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
 };
 
 function withSecurityHeaders(response: NextResponse): NextResponse {
