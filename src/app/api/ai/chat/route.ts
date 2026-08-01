@@ -1,30 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AiRAGService, RateLimitError, ServiceUnavailableError } from "@/services/AiRAGService";
 import { prisma } from "@/lib/db";
-import { jwtVerify } from "jose";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'super_secret_jwt_key_for_dev_only'
-);
+import { getCurrentUser } from "@/lib/auth";
+import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 
 export async function POST(req: NextRequest) {
   try {
+    const limited = rateLimitOrResponse(req, 20, 60000);
+    if (limited) return limited;
+
     // 1. Authenticate user from cookie token
-    const token = req.cookies.get("token")?.value;
-    if (!token) {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    let payload: any;
-    try {
-      const verified = await jwtVerify(token, JWT_SECRET);
-      payload = verified.payload;
-    } catch (e) {
-      return NextResponse.json({ error: "Token invalide" }, { status: 401 });
-    }
-
-    const userId = payload.userId;
-    const userRole = payload.role;
+    const userId = currentUser.id;
+    const userRole = currentUser.role;
 
     // Strict access control: only Admin, Coordinator, Caregiver
     if (!["ADMIN", "COORDINATOR", "CAREGIVER"].includes(userRole)) {

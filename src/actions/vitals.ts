@@ -3,6 +3,8 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
+import { toErrorMessage } from "@/lib/utils";
+import { recordVitalSignSchema } from "@/validators/vitals";
 import { revalidatePath } from "next/cache";
 
 export interface RecordVitalSignInput {
@@ -19,6 +21,7 @@ export interface RecordVitalSignInput {
 
 export async function recordVitalSign(data: RecordVitalSignInput) {
   try {
+    recordVitalSignSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -53,7 +56,7 @@ export async function recordVitalSign(data: RecordVitalSignInput) {
     revalidatePath(`/dashboard/patients/${data.patientId}`);
     return { success: true, data: vital };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de l'enregistrement des constantes." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement des constantes.") };
   }
 }
 

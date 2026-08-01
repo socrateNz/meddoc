@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { UserService } from "@/services/UserService";
+import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 
@@ -14,8 +15,11 @@ const createUserSchema = z.object({
 
 export async function GET(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 60, 60000);
+    if (limited) return limited;
+
     const role = req.headers.get("x-user-role");
-    
+
     // RBAC simple: Seul un ADMIN peut lister tous les utilisateurs (ou coordinateur)
     if (role !== "ADMIN" && role !== "COORDINATOR") {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
@@ -30,8 +34,11 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 10, 60000);
+    if (limited) return limited;
+
     const role = req.headers.get("x-user-role");
-    
+
     if (role !== "ADMIN") {
       return NextResponse.json({ error: "Seul un administrateur peut créer des utilisateurs" }, { status: 403 });
     }

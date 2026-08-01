@@ -2,8 +2,16 @@ import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 import { prisma } from "./db";
 
-const JWT_SECRET = process.env.JWT_SECRET || "super_secret_jwt_key_for_dev_only";
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "super_secret_refresh_key_for_dev_only";
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Variable d'environnement manquante : ${name}. Voir .env.example.`);
+  }
+  return value;
+}
+
+const JWT_SECRET = requireEnv("JWT_SECRET");
+const REFRESH_SECRET = requireEnv("JWT_REFRESH_SECRET");
 
 export function signJwt(payload: any, options: jwt.SignOptions = { expiresIn: "15m" }) {
   return jwt.sign(payload, JWT_SECRET, options);

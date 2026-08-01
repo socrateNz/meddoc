@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AppointmentService } from "@/services/AppointmentService";
+import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 import { z } from "zod";
 
 const createApptSchema = z.object({
@@ -13,6 +14,9 @@ const createApptSchema = z.object({
 
 export async function GET(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 60, 60000);
+    if (limited) return limited;
+
     const userId = req.headers.get("x-user-id");
     const role = req.headers.get("x-user-role");
     
@@ -29,8 +33,11 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 20, 60000);
+    if (limited) return limited;
+
     const role = req.headers.get("x-user-role");
-    
+
     // Seuls Admin, Coordinateur et Soignant peuvent créer un rendez-vous
     if (role === "PATIENT" || role === "FAMILY") {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });

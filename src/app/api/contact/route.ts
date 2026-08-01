@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { rateLimit } from "@/middlewares/rateLimiter";
 import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { Role } from "@prisma/client";
 
 const contactSchema = z.object({
   name: z.string().min(2, "Le nom doit contenir au moins 2 caractères"),
@@ -16,16 +18,13 @@ export async function POST(req: Request) {
     if (!limitCheck.success) {
       // Create a warning notification for coordinators/admins about rate limit hit on contact form
       try {
-        const { prisma } = await import("@/lib/db");
-        const { Role } = await import("@prisma/client");
-        
         const staff = await prisma.user.findMany({
           where: {
             role: { in: [Role.COORDINATOR, Role.ADMIN] },
             isActive: true
           }
         });
-        
+
         await prisma.notification.createMany({
           data: staff.map(user => ({
             userId: user.id,
@@ -47,9 +46,38 @@ export async function POST(req: Request) {
     const body = await req.json();
     const validatedData = contactSchema.parse(body);
 
+    const contactMessage = await prisma.contactMessage.create({
+      data: {
+        name: validatedData.name,
+        email: validatedData.email,
+        subject: validatedData.subject,
+        message: validatedData.message,
+      }
+    });
+
+    try {
+      const staff = await prisma.user.findMany({
+        where: {
+          role: { in: [Role.COORDINATOR, Role.ADMIN] },
+          isActive: true
+        }
+      });
+
+      await prisma.notification.createMany({
+        data: staff.map(user => ({
+          userId: user.id,
+          title: `Nouveau message de contact : ${validatedData.subject}`,
+          message: `${validatedData.name} (${validatedData.email}) a envoyé un message via le formulaire de contact.`,
+          type: "INFO"
+        }))
+      });
+    } catch (e) {
+      console.error("Failed to notify staff about new contact message:", e);
+    }
 
     return NextResponse.json({
       success: true,
+      data: { id: contactMessage.id },
       message: "Votre message a été envoyé avec succès. Notre équipe vous contactera sous peu."
     });
   } catch (error) {

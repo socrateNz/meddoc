@@ -4,6 +4,14 @@ import { prisma } from "@/lib/db";
 import { Role, Priority, IncidentStatus } from "@prisma/client";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
+import { toErrorMessage } from "@/lib/utils";
+import {
+  createPatientSchema,
+  createMedicalRecordSchema,
+  createIncidentSchema,
+  updateIncidentStatusSchema,
+  reassignPatientSchema,
+} from "@/validators/patients";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 
@@ -21,6 +29,7 @@ export async function createPatient(data: {
   organizationId?: string;
 }) {
   try {
+    createPatientSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
@@ -92,7 +101,7 @@ export async function createPatient(data: {
     return { success: true, data: result };
   } catch (error: any) {
     console.error("Error creating patient:", error);
-    return { success: false, error: error.message || "Erreur lors de la création du patient" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la création du patient") };
   }
 }
 
@@ -103,6 +112,7 @@ export async function createMedicalRecord(data: {
   documentUrl?: string;
 }) {
   try {
+    createMedicalRecordSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
@@ -144,7 +154,7 @@ export async function createMedicalRecord(data: {
     return { success: true, data: record };
   } catch (error: any) {
     console.error("Error creating medical record:", error);
-    return { success: false, error: error.message || "Erreur lors de la création du document médical" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la création du document médical") };
   }
 }
 
@@ -156,6 +166,7 @@ export async function createIncident(data: {
   priority: Priority;
 }) {
   try {
+    createIncidentSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
@@ -212,12 +223,13 @@ export async function createIncident(data: {
     return { success: true, data: incident };
   } catch (error: any) {
     console.error("Error creating incident:", error);
-    return { success: false, error: error.message || "Erreur lors de la création de l'incident" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la création de l'incident") };
   }
 }
 
 export async function updateIncidentStatus(incidentId: string, status: IncidentStatus) {
   try {
+    updateIncidentStatusSchema.parse({ incidentId, status });
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
@@ -255,7 +267,7 @@ export async function updateIncidentStatus(incidentId: string, status: IncidentS
     return { success: true, data: updated };
   } catch (error: any) {
     console.error("Error updating incident status:", error);
-    return { success: false, error: error.message || "Erreur lors de la mise à jour de l'incident" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la mise à jour de l'incident") };
   }
 }
 
@@ -302,6 +314,7 @@ export async function getClinicPatients(clinicId: string) {
 
 export async function reassignPatient(patientId: string, newOrganizationId: string) {
   try {
+    reassignPatientSchema.parse({ patientId, newOrganizationId });
     const activeUser = await getCurrentUser();
     if (!activeUser || activeUser.role !== "ADMIN" || activeUser.organization?.type !== "HOLDING") {
       throw new Error("Non autorisé. Seul un administrateur de Holding peut réaffecter un patient.");
@@ -344,6 +357,6 @@ export async function reassignPatient(patientId: string, newOrganizationId: stri
 
     return { success: true, data: updatedPatient };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la réaffectation." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la réaffectation.") };
   }
 }

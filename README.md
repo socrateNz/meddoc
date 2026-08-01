@@ -1,36 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MedDoc
 
-## Getting Started
+MedDoc est une plateforme SaaS de gestion médicale et de coordination des soins pour des holdings hospitalières et leurs cliniques : dossiers patients, plans de soins, rendez-vous, incidents, messagerie interne, finance & pharmacie (achats, ventes, inventaire), assistant clinique IA, et génération de documents PDF.
 
-First, run the development server:
+## Stack technique
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- [Next.js](https://nextjs.org) (App Router, Server Actions) + React 19 + TypeScript
+- [Prisma](https://www.prisma.io) sur une base **MongoDB**
+- Tailwind CSS + shadcn/ui (Radix)
+- Authentification par JWT (access token + refresh token) via cookies HTTP-only
+- Cloudinary (fichiers/avatars), Google Generative AI / Gemini (assistant IA), `@react-pdf/renderer` (factures, ordonnances)
+- PWA (service worker, mode hors-ligne partiel)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Rôles
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`SUPER_ADMIN` (gestion des holdings) · `ADMIN` · `COORDINATOR` · `CAREGIVER` (aidant/soignant) · `FAMILY` · `PATIENT`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Une organisation est soit une `HOLDING` (regroupe plusieurs cliniques), soit une `CLINIC`. Les accès aux pages et actions serveur sont filtrés par rôle et par organisation (voir [src/middleware.ts](src/middleware.ts)).
 
-## Learn More
+## Démarrage local
 
-To learn more about Next.js, take a look at the following resources:
+1. **Dépendances**
+   ```bash
+   npm install
+   ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2. **Variables d'environnement** — copier `.env.example` en `.env` et renseigner :
+   - `DATABASE_URL` : connexion MongoDB (Atlas ou local)
+   - `JWT_SECRET` / `JWT_REFRESH_SECRET` : générer avec
+     `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
+   - `CLOUDINARY_URL` : identifiants Cloudinary
+   - `GEMINI_API_KEY` : clé API Google Generative AI
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   L'application refuse de démarrer si `JWT_SECRET` ou `JWT_REFRESH_SECRET` sont absents (pas de valeur par défaut en production).
 
-## Deploy on Vercel
+3. **Base de données**
+   ```bash
+   npx prisma generate
+   npx prisma db push
+   ```
+   `db push` synchronise directement le schéma avec MongoDB (pas de migrations SQL classiques sur ce provider).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+4. **Compte initial** — créer un super-administrateur :
+   ```bash
+   npx tsx scripts/seed-superadmin.ts
+   ```
+   ou peupler des données de démonstration avec `prisma/seed.ts` / `migrate.ts` selon le besoin.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+5. **Lancer le serveur de développement**
+   ```bash
+   npm run dev
+   ```
+   puis ouvrir [http://localhost:3000](http://localhost:3000).
+
+## Scripts
+
+- `npm run dev` — serveur de développement
+- `npm run build` — `prisma generate` + build de production
+- `npm run start` — serveur de production
+- `npm run lint` — ESLint
+
+## Structure du projet
+
+- `src/app` — routes App Router (pages publiques, `dashboard/*`, routes API sous `app/api/*`)
+- `src/actions` — Server Actions (logique métier principale, écriture en base)
+- `src/services` / `src/repositories` — logique de plus bas niveau utilisée par certaines routes API historiques
+- `src/validators` — schémas zod de validation des entrées (Server Actions et routes API)
+- `src/middlewares` — rate limiting, en-têtes de sécurité, journal d'audit
+- `src/middleware.ts` — middleware Next.js : authentification JWT, RBAC par section, en-têtes de sécurité
+- `prisma/schema.prisma` — modèle de données MongoDB
+
+## Sécurité
+
+- Middleware Edge : vérification JWT, RBAC par rôle/section, en-têtes de sécurité (CSP, X-Frame-Options...)
+- Rate limiting en mémoire sur les routes sensibles (login, contact, écritures API)
+- Journal d'audit (`AuditLog`) sur les actions sensibles, consultable dans `Tableau de bord > Journal d'audit` (ADMIN)
+- Validation runtime (zod) sur les Server Actions et routes API en écriture
+
+> Ce projet cible une version de Next.js dont certaines conventions diffèrent des versions publiques habituelles — voir `node_modules/next/dist/docs/` avant de modifier des fichiers de routing ou de configuration.

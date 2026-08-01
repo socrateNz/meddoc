@@ -23,7 +23,6 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
     name: item?.name || "",
     dosage: item?.dosage || "",
     category: item?.category || "MEDICATION",
-    stockQuantity: item?.stockQuantity ?? 0,
     reorderLevel: item?.reorderLevel ?? 10,
     unitPrice: item?.unitPrice ?? 500,
     batchNumber: item?.batchNumber || "",
@@ -43,7 +42,6 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
         name: formData.name,
         dosage: formData.dosage,
         category: formData.category,
-        stockQuantity: Number(formData.stockQuantity),
         reorderLevel: Number(formData.reorderLevel),
         unitPrice: Number(formData.unitPrice),
         batchNumber: formData.batchNumber || undefined,
@@ -60,7 +58,6 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
             name: "",
             dosage: "",
             category: "MEDICATION",
-            stockQuantity: 0,
             reorderLevel: 10,
             unitPrice: 500,
             batchNumber: "",
@@ -95,10 +92,12 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Package className="h-5 w-5 text-blue-600" />
-            {item ? "Modifier le produit / stock" : "Ajouter un produit en pharmacie"}
+            {item ? "Modifier le produit" : "Ajouter un produit en pharmacie"}
           </DialogTitle>
           <DialogDescription>
-            Renseignez les détails du médicament, N° de lot et traçabilité de péremption.
+            {item
+              ? "Ces informations décrivent le produit. Le stock évolue uniquement via un achat, une vente ou un inventaire."
+              : "Créez la fiche du produit. Le stock démarre à zéro : utilisez ensuite \"Nouvel achat\" pour réceptionner une quantité avec son prix d'achat."}
           </DialogDescription>
         </DialogHeader>
 
@@ -134,7 +133,7 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="unitPrice">Prix unitaire (FCFA) *</Label>
+              <Label htmlFor="unitPrice">Prix de vente (FCFA) *</Label>
               <Input
                 id="unitPrice"
                 type="number"
@@ -148,15 +147,15 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="stockQuantity">Stock initial disponible *</Label>
+              <Label htmlFor="reorderLevel">Seuil d'alerte (Stock faible) *</Label>
               <Input
-                id="stockQuantity"
+                id="reorderLevel"
                 type="number"
-                min="0"
+                min="1"
                 required
-                placeholder="50"
-                value={formData.stockQuantity}
-                onChange={(e) => setFormData({ ...formData, stockQuantity: Number(e.target.value) })}
+                placeholder="10"
+                value={formData.reorderLevel}
+                onChange={(e) => setFormData({ ...formData, reorderLevel: Number(e.target.value) })}
                 className="rounded-xl"
               />
             </div>
@@ -211,18 +210,7 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="reorderLevel">Seuil d'alerte (Stock faible) *</Label>
-            <Input
-              id="reorderLevel"
-              type="number"
-              min="1"
-              required
-              placeholder="10"
-              value={formData.reorderLevel}
-              onChange={(e) => setFormData({ ...formData, reorderLevel: Number(e.target.value) })}
-              className="rounded-xl"
-            />
-            <p className="text-[11px] text-muted-foreground">Une alerte sera déclenchée si le stock descend à ce niveau ou en-dessous.</p>
+            <p className="text-[11px] text-muted-foreground">Une alerte de stock faible sera déclenchée si le stock descend au niveau du seuil d'alerte ou en-dessous.</p>
           </div>
 
           <div className="flex justify-end gap-2 pt-4">

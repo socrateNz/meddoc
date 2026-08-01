@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { PatientService } from "@/services/PatientService";
+import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 import { z } from "zod";
 
 const createPatientSchema = z.object({
@@ -14,8 +15,11 @@ const createPatientSchema = z.object({
 
 export async function GET(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 60, 60000);
+    if (limited) return limited;
+
     const role = req.headers.get("x-user-role");
-    
+
     // RBAC
     if (role === "PATIENT" || role === "FAMILY") {
       return NextResponse.json({ error: "Accès non autorisé à la liste globale" }, { status: 403 });
@@ -30,8 +34,11 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 20, 60000);
+    if (limited) return limited;
+
     const role = req.headers.get("x-user-role");
-    
+
     // Seuls Admin et Coordinateur peuvent créer un dossier patient
     if (role !== "ADMIN" && role !== "COORDINATOR") {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });

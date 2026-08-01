@@ -3,6 +3,15 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
+import { toErrorMessage } from "@/lib/utils";
+import {
+  pharmacyItemSchema,
+  recordPharmacySaleSchema,
+  recordSpecifiedIncomeSchema,
+  recordExpenseSchema,
+  recordMultiItemInvoiceSchema,
+} from "@/validators/finance";
+import { consumeStockLots } from "@/actions/stock";
 import { revalidatePath } from "next/cache";
 
 // Helper function to format raw MongoDB documents into standard JS objects
@@ -67,7 +76,6 @@ export async function createOrUpdatePharmacyItem(data: {
   name: string;
   dosage?: string;
   category?: string;
-  stockQuantity: number;
   reorderLevel: number;
   unitPrice: number;
   batchNumber?: string;
@@ -77,6 +85,7 @@ export async function createOrUpdatePharmacyItem(data: {
   organizationId?: string;
 }) {
   try {
+    pharmacyItemSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -84,7 +93,9 @@ export async function createOrUpdatePharmacyItem(data: {
     const nowISO = new Date().toISOString();
     const expiryISO = data.expiryDate ? new Date(data.expiryDate).toISOString() : null;
 
-    // Direct MongoDB raw command execution to support new fields seamlessly
+    // Ce formulaire ne porte que les métadonnées du produit : la quantité en
+    // stock n'est plus modifiable ici, elle évolue uniquement via un achat
+    // (recordStockPurchase), une vente, ou une clôture d'inventaire.
     let item: any;
     if (data.id) {
       await prisma.$runCommandRaw({
@@ -96,7 +107,6 @@ export async function createOrUpdatePharmacyItem(data: {
               name: data.name,
               dosage: data.dosage || null,
               category: data.category || "MEDICATION",
-              stockQuantity: Number(data.stockQuantity),
               reorderLevel: Number(data.reorderLevel),
               unitPrice: Number(data.unitPrice),
               batchNumber: data.batchNumber || null,
@@ -116,7 +126,7 @@ export async function createOrUpdatePharmacyItem(data: {
           name: data.name,
           dosage: data.dosage || null,
           category: data.category || "MEDICATION",
-          stockQuantity: Number(data.stockQuantity),
+          stockQuantity: 0,
           reorderLevel: Number(data.reorderLevel),
           unitPrice: Number(data.unitPrice),
           batchNumber: data.batchNumber || null,
@@ -137,7 +147,7 @@ export async function createOrUpdatePharmacyItem(data: {
 
     return { success: true, data: item };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de l'enregistrement de l'article." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de l'article.") };
   }
 }
 
@@ -148,6 +158,7 @@ export async function recordPharmacySale(data: {
   organizationId?: string;
 }) {
   try {
+    recordPharmacySaleSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -182,6 +193,10 @@ export async function recordPharmacySale(data: {
           where: { id: data.pharmacyItemId },
           data: { stockQuantity: { decrement: qty } }
         });
+
+        // Garde les lots d'achat (StockPurchase) synchronisés avec la vente,
+        // en consommant en FEFO, pour préserver une valorisation de stock exacte.
+        await consumeStockLots(tx, data.pharmacyItemId, qty);
 
         return await (tx as any).financialTransaction.create({
           data: {
@@ -231,7 +246,7 @@ export async function recordPharmacySale(data: {
 
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de l'enregistrement de la vente." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de la vente.") };
   }
 }
 
@@ -242,13 +257,11 @@ export async function recordSpecifiedIncome(data: {
   organizationId?: string;
 }) {
   try {
+    recordSpecifiedIncomeSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
     const amount = Number(data.amount);
-    if (amount <= 0) throw new Error("Le montant doit être supérieur à zéro.");
-    if (!data.description.trim()) throw new Error("Le motif/libellé est obligatoire.");
-
     const targetOrgId = data.organizationId || activeUser.organizationId;
     const nowISO = new Date().toISOString();
 
@@ -288,7 +301,7 @@ export async function recordSpecifiedIncome(data: {
 
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de l'enregistrement de l'encaissement." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de l'encaissement.") };
   }
 }
 
@@ -298,13 +311,11 @@ export async function recordExpense(data: {
   organizationId?: string;
 }) {
   try {
+    recordExpenseSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
     const amount = Number(data.amount);
-    if (amount <= 0) throw new Error("Le montant doit être supérieur à zéro.");
-    if (!data.description.trim()) throw new Error("Le motif du retrait/dépense est obligatoire.");
-
     const targetOrgId = data.organizationId || activeUser.organizationId;
     const nowISO = new Date().toISOString();
 
@@ -342,7 +353,7 @@ export async function recordExpense(data: {
 
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de l'enregistrement de la dépense." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de la dépense.") };
   }
 }
 
@@ -359,12 +370,9 @@ export async function recordMultiItemInvoice(data: {
   organizationId?: string;
 }) {
   try {
+    recordMultiItemInvoiceSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-
-    if (!data.items || data.items.length === 0) {
-      throw new Error("Le panier de facturation est vide.");
-    }
 
     const targetOrgId = data.organizationId || activeUser.organizationId;
     const nowISO = new Date().toISOString();
@@ -399,6 +407,8 @@ export async function recordMultiItemInvoice(data: {
             where: { id: item.pharmacyItemId },
             data: { stockQuantity: { decrement: item.quantity } }
           });
+          // Garde les lots d'achat synchronisés (FEFO) pour la valorisation de stock.
+          await consumeStockLots(prisma, item.pharmacyItemId, item.quantity);
         } else {
           await prisma.$runCommandRaw({
             update: "PharmacyItem",
@@ -466,7 +476,7 @@ export async function recordMultiItemInvoice(data: {
 
     return { success: true, data: transaction };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la validation du panier." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la validation du panier.") };
   }
 }
 

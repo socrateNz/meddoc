@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { toErrorMessage } from "@/lib/utils";
+import { updateProfileSchema, updateInitialPasswordSchema } from "@/validators/users";
 import { revalidatePath } from "next/cache";
 
 export async function updateProfile(data: {
@@ -10,6 +12,7 @@ export async function updateProfile(data: {
   phone?: string;
 }) {
   try {
+    updateProfileSchema.parse(data);
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       throw new Error("Non authentifié.");
@@ -28,12 +31,13 @@ export async function updateProfile(data: {
     return { success: true, data: updatedUser };
   } catch (error: any) {
     console.error("Error updating profile:", error);
-    return { success: false, error: error.message || "Erreur lors de la mise à jour du profil" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la mise à jour du profil") };
   }
 }
 
 export async function updateInitialPassword(newPassword: string) {
   try {
+    updateInitialPasswordSchema.parse(newPassword);
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       throw new Error("Non authentifié.");
@@ -53,6 +57,6 @@ export async function updateInitialPassword(newPassword: string) {
     return { success: true };
   } catch (error: any) {
     console.error("Error updating initial password:", error);
-    return { success: false, error: error.message || "Erreur lors de la mise à jour du mot de passe" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la mise à jour du mot de passe") };
   }
 }

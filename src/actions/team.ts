@@ -3,6 +3,12 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
+import { toErrorMessage } from "@/lib/utils";
+import {
+  toggleAvailabilitySchema,
+  createTeamMemberSchema,
+  reassignTeamMemberSchema,
+} from "@/validators/team";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
@@ -59,6 +65,7 @@ export async function getTeamMembers() {
 
 export async function toggleAvailability(userId: string, isAvailable: boolean) {
   try {
+    toggleAvailabilitySchema.parse({ userId, isAvailable });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -80,12 +87,13 @@ export async function toggleAvailability(userId: string, isAvailable: boolean) {
 
     return { success: true, data: updated };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la mise à jour." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la mise à jour.") };
   }
 }
 
 export async function createTeamMember(data: any) {
   try {
+    createTeamMemberSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser || activeUser.role !== "ADMIN") {
       throw new Error("Non autorisé. Seul un administrateur peut ajouter du personnel.");
@@ -150,7 +158,7 @@ export async function createTeamMember(data: any) {
     return { success: true, data: newUser };
   } catch (error: any) {
     console.error("Error creating team member:", error);
-    return { success: false, error: error.message || "Erreur lors de la création du membre." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la création du membre.") };
   }
 }
 
@@ -250,6 +258,7 @@ export async function getClinicTeam(clinicId: string) {
 
 export async function reassignTeamMember(userId: string, newOrganizationId: string) {
   try {
+    reassignTeamMemberSchema.parse({ userId, newOrganizationId });
     const activeUser = await getCurrentUser();
     if (!activeUser || activeUser.role !== "ADMIN" || activeUser.organization?.type !== "HOLDING") {
       throw new Error("Non autorisé. Seul un administrateur de Holding peut réaffecter le personnel.");
@@ -283,7 +292,7 @@ export async function reassignTeamMember(userId: string, newOrganizationId: stri
 
     return { success: true, data: updatedUser };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la réaffectation." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la réaffectation.") };
   }
 }
 

@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { toErrorMessage } from "@/lib/utils";
+import { sendMessageSchema, createConversationSchema } from "@/validators/messages";
 import { revalidatePath } from "next/cache";
 
 export async function sendMessage(data: {
@@ -9,6 +11,7 @@ export async function sendMessage(data: {
   content: string;
 }) {
   try {
+    sendMessageSchema.parse(data);
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       throw new Error("Non authentifié.");
@@ -26,12 +29,13 @@ export async function sendMessage(data: {
     return { success: true, data: message };
   } catch (error: any) {
     console.error("Error sending message:", error);
-    return { success: false, error: error.message || "Erreur lors de l'envoi du message" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'envoi du message") };
   }
 }
 
 export async function createConversation(targetUserId: string) {
   try {
+    createConversationSchema.parse({ targetUserId });
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       throw new Error("Non authentifié.");
@@ -66,6 +70,6 @@ export async function createConversation(targetUserId: string) {
     return { success: true, data: conversation };
   } catch (error: any) {
     console.error("Error creating conversation:", error);
-    return { success: false, error: error.message || "Erreur de création de la conversation" };
+    return { success: false, error: toErrorMessage(error, "Erreur de création de la conversation") };
   }
 }

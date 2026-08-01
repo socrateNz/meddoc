@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { toErrorMessage } from "@/lib/utils";
+import { createClinicSchema, updateClinicSchema } from "@/validators/organizations";
 import { revalidatePath } from "next/cache";
 
 export async function getClinics() {
@@ -39,6 +41,7 @@ export async function getClinics() {
 
 export async function createClinic(data: { name: string }) {
   try {
+    createClinicSchema.parse(data);
     const user = await getCurrentUser();
     if (!user || user.role !== "ADMIN" || user.organization?.type !== "HOLDING") {
       throw new Error("Unauthorized");
@@ -46,10 +49,6 @@ export async function createClinic(data: { name: string }) {
 
     if (!user.organizationId) {
       throw new Error("User does not belong to a holding");
-    }
-
-    if (!data.name || data.name.trim() === "") {
-      throw new Error("Clinic name is required");
     }
 
     const clinic = await prisma.organization.create({
@@ -64,19 +63,16 @@ export async function createClinic(data: { name: string }) {
     return { clinic, error: null };
   } catch (error: any) {
     console.error("Error creating clinic:", error);
-    return { clinic: null, error: error.message || "Failed to create clinic" };
+    return { clinic: null, error: toErrorMessage(error, "Failed to create clinic") };
   }
 }
 
 export async function updateClinic(id: string, data: { name: string }) {
   try {
+    updateClinicSchema.parse({ id, name: data.name });
     const user = await getCurrentUser();
     if (!user || user.role !== "ADMIN" || user.organization?.type !== "HOLDING") {
       throw new Error("Unauthorized");
-    }
-
-    if (!data.name || data.name.trim() === "") {
-      throw new Error("Clinic name is required");
     }
 
     // Verify ownership
@@ -98,7 +94,7 @@ export async function updateClinic(id: string, data: { name: string }) {
     return { clinic, error: null };
   } catch (error: any) {
     console.error("Error updating clinic:", error);
-    return { clinic: null, error: error.message || "Failed to update clinic" };
+    return { clinic: null, error: toErrorMessage(error, "Failed to update clinic") };
   }
 }
 

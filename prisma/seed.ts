@@ -6,7 +6,7 @@ async function main() {
   const hashedPassword = await bcrypt.hash('password123', 10);
 
   // 1. Seed Permissions
-  const permissionsList = [
+  const permissionsList: { name: string; description: string; roles?: Role[] }[] = [
     { name: 'ACCESS_ALL', description: 'Accès complet au système' },
     { name: 'MANAGE_PATIENTS', description: 'Créer, modifier et supprimer des patients' },
     { name: 'MANAGE_CAREGIVERS', description: 'Gérer les soignants et affectations' },
@@ -15,16 +15,21 @@ async function main() {
     { name: 'RESOLVE_INCIDENTS', description: 'Traiter et résoudre des incidents' },
     { name: 'RUN_AI_ANALYSIS', description: 'Lancer des analyses cliniques IA' },
     { name: 'VIEW_REPORTS', description: 'Visualiser les rapports et statistiques' },
+    { name: 'MANAGE_STOCK', description: "Enregistrer des achats de pharmacie et réaliser l'inventaire" },
+    { name: 'MANAGE_CONTRACTS', description: 'Créer et gérer les contrats des aidants' },
+    { name: 'VIEW_AUDIT_LOG', description: "Consulter le journal d'audit", roles: [Role.ADMIN] },
+    { name: 'MANAGE_PERMISSIONS', description: 'Modifier les permissions par rôle', roles: [Role.ADMIN] },
   ];
 
   for (const perm of permissionsList) {
+    const roles = perm.roles || [Role.ADMIN, Role.COORDINATOR];
     await prisma.permission.upsert({
       where: { name: perm.name },
       update: { description: perm.description },
       create: {
         name: perm.name,
         description: perm.description,
-        roles: [Role.ADMIN, Role.COORDINATOR],
+        roles,
       },
     });
   }

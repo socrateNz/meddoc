@@ -2,6 +2,8 @@
 
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { toErrorMessage } from "@/lib/utils";
+import { createHoldingSchema, updateHoldingSubscriptionSchema } from "@/validators/super-admin";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcrypt";
 import { Role, SubscriptionPlan, SubscriptionStatus } from "@prisma/client";
@@ -74,13 +76,10 @@ export async function createHolding(data: {
   licenseExpiresAt?: Date | null;
 }) {
   try {
+    createHoldingSchema.parse(data);
     const user = await getCurrentUser();
     if (!user || user.role !== "SUPER_ADMIN") {
       throw new Error("Unauthorized");
-    }
-
-    if (!data.name || !data.adminEmail || !data.adminFirstName || !data.adminLastName) {
-      throw new Error("All fields are required");
     }
 
     const existingUser = await prisma.user.findUnique({
@@ -126,12 +125,13 @@ export async function createHolding(data: {
     return { holding, error: null };
   } catch (error: any) {
     console.error("Error creating holding:", error);
-    return { holding: null, error: error.message || "Failed to create holding" };
+    return { holding: null, error: toErrorMessage(error, "Failed to create holding") };
   }
 }
 
 export async function updateHoldingSubscription(holdingId: string, data: { plan: SubscriptionPlan, status: SubscriptionStatus, licenseExpiresAt?: Date | null }) {
   try {
+    updateHoldingSubscriptionSchema.parse({ holdingId, ...data });
     const user = await getCurrentUser();
     if (!user || user.role !== "SUPER_ADMIN") {
       throw new Error("Unauthorized");
@@ -149,6 +149,6 @@ export async function updateHoldingSubscription(holdingId: string, data: { plan:
     revalidatePath("/dashboard/holdings");
     return { holding, error: null };
   } catch (error: any) {
-    return { holding: null, error: error.message || "Failed to update holding" };
+    return { holding: null, error: toErrorMessage(error, "Failed to update holding") };
   }
 }

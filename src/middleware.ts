@@ -1,16 +1,38 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify, SignJWT } from 'jose';
+import { appendSecurityHeaders } from '@/middlewares/securityHeaders';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'super_secret_jwt_key_for_dev_only'
-);
-const REFRESH_SECRET = new TextEncoder().encode(
-  process.env.JWT_REFRESH_SECRET || 'super_secret_refresh_key_for_dev_only'
-);
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Variable d'environnement manquante : ${name}. Voir .env.example.`);
+  }
+  return value;
+}
+
+const JWT_SECRET = new TextEncoder().encode(requireEnv('JWT_SECRET'));
+const REFRESH_SECRET = new TextEncoder().encode(requireEnv('JWT_REFRESH_SECRET'));
 
 // Routes publiques qui ne nécessitent pas d'authentification
-const publicPaths = ['/', '/api/auth/login', '/login'];
+const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password'];
+
+// RBAC par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...)
+const restrictedSections: Record<string, string[]> = {
+  patients: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+  team: ['ADMIN', 'COORDINATOR'],
+  incidents: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+  'ai-assistant': ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+  finance: ['ADMIN', 'COORDINATOR'],
+  contracts: ['ADMIN', 'COORDINATOR'],
+  permissions: ['ADMIN'],
+  'audit-log': ['ADMIN'],
+};
+
+function withSecurityHeaders(response: NextResponse): NextResponse {
+  appendSecurityHeaders(response.headers);
+  return response;
+}
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -25,8 +47,8 @@ export async function middleware(request: NextRequest) {
   }
 
   // Si c'est une route publique
-  if (publicPaths.includes(pathname)) {
-    return NextResponse.next();
+  if (publicPaths.includes(pathname) || pathname.startsWith('/reset-password')) {
+    return withSecurityHeaders(NextResponse.next());
   }
 
   let token = request.cookies.get('token')?.value;
@@ -58,31 +80,24 @@ export async function middleware(request: NextRequest) {
 
   // Si pas de token et qu'on essaie d'accéder au dashboard -> redirection vers login
   if (!token && !pathname.startsWith('/api')) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return withSecurityHeaders(NextResponse.redirect(new URL('/login', request.url)));
   }
 
   // Si pas de token et qu'on essaie d'accéder à une API protégée -> erreur 401
   if (!token && pathname.startsWith('/api')) {
-    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    return withSecurityHeaders(NextResponse.json({ error: 'Non autorisé' }, { status: 401 }));
   }
 
   try {
     const { payload } = await jwtVerify(token!, JWT_SECRET);
     const role = payload.role as string;
-    
-    // RBAC: Filtrage des pages en fonction du rôle
-    const restrictedRoutes = [
-      { path: '/dashboard/patients', roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'] },
-      { path: '/dashboard/team', roles: ['ADMIN', 'COORDINATOR'] },
-      { path: '/dashboard/incidents', roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'] },
-      { path: '/dashboard/ai-assistant', roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'] },
-      { path: '/dashboard/finance', roles: ['ADMIN', 'COORDINATOR'] },
-    ];
 
-    for (const route of restrictedRoutes) {
-      if (pathname.startsWith(route.path) && !route.roles.includes(role)) {
-        return NextResponse.redirect(new URL('/dashboard', request.url));
-      }
+    // RBAC: Filtrage des pages en fonction du rôle, quel que soit le préfixe
+    // (/dashboard/<section> pour une holding, /dashboard/clinics/<id>/<section> pour une clinique)
+    const sectionMatch = pathname.match(/^\/dashboard\/(?:clinics\/[^/]+\/)?([^/]+)/);
+    const section = sectionMatch?.[1];
+    if (section && restrictedSections[section] && !restrictedSections[section].includes(role)) {
+      return withSecurityHeaders(NextResponse.redirect(new URL('/dashboard', request.url)));
     }
 
     const requestHeaders = new Headers(request.headers);
@@ -114,12 +129,12 @@ export async function middleware(request: NextRequest) {
       });
     }
 
-    return response;
+    return withSecurityHeaders(response);
   } catch (error) {
     if (pathname.startsWith('/api')) {
-      return NextResponse.json({ error: 'Token invalide' }, { status: 401 });
+      return withSecurityHeaders(NextResponse.json({ error: 'Token invalide' }, { status: 401 }));
     }
-    return NextResponse.redirect(new URL('/login', request.url));
+    return withSecurityHeaders(NextResponse.redirect(new URL('/login', request.url)));
   }
 }
 

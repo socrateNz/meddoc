@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   title: "MedDoc - Gestion Médicale & Coordination de Soins",
   description: "Plateforme SaaS de suivi de dossier patient informatisé et gestion des soins de santé",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

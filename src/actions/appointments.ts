@@ -3,6 +3,8 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
+import { toErrorMessage } from "@/lib/utils";
+import { createAppointmentSchema, completeConsultationSchema } from "@/validators/appointments";
 import { revalidatePath } from "next/cache";
 
 export async function createAppointment(data: {
@@ -15,6 +17,7 @@ export async function createAppointment(data: {
   status?: string;
 }) {
   try {
+    createAppointmentSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
@@ -65,7 +68,7 @@ export async function createAppointment(data: {
     return { success: true, data: appointment };
   } catch (error: any) {
     console.error("Error creating appointment:", error);
-    return { success: false, error: error.message || "Erreur lors de la planification du rendez-vous" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la planification du rendez-vous") };
   }
 }
 
@@ -78,6 +81,7 @@ export async function completeConsultation(data: {
   medications?: { name: string; dosage: string; frequency: string; instructions: string }[];
 }) {
   try {
+    completeConsultationSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");
@@ -171,6 +175,6 @@ export async function completeConsultation(data: {
     return { success: true, data: result };
   } catch (error: any) {
     console.error("Error completing consultation:", error);
-    return { success: false, error: error.message || "Erreur lors de la clôture de la consultation" };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la clôture de la consultation") };
   }
 }

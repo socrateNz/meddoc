@@ -20,7 +20,10 @@ import {
   Building2,
   Server,
   Wallet,
-  BookOpen
+  BookOpen,
+  ScrollText,
+  FileSignature,
+  ShieldCheck
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -172,6 +175,24 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [] }: Sid
       href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/manual` : "/dashboard/manual",
       icon: BookOpen,
       roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'CAREGIVER', 'FAMILY', 'PATIENT'],
+    },
+    {
+      name: "Journal d'audit",
+      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/audit-log` : "/dashboard/audit-log",
+      icon: ScrollText,
+      roles: ['ADMIN'],
+    },
+    {
+      name: "Contrats aidants",
+      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/contracts` : "/dashboard/contracts",
+      icon: FileSignature,
+      roles: ['ADMIN', 'COORDINATOR'],
+    },
+    {
+      name: "Permissions",
+      href: "/dashboard/permissions",
+      icon: ShieldCheck,
+      roles: ['ADMIN'],
     },
     {
       name: "Toutes les Holdings",

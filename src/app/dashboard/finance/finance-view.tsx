@@ -26,10 +26,13 @@ import {
   User as UserIcon,
   Package,
   ShoppingCart,
-  Trash2
+  Trash2,
+  ClipboardList
 } from "lucide-react";
 import { recordPharmacySale, recordSpecifiedIncome, recordExpense, recordMultiItemInvoice } from "@/actions/finance";
 import PharmacyDialog from "./pharmacy-dialog";
+import StockPurchaseDialog from "./stock-purchase-dialog";
+import InventoryPanel from "./inventory-panel";
 import InvoiceModal from "./invoice-modal";
 
 interface FinanceViewProps {
@@ -503,10 +506,17 @@ export default function FinanceView({ summary, patients, organizationId, organiz
               <Package className="h-4 w-4 text-indigo-500" />
               Stock Pharmacie ({summary.pharmacyItems.length})
             </TabsTrigger>
+            <TabsTrigger value="inventaire" className="rounded-lg text-xs font-semibold gap-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+              <ClipboardList className="h-4 w-4 text-rose-500" />
+              Inventaire
+            </TabsTrigger>
           </TabsList>
 
           {activeTab === "pharmacie" && (
-            <PharmacyDialog organizationId={organizationId} />
+            <div className="flex gap-2">
+              <StockPurchaseDialog pharmacyItems={summary.pharmacyItems} organizationId={organizationId} />
+              <PharmacyDialog organizationId={organizationId} />
+            </div>
           )}
         </div>
 
@@ -1042,6 +1052,11 @@ export default function FinanceView({ summary, patients, organizationId, organiz
               </TableBody>
             </Table>
           </div>
+        </TabsContent>
+
+        {/* TAB 4: Inventaire (comptage physique vs stock système) */}
+        <TabsContent value="inventaire" className="pt-6 space-y-4">
+          <InventoryPanel organizationId={organizationId} />
         </TabsContent>
       </Tabs>
 

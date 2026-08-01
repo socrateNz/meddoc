@@ -4,11 +4,13 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export async function generateAIAnalysis(patientId: string) {
   try {
+    z.string().min(1, "Patient requis").parse(patientId);
     const activeUser = await getCurrentUser();
     if (!activeUser) {
       throw new Error("Non authentifié.");

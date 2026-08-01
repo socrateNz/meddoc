@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { IncidentService } from "@/services/IncidentService";
+import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 import { z } from "zod";
 import { Priority } from "@prisma/client";
 
@@ -12,8 +13,11 @@ const createIncidentSchema = z.object({
 
 export async function GET(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 60, 60000);
+    if (limited) return limited;
+
     const role = req.headers.get("x-user-role");
-    
+
     // Seulement Admin, Coordinateur et Soignant
     if (role === "PATIENT" || role === "FAMILY") {
       return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
@@ -28,6 +32,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 20, 60000);
+    if (limited) return limited;
+
     const userId = req.headers.get("x-user-id");
     const role = req.headers.get("x-user-role");
     

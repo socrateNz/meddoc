@@ -24,3 +24,19 @@ export function rateLimit(ip: string, limit = 60, windowMs = 60000) {
 
   return { success: true, count: cache.count };
 }
+
+/**
+ * Convenience helper for API routes: returns a ready-to-return 429 response
+ * when the IP is over the limit, or null when the request can proceed.
+ */
+export function rateLimitOrResponse(req: Request, limit = 60, windowMs = 60000) {
+  const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
+  const result = rateLimit(ip, limit, windowMs);
+  if (!result.success) {
+    return NextResponse.json(
+      { error: "Trop de requêtes. Veuillez réessayer plus tard." },
+      { status: 429 }
+    );
+  }
+  return null;
+}

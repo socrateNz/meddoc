@@ -3,6 +3,14 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
+import { toErrorMessage } from "@/lib/utils";
+import {
+  createCarePlanSchema,
+  createCareTaskSchema,
+  toggleTaskStatusSchema,
+  closeCarePlanSchema,
+  reopenCarePlanSchema,
+} from "@/validators/careplans";
 import { revalidatePath } from "next/cache";
 
 export async function createCarePlan(data: {
@@ -12,6 +20,7 @@ export async function createCarePlan(data: {
   endDate?: string;
 }) {
   try {
+    createCarePlanSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -40,7 +49,7 @@ export async function createCarePlan(data: {
     revalidatePath(`/dashboard/patients/${data.patientId}`);
     return { success: true, data: carePlan };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la création du plan." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la création du plan.") };
   }
 }
 
@@ -52,6 +61,7 @@ export async function createCareTask(data: {
   scheduledFor: string;
 }) {
   try {
+    createCareTaskSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -72,12 +82,13 @@ export async function createCareTask(data: {
     revalidatePath(`/dashboard/patients/${data.patientId}`);
     return { success: true, data: task };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de l'ajout de la tâche." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'ajout de la tâche.") };
   }
 }
 
 export async function toggleTaskStatus(taskId: string, patientId: string, isCompleted: boolean) {
   try {
+    toggleTaskStatusSchema.parse({ taskId, patientId, isCompleted });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -96,7 +107,7 @@ export async function toggleTaskStatus(taskId: string, patientId: string, isComp
     revalidatePath(`/dashboard/patients/${patientId}`);
     return { success: true, data: task };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la mise à jour." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la mise à jour.") };
   }
 }
 
@@ -106,6 +117,7 @@ export async function closeCarePlan(
   dischargeSummary: string
 ) {
   try {
+    closeCarePlanSchema.parse({ carePlanId, patientId, dischargeSummary });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -151,12 +163,13 @@ export async function closeCarePlan(
 
     return { success: true, data: updatedPlan };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la clôture des soins." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la clôture des soins.") };
   }
 }
 
 export async function reopenCarePlan(patientId: string, title?: string) {
   try {
+    reopenCarePlanSchema.parse({ patientId, title });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -200,6 +213,6 @@ export async function reopenCarePlan(patientId: string, title?: string) {
 
     return { success: true, data: newCarePlan };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la réouverture du dossier." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la réouverture du dossier.") };
   }
 }

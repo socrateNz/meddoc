@@ -57,6 +57,8 @@ enum TransactionCategory {
   PHARMACY_SALE
   SERVICE_FEE
   OPERATIONAL_EXPENSE
+  PHARMACY_PURCHASE
+  STOCK_ADJUSTMENT
   OTHER
 }
 
@@ -73,7 +75,9 @@ model Organization {
   wards     Ward[]
   pharmacyItems PharmacyItem[]
   financialTransactions FinancialTransaction[]
-  
+  stockPurchases StockPurchase[]
+  inventoryCounts InventoryCount[]
+
   plan                SubscriptionPlan @default(TRIAL)
   subscriptionStatus  SubscriptionStatus @default(TRIALING)
   licenseExpiresAt    DateTime?
@@ -111,6 +115,9 @@ model User {
   aiConversations     AIConversation[]
   vitalsRecorded      VitalSign[]         @relation("RecordedVitals")
   financialTransactions FinancialTransaction[] @relation("RecordedTransactions")
+  passwordResetTokens PasswordResetToken[]
+  stockPurchasesRecorded StockPurchase[]
+  inventoryCountsStarted InventoryCount[]
 
   organizationId      String?   @db.ObjectId
   organization        Organization? @relation(fields: [organizationId], references: [id])
@@ -423,9 +430,104 @@ model PharmacyItem {
   organization   Organization? @relation(fields: [organizationId], references: [id])
 
   transactions   FinancialTransaction[]
+  stockPurchases StockPurchase[]
+  stockAdjustments StockAdjustment[]
+  inventoryLines InventoryCountLine[]
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+// Un lot d'achat pour un produit de pharmacie. Chaque achat garde son propre
+// prix (traçabilité par lot) : remainingQuantity est décrémenté en FEFO par
+// les ventes et les ajustements d'inventaire, ce qui permet de valoriser le
+// stock restant aux prix réellement payés plutôt qu'à un prix moyen unique.
+model StockPurchase {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  pharmacyItemId    String   @db.ObjectId
+  pharmacyItem      PharmacyItem @relation(fields: [pharmacyItemId], references: [id])
+
+  quantity          Int
+  remainingQuantity Int
+  purchasePrice     Float    // Prix d'achat unitaire de ce lot précis (FCFA)
+  totalCost         Float
+
+  supplier          String?
+  batchNumber       String?
+  expiryDate        DateTime?
+  invoiceRef        String?
+
+  purchasedById     String   @db.ObjectId
+  purchasedBy       User     @relation(fields: [purchasedById], references: [id])
+  organizationId    String?  @db.ObjectId
+  organization      Organization? @relation(fields: [organizationId], references: [id])
+
+  createdAt         DateTime @default(now())
+}
+
+// Correction de stock issue d'un inventaire (ou d'un ajustement manuel).
+// quantityDelta négatif = perte, positif = surplus retrouvé.
+model StockAdjustment {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  pharmacyItemId       String   @db.ObjectId
+  pharmacyItem         PharmacyItem @relation(fields: [pharmacyItemId], references: [id])
+  inventoryCountLineId String?  @db.ObjectId
+
+  quantityDelta        Int
+  valuationAmount      Float?
+  reason               String   @default("INVENTORY") // INVENTORY, MANUAL
+
+  createdById          String   @db.ObjectId
+  createdAt            DateTime @default(now())
+}
+
+model InventoryCount {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String   @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  status         String   @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+
+  startedById    String   @db.ObjectId
+  startedBy      User     @relation(fields: [startedById], references: [id])
+  completedAt    DateTime?
+  notes          String?
+
+  lines          InventoryCountLine[]
+  createdAt      DateTime @default(now())
+}
+
+model InventoryCountLine {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  inventoryCountId String   @db.ObjectId
+  inventoryCount   InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
+  pharmacyItemId   String   @db.ObjectId
+  pharmacyItem     PharmacyItem @relation(fields: [pharmacyItemId], references: [id])
+
+  systemQuantity   Int
+  countedQuantity  Int?
+  unitCost         Float?
+
+  createdAt        DateTime @default(now())
+}
+
+model ContactMessage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String
+  subject   String
+  message   String
+  status    String   @default("NEW") // NEW, READ, ARCHIVED
+  createdAt DateTime @default(now())
+}
+
+model PasswordResetToken {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
 }
 
 model FinancialTransaction {

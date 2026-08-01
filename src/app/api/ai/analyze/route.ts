@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { AiService } from "@/services/AiService";
+import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimitOrResponse(req, 20, 60000);
+    if (limited) return limited;
+
     const role = req.headers.get("x-user-role");
-    
+
     // Seulement Admin, Coordinateur et Soignant (selon permissions)
     if (role === "PATIENT" || role === "FAMILY") {
       return NextResponse.json({ error: "Accès IA non autorisé" }, { status: 403 });
