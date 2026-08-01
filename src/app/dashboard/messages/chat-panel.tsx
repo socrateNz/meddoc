@@ -63,11 +63,18 @@ export default function ChatPanel({
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom whenever active conversation or messages list changes
+  // Scroll to bottom whenever active conversation or messages list changes.
+  // Deliberately sets scrollTop on the message list itself rather than using
+  // scrollIntoView, which can bubble up and scroll ancestor containers (the
+  // whole dashboard content pane) instead of just this panel, leaving blank
+  // space below it — same safe pattern as chat-interface.tsx (assistant IA).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesContainerRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [activeConversationId, initialMessages]);
 
   const handleStartConversation = async (e: React.FormEvent) => {
@@ -255,7 +262,7 @@ export default function ChatPanel({
             </div>
 
             {/* Chat Messages list */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-muted/5">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-muted/5">
               {initialMessages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm">
                   <Info className="h-6 w-6 text-muted-foreground/50 mb-2" />
@@ -294,7 +301,6 @@ export default function ChatPanel({
                   );
                 })
               )}
-              <div ref={messagesEndRef} />
             </div>
 
             {/* Chat input box */}

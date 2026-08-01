@@ -27,8 +27,22 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
   const priorityFilter = params.priority;
   const statusFilter = params.status;
 
+  // Filtrage par organisation : une holding voit ses cliniques, une clinique
+  // ne voit que ses propres données (cf. src/app/dashboard/page.tsx:82-91).
+  const orgFilter: any = {};
+  if (currentUser.organization?.type === "HOLDING") {
+    orgFilter.OR = [
+      { organizationId: currentUser.organizationId },
+      { organization: { parentId: currentUser.organizationId } }
+    ];
+  } else if (currentUser.organization?.type === "CLINIC") {
+    orgFilter.organizationId = currentUser.organizationId;
+  } else {
+    orgFilter.organizationId = "NO_ACCESS";
+  }
+
   // Build filter query
-  const where: any = {};
+  const where: any = { patient: orgFilter };
   if (priorityFilter && ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(priorityFilter)) {
     where.priority = priorityFilter as Priority;
   }
@@ -49,6 +63,7 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
   });
 
   const patients = await prisma.patient.findMany({
+    where: orgFilter,
     include: { user: true },
     orderBy: {
       user: {

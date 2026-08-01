@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ClipboardList, PlayCircle, Save, CheckCircle2, Loader2, AlertTriangle, History } from "lucide-react";
 import {
   startInventoryCount,
@@ -33,9 +34,26 @@ export default function InventoryPanel({ organizationId }: InventoryPanelProps) 
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [lastClosure, setLastClosure] = useState<{ totalLossValue: number } | null>(null);
+
+  const closureSummary = () => {
+    let conforming = 0, negative = 0, positive = 0, lossValue = 0;
+    (count?.lines || []).forEach((line: any) => {
+      const counted = Number(countedValues[line.id] ?? line.systemQuantity);
+      const variance = counted - line.systemQuantity;
+      if (variance === 0) conforming++;
+      else if (variance < 0) {
+        negative++;
+        if (line.unitCost) lossValue += Math.abs(variance) * line.unitCost;
+      } else {
+        positive++;
+      }
+    });
+    return { conforming, negative, positive, lossValue };
+  };
 
   const loadAll = async () => {
     if (!organizationId) {
@@ -119,13 +137,7 @@ export default function InventoryPanel({ organizationId }: InventoryPanelProps) 
 
   const handleComplete = async () => {
     if (!count) return;
-    if (
-      !window.confirm(
-        "Clôturer l'inventaire ? Le stock système sera ajusté sur les quantités comptées. Les écarts négatifs généreront automatiquement une dépense."
-      )
-    ) {
-      return;
-    }
+    setConfirmOpen(false);
     setCompleting(true);
     setMsg(null);
     try {
@@ -207,7 +219,7 @@ export default function InventoryPanel({ organizationId }: InventoryPanelProps) 
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 Enregistrer le comptage
               </Button>
-              <Button onClick={handleComplete} disabled={completing} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+              <Button onClick={() => setConfirmOpen(true)} disabled={completing} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
                 {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 Clôturer l'inventaire
               </Button>
@@ -275,6 +287,64 @@ export default function InventoryPanel({ organizationId }: InventoryPanelProps) 
           </div>
         </div>
       )}
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="sm:max-w-[440px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+              <AlertTriangle className="h-5 w-5" />
+              Clôturer l'inventaire ?
+            </DialogTitle>
+            <DialogDescription>
+              Cette action est définitive : le stock système sera ajusté sur les quantités comptées et ce comptage ne
+              pourra plus être modifié.
+            </DialogDescription>
+          </DialogHeader>
+
+          {(() => {
+            const s = closureSummary();
+            return (
+              <>
+                <div className="space-y-2 text-sm rounded-xl border border-slate-200/60 dark:border-slate-800/60 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Produits comptés</span>
+                    <span className="font-semibold">{count?.lines.length ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Conformes</span>
+                    <span className="font-semibold text-emerald-600">{s.conforming}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Écarts négatifs (manquants)</span>
+                    <span className="font-semibold text-rose-600">{s.negative}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Écarts positifs (surplus)</span>
+                    <span className="font-semibold text-amber-600">{s.positive}</span>
+                  </div>
+                </div>
+
+                {s.lossValue > 0 && (
+                  <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5">
+                    Une dépense de <span className="font-bold">{formatFCFA(s.lossValue)}</span> sera automatiquement
+                    enregistrée dans le journal de caisse pour couvrir les écarts constatés.
+                  </p>
+                )}
+              </>
+            );
+          })()}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={completing} className="rounded-xl">
+              Annuler
+            </Button>
+            <Button onClick={handleComplete} disabled={completing} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+              {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Confirmer la clôture
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {history.length > 0 && (
         <div className="pt-2">

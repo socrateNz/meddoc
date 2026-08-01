@@ -13,7 +13,7 @@ import * as z from "zod";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createHolding } from "@/actions/super-admin";
-import { SubscriptionPlan } from "@prisma/client";
+import { SubscriptionPlan, PaymentFrequency } from "@prisma/client";
 
 const formSchema = z.object({
   name: z.string().min(2, "Le nom doit contenir au moins 2 caractères"),
@@ -23,6 +23,8 @@ const formSchema = z.object({
   adminEmail: z.string().email("Email invalide"),
   isUnlimited: z.boolean(),
   licenseExpiresAt: z.string().optional(),
+  paymentAmount: z.string().optional(),
+  paymentFrequency: z.nativeEnum(PaymentFrequency).optional(),
 });
 
 export default function NewHoldingDialog() {
@@ -35,26 +37,33 @@ export default function NewHoldingDialog() {
       plan: "TRIAL",
       isUnlimited: true,
       licenseExpiresAt: "",
+      paymentAmount: "",
+      paymentFrequency: "MONTHLY",
     },
   });
 
   const isUnlimited = watch("isUnlimited");
   const selectedPlan = watch("plan");
+  const selectedFrequency = watch("paymentFrequency");
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setLoading(true);
-    
+
     // Convert the string date to a Date object or null
     let licenseExpiresAt: Date | null = null;
     if (!data.isUnlimited && data.licenseExpiresAt) {
       licenseExpiresAt = new Date(data.licenseExpiresAt);
     }
-    
+
+    const paymentAmount = data.paymentAmount ? Number(data.paymentAmount) : null;
+
     const response = await createHolding({
       ...data,
       licenseExpiresAt,
+      paymentAmount,
+      paymentFrequency: paymentAmount !== null ? (data.paymentFrequency || "MONTHLY") : null,
     });
-    
+
     if (response.error) {
       toast.error(response.error);
     } else {
@@ -130,6 +139,29 @@ export default function NewHoldingDialog() {
                     </div>
                   )}
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="paymentAmount">Montant du forfait (FCFA)</Label>
+                <Input
+                  id="paymentAmount"
+                  type="number"
+                  min="0"
+                  {...register("paymentAmount")}
+                  placeholder="ex: 150000"
+                />
+                {errors.paymentAmount && <p className="text-[10px] text-red-500">{errors.paymentAmount.message}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label>Fréquence de facturation</Label>
+                <Select onValueChange={(val: any) => setValue("paymentFrequency", val)} value={selectedFrequency}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sélectionnez une fréquence" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MONTHLY">Mensuelle</SelectItem>
+                    <SelectItem value="YEARLY">Annuelle</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>

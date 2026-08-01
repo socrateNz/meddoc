@@ -48,6 +48,11 @@ enum SubscriptionStatus {
   TRIALING
 }
 
+enum PaymentFrequency {
+  MONTHLY
+  YEARLY
+}
+
 enum TransactionType {
   INCOME
   EXPENSE
@@ -84,6 +89,9 @@ model Organization {
   stripeCustomerId    String?
   maxClinics          Int @default(1)
   maxUsers            Int @default(10)
+
+  paymentAmount       Float?              // Tarif actuel (FCFA), éditable à tout moment
+  paymentFrequency    PaymentFrequency?
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -100,6 +108,9 @@ model User {
   avatarUrl     String?
   isActive               Boolean   @default(true)
   requiresPasswordChange Boolean   @default(false)
+  // Types de Notification (ex: "INCIDENT", "APPOINTMENT") que l'utilisateur a
+  // désactivés depuis Paramètres > Notifications. Vide = tout est affiché.
+  mutedNotificationTypes String[]  @default([])
   createdAt              DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

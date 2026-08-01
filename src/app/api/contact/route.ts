@@ -14,13 +14,13 @@ const contactSchema = z.object({
 export async function POST(req: Request) {
   const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
   try {
-    const limitCheck = rateLimit(ip, 10, 60000); // 10 soumissions par minute max
+    const limitCheck = await rateLimit(ip, 10, 60000); // 10 soumissions par minute max
     if (!limitCheck.success) {
       // Create a warning notification for coordinators/admins about rate limit hit on contact form
       try {
         const staff = await prisma.user.findMany({
           where: {
-            role: { in: [Role.COORDINATOR, Role.ADMIN] },
+            role: Role.SUPER_ADMIN,
             isActive: true
           }
         });
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     try {
       const staff = await prisma.user.findMany({
         where: {
-          role: { in: [Role.COORDINATOR, Role.ADMIN] },
+          role: Role.SUPER_ADMIN,
           isActive: true
         }
       });

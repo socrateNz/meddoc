@@ -57,6 +57,7 @@ export async function getCurrentUser() {
         phone: true,
         avatarUrl: true,
         requiresPasswordChange: true,
+        mutedNotificationTypes: true,
         organizationId: true,
         organization: {
           select: { 

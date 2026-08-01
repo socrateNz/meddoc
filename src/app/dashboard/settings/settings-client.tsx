@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useTheme } from "next-themes";
 import {
   User,
   Bell,
@@ -15,13 +16,8 @@ import {
   Eye,
   EyeOff,
   CheckCircle2,
-  Smartphone,
-  Mail,
-  MessageSquare,
   AlertCircle,
   Calendar,
-  Activity,
-  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,10 +25,10 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { updateProfile } from "@/actions/users";
+import { updateProfile, changePassword, updateNotificationPreferences } from "@/actions/users";
 import { toast } from "sonner";
 
-interface User {
+interface SettingsUser {
   id: string;
   email: string;
   firstName: string;
@@ -40,6 +36,7 @@ interface User {
   role: string;
   phone: string | null;
   avatarUrl: string | null;
+  mutedNotificationTypes: string[];
 }
 
 type Tab = "profile" | "notifications" | "security" | "appearance";
@@ -57,10 +54,11 @@ const ROLE_LABELS: Record<string, string> = {
   CAREGIVER: "Soignant",
   PATIENT: "Patient",
   FAMILY: "Famille",
+  SUPER_ADMIN: "Super administrateur",
 };
 
 // ─── Profile Tab ─────────────────────────────────────────────────────────────
-function ProfileTab({ user }: { user: User }) {
+function ProfileTab({ user }: { user: SettingsUser }) {
   const [firstName, setFirstName] = useState(user.firstName);
   const [lastName, setLastName] = useState(user.lastName);
   const [phone, setPhone] = useState(user.phone ?? "");
@@ -86,7 +84,6 @@ function ProfileTab({ user }: { user: User }) {
 
   return (
     <div className="space-y-6">
-      {/* Identity card */}
       <Card className="border border-border/40 shadow-sm overflow-hidden">
         <CardHeader className="border-b bg-muted/10">
           <CardTitle>Informations Personnelles</CardTitle>
@@ -95,7 +92,6 @@ function ProfileTab({ user }: { user: User }) {
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
-          {/* Avatar section */}
           <div className="flex items-center gap-5 mb-6 pb-6 border-b">
             <Avatar className="h-16 w-16 border-2 border-border shadow">
               <AvatarImage src={user.avatarUrl ?? ""} />
@@ -181,18 +177,12 @@ function ProfileTab({ user }: { user: User }) {
 }
 
 // ─── Notification Prefs Tab ───────────────────────────────────────────────────
-const NOTIF_CHANNELS = [
-  { id: "email", label: "Email", description: "Recevoir les alertes par email", icon: Mail },
-  { id: "sms", label: "SMS", description: "Notifications critiques par SMS", icon: Smartphone },
-  { id: "inapp", label: "Notifications in-app", description: "Alertes dans l'interface MedDoc", icon: Bell },
-];
-
+// Ne couvre que les types de Notification réellement générés par l'application
+// (voir src/lib/events.ts, src/lib/scheduler.ts) : pas de canal Email/SMS, ils
+// n'existent pas encore côté envoi.
 const NOTIF_TYPES = [
-  { id: "incidents", label: "Incidents", description: "Création et escalade d'incidents", icon: AlertCircle, color: "text-red-500" },
-  { id: "appointments", label: "Rendez-vous", description: "Rappels et modifications de RDV", icon: Calendar, color: "text-blue-500" },
-  { id: "careplans", label: "Plans de soins", description: "Mises à jour des protocoles de soins", icon: Activity, color: "text-amber-500" },
-  { id: "messages", label: "Messages", description: "Nouveaux messages reçus", icon: MessageSquare, color: "text-emerald-500" },
-  { id: "ai", label: "Analyses IA", description: "Nouveaux rapports d'analyse clinique", icon: Sparkles, color: "text-violet-500" },
+  { id: "INCIDENT", label: "Incidents", description: "Création et escalade d'incidents", icon: AlertCircle, color: "text-red-500" },
+  { id: "APPOINTMENT", label: "Rendez-vous", description: "Rappels et affectations de rendez-vous", icon: Calendar, color: "text-blue-500" },
 ];
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -215,66 +205,43 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-function NotificationsTab() {
-  const [channels, setChannels] = useState({ email: true, sms: false, inapp: true });
-  const [types, setTypes] = useState({
-    incidents: true,
-    appointments: true,
-    careplans: true,
-    messages: true,
-    ai: false,
+function NotificationsTab({ user }: { user: SettingsUser }) {
+  const [enabled, setEnabled] = useState<Record<string, boolean>>(() => {
+    const state: Record<string, boolean> = {};
+    for (const t of NOTIF_TYPES) {
+      state[t.id] = !user.mutedNotificationTypes.includes(t.id);
+    }
+    return state;
   });
-  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    setSaved(true);
-    toast.success("Préférences de notifications mises à jour.");
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const mutedTypes = NOTIF_TYPES.filter((t) => !enabled[t.id]).map((t) => t.id);
+      const res = await updateNotificationPreferences(mutedTypes);
+      if (res.success) {
+        toast.success("Préférences de notifications mises à jour.");
+      } else {
+        toast.error(res.error || "Erreur lors de l'enregistrement.");
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Channels */}
-      <Card className="border border-border/40 shadow-sm overflow-hidden">
-        <CardHeader className="border-b bg-muted/10">
-          <CardTitle>Canaux de notification</CardTitle>
-          <CardDescription>Choisissez comment vous souhaitez être alerté.</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-5 space-y-4">
-          {NOTIF_CHANNELS.map((ch) => {
-            const Icon = ch.icon;
-            const checked = channels[ch.id as keyof typeof channels];
-            return (
-              <div key={ch.id} className="flex items-center justify-between py-1">
-                <div className="flex items-center gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold">{ch.label}</p>
-                    <p className="text-xs text-muted-foreground">{ch.description}</p>
-                  </div>
-                </div>
-                <Toggle
-                  checked={checked}
-                  onChange={(v) => setChannels((prev) => ({ ...prev, [ch.id]: v }))}
-                />
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      {/* Event Types */}
       <Card className="border border-border/40 shadow-sm overflow-hidden">
         <CardHeader className="border-b bg-muted/10">
           <CardTitle>Types d&apos;événements</CardTitle>
-          <CardDescription>Sélectionnez les événements pour lesquels vous souhaitez des alertes.</CardDescription>
+          <CardDescription>
+            Choisissez les événements pour lesquels vous recevez une notification dans MedDoc.
+          </CardDescription>
         </CardHeader>
         <CardContent className="pt-5 space-y-4">
           {NOTIF_TYPES.map((t) => {
             const Icon = t.icon;
-            const checked = types[t.id as keyof typeof types];
             return (
               <div key={t.id} className="flex items-center justify-between py-1">
                 <div className="flex items-center gap-3">
@@ -285,19 +252,22 @@ function NotificationsTab() {
                   </div>
                 </div>
                 <Toggle
-                  checked={checked}
-                  onChange={(v) => setTypes((prev) => ({ ...prev, [t.id]: v }))}
+                  checked={enabled[t.id]}
+                  onChange={(v) => setEnabled((prev) => ({ ...prev, [t.id]: v }))}
                 />
               </div>
             );
           })}
+          <p className="text-xs text-muted-foreground pt-2 border-t">
+            Ces notifications s&apos;affichent dans MedDoc (cloche en haut de l&apos;écran). L&apos;envoi par email ou SMS n&apos;est pas disponible pour le moment.
+          </p>
         </CardContent>
       </Card>
 
       <div className="flex justify-end">
-        <Button onClick={handleSave} className="gap-2">
-          {saved ? (
-            <><CheckCircle2 className="h-4 w-4" />Enregistré</>
+        <Button onClick={handleSave} disabled={saving} className="gap-2 min-w-[180px]">
+          {saving ? (
+            <><Loader2 className="h-4 w-4 animate-spin" />Enregistrement...</>
           ) : (
             <><Save className="h-4 w-4" />Enregistrer les préférences</>
           )}
@@ -308,7 +278,7 @@ function NotificationsTab() {
 }
 
 // ─── Security Tab ─────────────────────────────────────────────────────────────
-function SecurityTab({ user }: { user: User }) {
+function SecurityTab({ user }: { user: SettingsUser }) {
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
@@ -331,10 +301,17 @@ function SecurityTab({ user }: { user: User }) {
       return;
     }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800)); // Simulate API call
-    toast.success("Mot de passe mis à jour avec succès.");
-    setCurrentPw(""); setNewPw(""); setConfirmPw("");
-    setLoading(false);
+    try {
+      const res = await changePassword(currentPw, newPw);
+      if (res.success) {
+        toast.success("Mot de passe mis à jour avec succès.");
+        setCurrentPw(""); setNewPw(""); setConfirmPw("");
+      } else {
+        toast.error(res.error || "Erreur lors du changement de mot de passe.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -437,26 +414,18 @@ function SecurityTab({ user }: { user: User }) {
         </CardContent>
       </Card>
 
-      {/* Sessions info */}
       <Card className="border border-border/40 shadow-sm overflow-hidden">
         <CardHeader className="border-b bg-muted/10">
           <CardTitle>Informations de connexion</CardTitle>
-          <CardDescription>Détails du compte et de la session active.</CardDescription>
+          <CardDescription>Détails du compte utilisé pour vous connecter.</CardDescription>
         </CardHeader>
-        <CardContent className="pt-5 space-y-3">
-          <div className="flex items-center justify-between py-2 border-b last:border-0">
+        <CardContent className="pt-5">
+          <div className="flex items-center justify-between py-2">
             <div>
               <p className="text-sm font-semibold">Adresse email</p>
               <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
-            <Badge variant="outline" className="text-xs">Vérifié</Badge>
-          </div>
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <p className="text-sm font-semibold">Session active</p>
-              <p className="text-xs text-muted-foreground">Ce navigateur — Aujourd&apos;hui</p>
-            </div>
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <Badge variant="outline" className="text-xs">{ROLE_LABELS[user.role] ?? user.role}</Badge>
           </div>
         </CardContent>
       </Card>
@@ -465,37 +434,21 @@ function SecurityTab({ user }: { user: User }) {
 }
 
 // ─── Appearance Tab ───────────────────────────────────────────────────────────
-type Theme = "light" | "dark" | "system";
-const THEMES: { key: Theme; label: string; icon: React.ElementType; desc: string }[] = [
+const THEMES: { key: "light" | "dark" | "system"; label: string; icon: React.ElementType; desc: string }[] = [
   { key: "light", label: "Clair", icon: Sun, desc: "Interface lumineuse" },
   { key: "dark", label: "Sombre", icon: Moon, desc: "Interface sombre" },
   { key: "system", label: "Système", icon: Monitor, desc: "Suit votre OS" },
 ];
 
-const ACCENT_COLORS = [
-  { name: "Bleu", value: "blue", cls: "bg-blue-500" },
-  { name: "Violet", value: "violet", cls: "bg-violet-500" },
-  { name: "Vert", value: "emerald", cls: "bg-emerald-500" },
-  { name: "Indigo", value: "indigo", cls: "bg-indigo-500" },
-  { name: "Rose", value: "rose", cls: "bg-rose-500" },
-];
-
 function AppearanceTab() {
-  const [theme, setTheme] = useState<Theme>("system");
-  const [accent, setAccent] = useState("blue");
-  const [density, setDensity] = useState<"compact" | "normal" | "spacious">("normal");
-
-  const handleSave = () => {
-    toast.success("Préférences d'apparence enregistrées.");
-  };
+  const { theme, setTheme } = useTheme();
 
   return (
     <div className="space-y-6">
-      {/* Theme */}
       <Card className="border border-border/40 shadow-sm overflow-hidden">
         <CardHeader className="border-b bg-muted/10">
           <CardTitle>Thème</CardTitle>
-          <CardDescription>Choisissez l&apos;apparence générale de l&apos;interface.</CardDescription>
+          <CardDescription>Choisissez l&apos;apparence générale de l&apos;interface. Le changement est appliqué immédiatement.</CardDescription>
         </CardHeader>
         <CardContent className="pt-5">
           <div className="grid grid-cols-3 gap-3">
@@ -505,7 +458,10 @@ function AppearanceTab() {
               return (
                 <button
                   key={t.key}
-                  onClick={() => setTheme(t.key)}
+                  onClick={() => {
+                    setTheme(t.key);
+                    toast.success(`Thème « ${t.label} » appliqué.`);
+                  }}
                   className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all duration-200 ${
                     selected
                       ? "border-primary bg-primary/5 shadow-sm"
@@ -526,74 +482,12 @@ function AppearanceTab() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Accent Color */}
-      <Card className="border border-border/40 shadow-sm overflow-hidden">
-        <CardHeader className="border-b bg-muted/10">
-          <CardTitle>Couleur d&apos;accentuation</CardTitle>
-          <CardDescription>Personnalisez la couleur principale de l&apos;interface.</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-5">
-          <div className="flex gap-3 flex-wrap">
-            {ACCENT_COLORS.map((c) => (
-              <button
-                key={c.value}
-                onClick={() => setAccent(c.value)}
-                title={c.name}
-                className={`h-8 w-8 rounded-full ${c.cls} transition-all duration-200 ${
-                  accent === c.value
-                    ? "ring-2 ring-offset-2 ring-offset-background ring-foreground scale-110"
-                    : "opacity-70 hover:opacity-100 hover:scale-105"
-                }`}
-              />
-            ))}
-          </div>
-          <p className="text-xs text-muted-foreground mt-3">
-            Couleur sélectionnée :{" "}
-            <span className="font-semibold">
-              {ACCENT_COLORS.find((c) => c.value === accent)?.name}
-            </span>
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Density */}
-      <Card className="border border-border/40 shadow-sm overflow-hidden">
-        <CardHeader className="border-b bg-muted/10">
-          <CardTitle>Densité d&apos;affichage</CardTitle>
-          <CardDescription>Ajustez l&apos;espacement des éléments de l&apos;interface.</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-5">
-          <div className="flex rounded-xl border overflow-hidden w-fit">
-            {(["compact", "normal", "spacious"] as const).map((d) => (
-              <button
-                key={d}
-                onClick={() => setDensity(d)}
-                className={`px-5 py-2 text-sm font-medium transition-colors border-r last:border-r-0 ${
-                  density === d
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted/50"
-                }`}
-              >
-                {d === "compact" ? "Compact" : d === "normal" ? "Normal" : "Spacieux"}
-              </button>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end">
-        <Button onClick={handleSave} className="gap-2">
-          <Save className="h-4 w-4" />
-          Enregistrer
-        </Button>
-      </div>
     </div>
   );
 }
 
 // ─── Main Shell ───────────────────────────────────────────────────────────────
-export default function SettingsClient({ user }: { user: User }) {
+export default function SettingsClient({ user }: { user: SettingsUser }) {
   const [activeTab, setActiveTab] = useState<Tab>("profile");
 
   return (
@@ -606,7 +500,6 @@ export default function SettingsClient({ user }: { user: User }) {
       </div>
 
       <div className="grid md:grid-cols-[220px_1fr] gap-6 items-start">
-        {/* Sidebar Nav */}
         <nav className="flex flex-col gap-1 bg-muted/20 border rounded-xl p-2">
           {TABS.map((t) => {
             const Icon = t.icon;
@@ -628,10 +521,9 @@ export default function SettingsClient({ user }: { user: User }) {
           })}
         </nav>
 
-        {/* Tab Content */}
         <div>
           {activeTab === "profile" && <ProfileTab user={user} />}
-          {activeTab === "notifications" && <NotificationsTab />}
+          {activeTab === "notifications" && <NotificationsTab user={user} />}
           {activeTab === "security" && <SecurityTab user={user} />}
           {activeTab === "appearance" && <AppearanceTab />}
         </div>

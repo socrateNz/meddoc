@@ -6,7 +6,7 @@ import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 
 export async function POST(req: NextRequest) {
   try {
-    const limited = rateLimitOrResponse(req, 20, 60000);
+    const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
     // 1. Authenticate user from cookie token

@@ -15,8 +15,23 @@ export default async function AIAssistantPage() {
     redirect("/dashboard");
   }
 
-  // Fetch all patients with their user profile info
+  // Filtrage par organisation : une holding voit ses cliniques, une clinique
+  // ne voit que ses propres données (cf. src/app/dashboard/page.tsx:82-91).
+  const orgFilter: any = {};
+  if (currentUser.organization?.type === "HOLDING") {
+    orgFilter.OR = [
+      { organizationId: currentUser.organizationId },
+      { organization: { parentId: currentUser.organizationId } }
+    ];
+  } else if (currentUser.organization?.type === "CLINIC") {
+    orgFilter.organizationId = currentUser.organizationId;
+  } else {
+    orgFilter.organizationId = "NO_ACCESS";
+  }
+
+  // Fetch patients with their user profile info, scoped to the current organization
   const patients = await prisma.patient.findMany({
+    where: orgFilter,
     include: {
       user: {
         select: {

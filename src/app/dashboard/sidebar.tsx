@@ -23,7 +23,8 @@ import {
   BookOpen,
   ScrollText,
   FileSignature,
-  ShieldCheck
+  ShieldCheck,
+  MessageCircle
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -47,9 +48,12 @@ interface SidebarProps {
     ai: number;
   };
   clinics?: { id: string; name: string }[];
+  // Alertes réservées au SUPER_ADMIN : ne proviennent pas du modèle Notification,
+  // calculées séparément dans src/app/dashboard/layout.tsx.
+  superAdminAlerts?: { contactMessages: number; expiringLicenses: number };
 }
 
-export default function Sidebar({ currentUser, unreadCounts, clinics = [] }: SidebarProps) {
+export default function Sidebar({ currentUser, unreadCounts, clinics = [], superAdminAlerts }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const params = useParams();
@@ -198,6 +202,16 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [] }: Sid
       name: "Toutes les Holdings",
       href: "/dashboard/holdings",
       icon: Server,
+      count: superAdminAlerts?.expiringLicenses || 0,
+      badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+      roles: ['SUPER_ADMIN'],
+    },
+    {
+      name: "Messages de contact",
+      href: "/dashboard/contact-messages",
+      icon: MessageCircle,
+      count: superAdminAlerts?.contactMessages || 0,
+      badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
       roles: ['SUPER_ADMIN'],
     },
   ];

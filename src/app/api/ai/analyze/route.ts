@@ -4,7 +4,7 @@ import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 
 export async function POST(req: Request) {
   try {
-    const limited = rateLimitOrResponse(req, 20, 60000);
+    const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
     const role = req.headers.get("x-user-role");

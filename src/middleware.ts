@@ -15,7 +15,7 @@ const JWT_SECRET = new TextEncoder().encode(requireEnv('JWT_SECRET'));
 const REFRESH_SECRET = new TextEncoder().encode(requireEnv('JWT_REFRESH_SECRET'));
 
 // Routes publiques qui ne nécessitent pas d'authentification
-const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password'];
+const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password', '/api/health'];
 
 // RBAC par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...)
 const restrictedSections: Record<string, string[]> = {
@@ -27,6 +27,7 @@ const restrictedSections: Record<string, string[]> = {
   contracts: ['ADMIN', 'COORDINATOR'],
   permissions: ['ADMIN'],
   'audit-log': ['ADMIN'],
+  'contact-messages': ['SUPER_ADMIN'],
 };
 
 function withSecurityHeaders(response: NextResponse): NextResponse {
@@ -48,6 +49,21 @@ export async function middleware(request: NextRequest) {
 
   // Si c'est une route publique
   if (publicPaths.includes(pathname) || pathname.startsWith('/reset-password')) {
+    return withSecurityHeaders(NextResponse.next());
+  }
+
+  // Routes appelées par des services externes (cron) avec leur propre secret
+  // partagé plutôt qu'un cookie de session — voir CRON_SECRET dans .env.example.
+  if (pathname.startsWith('/api/cron/')) {
+    return withSecurityHeaders(NextResponse.next());
+  }
+
+  // Tunnel Sentry (tunnelRoute côté client, cf. next.config.ts) : relaie les
+  // événements d'erreur vers Sentry pour contourner les bloqueurs de pub.
+  // Doit rester accessible sans session (une erreur peut survenir avant
+  // connexion, ex. sur la page de login) sous peine de casser silencieusement
+  // la remontée d'erreurs côté client.
+  if (pathname.startsWith('/monitoring')) {
     return withSecurityHeaders(NextResponse.next());
   }
 

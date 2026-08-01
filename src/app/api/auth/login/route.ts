@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { loginSchema } from "@/validators/auth";
 import { AuthService } from "@/services/AuthService";
 import { rateLimit } from "@/middlewares/rateLimiter";
@@ -7,7 +8,7 @@ import { z } from "zod";
 export async function POST(req: Request) {
   const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
   try {
-    const limitCheck = rateLimit(ip, 5, 60000);
+    const limitCheck = await rateLimit(ip, 5, 60000);
     if (!limitCheck.success) {
       // Create a warning notification for coordinators/admins about rate limit hit on this IP
       try {
@@ -90,6 +91,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Données invalides", details: error.issues }, { status: 400 });
     }
     const message = error instanceof Error ? error.message : "Erreur interne";
+    Sentry.captureException(error);
 
     // Write audit log for login failure if we can find the user email
     try {

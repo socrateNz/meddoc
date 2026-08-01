@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SubscriptionPlan, SubscriptionStatus } from "@prisma/client";
+import { SubscriptionPlan, SubscriptionStatus, PaymentFrequency } from "@prisma/client";
 import { updateHoldingSubscription } from "@/actions/super-admin";
 import { toast } from "sonner";
 
@@ -28,6 +28,8 @@ interface HoldingActionsMenuProps {
     plan: SubscriptionPlan;
     subscriptionStatus: SubscriptionStatus;
     licenseExpiresAt: Date | null;
+    paymentAmount?: number | null;
+    paymentFrequency?: PaymentFrequency | null;
   };
 }
 
@@ -40,6 +42,12 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
   const [licenseExpiresAt, setLicenseExpiresAt] = useState<string>(
     holding.licenseExpiresAt ? new Date(holding.licenseExpiresAt).toISOString().split('T')[0] : ""
   );
+  const [paymentAmount, setPaymentAmount] = useState<string>(
+    holding.paymentAmount != null ? String(holding.paymentAmount) : ""
+  );
+  const [paymentFrequency, setPaymentFrequency] = useState<PaymentFrequency>(
+    holding.paymentFrequency || "MONTHLY"
+  );
 
   const handleUpdate = async () => {
     setLoading(true);
@@ -47,13 +55,17 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
     if (!isUnlimited && licenseExpiresAt) {
       expiresAt = new Date(licenseExpiresAt);
     }
-    
-    const response = await updateHoldingSubscription(holding.id, { 
-      plan, 
-      status, 
-      licenseExpiresAt: expiresAt 
+
+    const amount = paymentAmount ? Number(paymentAmount) : null;
+
+    const response = await updateHoldingSubscription(holding.id, {
+      plan,
+      status,
+      licenseExpiresAt: expiresAt,
+      paymentAmount: amount,
+      paymentFrequency: amount !== null ? paymentFrequency : null,
     });
-    
+
     if (response.error) {
       toast.error(response.error);
     } else {
@@ -139,14 +151,40 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
                 </div>
                 {!isUnlimited && (
                   <div className="flex-1">
-                    <Input 
-                      type="date" 
+                    <Input
+                      type="date"
                       value={licenseExpiresAt}
                       onChange={(e) => setLicenseExpiresAt(e.target.value)}
                       min={new Date().toISOString().split('T')[0]}
                     />
                   </div>
                 )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor={`paymentAmount-${holding.id}`}>Montant du forfait (FCFA)</Label>
+                <Input
+                  id={`paymentAmount-${holding.id}`}
+                  type="number"
+                  min="0"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder="ex: 150000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Fréquence</Label>
+                <Select value={paymentFrequency} onValueChange={(val) => { if (val) setPaymentFrequency(val as PaymentFrequency); }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Fréquence" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="MONTHLY">Mensuelle</SelectItem>
+                    <SelectItem value="YEARLY">Annuelle</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>

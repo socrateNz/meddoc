@@ -1,30 +1,14 @@
 import { prisma } from "./db";
 
-let isRunning = false;
-
-export function startScheduler() {
-  console.log("⏰ Background scheduler initialized.");
-  
-  // Run immediately on start
-  runSchedulerTasks().catch(err => console.error("Error in scheduler run:", err));
-
-  // Run every 1 minute
-  setInterval(async () => {
-    if (isRunning) return;
-    isRunning = true;
-    try {
-      await runSchedulerTasks();
-    } catch (error) {
-      console.error("Scheduler task error:", error);
-    } finally {
-      isRunning = false;
-    }
-  }, 60000); // 60 seconds
-}
-
-async function runSchedulerTasks() {
+// Anciennement déclenché par un setInterval démarré au chargement de
+// src/lib/db.ts — retiré car incompatible avec un déploiement serverless
+// (chaque instance/invocation est éphémère, un setInterval n'y survit pas).
+// Cette fonction est maintenant appelée par la route protégée
+// src/app/api/cron/scheduler/route.ts, elle-même déclenchée par un service
+// de cron externe (voir .env.example : CRON_SECRET).
+export async function runSchedulerTasks() {
   const now = new Date();
-  
+
   // 1. DAILY AGENDA NOTIFICATIONS
   await sendDailyAgenda(now);
 

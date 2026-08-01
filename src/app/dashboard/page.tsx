@@ -1,8 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Activity, Users, Calendar, AlertCircle, Sparkles, Bell, Building2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Activity, Users, Calendar, AlertCircle, Bell, Building2, Wallet, AlertTriangle, Clock, Mail } from "lucide-react";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { getSuperAdminOverview } from "@/actions/super-admin";
 
 export default async function DashboardPage() {
   const currentUser = await getCurrentUser();
@@ -26,6 +29,18 @@ export default async function DashboardPage() {
     const usersCount = await prisma.user.count({ where: { role: { not: "SUPER_ADMIN" } } });
     const patientsCount = await prisma.patient.count();
 
+    const overviewRes = await getSuperAdminOverview();
+    const overview = overviewRes.success ? overviewRes.data! : {
+      mrr: 0,
+      planBreakdown: [] as { plan: string; count: number }[],
+      holdingsToWatch: [] as { id: string; name: string; licenseExpiresAt: Date | null; subscriptionStatus: string; reasons: string[] }[],
+      recentHoldings: [] as { id: string; name: string; plan: string; createdAt: Date }[],
+      recentContactMessages: [] as { id: string; name: string; subject: string; status: string; createdAt: Date }[],
+    };
+
+    const planLabels: Record<string, string> = { TRIAL: "Essai", BASIC: "Basique", PREMIUM: "Premium", ENTERPRISE: "Entreprise" };
+    const maxPlanCount = Math.max(1, ...overview.planBreakdown.map((p) => p.count));
+
     return (
       <div className="space-y-6">
         <div className="flex flex-col gap-2 animate-fade-up">
@@ -37,7 +52,7 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 animate-fade-up" style={{ animationDelay: "150ms" } as React.CSSProperties}>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5 animate-fade-up" style={{ animationDelay: "150ms" } as React.CSSProperties}>
           <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200">Total Holdings</CardTitle>
@@ -72,6 +87,129 @@ export default async function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">{patientsCount}</div>
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl border border-emerald-200/50 dark:border-emerald-900/40 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200">Revenu mensuel (MRR)</CardTitle>
+              <Wallet className="h-4 w-4 text-emerald-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
+                {new Intl.NumberFormat("fr-FR").format(Math.round(overview.mrr))} FCFA
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2 animate-fade-up" style={{ animationDelay: "225ms" } as React.CSSProperties}>
+          {/* Plan breakdown */}
+          <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg font-bold text-slate-800 dark:text-slate-200">Répartition par forfait</CardTitle>
+              <CardDescription className="text-xs">Nombre de holdings par forfait souscrit.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-2">
+              {overview.planBreakdown.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">Aucune holding pour le moment.</p>
+              ) : (
+                overview.planBreakdown.map((p) => (
+                  <div key={p.plan} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
+                      <span>{planLabels[p.plan] || p.plan}</span>
+                      <span>{p.count}</span>
+                    </div>
+                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${(p.count / maxPlanCount) * 100}%` }} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Holdings to watch */}
+          <Card className="rounded-2xl border border-amber-200/50 dark:border-amber-900/40 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <div>
+                <CardTitle className="text-lg font-bold text-slate-800 dark:text-slate-200">Holdings à surveiller</CardTitle>
+                <CardDescription className="text-xs">Licence bientôt expirée ou abonnement inactif.</CardDescription>
+              </div>
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+            </CardHeader>
+            <CardContent className="pt-2">
+              {overview.holdingsToWatch.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">Rien à signaler.</p>
+              ) : (
+                <div className="space-y-3">
+                  {overview.holdingsToWatch.slice(0, 6).map((h) => (
+                    <Link key={h.id} href="/dashboard/holdings" className="flex items-center justify-between gap-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-lg p-1.5 -m-1.5 transition-colors">
+                      <span className="font-medium text-slate-700 dark:text-slate-300 truncate">{h.name}</span>
+                      <div className="flex gap-1.5 shrink-0">
+                        {h.reasons.includes("EXPIRING") && (
+                          <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">
+                            {h.licenseExpiresAt && new Date(h.licenseExpiresAt) < new Date() ? "Expirée" : "Expire bientôt"}
+                          </Badge>
+                        )}
+                        {h.reasons.includes("INACTIVE") && (
+                          <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20">
+                            {h.subscriptionStatus === "CANCELLED" ? "Annulé" : "Inactif"}
+                          </Badge>
+                        )}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2 animate-fade-up" style={{ animationDelay: "300ms" } as React.CSSProperties}>
+          {/* Recent holdings */}
+          <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-lg font-bold text-slate-800 dark:text-slate-200">Dernières holdings créées</CardTitle>
+              <Clock className="h-4 w-4 text-slate-400" />
+            </CardHeader>
+            <CardContent className="pt-2">
+              {overview.recentHoldings.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">Aucune holding pour le moment.</p>
+              ) : (
+                <div className="space-y-3">
+                  {overview.recentHoldings.map((h) => (
+                    <div key={h.id} className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-700 dark:text-slate-300 truncate">{h.name}</span>
+                      <span className="text-[10px] text-slate-400 shrink-0 ml-2">{new Date(h.createdAt).toLocaleDateString("fr-FR")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Recent contact messages */}
+          <Card className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-lg font-bold text-slate-800 dark:text-slate-200">Derniers messages de contact</CardTitle>
+              <Mail className="h-4 w-4 text-slate-400" />
+            </CardHeader>
+            <CardContent className="pt-2">
+              {overview.recentContactMessages.length === 0 ? (
+                <p className="text-sm text-slate-500 py-6 text-center">Aucun message reçu.</p>
+              ) : (
+                <div className="space-y-3">
+                  {overview.recentContactMessages.map((m) => (
+                    <Link key={m.id} href="/dashboard/contact-messages" className="flex items-center justify-between gap-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-lg p-1.5 -m-1.5 transition-colors">
+                      <span className="min-w-0">
+                        <span className="font-medium text-slate-700 dark:text-slate-300 truncate block">{m.subject}</span>
+                        <span className="text-[10px] text-slate-400">{m.name}</span>
+                      </span>
+                      {m.status === "NEW" && <Badge className="text-[10px] bg-blue-500/10 text-blue-600 border-blue-500/20 shrink-0" variant="outline">Nouveau</Badge>}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -117,8 +255,12 @@ export default async function DashboardPage() {
   });
 
   // Query recent notifications for current user
+  const mutedNotificationTypes = currentUser.mutedNotificationTypes ?? [];
   const notifications = await prisma.notification.findMany({
-    where: { userId: currentUser.id },
+    where: {
+      userId: currentUser.id,
+      ...(mutedNotificationTypes.length > 0 ? { type: { notIn: mutedNotificationTypes } } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 5,
   });

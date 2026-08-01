@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, Clock, User as UserIcon } from "lucide-react";
@@ -18,7 +20,27 @@ type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
 }>;
 
 export default async function AppointmentsPage() {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    redirect("/login");
+  }
+
+  // Filtrage par organisation : une holding voit ses cliniques, une clinique
+  // ne voit que ses propres données (cf. src/app/dashboard/page.tsx:82-91).
+  const orgFilter: any = {};
+  if (currentUser.organization?.type === "HOLDING") {
+    orgFilter.OR = [
+      { organizationId: currentUser.organizationId },
+      { organization: { parentId: currentUser.organizationId } }
+    ];
+  } else if (currentUser.organization?.type === "CLINIC") {
+    orgFilter.organizationId = currentUser.organizationId;
+  } else {
+    orgFilter.organizationId = "NO_ACCESS";
+  }
+
   const appointments = await prisma.appointment.findMany({
+    where: { patient: orgFilter },
     include: {
       patient: {
         include: { user: true }
@@ -33,6 +55,7 @@ export default async function AppointmentsPage() {
   });
 
   const patients = await prisma.patient.findMany({
+    where: orgFilter,
     include: { user: true },
     orderBy: {
       user: {
@@ -42,6 +65,7 @@ export default async function AppointmentsPage() {
   });
 
   const caregivers = await prisma.caregiver.findMany({
+    where: { user: orgFilter },
     include: { user: true },
     orderBy: {
       user: {

@@ -14,9 +14,12 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const filter = params.filter ?? "all";
 
+  const mutedTypes = currentUser.mutedNotificationTypes ?? [];
+
   const where: Record<string, unknown> = { userId: currentUser.id };
   if (filter === "unread") where.isRead = false;
   if (filter === "read") where.isRead = true;
+  if (mutedTypes.length > 0) where.type = { notIn: mutedTypes };
 
   const notifications = await prisma.notification.findMany({
     where,
@@ -24,7 +27,11 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
   });
 
   const unreadCount = await prisma.notification.count({
-    where: { userId: currentUser.id, isRead: false },
+    where: {
+      userId: currentUser.id,
+      isRead: false,
+      ...(mutedTypes.length > 0 ? { type: { notIn: mutedTypes } } : {}),
+    },
   });
 
   return (

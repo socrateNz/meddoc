@@ -15,7 +15,7 @@ const createPatientSchema = z.object({
 
 export async function GET(req: Request) {
   try {
-    const limited = rateLimitOrResponse(req, 60, 60000);
+    const limited = await rateLimitOrResponse(req, 60, 60000);
     if (limited) return limited;
 
     const role = req.headers.get("x-user-role");
@@ -34,7 +34,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const limited = rateLimitOrResponse(req, 20, 60000);
+    const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
     const role = req.headers.get("x-user-role");

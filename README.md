@@ -58,6 +58,7 @@ Une organisation est soit une `HOLDING` (regroupe plusieurs cliniques), soit une
 - `npm run build` — `prisma generate` + build de production
 - `npm run start` — serveur de production
 - `npm run lint` — ESLint
+- `npm run test` — tests unitaires/intégration (Vitest)
 
 ## Structure du projet
 
@@ -72,8 +73,26 @@ Une organisation est soit une `HOLDING` (regroupe plusieurs cliniques), soit une
 ## Sécurité
 
 - Middleware Edge : vérification JWT, RBAC par rôle/section, en-têtes de sécurité (CSP, X-Frame-Options...)
-- Rate limiting en mémoire sur les routes sensibles (login, contact, écritures API)
+- Rate limiting sur les routes sensibles (login, contact, écritures API), backé par Upstash Redis en production — repli automatique en mémoire si `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` sont absents (dev local uniquement, **ne pas déployer sans Upstash configuré**, cf. ci-dessous)
 - Journal d'audit (`AuditLog`) sur les actions sensibles, consultable dans `Tableau de bord > Journal d'audit` (ADMIN)
 - Validation runtime (zod) sur les Server Actions et routes API en écriture
+
+## Déploiement en production (serverless)
+
+Ce projet est conçu pour un hébergement serverless (Vercel ou équivalent). Deux points nécessitent une configuration spécifique par rapport au dev local :
+
+1. **Rate limiting distribué** — créer une base sur [upstash.com](https://upstash.com) (plan gratuit suffisant au départ) et renseigner `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`. Sans ça, chaque instance serverless a son propre compteur en mémoire et la protection anti-brute-force est inefficace.
+2. **Tâches planifiées** (rappels de rendez-vous, agenda du jour) — un `setInterval` ne survit pas entre les invocations serverless. La route `GET /api/cron/scheduler` (protégée par le header `Authorization: Bearer ${CRON_SECRET}`) doit être appelée toutes les 5 à 15 minutes par un service de cron externe (ex. [cron-job.org](https://cron-job.org), gratuit ; ou un workflow GitHub Actions planifié). Les Cron Jobs natifs de Vercel fonctionnent aussi, mais sont limités à une exécution/jour sur le plan gratuit — insuffisant pour des rappels à l'heure près.
+3. **Monitoring** — `SENTRY_DSN`/`NEXT_PUBLIC_SENTRY_DSN` pour la remontée d'erreurs (voir `.env.example`).
+
+La CI (`.github/workflows/ci.yml`) fait tourner `tsc`, les tests et le build sur chaque push/PR vers `main`.
+
+### Checklist avant le lancement
+
+- [ ] `GET /api/health` répond `{ status: "ok" }` une fois déployé (utile pour un service d'uptime).
+- [ ] Vérifier en conditions réelles (CSP resserrée en production, `'unsafe-eval'` retiré du `script-src`) que l'assistant IA et la génération de PDF fonctionnent toujours — voir `src/middlewares/securityHeaders.ts`.
+- [ ] Activer les sauvegardes continues / point-in-time recovery sur le cluster MongoDB Atlas.
+- [ ] Restreindre la liste d'accès IP Atlas si l'hébergeur le permet (sinon s'assurer que l'authentification applicative suffit).
+- [ ] Confirmer les obligations légales applicables au traitement de données de santé selon la localisation des utilisateurs (protection des données personnelles) — à valider avec un conseil juridique, hors périmètre technique de ce projet.
 
 > Ce projet cible une version de Next.js dont certaines conventions diffèrent des versions publiques habituelles — voir `node_modules/next/dist/docs/` avant de modifier des fichiers de routing ou de configuration.

@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "Sentry": {
+      "url": "https://mcp.sentry.dev/mcp/etarcos-dev/javascript-nextjs-br"
+    }
+  }
+}

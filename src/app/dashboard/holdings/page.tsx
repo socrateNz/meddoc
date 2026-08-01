@@ -79,6 +79,13 @@ export default async function HoldingsPage() {
                   ) : (
                     <span className="text-xs text-emerald-500 font-medium">Licence illimitée</span>
                   )}
+                  {holding.paymentAmount != null ? (
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                      {new Intl.NumberFormat("fr-FR").format(holding.paymentAmount)} FCFA / {holding.paymentFrequency === "YEARLY" ? "an" : "mois"}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400">Tarif non défini</span>
+                  )}
                 </div>
                 <HoldingActionsMenu holding={holding} />
               </div>

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SubscriptionPlan, SubscriptionStatus } from "@prisma/client";
+import { SubscriptionPlan, SubscriptionStatus, PaymentFrequency } from "@prisma/client";
 
 export const createHoldingSchema = z.object({
   name: z.string().trim().min(2, "Le nom est requis"),
@@ -8,6 +8,8 @@ export const createHoldingSchema = z.object({
   adminLastName: z.string().min(2, "Nom requis"),
   adminEmail: z.string().email("Adresse email invalide"),
   licenseExpiresAt: z.date().nullable().optional(),
+  paymentAmount: z.number().min(0, "Le montant doit être positif").nullable().optional(),
+  paymentFrequency: z.nativeEnum(PaymentFrequency).nullable().optional(),
 });
 
 export const updateHoldingSubscriptionSchema = z.object({
@@ -15,4 +17,6 @@ export const updateHoldingSubscriptionSchema = z.object({
   plan: z.nativeEnum(SubscriptionPlan),
   status: z.nativeEnum(SubscriptionStatus),
   licenseExpiresAt: z.date().nullable().optional(),
+  paymentAmount: z.number().min(0, "Le montant doit être positif").nullable().optional(),
+  paymentFrequency: z.nativeEnum(PaymentFrequency).nullable().optional(),
 });
