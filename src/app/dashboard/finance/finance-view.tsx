@@ -553,11 +553,10 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                 key={f.value}
                 type="button"
                 onClick={() => setCategoryFilter(f.value as any)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                  categoryFilter === f.value
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${categoryFilter === f.value
                     ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                }`}
+                  }`}
               >
                 {f.label}
               </button>
@@ -686,7 +685,6 @@ export default function FinanceView({ summary, patients, organizationId, organiz
         </TabsContent>
       </Tabs>
 
-      {/* Invoice Modal for Printable Receipt & PDF */}
       <InvoiceModal
         transaction={selectedInvoiceTransaction}
         organizationName={organizationName}
