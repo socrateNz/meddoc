@@ -86,13 +86,14 @@ export default async function ClinicTeamPage({ params }: PageProps) {
           const isCoordinator = !!member.coordinatorProfile;
 
           let roleLabel = member.role;
-          if (member.role === "CAREGIVER") roleLabel = "Soignant";
+          if (member.role === "MEDECIN") roleLabel = "Médecin";
+          if (member.role === "CAREGIVER") roleLabel = "Infirmier(e)";
           if (member.role === "COORDINATOR") roleLabel = "Coordinateur";
           if (member.role === "ADMIN") roleLabel = "Administrateur";
           if (member.role === "PHARMACIST") roleLabel = "Pharmacien(ne)";
 
           const specialty = isCaregiver
-            ? member.caregiverProfile.specialties?.[0] || "Soignant"
+            ? member.caregiverProfile.specialties?.[0] || (member.role === "MEDECIN" ? "Médecin" : "Soignant")
             : isCoordinator
               ? "Coordination Médicale"
               : "Direction";

@@ -10,8 +10,8 @@ export default async function AIAssistantPage() {
     redirect("/login");
   }
 
-  // Deny access to patients and families
-  if (!["ADMIN", "COORDINATOR", "CAREGIVER"].includes(currentUser.role)) {
+  // Assistance clinique IA : autorité diagnostique (COORDINATOR/MEDECIN), ADMIN en lecture seule.
+  if (!["ADMIN", "COORDINATOR", "MEDECIN"].includes(currentUser.role)) {
     redirect("/dashboard");
   }
 

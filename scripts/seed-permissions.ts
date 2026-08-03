@@ -11,9 +11,11 @@ const permissionsList: { name: string; description: string; roles: Role[] }[] = 
   { name: 'MANAGE_APPOINTMENTS', description: 'Planifier des rendez-vous', roles: [Role.ADMIN, Role.COORDINATOR] },
   { name: 'REPORT_INCIDENTS', description: 'Déclarer des incidents', roles: [Role.ADMIN, Role.COORDINATOR] },
   { name: 'RESOLVE_INCIDENTS', description: 'Traiter et résoudre des incidents', roles: [Role.ADMIN, Role.COORDINATOR] },
-  { name: 'RUN_AI_ANALYSIS', description: 'Lancer des analyses cliniques IA', roles: [Role.ADMIN, Role.COORDINATOR] },
+  { name: 'RUN_AI_ANALYSIS', description: 'Lancer des analyses cliniques IA', roles: [Role.ADMIN, Role.COORDINATOR, Role.MEDECIN] },
   { name: 'VIEW_REPORTS', description: 'Visualiser les rapports et statistiques', roles: [Role.ADMIN, Role.COORDINATOR] },
-  { name: 'MANAGE_STOCK', description: "Enregistrer des achats de pharmacie et réaliser l'inventaire", roles: [Role.ADMIN, Role.COORDINATOR] },
+  // Corrige une divergence avec l'enforcement réel dans src/actions/stock.ts (STOCK_WRITE_ROLES =
+  // COORDINATOR/PHARMACIST, ADMIN y est en lecture seule) — PHARMACIST échouait silencieusement ici.
+  { name: 'MANAGE_STOCK', description: "Enregistrer des achats de pharmacie et réaliser l'inventaire", roles: [Role.COORDINATOR, Role.PHARMACIST] },
   { name: 'MANAGE_CONTRACTS', description: 'Créer et gérer les contrats des aidants', roles: [Role.ADMIN, Role.COORDINATOR] },
   { name: 'VIEW_AUDIT_LOG', description: "Consulter le journal d'audit", roles: [Role.ADMIN] },
   { name: 'MANAGE_PERMISSIONS', description: 'Modifier les permissions par rôle', roles: [Role.ADMIN] },

@@ -18,7 +18,7 @@ export async function getTeamMembers() {
   if (!activeUser) throw new Error("Non authentifié.");
 
   const whereClause: any = {
-    role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
+    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
   };
 
   if (activeUser.organization?.type === "HOLDING") {
@@ -98,14 +98,14 @@ export async function createTeamMember(data: any) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
-    const { firstName, lastName, email, phone, role, specialties, organizationId } = data;
+    const { firstName, lastName, email, phone, role, specialties, licenseNumber, organizationId } = data;
 
     let targetOrgId: string | null | undefined;
 
     if (activeUser.role === "COORDINATOR") {
       // Le coordinateur ne recrute que pour sa propre clinique, jamais un autre coordinateur ou un admin.
-      if (role !== "CAREGIVER" && role !== "PHARMACIST") {
-        throw new Error("Un coordinateur ne peut ajouter que des soignants ou des pharmaciens.");
+      if (!["CAREGIVER", "PHARMACIST", "MEDECIN"].includes(role)) {
+        throw new Error("Un coordinateur ne peut ajouter que des médecins, des infirmier(e)s ou des pharmaciens.");
       }
       targetOrgId = activeUser.organizationId;
     } else if (activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING") {
@@ -149,12 +149,13 @@ export async function createTeamMember(data: any) {
       }
     });
 
-    if (role === "CAREGIVER") {
+    if (role === "CAREGIVER" || role === "MEDECIN") {
       await prisma.caregiver.create({
         data: {
           userId: newUser.id,
           specialties: specialties ? [specialties] : ["Généraliste"],
           certifications: [],
+          licenseNumber: role === "MEDECIN" ? (licenseNumber || null) : null,
         }
       });
     } else if (role === "COORDINATOR") {
@@ -176,12 +177,12 @@ export async function createTeamMember(data: any) {
   }
 }
 
-// COORDINATOR gère le personnel de sa propre clinique (CAREGIVER/PHARMACIST) ; ADMIN (holding)
-// ne gère plus que les coordinateurs de ses cliniques enfants (désignation/remplacement).
+// COORDINATOR gère le personnel de sa propre clinique (MEDECIN/CAREGIVER/PHARMACIST) ; ADMIN
+// (holding) ne gère plus que les coordinateurs de ses cliniques enfants (désignation/remplacement).
 async function assertCanManageStaffMember(activeUser: any, target: { role: string; organizationId: string | null }) {
   if (activeUser.role === "COORDINATOR") {
-    if (target.organizationId !== activeUser.organizationId || !["CAREGIVER", "PHARMACIST"].includes(target.role)) {
-      throw new Error("Vous ne pouvez gérer que le personnel (soignant ou pharmacien) de votre clinique.");
+    if (target.organizationId !== activeUser.organizationId || !["CAREGIVER", "PHARMACIST", "MEDECIN"].includes(target.role)) {
+      throw new Error("Vous ne pouvez gérer que le personnel (médecin, infirmier(e) ou pharmacien) de votre clinique.");
     }
     return;
   }
@@ -214,7 +215,7 @@ export async function deactivateTeamMember(userId: string) {
       data: { isActive: false }
     });
 
-    if (updatedUser.role === "CAREGIVER") {
+    if (updatedUser.role === "CAREGIVER" || updatedUser.role === "MEDECIN") {
       const caregiver = await prisma.caregiver.findUnique({ where: { userId } });
       if (caregiver) {
         await prisma.caregiver.update({
@@ -274,7 +275,7 @@ export async function getClinicTeam(clinicId: string) {
   const members = await prisma.user.findMany({
     where: {
       organizationId: clinicId,
-      role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
+      role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
     },
     include: {
       caregiverProfile: {
@@ -335,6 +336,42 @@ export async function reassignTeamMember(userId: string, newOrganizationId: stri
     return { success: true, data: updatedUser };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la réaffectation.") };
+  }
+}
+
+// Bascule non destructive entre Médecin et Infirmier(e) : ne touche jamais User.role en masse
+// (voir plan de bascule). Ne modifie pas la ligne Caregiver liée — Appointment/Contract/CareTask
+// restent intacts, réversible à tout moment.
+export async function reclassifyRole(userId: string, newRole: "MEDECIN" | "CAREGIVER") {
+  try {
+    if (newRole !== "MEDECIN" && newRole !== "CAREGIVER") {
+      throw new Error("Rôle cible invalide.");
+    }
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) throw new Error("Utilisateur introuvable.");
+    if (target.role !== "MEDECIN" && target.role !== "CAREGIVER") {
+      throw new Error("Cette action ne s'applique qu'aux médecins et infirmier(e)s.");
+    }
+    await assertCanManageStaffMember(activeUser, target);
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { role: newRole },
+    });
+
+    await logAuditAction(activeUser.id, "RECLASSIFY_ROLE", "User", userId, {
+      from: target.role,
+      to: newRole,
+    });
+    revalidatePath("/dashboard/team");
+    revalidatePath("/dashboard/clinics/[id]/team", "page");
+
+    return { success: true, data: updatedUser };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors du changement de rôle.") };
   }
 }
 

@@ -27,6 +27,12 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     redirect("/dashboard");
   }
 
+  // MEDECIN a son propre tableau de bord dédié (consultations du jour, labo, prescriptions,
+  // notes) — le "Tableau de bord" générique de la clinique reste conçu pour les autres rôles.
+  if (user.role === "MEDECIN") {
+    redirect(`/dashboard/clinics/${params.id}/medecin`);
+  }
+
   // ADMIN (holding)/SUPER_ADMIN : consultation en lecture seule. COORDINATOR : administre
   // totalement sa clinique. CAREGIVER/PHARMACIST : vue adaptée à leurs responsabilités propres.
   const isReadOnlyOverview = isHoldingAdmin || isSuperAdmin;
@@ -64,7 +70,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     staffMembers = await prisma.user.findMany({
       where: {
         organizationId: clinic.id,
-        role: { in: ["CAREGIVER", "COORDINATOR"] }
+        role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR"] }
       },
       take: 3,
     });
@@ -386,7 +392,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
                       <div>
                         <p className="text-sm font-semibold text-slate-850 dark:text-slate-200">{member.firstName} {member.lastName}</p>
                         <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
-                          {member.role === "CAREGIVER" ? "Praticien / Soignant" : "Coordinateur Clinique"}
+                          {member.role === "MEDECIN" ? "Médecin" : member.role === "CAREGIVER" ? "Infirmier(e)" : "Coordinateur Clinique"}
                         </p>
                       </div>
                     </div>

@@ -160,7 +160,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           icon: Users,
           content: "Le coordinateur recrute et gère toute l'équipe de sa clinique.",
           details: [
-            "Ajouter des Soignants / Médecins (CAREGIVER) et des Pharmaciens (PHARMACIST).",
+            "Ajouter des Médecins (MEDECIN), des Infirmier(e)s (CAREGIVER) et des Pharmaciens (PHARMACIST).",
             "Activer / Désactiver les accès du personnel de sa clinique.",
             "Consulter les disponibilités et les affectations de l'équipe."
           ],
@@ -246,9 +246,63 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
       ]
     },
     {
+      id: "MEDECIN",
+      title: "Médecin",
+      subtitle: "Consultations, diagnostic, prescriptions, examens de laboratoire & Assistant IA",
+      icon: Stethoscope,
+      color: "from-blue-600 to-cyan-600",
+      badge: "Autorité Clinique",
+      badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+      items: [
+        {
+          title: "1. Tableau de bord Médecin",
+          icon: Calendar,
+          content: "Vue centralisée de l'activité clinique du jour.",
+          details: [
+            "Consulter ses consultations du jour et son calendrier de rendez-vous.",
+            "Retrouver la liste de ses patients, ses résultats de laboratoire récents/en attente et ses notes cliniques.",
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/medecin` : undefined,
+          linkText: "Ouvrir mon tableau de bord"
+        },
+        {
+          title: "2. Consultations & Diagnostic",
+          icon: FileText,
+          content: "Clôture structurée d'une consultation avec codification du diagnostic.",
+          details: [
+            "Rédiger symptômes, diagnostic et plan de traitement.",
+            "Coder le diagnostic au format CIM-10 (recherche assistée).",
+            "Dicter les notes à la voix (transcription IA, relecture obligatoire avant validation)."
+          ]
+        },
+        {
+          title: "3. Prescriptions & Examens de Laboratoire",
+          icon: CheckCircle2,
+          content: "Autorité exclusive de prescription (ordonnances et examens).",
+          details: [
+            "Rédiger une ordonnance structurée (médicament, dosage, fréquence, durée).",
+            "Prescrire un examen de laboratoire et suivre son cycle jusqu'à validation du résultat.",
+            "Valider les résultats de laboratoire de ses patients."
+          ]
+        },
+        {
+          title: "4. Assistant Clinique IA",
+          icon: Sparkles,
+          content: "Support à la décision clinique et analyse intelligente des synthèses.",
+          details: [
+            "Poser des questions médicales complexes sur les protocoles ou interactions médicamenteuses.",
+            "Générer des résumés automatisés de l'historique médical d'un patient.",
+            "Demander des pré-analyses de constantes ou de symptômes."
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/ai-assistant` : "/dashboard/ai-assistant",
+          linkText: "Lancer l'Assistant IA"
+        }
+      ]
+    },
+    {
       id: "CAREGIVER",
-      title: "Soignant / Médecin",
-      subtitle: "Prise des constantes vitales, exécution des soins & Assistant IA",
+      title: "Infirmier(e)",
+      subtitle: "Prise des constantes vitales, exécution des soins & prélèvements de laboratoire",
       icon: HeartPulse,
       color: "from-rose-600 to-pink-600",
       badge: "Soins Terrain",
@@ -275,16 +329,15 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           ]
         },
         {
-          title: "3. Assistant Clinique IA",
-          icon: Sparkles,
-          content: "Support à la décision clinique et analyse intelligente des synthèses.",
+          title: "3. Prélèvements de Laboratoire",
+          icon: FileText,
+          content: "Gestes techniques d'exécution sur prescription du médecin.",
           details: [
-            "Poser des questions médicales complexes sur les protocoles ou interactions médicamenteuses.",
-            "Générer des résumés automatisés de l'historique médical d'un patient.",
-            "Demander des pré-analyses de constantes ou de symptômes."
+            "Enregistrer un prélèvement d'échantillon (type, quantité, état) sur une demande prescrite.",
+            "Marquer la réception au laboratoire et saisir un résultat brut."
           ],
-          link: clinicId ? `/dashboard/clinics/${clinicId}/ai-assistant` : "/dashboard/ai-assistant",
-          linkText: "Lancer l'Assistant IA"
+          link: clinicId ? `/dashboard/clinics/${clinicId}/lab` : "/dashboard/lab",
+          linkText: "Ouvrir le Laboratoire"
         },
         {
           title: "4. Signalement d'Incidents Instantané",
@@ -333,9 +386,10 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
 
   // Role hierarchy filtering: Users can view their own role tab and all role tabs below them in hierarchy
   const roleHierarchy: Record<string, string[]> = {
-    SUPER_ADMIN: ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "CAREGIVER", "PHARMACIST", "FAMILY"],
-    ADMIN: ["ADMIN", "COORDINATOR", "CAREGIVER", "PHARMACIST", "FAMILY"],
-    COORDINATOR: ["COORDINATOR", "CAREGIVER", "PHARMACIST", "FAMILY"],
+    SUPER_ADMIN: ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "FAMILY"],
+    ADMIN: ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "FAMILY"],
+    COORDINATOR: ["COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "FAMILY"],
+    MEDECIN: ["MEDECIN", "FAMILY"],
     CAREGIVER: ["CAREGIVER", "FAMILY"],
     PHARMACIST: ["PHARMACIST", "FAMILY"],
     FAMILY: ["FAMILY"],

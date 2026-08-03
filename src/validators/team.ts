@@ -10,10 +10,11 @@ export const createTeamMemberSchema = z.object({
   lastName: z.string().min(2, "Nom requis"),
   email: z.string().email("Adresse email invalide"),
   phone: z.string().optional(),
-  role: z.enum(["CAREGIVER", "COORDINATOR", "ADMIN"], {
+  role: z.enum(["MEDECIN", "CAREGIVER", "PHARMACIST", "COORDINATOR", "ADMIN"], {
     message: "Rôle invalide pour un membre d'équipe",
   }),
   specialties: z.string().optional(),
+  licenseNumber: z.string().optional(),
   organizationId: z.string().optional(),
 });
 

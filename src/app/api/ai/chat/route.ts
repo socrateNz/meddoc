@@ -18,9 +18,9 @@ export async function POST(req: NextRequest) {
     const userId = currentUser.id;
     const userRole = currentUser.role;
 
-    // Strict access control: only Admin, Coordinator, Caregiver
-    if (!["ADMIN", "COORDINATOR", "CAREGIVER"].includes(userRole)) {
-      return NextResponse.json({ error: "Accès interdit aux patients et familles" }, { status: 403 });
+    // Assistance clinique IA : autorité diagnostique (COORDINATOR/MEDECIN), ADMIN en lecture seule.
+    if (!["ADMIN", "COORDINATOR", "MEDECIN"].includes(userRole)) {
+      return NextResponse.json({ error: "Accès interdit" }, { status: 403 });
     }
 
     const body = await req.json();

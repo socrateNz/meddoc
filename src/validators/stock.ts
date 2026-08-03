@@ -7,7 +7,7 @@ export const recordStockPurchaseSchema = z
       .object({
         name: z.string().min(2, "Nom du produit requis"),
         dosage: z.string().optional(),
-        category: z.string().optional(),
+        category: z.enum(["MEDICATION", "CONSUMABLE", "EQUIPMENT"]).optional(),
         unitPrice: z.number().min(0, "Le prix de vente doit être positif"),
         reorderLevel: z.number().min(0).optional(),
         location: z.string().optional(),

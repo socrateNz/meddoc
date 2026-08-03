@@ -14,6 +14,13 @@ export async function runSchedulerTasks() {
 
   // 2. APPOINTMENT REMINDERS
   await sendAppointmentReminders(now);
+
+  // 3. EXPIRING STOCK LOTS (rien ne "se déclenche" quand un lot vieillit — uniquement planifié)
+  await checkExpiringStock(now);
+
+  // 4. LOW STOCK SAFETY NET (couvre les articles déjà sous le seuil au déploiement, ou un
+  // événement stock.low qui aurait échoué silencieusement côté finance.ts/lab.ts/stock.ts)
+  await checkLowStock(now);
 }
 
 async function sendDailyAgenda(now: Date) {
@@ -153,5 +160,81 @@ async function sendAppointmentReminders(now: Date) {
     }
   } catch (error) {
     console.error("Error sending appointment reminders:", error);
+  }
+}
+
+async function checkExpiringStock(now: Date) {
+  try {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const expiringLots = await prisma.stockPurchase.findMany({
+      where: { remainingQuantity: { gt: 0 }, expiryDate: { gte: now, lte: in30Days } },
+      include: { pharmacyItem: true },
+    });
+
+    // Un seul rappel par article (garde le lot dont l'échéance est la plus proche).
+    const earliestByItem = new Map<string, (typeof expiringLots)[number]>();
+    for (const lot of expiringLots) {
+      if (!lot.pharmacyItem || !lot.expiryDate) continue;
+      const existing = earliestByItem.get(lot.pharmacyItemId);
+      if (!existing || !existing.expiryDate || lot.expiryDate < existing.expiryDate) {
+        earliestByItem.set(lot.pharmacyItemId, lot);
+      }
+    }
+
+    if (earliestByItem.size === 0) return;
+    const { appEvents } = await import("./events");
+
+    for (const lot of earliestByItem.values()) {
+      const title = `Expiration proche : ${lot.pharmacyItem!.name}`;
+      // Dédoublonnage quotidien (même pattern que sendDailyAgenda) : au plus une alerte par jour.
+      const existingNotification = await prisma.notification.findFirst({
+        where: { title, createdAt: { gte: startOfToday } },
+      });
+      if (existingNotification) continue;
+
+      appEvents.emit("stock.expiring", {
+        pharmacyItemId: lot.pharmacyItemId,
+        itemName: lot.pharmacyItem!.name,
+        expiryDate: lot.expiryDate!.toISOString(),
+        organizationId: lot.organizationId,
+      });
+
+      console.log(`[Scheduler] Expiring stock alert emitted for ${lot.pharmacyItem!.name}`);
+    }
+  } catch (error) {
+    console.error("Error checking expiring stock:", error);
+  }
+}
+
+async function checkLowStock(now: Date) {
+  try {
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const items = await prisma.pharmacyItem.findMany({ where: { organizationId: { not: null } } });
+    const belowThreshold = items.filter((item) => item.stockQuantity <= item.reorderLevel);
+    if (belowThreshold.length === 0) return;
+
+    const { appEvents } = await import("./events");
+
+    for (const item of belowThreshold) {
+      const title = `Rupture de stock : ${item.name}`;
+      const existingNotification = await prisma.notification.findFirst({
+        where: { title, createdAt: { gte: startOfToday } },
+      });
+      if (existingNotification) continue;
+
+      appEvents.emit("stock.low", {
+        pharmacyItemId: item.id,
+        itemName: item.name,
+        stockQuantity: item.stockQuantity,
+        reorderLevel: item.reorderLevel,
+        organizationId: item.organizationId,
+      });
+
+      console.log(`[Scheduler] Low stock safety-net alert emitted for ${item.name}`);
+    }
+  } catch (error) {
+    console.error("Error checking low stock:", error);
   }
 }

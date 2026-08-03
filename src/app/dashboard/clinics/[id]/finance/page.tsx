@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { getFinanceSummary } from "@/actions/finance";
+import { getFinanceSummary, listPendingInvoices } from "@/actions/finance";
+import { getStockValuation } from "@/actions/stock";
 import FinanceView from "@/app/dashboard/finance/finance-view";
 import { redirect } from "next/navigation";
 
@@ -45,6 +46,12 @@ export default async function ClinicFinancePage({ params }: ClinicFinancePagePro
   });
   const orgName = clinicOrg?.name || (activeUser.organization as any)?.name || "ÉTABLISSEMENT MÉDICAL";
 
+  const pendingInvoicesRes = await listPendingInvoices(clinicId);
+  const pendingInvoices = pendingInvoicesRes.success ? pendingInvoicesRes.data || [] : [];
+
+  const valuationRes = await getStockValuation(clinicId);
+  const valuation = valuationRes.success ? valuationRes.data : undefined;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1 animate-fade-up">
@@ -56,7 +63,7 @@ export default async function ClinicFinancePage({ params }: ClinicFinancePagePro
         </p>
       </div>
 
-      <FinanceView summary={summary} patients={patients} organizationId={clinicId} organizationName={orgName} currentUserRole={activeUser.role} />
+      <FinanceView summary={summary} patients={patients} organizationId={clinicId} organizationName={orgName} currentUserRole={activeUser.role} pendingInvoices={pendingInvoices} valuation={valuation} />
     </div>
   );
 }

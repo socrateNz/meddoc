@@ -21,6 +21,7 @@ import {
   ClipboardList,
   Activity,
   ArrowRight,
+  Truck,
 } from "lucide-react";
 import PharmacyDialog from "./pharmacy-dialog";
 import StockPurchaseDialog from "./stock-purchase-dialog";
@@ -28,6 +29,8 @@ import InventoryPanel from "./inventory-panel";
 import InvoiceModal from "./invoice-modal";
 import SaleInvoiceDialog from "./sale-invoice-dialog";
 import ExpenseDialog from "./expense-dialog";
+import FinalizePendingInvoiceDialog from "./finalize-pending-invoice-dialog";
+import SuppliersPanel from "./suppliers-panel";
 
 interface FinanceViewProps {
   summary: {
@@ -44,13 +47,29 @@ interface FinanceViewProps {
   organizationId?: string;
   organizationName?: string;
   currentUserRole?: string;
+  pendingInvoices?: any[];
+  valuation?: {
+    totalCostValue: number;
+    totalSaleValue: number;
+    potentialMargin: number;
+    byCategory: { category: string; costValue: number; saleValue: number }[];
+    byLocation: { location: string; costValue: number; saleValue: number }[];
+  };
 }
 
-export default function FinanceView({ summary, patients, organizationId, organizationName, currentUserRole }: FinanceViewProps) {
+const CATEGORY_LABELS: Record<string, string> = {
+  MEDICATION: "Médicaments",
+  CONSUMABLE: "Consommables",
+  EQUIPMENT: "Matériel médical",
+};
+
+export default function FinanceView({ summary, patients, organizationId, organizationName, currentUserRole, pendingInvoices = [], valuation }: FinanceViewProps) {
   const [selectedInvoiceTransaction, setSelectedInvoiceTransaction] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState("journal");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | "INCOME" | "EXPENSE" | "PHARMACY">("ALL");
+  const [pendingInvoicesState, setPendingInvoicesState] = useState(pendingInvoices);
+  const [categoryFilter, setCategoryFilter] = useState<"ALL" | "MEDICATION" | "CONSUMABLE" | "EQUIPMENT">("ALL");
 
   // ADMIN (holding) consulte la finance en lecture seule ; COORDINATOR/PHARMACIST gèrent.
   const canWrite = currentUserRole !== "ADMIN";
@@ -111,6 +130,10 @@ export default function FinanceView({ summary, patients, organizationId, organiz
     .filter((x): x is NonNullable<typeof x> => x !== null)
     .sort((a, b) => (a.severity === "critical" ? 0 : 1) - (b.severity === "critical" ? 0 : 1))
     .slice(0, 5);
+
+  const filteredPharmacyItems = categoryFilter === "ALL"
+    ? summary.pharmacyItems
+    : summary.pharmacyItems.filter((item: any) => item.category === categoryFilter);
 
   return (
     <div className="space-y-6">
@@ -195,6 +218,46 @@ export default function FinanceView({ summary, patients, organizationId, organiz
           />
           <ExpenseDialog organizationId={organizationId} onSuccess={setSelectedInvoiceTransaction} />
         </div>
+      )}
+
+      {/* Factures en attente : créées à la clôture d'une consultation par un CAREGIVER,
+          à finaliser par un COORDINATOR/PHARMACIST (qui seuls ont accès à la caisse). */}
+      {canWrite && pendingInvoicesState.length > 0 && (
+        <Card className="rounded-2xl border-amber-300/60 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/10 shadow-xs animate-fade-up">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-bold flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <Receipt className="h-4 w-4" />
+              Factures en attente ({pendingInvoicesState.length})
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Générées à la clôture de consultations par les soignants — à valider avant encaissement.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-2 space-y-2">
+            {pendingInvoicesState.map((inv: any) => {
+              const total = (inv.items || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
+              const patientName = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : "Client comptant";
+              return (
+                <div key={inv.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/70 dark:bg-slate-900/50 border border-amber-200/50 dark:border-amber-900/30">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{patientName}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {inv.medicalRecord?.title || "Consultation"} • {formatDateTime(inv.createdAt)} • {formatFCFA(total)}
+                    </p>
+                  </div>
+                  <FinalizePendingInvoiceDialog
+                    pendingInvoice={inv}
+                    pharmacyItems={summary.pharmacyItems}
+                    onSuccess={(transaction) => {
+                      setPendingInvoicesState((prev) => prev.filter((p) => p.id !== inv.id));
+                      setSelectedInvoiceTransaction(transaction);
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
       )}
 
       {/* Overview: recent activity + stock alerts */}
@@ -294,6 +357,10 @@ export default function FinanceView({ summary, patients, organizationId, organiz
             <TabsTrigger value="inventaire" className="rounded-lg text-xs font-semibold gap-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
               <ClipboardList className="h-4 w-4 text-rose-500" />
               Inventaire
+            </TabsTrigger>
+            <TabsTrigger value="fournisseurs" className="rounded-lg text-xs font-semibold gap-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+              <Truck className="h-4 w-4 text-emerald-500" />
+              Fournisseurs
             </TabsTrigger>
           </TabsList>
 
@@ -426,6 +493,76 @@ export default function FinanceView({ summary, patients, organizationId, organiz
 
         {/* TAB: Stock Pharmacie & Alertes */}
         <TabsContent value="pharmacie" className="pt-6 space-y-4">
+          {valuation && (
+            <Card className="rounded-2xl">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Valorisation du stock</CardTitle>
+                <CardDescription>Valeur au coût d&apos;achat (FEFO par lot) et à la vente, par catégorie et par emplacement.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Valeur au coût</p>
+                    <p className="text-lg font-extrabold">{formatFCFA(valuation.totalCostValue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Valeur à la vente</p>
+                    <p className="text-lg font-extrabold">{formatFCFA(valuation.totalSaleValue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Marge potentielle</p>
+                    <p className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{formatFCFA(valuation.potentialMargin)}</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1.5">Par catégorie</p>
+                    <div className="space-y-1">
+                      {valuation.byCategory.map((c) => (
+                        <div key={c.category} className="flex items-center justify-between text-xs">
+                          <span className="text-slate-600 dark:text-slate-400">{CATEGORY_LABELS[c.category] || c.category}</span>
+                          <span className="font-semibold">{formatFCFA(c.costValue)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1.5">Par emplacement</p>
+                    <div className="space-y-1">
+                      {valuation.byLocation.map((l) => (
+                        <div key={l.location} className="flex items-center justify-between text-xs">
+                          <span className="text-slate-600 dark:text-slate-400">{l.location}</span>
+                          <span className="font-semibold">{formatFCFA(l.costValue)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="flex items-center gap-1.5 bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800/50 w-fit">
+            {[
+              { value: "ALL", label: `Tous (${summary.pharmacyItems.length})` },
+              { value: "MEDICATION", label: `Médicaments (${summary.pharmacyItems.filter((i: any) => i.category === "MEDICATION").length})` },
+              { value: "CONSUMABLE", label: `Consommables (${summary.pharmacyItems.filter((i: any) => i.category === "CONSUMABLE").length})` },
+              { value: "EQUIPMENT", label: `Matériel (${summary.pharmacyItems.filter((i: any) => i.category === "EQUIPMENT").length})` },
+            ].map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setCategoryFilter(f.value as any)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  categoryFilter === f.value
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
           <div className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md overflow-hidden shadow-xs">
             <Table>
               <TableHeader className="bg-slate-50/50 dark:bg-slate-900/40">
@@ -440,14 +577,16 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {summary.pharmacyItems.length === 0 ? (
+                {filteredPharmacyItems.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="h-32 text-center text-slate-500 font-medium">
-                      Aucun produit en stock. Cliquez sur &quot;Nouveau produit&quot; pour ajouter des médicaments.
+                      {summary.pharmacyItems.length === 0
+                        ? "Aucun produit en stock. Cliquez sur \"Nouveau produit\" pour ajouter des médicaments."
+                        : "Aucun produit dans cette catégorie."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  summary.pharmacyItems.map((item) => {
+                  filteredPharmacyItems.map((item: any) => {
                     const isOutOfStock = item.stockQuantity <= 0;
                     const isLowStock = item.stockQuantity <= item.reorderLevel;
 
@@ -540,6 +679,10 @@ export default function FinanceView({ summary, patients, organizationId, organiz
         {/* TAB: Inventaire (comptage physique vs stock système) */}
         <TabsContent value="inventaire" className="pt-6 space-y-4">
           <InventoryPanel organizationId={organizationId} canWrite={canWrite} />
+        </TabsContent>
+
+        <TabsContent value="fournisseurs" className="pt-6">
+          <SuppliersPanel organizationId={organizationId} pharmacyItems={summary.pharmacyItems} canWrite={canWrite} />
         </TabsContent>
       </Tabs>
 

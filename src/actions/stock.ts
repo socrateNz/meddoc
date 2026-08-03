@@ -14,14 +14,16 @@ const STOCK_WRITE_ROLES = ["COORDINATOR", "PHARMACIST"];
 
 // ADMIN (holding) garde une vue lecture seule du stock/pharmacie ; seuls COORDINATOR
 // et PHARMACIST peuvent enregistrer des mouvements (achats, inventaire).
-async function assertStockRead(activeUser: any) {
+// Exportées pour être réutilisées par suppliers.ts/purchase-orders.ts (mêmes rôles,
+// évite toute divergence entre fichiers).
+export async function assertStockRead(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
   if (!STOCK_READ_ROLES.includes(activeUser.role)) {
     throw new Error("Non autorisé.");
   }
 }
 
-async function assertStockWrite(activeUser: any) {
+export async function assertStockWrite(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
   if (!STOCK_WRITE_ROLES.includes(activeUser.role)) {
     throw new Error("Non autorisé. Réservé aux coordinateurs et pharmaciens.");
@@ -72,6 +74,64 @@ async function getItemUnitCost(pharmacyItemId: string, client: any = prisma): Pr
   return totalCost / totalQty;
 }
 
+// Applique une réception de stock sur un article déjà existant : crée le lot StockPurchase,
+// incrémente PharmacyItem.stockQuantity, crée la FinancialTransaction correspondante. Réutilisée
+// par recordStockPurchase (saisie manuelle) et receivePurchaseOrders.receivePurchaseOrderLines
+// (réception de commande fournisseur) — un seul endroit pour cette logique transactionnelle.
+export async function applyStockReceipt(
+  tx: any,
+  data: {
+    pharmacyItemId: string;
+    itemName: string;
+    quantity: number;
+    purchasePrice: number;
+    supplier?: string | null;
+    batchNumber?: string | null;
+    expiryDate?: Date | null;
+    invoiceRef?: string | null;
+    purchasedById: string;
+    organizationId?: string | null;
+  }
+) {
+  const totalCost = data.quantity * data.purchasePrice;
+
+  const purchase = await tx.stockPurchase.create({
+    data: {
+      pharmacyItemId: data.pharmacyItemId,
+      quantity: data.quantity,
+      remainingQuantity: data.quantity,
+      purchasePrice: data.purchasePrice,
+      totalCost,
+      supplier: data.supplier || null,
+      batchNumber: data.batchNumber || null,
+      expiryDate: data.expiryDate || null,
+      invoiceRef: data.invoiceRef || null,
+      purchasedById: data.purchasedById,
+      organizationId: data.organizationId || null,
+    },
+  });
+
+  await tx.pharmacyItem.update({
+    where: { id: data.pharmacyItemId },
+    data: { stockQuantity: { increment: data.quantity } },
+  });
+
+  const transaction = await tx.financialTransaction.create({
+    data: {
+      type: "EXPENSE",
+      category: "PHARMACY_PURCHASE",
+      amount: totalCost,
+      description: `Achat pharmacie : ${data.quantity}x ${data.itemName}`,
+      pharmacyItemId: data.pharmacyItemId,
+      quantity: data.quantity,
+      recordedById: data.purchasedById,
+      organizationId: data.organizationId || null,
+    },
+  });
+
+  return { purchase, transaction };
+}
+
 export async function recordStockPurchase(data: {
   pharmacyItemId?: string;
   newItem?: {
@@ -98,7 +158,6 @@ export async function recordStockPurchase(data: {
     const targetOrgId = data.organizationId || activeUser!.organizationId;
     const quantity = Number(data.quantity);
     const purchasePrice = Number(data.purchasePrice);
-    const totalCost = quantity * purchasePrice;
     const expiry = data.expiryDate ? new Date(data.expiryDate) : null;
 
     const result = await prisma.$transaction(async (tx) => {
@@ -110,7 +169,7 @@ export async function recordStockPurchase(data: {
           data: {
             name: data.newItem!.name,
             dosage: data.newItem!.dosage || null,
-            category: data.newItem!.category || "MEDICATION",
+            category: (data.newItem!.category as any) || "MEDICATION",
             stockQuantity: 0,
             reorderLevel: data.newItem!.reorderLevel ?? 10,
             unitPrice: data.newItem!.unitPrice,
@@ -126,38 +185,17 @@ export async function recordStockPurchase(data: {
         itemName = existing.name;
       }
 
-      const purchase = await tx.stockPurchase.create({
-        data: {
-          pharmacyItemId: itemId,
-          quantity,
-          remainingQuantity: quantity,
-          purchasePrice,
-          totalCost,
-          supplier: data.supplier || null,
-          batchNumber: data.batchNumber || null,
-          expiryDate: expiry,
-          invoiceRef: data.invoiceRef || null,
-          purchasedById: activeUser!.id,
-          organizationId: targetOrgId,
-        },
-      });
-
-      await tx.pharmacyItem.update({
-        where: { id: itemId },
-        data: { stockQuantity: { increment: quantity } },
-      });
-
-      const transaction = await tx.financialTransaction.create({
-        data: {
-          type: "EXPENSE",
-          category: "PHARMACY_PURCHASE",
-          amount: totalCost,
-          description: `Achat pharmacie : ${quantity}x ${itemName}`,
-          pharmacyItemId: itemId,
-          quantity,
-          recordedById: activeUser!.id,
-          organizationId: targetOrgId,
-        },
+      const { purchase, transaction } = await applyStockReceipt(tx, {
+        pharmacyItemId: itemId!,
+        itemName,
+        quantity,
+        purchasePrice,
+        supplier: data.supplier,
+        batchNumber: data.batchNumber,
+        expiryDate: expiry,
+        invoiceRef: data.invoiceRef,
+        purchasedById: activeUser!.id,
+        organizationId: targetOrgId,
       });
 
       return { purchase, transaction, pharmacyItemId: itemId };
@@ -166,7 +204,7 @@ export async function recordStockPurchase(data: {
     await logAuditAction(activeUser!.id, "RECORD_STOCK_PURCHASE", "PharmacyItem", result.pharmacyItemId, {
       quantity,
       purchasePrice,
-      totalCost,
+      totalCost: quantity * purchasePrice,
     });
 
     revalidatePath("/dashboard/finance");
@@ -227,9 +265,25 @@ export async function getStockValuation(organizationId?: string) {
 
     let totalCostValue = 0;
     let totalSaleValue = 0;
+    const byCategoryMap = new Map<string, { costValue: number; saleValue: number }>();
+    const byLocationMap = new Map<string, { costValue: number; saleValue: number }>();
+
     for (const item of items) {
-      totalCostValue += costByItem.get(item.id) || 0;
-      totalSaleValue += item.stockQuantity * item.unitPrice;
+      const costValue = costByItem.get(item.id) || 0;
+      const saleValue = item.stockQuantity * item.unitPrice;
+      totalCostValue += costValue;
+      totalSaleValue += saleValue;
+
+      const catEntry = byCategoryMap.get(item.category) || { costValue: 0, saleValue: 0 };
+      catEntry.costValue += costValue;
+      catEntry.saleValue += saleValue;
+      byCategoryMap.set(item.category, catEntry);
+
+      const locKey = item.location || "Non renseigné";
+      const locEntry = byLocationMap.get(locKey) || { costValue: 0, saleValue: 0 };
+      locEntry.costValue += costValue;
+      locEntry.saleValue += saleValue;
+      byLocationMap.set(locKey, locEntry);
     }
 
     return {
@@ -238,6 +292,8 @@ export async function getStockValuation(organizationId?: string) {
         totalCostValue,
         totalSaleValue,
         potentialMargin: totalSaleValue - totalCostValue,
+        byCategory: Array.from(byCategoryMap.entries()).map(([category, v]) => ({ category, ...v })),
+        byLocation: Array.from(byLocationMap.entries()).map(([location, v]) => ({ location, ...v })),
       },
     };
   } catch (error: any) {
@@ -354,6 +410,7 @@ export async function completeInventoryCount(inventoryCountId: string) {
     }
 
     let totalLossValue = 0;
+    const lowStockAlerts: { pharmacyItemId: string; itemName: string; stockQuantity: number; reorderLevel: number; organizationId: string | null }[] = [];
 
     await prisma.$transaction(async (tx) => {
       for (const line of count.lines) {
@@ -423,10 +480,21 @@ export async function completeInventoryCount(inventoryCountId: string) {
           });
         }
 
-        await tx.pharmacyItem.update({
+        const updatedItem = await tx.pharmacyItem.update({
           where: { id: line.pharmacyItemId },
           data: { stockQuantity: line.countedQuantity },
         });
+
+        // Alerte de rupture uniquement au franchissement du seuil (pas à chaque perte sous le seuil).
+        if (delta < 0 && line.systemQuantity > updatedItem.reorderLevel && updatedItem.stockQuantity <= updatedItem.reorderLevel) {
+          lowStockAlerts.push({
+            pharmacyItemId: updatedItem.id,
+            itemName: updatedItem.name,
+            stockQuantity: updatedItem.stockQuantity,
+            reorderLevel: updatedItem.reorderLevel,
+            organizationId: count.organizationId,
+          });
+        }
       }
 
       await tx.inventoryCount.update({
@@ -438,6 +506,11 @@ export async function completeInventoryCount(inventoryCountId: string) {
     await logAuditAction(activeUser!.id, "COMPLETE_INVENTORY_COUNT", "InventoryCount", inventoryCountId, {
       totalLossValue,
     });
+
+    if (lowStockAlerts.length > 0) {
+      const { appEvents } = await import("@/lib/events");
+      for (const alert of lowStockAlerts) appEvents.emit("stock.low", alert);
+    }
 
     revalidatePath("/dashboard/finance");
     revalidatePath("/dashboard", "layout");

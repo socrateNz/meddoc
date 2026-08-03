@@ -19,7 +19,7 @@ export class AppointmentService {
   }
 
   static async getAppointmentsForUser(userId: string, role: string) {
-    if (role === "CAREGIVER") {
+    if (role === "CAREGIVER" || role === "MEDECIN") {
       const caregiver = await prisma.caregiver.findUnique({ where: { userId } });
       if (!caregiver) return [];
       return prisma.appointment.findMany({

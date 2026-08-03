@@ -6,13 +6,23 @@ import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { createAppointmentSchema, completeConsultationSchema } from "@/validators/appointments";
 import { revalidatePath } from "next/cache";
+import { runInteractionCheck } from "@/actions/prescriptions";
 
-// Planifier/clôturer un RDV est une action clinique — ADMIN (holding) et PHARMACIST restent en lecture seule.
-const CLINICAL_WRITE_ROLES = ["COORDINATOR", "CAREGIVER"];
+// Planifier un RDV reste large (le personnel infirmier organise aussi l'agenda) ; clôturer une
+// consultation (diagnostic + ordonnance) est réservé à l'autorité clinique complète — ADMIN
+// (holding) et PHARMACIST restent en lecture seule dans les deux cas.
+const APPOINTMENT_SCHEDULE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
+const CONSULTATION_WRITE_ROLES = ["COORDINATOR", "MEDECIN"];
 
-function assertClinicalWriteAccess(role: string) {
-  if (!CLINICAL_WRITE_ROLES.includes(role)) {
-    throw new Error("Non autorisé. Seuls un coordinateur ou un soignant peuvent effectuer cette action.");
+function assertScheduleAccess(role: string) {
+  if (!APPOINTMENT_SCHEDULE_ROLES.includes(role)) {
+    throw new Error("Non autorisé. Seuls un coordinateur, un médecin ou un infirmier(e) peuvent effectuer cette action.");
+  }
+}
+
+function assertConsultationWriteAccess(role: string) {
+  if (!CONSULTATION_WRITE_ROLES.includes(role)) {
+    throw new Error("Non autorisé. Seuls un coordinateur ou un médecin peuvent clôturer une consultation.");
   }
 }
 
@@ -31,7 +41,7 @@ export async function createAppointment(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertClinicalWriteAccess(activeUser.role);
+    assertScheduleAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -89,6 +99,8 @@ export async function completeConsultation(data: {
   diagnosis: string;
   plan: string;
   medications?: { name: string; dosage: string; frequency: string; instructions: string }[];
+  diagnosisCode?: string;
+  diagnosisLabel?: string;
 }) {
   try {
     completeConsultationSchema.parse(data);
@@ -96,7 +108,7 @@ export async function completeConsultation(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertClinicalWriteAccess(activeUser.role);
+    assertConsultationWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -104,6 +116,9 @@ export async function completeConsultation(data: {
     }
 
     let description = `**Symptômes / Observations :**\n${data.symptoms}\n\n**Diagnostic / Évaluation :**\n${data.diagnosis}\n\n**Plan de traitement / Recommandations :**\n${data.plan}`;
+    if (data.diagnosisCode && data.diagnosisLabel) {
+      description = `**Diagnostic CIM-10 :** ${data.diagnosisCode} — ${data.diagnosisLabel}\n\n${description}`;
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       let appointment = null;
@@ -115,60 +130,113 @@ export async function completeConsultation(data: {
         });
       }
 
-      // 2. Handle Medications & Care Plan
-      if (data.medications && data.medications.length > 0) {
-        let activeCarePlan = await tx.carePlan.findFirst({
-          where: { patientId: data.patientId, status: "ACTIVE" },
-          orderBy: { startDate: "desc" },
-        });
-
-        if (!activeCarePlan) {
-          let coordinator = await tx.medicalCoordinator.findFirst();
-          if (!coordinator) {
-            const fallbackUser = await tx.user.findFirst({ where: { role: { in: ["ADMIN", "COORDINATOR"] } } });
-            if (!fallbackUser) throw new Error("Aucun administrateur ou coordinateur disponible pour valider le plan de soins.");
-            coordinator = await tx.medicalCoordinator.create({
-              data: { userId: fallbackUser.id }
-            });
-          }
-
-          activeCarePlan = await tx.carePlan.create({
-            data: {
-              title: "Plan de Soins Général",
-              patientId: data.patientId,
-              coordinatorId: coordinator.id,
-              startDate: new Date(),
-              status: "ACTIVE",
-            }
-          });
-        }
-
-        await tx.medication.createMany({
-          data: data.medications.map((med) => ({
-            carePlanId: activeCarePlan!.id,
-            name: med.name,
-            dosage: med.dosage,
-            frequency: med.frequency,
-            instructions: med.instructions,
-          }))
-        });
-
-        description += "\n\n**Ordonnance :**\n";
-        data.medications.forEach(med => {
-          description += `- ${med.name} : ${med.dosage}, ${med.frequency}${med.instructions ? ` (${med.instructions})` : ''}\n`;
-        });
-      }
-
-      // 3. Create medical record with structured notes in description
+      // 2. Create medical record with structured notes in description
       const medicalRecord = await tx.medicalRecord.create({
         data: {
           patientId: data.patientId,
           title: `Consultation du ${new Date().toLocaleDateString('fr-FR')}`,
           description: description,
+          diagnosisCode: data.diagnosisCode || null,
+          diagnosisLabel: data.diagnosisLabel || null,
+          createdById: activeUser.id,
         },
       });
 
-      return { appointment, medicalRecord };
+      const patientRecord = await tx.patient.findUnique({
+        where: { id: data.patientId },
+        select: { organizationId: true },
+      });
+
+      // 3. Ordonnance électronique : un médicament reconnu au catalogue pharmacie (par nom,
+      // insensible à la casse) est rapproché une seule fois et réutilisé à la fois pour la
+      // ligne PrescriptionItem et la ligne de facturation ci-dessous.
+      let prescription = null;
+      const pharmacyMatches: { pharmacyItemId: string; unitPrice: number; name: string; dosage: string | null }[] = [];
+      if (data.medications && data.medications.length > 0) {
+        for (const med of data.medications) {
+          const pharmacyItem = patientRecord?.organizationId
+            ? await tx.pharmacyItem.findFirst({
+                where: {
+                  organizationId: patientRecord.organizationId,
+                  name: { equals: med.name, mode: "insensitive" },
+                },
+              })
+            : null;
+          pharmacyMatches.push(
+            pharmacyItem
+              ? { pharmacyItemId: pharmacyItem.id, unitPrice: pharmacyItem.unitPrice, name: pharmacyItem.name, dosage: pharmacyItem.dosage }
+              : { pharmacyItemId: "", unitPrice: 0, name: med.name, dosage: null }
+          );
+        }
+
+        prescription = await tx.prescription.create({
+          data: {
+            patientId: data.patientId,
+            prescribedById: activeUser.id,
+            medicalRecordId: medicalRecord.id,
+            appointmentId: data.appointmentId || null,
+            organizationId: patientRecord?.organizationId || null,
+            status: "ACTIVE",
+            items: {
+              create: data.medications.map((med, i) => ({
+                pharmacyItemId: pharmacyMatches[i].pharmacyItemId || null,
+                drugName: med.name,
+                dosage: med.dosage,
+                frequency: med.frequency,
+                instructions: med.instructions || null,
+              })),
+            },
+          },
+        });
+      }
+
+      // 4. Facture en attente : un CAREGIVER/MEDECIN ne peut pas toucher la caisse
+      // (recordMultiItemInvoice est réservé à COORDINATOR/PHARMACIST), donc la clôture crée une
+      // facture à finaliser plutôt que d'enregistrer directement une transaction financière.
+      let pendingInvoice = null;
+      if (patientRecord?.organizationId) {
+        const items: any[] = [
+          {
+            type: "SERVICE",
+            description: "Frais de consultation",
+            quantity: 1,
+            unitPrice: 0,
+            amount: 0,
+          },
+        ];
+
+        for (const match of pharmacyMatches) {
+          if (!match.pharmacyItemId) continue;
+          items.push({
+            type: "PHARMACY",
+            pharmacyItemId: match.pharmacyItemId,
+            description: `${match.name}${match.dosage ? ` (${match.dosage})` : ""}`,
+            quantity: 1,
+            unitPrice: match.unitPrice,
+            amount: match.unitPrice,
+          });
+        }
+
+        pendingInvoice = await tx.pendingInvoice.create({
+          data: {
+            status: "PENDING",
+            patientId: data.patientId,
+            medicalRecordId: medicalRecord.id,
+            organizationId: patientRecord.organizationId,
+            items,
+            createdById: activeUser.id,
+          },
+        });
+
+        if (prescription) {
+          prescription = await tx.prescription.update({
+            where: { id: prescription.id },
+            data: { status: "SENT_TO_PHARMACY", pendingInvoiceId: pendingInvoice.id, sentToPharmacyAt: new Date() },
+          });
+        }
+      }
+
+      return { appointment, medicalRecord, pendingInvoice, prescription };
     });
 
     // Write Audit Log
@@ -182,8 +250,15 @@ export async function completeConsultation(data: {
 
     revalidatePath("/dashboard/appointments");
     revalidatePath(`/dashboard/patients/${data.patientId}`);
-    
-    return { success: true, data: result };
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+
+    // Vérification IA des interactions — jamais bloquante, exécutée après la transaction.
+    if (result.prescription) {
+      await runInteractionCheck(result.prescription.id);
+    }
+
+    return { success: true, data: result, pendingInvoiceCreated: !!result.pendingInvoice };
   } catch (error: any) {
     console.error("Error completing consultation:", error);
     return { success: false, error: toErrorMessage(error, "Erreur lors de la clôture de la consultation") };

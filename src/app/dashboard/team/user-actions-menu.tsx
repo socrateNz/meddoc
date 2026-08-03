@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { MoreHorizontal, Replace, UserX, UserCheck } from "lucide-react";
+import { MoreHorizontal, Replace, UserX, UserCheck, Stethoscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ReassignMemberDialog from "./reassign-member-dialog";
 import DeleteMemberAlert from "./delete-member-alert";
 import ReactivateMemberAlert from "./reactivate-member-alert";
+import ReclassifyRoleDialog from "./reclassify-role-dialog";
 
 interface UserActionsMenuProps {
   member: any;
@@ -20,15 +21,21 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
   const [reassignOpen, setReassignOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
+  const [reclassifyOpen, setReclassifyOpen] = useState(false);
   const userName = `${member.firstName} ${member.lastName}`;
 
-  // COORDINATOR ne gère que le personnel (soignant/pharmacien) de sa clinique ;
+  // COORDINATOR ne gère que le personnel (médecin/infirmier/pharmacien) de sa clinique ;
   // ADMIN (holding) ne gère plus que les coordinateurs — reflète team.ts:assertCanManageStaffMember.
   const canManageStatus =
-    (currentUserRole === "COORDINATOR" && ["CAREGIVER", "PHARMACIST"].includes(member.role)) ||
+    (currentUserRole === "COORDINATOR" && ["MEDECIN", "CAREGIVER", "PHARMACIST"].includes(member.role)) ||
     (currentUserRole === "ADMIN" && member.role === "COORDINATOR");
 
-  if (!canManageStatus && !isHoldingAdmin) {
+  // Bascule Médecin ⇄ Infirmier(e) : seul un COORDINATOR peut reclasser son propre personnel
+  // clinique (cf. team.ts:reclassifyRole), disponible en permanence (pas qu'au déploiement).
+  const canReclassify = currentUserRole === "COORDINATOR" && ["MEDECIN", "CAREGIVER"].includes(member.role) && member.isActive;
+  const reclassifyTarget: "MEDECIN" | "CAREGIVER" = member.role === "MEDECIN" ? "CAREGIVER" : "MEDECIN";
+
+  if (!canManageStatus && !canReclassify && !isHoldingAdmin) {
     return null;
   }
 
@@ -43,6 +50,12 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
             <DropdownMenuItem onClick={() => setReassignOpen(true)} className="cursor-pointer">
               <Replace className="mr-2 h-4 w-4" />
               <span>Réaffecter</span>
+            </DropdownMenuItem>
+          )}
+          {canReclassify && (
+            <DropdownMenuItem onClick={() => setReclassifyOpen(true)} className="cursor-pointer">
+              <Stethoscope className="mr-2 h-4 w-4" />
+              <span>Marquer comme {reclassifyTarget === "MEDECIN" ? "Médecin" : "Infirmier(e)"}</span>
             </DropdownMenuItem>
           )}
           {canManageStatus && (
@@ -85,6 +98,15 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
         userId={member.id}
         userName={userName}
       />
+      {canReclassify && (
+        <ReclassifyRoleDialog
+          open={reclassifyOpen}
+          onOpenChange={setReclassifyOpen}
+          userId={member.id}
+          userName={userName}
+          targetRole={reclassifyTarget}
+        />
+      )}
     </>
   );
 }

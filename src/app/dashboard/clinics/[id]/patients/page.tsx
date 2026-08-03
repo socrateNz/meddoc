@@ -62,7 +62,7 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
             Gérez la liste des patients, leurs statuts (actifs / clôturés) et leurs dossiers pour cette clinique.
           </p>
         </div>
-        {["COORDINATOR", "CAREGIVER"].includes(activeUser.role) && (
+        {["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role) && (
           <NewPatientDialog
             isHoldingAdmin={isHoldingAdmin}
             holdingId={activeUser.organizationId || ""}

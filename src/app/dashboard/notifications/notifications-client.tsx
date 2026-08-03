@@ -15,6 +15,10 @@ import {
   Sparkles,
   MessageSquare,
   X,
+  FlaskConical,
+  Pill,
+  PackageX,
+  CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +84,34 @@ const TYPE_CONFIG: Record<
     text: "text-amber-600 dark:text-amber-400",
     border: "border-amber-500/20",
     label: "Plan de soins",
+  },
+  LAB_CRITICAL: {
+    icon: FlaskConical,
+    bg: "bg-red-500/10",
+    text: "text-red-600 dark:text-red-400",
+    border: "border-red-500/20",
+    label: "Résultat critique",
+  },
+  DRUG_INTERACTION: {
+    icon: Pill,
+    bg: "bg-red-500/10",
+    text: "text-red-600 dark:text-red-400",
+    border: "border-red-500/20",
+    label: "Interaction médicamenteuse",
+  },
+  STOCK_LOW: {
+    icon: PackageX,
+    bg: "bg-amber-500/10",
+    text: "text-amber-600 dark:text-amber-400",
+    border: "border-amber-500/20",
+    label: "Rupture de stock",
+  },
+  STOCK_EXPIRY: {
+    icon: CalendarClock,
+    bg: "bg-amber-500/10",
+    text: "text-amber-600 dark:text-amber-400",
+    border: "border-amber-500/20",
+    label: "Expiration proche",
   },
   INFO: {
     icon: Info,

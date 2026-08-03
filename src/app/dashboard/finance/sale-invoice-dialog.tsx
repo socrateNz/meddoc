@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ShoppingCart, Trash2, Loader2, Printer, PlusCircle } from "lucide-react";
 import { recordMultiItemInvoice } from "@/actions/finance";
+import { listPrescriptions } from "@/actions/prescriptions";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -43,6 +44,7 @@ export default function SaleInvoiceDialog({ pharmacyItems, patients, organizatio
   const [addPharmacyQty, setAddPharmacyQty] = useState(1);
   const [addServiceDesc, setAddServiceDesc] = useState("");
   const [addServiceAmount, setAddServiceAmount] = useState("");
+  const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
 
   const resetCart = () => {
     setCartItems([]);
@@ -109,7 +111,7 @@ export default function SaleInvoiceDialog({ pharmacyItems, patients, organizatio
     setCartItems((prev) => prev.filter((i) => i.id !== id));
   };
 
-  const handleLoadPatientPrescriptions = () => {
+  const handleLoadPatientPrescriptions = async () => {
     if (!cartPatientId) {
       setCartMsg({ type: "error", text: "Veuillez sélectionner un patient ci-dessous avant d'importer une ordonnance." });
       return;
@@ -117,53 +119,56 @@ export default function SaleInvoiceDialog({ pharmacyItems, patients, organizatio
     const patient = patients.find((p) => p.id === cartPatientId);
     if (!patient) return;
 
-    const prescribedList: Array<{ name: string; dosage?: string }> = [];
-    if (Array.isArray(patient.carePlans)) {
-      patient.carePlans.forEach((plan: any) => {
-        if (Array.isArray(plan.medications)) {
-          plan.medications.forEach((med: any) => {
-            prescribedList.push({ name: med.name, dosage: med.dosage });
+    setLoadingPrescriptions(true);
+    setCartMsg(null);
+    try {
+      // Seules les ordonnances ACTIVE (pas encore envoyées à la pharmacie) sont importables ici —
+      // une ordonnance déjà SENT_TO_PHARMACY a sa propre facture en attente, pour éviter un double comptage.
+      const res = await listPrescriptions({ patientId: cartPatientId, status: "ACTIVE" });
+      const prescriptions = res.success ? res.data || [] : [];
+      const prescribedList: Array<{ name: string; dosage?: string }> = prescriptions.flatMap((p: any) =>
+        p.items.map((item: any) => ({ name: item.drugName, dosage: item.dosage }))
+      );
+
+      if (prescribedList.length === 0) {
+        setCartMsg({ type: "error", text: `Aucune ordonnance active en attente pour ${patient.user?.lastName || "ce patient"}.` });
+        return;
+      }
+
+      let addedCount = 0;
+      const newItems = [...cartItems];
+      prescribedList.forEach((med) => {
+        const match = pharmacyItems.find((p) =>
+          p.name.toLowerCase().includes(med.name.toLowerCase()) || med.name.toLowerCase().includes(p.name.toLowerCase())
+        );
+        if (match) {
+          newItems.push({
+            id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            type: "PHARMACY",
+            pharmacyItemId: match.id,
+            description: `${match.name}${match.dosage ? ` (${match.dosage})` : ""}`,
+            quantity: 1,
+            unitPrice: match.unitPrice,
+            amount: match.unitPrice,
+          });
+        } else {
+          newItems.push({
+            id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            type: "SERVICE",
+            description: `Prescription: ${med.name}${med.dosage ? ` (${med.dosage})` : ""}`,
+            quantity: 1,
+            unitPrice: 1000,
+            amount: 1000,
           });
         }
+        addedCount++;
       });
+
+      setCartItems(newItems);
+      setCartMsg({ type: "success", text: `${addedCount} produit(s) d'ordonnance chargé(s) dans le panier avec succès !` });
+    } finally {
+      setLoadingPrescriptions(false);
     }
-
-    if (prescribedList.length === 0) {
-      setCartMsg({ type: "error", text: `Aucune ordonnance/prescription active enregistrée pour ${patient.user?.lastName || "ce patient"}.` });
-      return;
-    }
-
-    let addedCount = 0;
-    const newItems = [...cartItems];
-    prescribedList.forEach((med) => {
-      const match = pharmacyItems.find((p) =>
-        p.name.toLowerCase().includes(med.name.toLowerCase()) || med.name.toLowerCase().includes(p.name.toLowerCase())
-      );
-      if (match) {
-        newItems.push({
-          id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          type: "PHARMACY",
-          pharmacyItemId: match.id,
-          description: `${match.name}${match.dosage ? ` (${match.dosage})` : ""}`,
-          quantity: 1,
-          unitPrice: match.unitPrice,
-          amount: match.unitPrice,
-        });
-      } else {
-        newItems.push({
-          id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          type: "SERVICE",
-          description: `Prescription: ${med.name}${med.dosage ? ` (${med.dosage})` : ""}`,
-          quantity: 1,
-          unitPrice: 1000,
-          amount: 1000,
-        });
-      }
-      addedCount++;
-    });
-
-    setCartItems(newItems);
-    setCartMsg({ type: "success", text: `${addedCount} produit(s) d'ordonnance chargé(s) dans le panier avec succès !` });
   };
 
   const cartGrandTotal = cartItems.reduce((sum, item) => sum + item.amount, 0);
@@ -394,9 +399,10 @@ export default function SaleInvoiceDialog({ pharmacyItems, patients, organizatio
                   <button
                     type="button"
                     onClick={handleLoadPatientPrescriptions}
-                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                    disabled={loadingPrescriptions}
+                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 disabled:opacity-50"
                   >
-                    ⚡ Importer Ordonnance Patient
+                    {loadingPrescriptions ? "Chargement..." : "⚡ Importer Ordonnance Patient"}
                   </button>
                 )}
               </div>

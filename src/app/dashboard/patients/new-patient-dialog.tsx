@@ -11,6 +11,12 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+const SEX_OPTIONS = [
+  { value: "M", label: "Masculin" },
+  { value: "F", label: "Féminin" },
+  { value: "Autre", label: "Autre" },
+];
+
 export default function NewPatientDialog({ 
   isHoldingAdmin = false, 
   holdingId = "", 
@@ -31,6 +37,7 @@ export default function NewPatientDialog({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
+  const [sex, setSex] = useState("");
   const [address, setAddress] = useState("");
   const [emergencyContact, setEmergencyContact] = useState("");
   const [dependencyLevel, setDependencyLevel] = useState(1);
@@ -85,6 +92,7 @@ export default function NewPatientDialog({
         email,
         phone,
         dateOfBirth,
+        sex: sex || undefined,
         address,
         emergencyContact,
         dependencyLevel,
@@ -102,6 +110,7 @@ export default function NewPatientDialog({
         setEmail("");
         setPhone("");
         setDateOfBirth("");
+        setSex("");
         setAddress("");
         setEmergencyContact("");
         setDependencyLevel(1);
@@ -192,22 +201,36 @@ export default function NewPatientDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label>Niveau de dépendance ({dependencyLevel})</Label>
-              <div className="flex items-center gap-1.5 pt-1">
-                {[1, 2, 3, 4, 5].map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() => setDependencyLevel(level)}
-                    className={`flex-1 h-9 rounded-lg font-medium text-sm transition-all border ${dependencyLevel === level
-                        ? "bg-primary border-primary text-primary-foreground shadow-md scale-105"
-                        : "bg-background hover:bg-accent border-border text-muted-foreground"
-                      }`}
-                  >
-                    {level}
-                  </button>
-                ))}
-              </div>
+              <Label>Sexe</Label>
+              <Select items={SEX_OPTIONS} value={sex} onValueChange={(v: any) => setSex(v || "")}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Non précisé" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SEX_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Niveau de dépendance ({dependencyLevel})</Label>
+            <div className="flex items-center gap-1.5 pt-1">
+              {[1, 2, 3, 4, 5].map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setDependencyLevel(level)}
+                  className={`flex-1 h-9 rounded-lg font-medium text-sm transition-all border ${dependencyLevel === level
+                      ? "bg-primary border-primary text-primary-foreground shadow-md scale-105"
+                      : "bg-background hover:bg-accent border-border text-muted-foreground"
+                    }`}
+                >
+                  {level}
+                </button>
+              ))}
             </div>
           </div>
 

@@ -51,7 +51,8 @@ const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
 const ROLE_LABELS: Record<string, string> = {
   ADMIN: "Administrateur",
   COORDINATOR: "Coordinateur",
-  CAREGIVER: "Soignant",
+  MEDECIN: "Médecin",
+  CAREGIVER: "Infirmier(e)",
   PHARMACIST: "Pharmacien(ne)",
   PATIENT: "Patient",
   FAMILY: "Famille",

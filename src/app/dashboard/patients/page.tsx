@@ -65,7 +65,7 @@ export default async function PatientsPage() {
             Gérez la liste de vos patients, filtrez par statut de soins et consultez leurs dossiers.
           </p>
         </div>
-        {["COORDINATOR", "CAREGIVER"].includes(activeUser.role) && (
+        {["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role) && (
           <NewPatientDialog
             isHoldingAdmin={isHoldingAdmin}
             holdingId={activeUser.organizationId || ""}

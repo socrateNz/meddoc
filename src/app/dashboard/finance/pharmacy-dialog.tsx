@@ -8,6 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Plus, Package, Edit, Loader2 } from "lucide-react";
 import { createOrUpdatePharmacyItem } from "@/actions/finance";
 
+const CATEGORY_OPTIONS = [
+  { value: "MEDICATION", label: "Médicament" },
+  { value: "CONSUMABLE", label: "Consommable" },
+  { value: "EQUIPMENT", label: "Matériel médical" },
+];
+
 interface PharmacyDialogProps {
   item?: any;
   organizationId?: string;
@@ -120,15 +126,30 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="dosage">Dosage / Forme</Label>
-            <Input
-              id="dosage"
-              placeholder="ex: 500mg, Boîte de 16 comprimés, Flacon..."
-              value={formData.dosage}
-              onChange={(e) => setFormData({ ...formData, dosage: e.target.value })}
-              className="rounded-xl"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="dosage">Dosage / Forme</Label>
+              <Input
+                id="dosage"
+                placeholder="ex: 500mg, Boîte de 16 comprimés, Flacon..."
+                value={formData.dosage}
+                onChange={(e) => setFormData({ ...formData, dosage: e.target.value })}
+                className="rounded-xl"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="category">Catégorie *</Label>
+              <select
+                id="category"
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="w-full h-9 px-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+              >
+                {CATEGORY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

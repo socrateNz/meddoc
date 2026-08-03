@@ -4,7 +4,7 @@ export const pharmacyItemSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(2, "Nom du produit requis"),
   dosage: z.string().optional(),
-  category: z.string().optional(),
+  category: z.enum(["MEDICATION", "CONSUMABLE", "EQUIPMENT"]).optional(),
   reorderLevel: z.number().min(0),
   unitPrice: z.number().min(0, "Le prix de vente doit être positif"),
   batchNumber: z.string().optional(),

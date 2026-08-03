@@ -26,4 +26,6 @@ export const completeConsultationSchema = z.object({
       })
     )
     .optional(),
+  diagnosisCode: z.string().optional(),
+  diagnosisLabel: z.string().optional(),
 });

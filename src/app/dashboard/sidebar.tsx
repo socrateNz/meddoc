@@ -24,7 +24,9 @@ import {
   ScrollText,
   FileSignature,
   ShieldCheck,
-  MessageCircle
+  MessageCircle,
+  FlaskConical,
+  HeartPulse
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -46,6 +48,7 @@ interface SidebarProps {
     appointment: number;
     message: number;
     ai: number;
+    lab: number;
   };
   clinics?: { id: string; name: string }[];
   // Alertes réservées au SUPER_ADMIN : ne proviennent pas du modèle Notification,
@@ -95,20 +98,32 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       href: activeClinicId ? `/dashboard/clinics/${activeClinicId}` : "/dashboard",
       icon: LayoutDashboard,
       exact: true,
+      section: "Aperçu",
+    },
+    {
+      name: "Notifications",
+      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/notifications` : "/dashboard/notifications",
+      icon: Bell,
+      count: unreadCounts?.total || 0,
+      badgeColor: "bg-primary text-primary-foreground font-bold shadow-xs",
+      roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'SUPER_ADMIN'],
+      section: "Aperçu",
     },
     // If a clinic is active, render clinic-specific items
     ...(activeClinicId ? [
       {
+        name: "Tableau de bord Médecin",
+        href: `/dashboard/clinics/${activeClinicId}/medecin`,
+        icon: HeartPulse,
+        roles: ['MEDECIN'],
+        section: "Clinique",
+      },
+      {
         name: "Patients",
         href: `/dashboard/clinics/${activeClinicId}/patients`,
         icon: Users,
-        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
-      },
-      {
-        name: "Équipe médicale",
-        href: `/dashboard/clinics/${activeClinicId}/team`,
-        icon: Stethoscope,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
       },
       {
         name: "Rendez-vous",
@@ -116,7 +131,8 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Calendar,
         count: unreadCounts?.appointment || 0,
         badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+        section: "Clinique",
       },
       {
         name: "Incidents",
@@ -124,15 +140,17 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: AlertCircle,
         count: unreadCounts?.incident || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
-        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
       },
       {
-        name: "Messagerie",
-        href: `/dashboard/clinics/${activeClinicId}/messages`,
-        icon: MessageSquare,
-        count: unreadCounts?.message || 0,
-        badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
+        name: "Laboratoire",
+        href: `/dashboard/clinics/${activeClinicId}/lab`,
+        icon: FlaskConical,
+        count: unreadCounts?.lab || 0,
+        badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
       },
       {
         name: "Assistant Clinique IA",
@@ -141,20 +159,106 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         iconClassName: "text-violet-500",
         count: unreadCounts?.ai || 0,
         badgeColor: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN'],
+        section: "Clinique",
       },
       {
         name: "Finance & Pharmacie",
         href: `/dashboard/clinics/${activeClinicId}/finance`,
         icon: Wallet,
         roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+        section: "Finance",
+      },
+      {
+        name: "Contrats aidants",
+        href: `/dashboard/clinics/${activeClinicId}/contracts`,
+        icon: FileSignature,
+        roles: ['ADMIN', 'COORDINATOR'],
+        section: "Finance",
+      },
+      {
+        name: "Équipe médicale",
+        href: `/dashboard/clinics/${activeClinicId}/team`,
+        icon: Stethoscope,
+        roles: ['ADMIN', 'COORDINATOR'],
+        section: "Administration",
+      },
+      {
+        name: "Journal d'audit",
+        href: `/dashboard/clinics/${activeClinicId}/audit-log`,
+        icon: ScrollText,
+        roles: ['ADMIN'],
+        section: "Administration",
+      },
+      {
+        name: "Messagerie",
+        href: `/dashboard/clinics/${activeClinicId}/messages`,
+        icon: MessageSquare,
+        count: unreadCounts?.message || 0,
+        badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+        section: "Autres",
+      },
+      {
+        name: "Manuel d'utilisation",
+        href: `/dashboard/clinics/${activeClinicId}/manual`,
+        icon: BookOpen,
+        roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'FAMILY', 'PATIENT'],
+        section: "Autres",
       },
     ] : [
+      {
+        name: "Laboratoire",
+        href: "/dashboard/lab",
+        icon: FlaskConical,
+        count: unreadCounts?.lab || 0,
+        badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
+      },
       {
         name: "Finance & Pharmacie",
         href: "/dashboard/finance",
         icon: Wallet,
         roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+        section: "Finance",
+      },
+      {
+        name: "Contrats aidants",
+        href: "/dashboard/contracts",
+        icon: FileSignature,
+        roles: ['ADMIN', 'COORDINATOR'],
+        section: "Finance",
+      },
+      {
+        name: "Équipe médicale",
+        href: "/dashboard/team",
+        icon: Stethoscope,
+        roles: ['ADMIN', 'COORDINATOR'],
+        section: "Administration",
+      },
+      {
+        name: "Journal d'audit",
+        href: "/dashboard/audit-log",
+        icon: ScrollText,
+        roles: ['ADMIN'],
+        section: "Administration",
+      },
+      {
+        name: "Messagerie",
+        href: "/dashboard/messages",
+        icon: MessageSquare,
+        count: unreadCounts?.message || 0,
+        badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+        section: "Autres",
+      },
+      {
+        name: "Manuel d'utilisation",
+        href: "/dashboard/manual",
+        icon: BookOpen,
+        roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'FAMILY', 'PATIENT'],
+        section: "Autres",
       },
     ]),
     ...(!activeClinicId ? [
@@ -164,39 +268,15 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Building2,
         roles: ['ADMIN'],
         isHoldingOnly: true,
+        section: "Administration",
       }
     ] : []),
-    {
-      name: "Notifications",
-      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/notifications` : "/dashboard/notifications",
-      icon: Bell,
-      count: unreadCounts?.total || 0,
-      badgeColor: "bg-primary text-primary-foreground font-bold shadow-xs",
-      roles: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST', 'SUPER_ADMIN'],
-    },
-    {
-      name: "Manuel d'utilisation",
-      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/manual` : "/dashboard/manual",
-      icon: BookOpen,
-      roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST', 'FAMILY', 'PATIENT'],
-    },
-    {
-      name: "Journal d'audit",
-      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/audit-log` : "/dashboard/audit-log",
-      icon: ScrollText,
-      roles: ['ADMIN'],
-    },
-    {
-      name: "Contrats aidants",
-      href: activeClinicId ? `/dashboard/clinics/${activeClinicId}/contracts` : "/dashboard/contracts",
-      icon: FileSignature,
-      roles: ['ADMIN', 'COORDINATOR'],
-    },
     {
       name: "Permissions",
       href: "/dashboard/permissions",
       icon: ShieldCheck,
       roles: ['ADMIN'],
+      section: "Administration",
     },
     {
       name: "Toutes les Holdings",
@@ -205,6 +285,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       count: superAdminAlerts?.expiringLicenses || 0,
       badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
       roles: ['SUPER_ADMIN'],
+      section: "Plateforme",
     },
     {
       name: "Messages de contact",
@@ -213,8 +294,13 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       count: superAdminAlerts?.contactMessages || 0,
       badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
       roles: ['SUPER_ADMIN'],
+      section: "Plateforme",
     },
   ];
+
+  // Ordre d'affichage des sections dans la sidebar (une section vide après filtrage par rôle
+  // ne s'affiche simplement pas — cf. renderNavLinks).
+  const SECTION_ORDER = ["Aperçu", "Clinique", "Finance", "Administration", "Plateforme", "Autres"];
 
   const isActive = (item: typeof navItems[0]) => {
     if (item.exact) {
@@ -281,29 +367,42 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       return true;
     });
 
+    const renderLink = (item: any) => {
+      const active = isActive(item);
+      const Icon = item.icon;
+      return (
+        <Link key={item.href} href={item.href} className={getLinkClass(item)}>
+          {/* Visual active left border accent */}
+          {active && (
+            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-r-full shadow-md shadow-blue-500/50" />
+          )}
+          <Icon
+            className={`h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 ${
+              item.iconClassName || ""
+            }`}
+          />
+          <span>{item.name}</span>
+          {item.count !== undefined && item.count > 0 && (
+            <span className={`ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold border transition-all duration-300 ${item.badgeColor}`}>
+              {item.count}
+            </span>
+          )}
+        </Link>
+      );
+    };
+
     return (
-      <nav className="grid items-start gap-1">
-        {filteredNavItems.map((item) => {
-          const active = isActive(item);
-          const Icon = item.icon;
+      <nav className="grid items-start gap-4">
+        {SECTION_ORDER.map((section) => {
+          const items = filteredNavItems.filter((item: any) => item.section === section);
+          if (items.length === 0) return null;
           return (
-            <Link key={item.href} href={item.href} className={getLinkClass(item)}>
-              {/* Visual active left border accent */}
-              {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-r-full shadow-md shadow-blue-500/50" />
-              )}
-              <Icon 
-                className={`h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 ${
-                  item.iconClassName || ""
-                }`} 
-              />
-              <span>{item.name}</span>
-              {item.count !== undefined && item.count > 0 && (
-                <span className={`ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold border transition-all duration-300 ${item.badgeColor}`}>
-                  {item.count}
-                </span>
-              )}
-            </Link>
+            <div key={section} className="grid gap-1">
+              <p className="px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                {section}
+              </p>
+              {items.map(renderLink)}
+            </div>
           );
         })}
       </nav>

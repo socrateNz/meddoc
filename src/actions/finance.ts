@@ -261,6 +261,18 @@ export async function recordPharmacySale(data: {
       await logAuditAction(activeUser.id, "RECORD_PHARMACY_SALE", "FinancialTransaction", data.pharmacyItemId);
     }
 
+    // Alerte de rupture uniquement au franchissement du seuil (jamais à chaque vente sous le seuil).
+    if (item.stockQuantity > item.reorderLevel && item.stockQuantity - qty <= item.reorderLevel) {
+      const { appEvents } = await import("@/lib/events");
+      appEvents.emit("stock.low", {
+        pharmacyItemId: item.id,
+        itemName: item.name,
+        stockQuantity: item.stockQuantity - qty,
+        reorderLevel: item.reorderLevel,
+        organizationId: targetOrgId || null,
+      });
+    }
+
     revalidatePath("/dashboard/finance");
     revalidatePath("/dashboard", "layout");
 
@@ -401,6 +413,7 @@ export async function recordMultiItemInvoice(data: {
     const nowISO = new Date().toISOString();
 
     // 1. Verify stocks for all pharmacy items in the cart
+    const stockSnapshots = new Map<string, { name: string; stockQuantity: number; reorderLevel: number }>();
     for (const item of data.items) {
       if (item.type === "PHARMACY" && item.pharmacyItemId) {
         let pItem: any = null;
@@ -419,6 +432,7 @@ export async function recordMultiItemInvoice(data: {
         if (pItem.stockQuantity < item.quantity) {
           throw new Error(`Stock insuffisant pour "${pItem.name}". Disponible: ${pItem.stockQuantity}, Demandé: ${item.quantity}`);
         }
+        stockSnapshots.set(item.pharmacyItemId, { name: pItem.name, stockQuantity: pItem.stockQuantity, reorderLevel: pItem.reorderLevel });
       }
     }
 
@@ -442,6 +456,28 @@ export async function recordMultiItemInvoice(data: {
           });
         }
       }
+    }
+
+    // Alertes de rupture uniquement au franchissement du seuil (jamais à chaque vente sous le seuil).
+    const lowStockAlerts: any[] = [];
+    for (const [pharmacyItemId, snapshot] of stockSnapshots) {
+      const soldQty = data.items
+        .filter((i) => i.type === "PHARMACY" && i.pharmacyItemId === pharmacyItemId)
+        .reduce((sum, i) => sum + Number(i.quantity), 0);
+      const newQty = snapshot.stockQuantity - soldQty;
+      if (snapshot.stockQuantity > snapshot.reorderLevel && newQty <= snapshot.reorderLevel) {
+        lowStockAlerts.push({
+          pharmacyItemId,
+          itemName: snapshot.name,
+          stockQuantity: newQty,
+          reorderLevel: snapshot.reorderLevel,
+          organizationId: targetOrgId || null,
+        });
+      }
+    }
+    if (lowStockAlerts.length > 0) {
+      const { appEvents } = await import("@/lib/events");
+      for (const alert of lowStockAlerts) appEvents.emit("stock.low", alert);
     }
 
     // 3. Compute grand total and combined description
@@ -601,5 +637,88 @@ export async function getFinanceSummary(organizationId?: string) {
     };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du calcul du bilan financier." };
+  }
+}
+
+// Créées automatiquement à la clôture d'une consultation par un CAREGIVER (qui n'a pas accès à
+// la caisse) — un COORDINATOR/PHARMACIST les retrouve ici et les finalise en vraie transaction.
+export async function listPendingInvoices(organizationId?: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceReadRole(activeUser.role);
+
+    const where: any = { status: "PENDING" };
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      where.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else {
+      const targetOrgId = organizationId || activeUser.organizationId;
+      if (targetOrgId) where.organizationId = targetOrgId;
+    }
+
+    const invoices = await prisma.pendingInvoice.findMany({
+      where,
+      include: {
+        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        medicalRecord: { select: { title: true, createdAt: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return { success: true, data: invoices };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Erreur lors du chargement des factures en attente." };
+  }
+}
+
+export async function finalizePendingInvoice(
+  pendingInvoiceId: string,
+  items: Array<{
+    type: "PHARMACY" | "SERVICE";
+    pharmacyItemId?: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    amount: number;
+  }>
+) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceWriteRole(activeUser.role);
+
+    const pending = await prisma.pendingInvoice.findUnique({ where: { id: pendingInvoiceId } });
+    if (!pending || pending.status !== "PENDING") {
+      throw new Error("Cette facture en attente n'existe plus ou a déjà été finalisée.");
+    }
+
+    const invoiceRes = await recordMultiItemInvoice({
+      items,
+      patientId: pending.patientId,
+      organizationId: pending.organizationId || undefined,
+    });
+
+    if (!invoiceRes.success) {
+      throw new Error(invoiceRes.error || "Erreur lors de la génération de la facture.");
+    }
+
+    await prisma.pendingInvoice.update({
+      where: { id: pendingInvoiceId },
+      data: {
+        status: "FINALIZED",
+        financialTransactionId: (invoiceRes.data as any)?.id || null,
+        finalizedAt: new Date(),
+      },
+    });
+
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true, data: invoiceRes.data };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la finalisation de la facture.") };
   }
 }

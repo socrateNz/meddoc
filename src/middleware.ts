@@ -21,18 +21,20 @@ const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password', '/api
 // ADMIN (holding) est laissé en lecture seule par les pages/actions elles-mêmes sur
 // patients/team/finance/contracts — il reste dans la liste pour pouvoir consulter.
 const restrictedSections: Record<string, string[]> = {
-  patients: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
+  patients: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
   team: ['ADMIN', 'COORDINATOR'],
-  incidents: ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
-  appointments: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
-  'ai-assistant': ['ADMIN', 'COORDINATOR', 'CAREGIVER'],
+  incidents: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  appointments: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+  'ai-assistant': ['ADMIN', 'COORDINATOR', 'MEDECIN'],
+  medecin: ['MEDECIN'],
   finance: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
   contracts: ['ADMIN', 'COORDINATOR'],
   permissions: ['ADMIN'],
   'audit-log': ['ADMIN'],
   'contact-messages': ['SUPER_ADMIN'],
   holdings: ['SUPER_ADMIN'],
-  messages: ['ADMIN', 'COORDINATOR', 'CAREGIVER', 'PHARMACIST'],
+  messages: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
 };
 
 function withSecurityHeaders(response: NextResponse): NextResponse {

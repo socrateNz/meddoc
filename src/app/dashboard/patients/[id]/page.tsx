@@ -21,6 +21,9 @@ import VitalSignsChart from "./vital-signs-chart";
 import CloseCarePlanDialog from "./close-care-plan-dialog";
 import ReopenCarePlanDialog from "./reopen-care-plan-dialog";
 import { getPatientVitalSigns } from "@/actions/vitals";
+import { listPrescriptions } from "@/actions/prescriptions";
+import PrescriptionsPanel from "./prescriptions-panel";
+import { Pill } from "lucide-react";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -41,7 +44,9 @@ export default async function PatientDetailPage({ params }: PageProps) {
 
   const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
   // ADMIN (holding) consulte en lecture seule ; PHARMACIST n'a qu'un accès identité limité (cf. plan RBAC).
-  const canWrite = ["COORDINATOR", "CAREGIVER"].includes(currentUser.role);
+  const canWrite = ["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(currentUser.role);
+  // Rédiger/renouveler/envoyer une ordonnance reste réservé à l'autorité clinique complète.
+  const canPrescribe = ["COORDINATOR", "MEDECIN"].includes(currentUser.role);
   const isPharmacist = currentUser.role === "PHARMACIST";
   let clinics: { id: string; name: string }[] = [];
   if (isHoldingAdmin) {
@@ -99,6 +104,16 @@ export default async function PatientDetailPage({ params }: PageProps) {
   }
 
   (patient as any).vitalSigns = vitalSigns;
+
+  let prescriptions: any[] = [];
+  if (!isPharmacist) {
+    try {
+      const prescriptionsRes = await listPrescriptions({ patientId: id });
+      if (prescriptionsRes.success) prescriptions = prescriptionsRes.data || [];
+    } catch (e) {
+      prescriptions = [];
+    }
+  }
 
   const calculateAge = (birthDate: Date) => {
     const today = new Date();
@@ -309,6 +324,12 @@ export default async function PatientDetailPage({ params }: PageProps) {
             Dossier médical
           </TabsTrigger>
           <TabsTrigger
+            value="prescriptions"
+            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
+          >
+            Ordonnances ({prescriptions.length})
+          </TabsTrigger>
+          <TabsTrigger
             value="careplans"
             className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
           >
@@ -436,6 +457,15 @@ export default async function PatientDetailPage({ params }: PageProps) {
               )}
             </div>
           </div>
+        </TabsContent>
+
+        {/* Tab Content: Ordonnances */}
+        <TabsContent value="prescriptions" className="pt-6 space-y-4">
+          <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+            <Pill className="h-5 w-5 text-blue-500" />
+            Historique des ordonnances
+          </h3>
+          <PrescriptionsPanel prescriptions={prescriptions} canPrescribe={canPrescribe} />
         </TabsContent>
 
         {/* Tab Content: Plan de Soins */}

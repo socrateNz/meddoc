@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 interface PDFDownloadButtonProps {
   documentName: string;
-  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription";
+  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport";
   data: any;
   buttonText?: string;
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
@@ -55,10 +55,26 @@ export default function PDFDownloadButton({
             date={data.date}
           />
         );
+      } else if (type === "labreport") {
+        const QRCode = (await import("qrcode")).default;
+        const reportNumber = `LAB-${String(data.order.id).slice(-8).toUpperCase()}`;
+        const qrDataUrl = await QRCode.toDataURL(
+          `MEDDOC-LAB|${reportNumber}|${data.order.patient?.user?.lastName || ""} ${data.order.patient?.user?.firstName || ""}`,
+          { margin: 1, width: 160 }
+        );
+        const LabReportPDFDocument = (await import("./lab-report-pdf")).default;
+        element = (
+          <LabReportPDFDocument
+            order={data.order}
+            organizationName={data.organizationName}
+            reportNumber={reportNumber}
+            qrDataUrl={qrDataUrl}
+          />
+        );
       } else {
         throw new Error("Type de document PDF non pris en charge");
       }
-      
+
       // 2. Dynamic import of the pdf compiler from @react-pdf/renderer
       const { pdf } = await import("@react-pdf/renderer");
       

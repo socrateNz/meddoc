@@ -17,11 +17,11 @@ import { revalidatePath } from "next/cache";
 
 // La prise en charge clinique (créer/modifier un patient, un dossier ou un incident) est réservée
 // au personnel opérationnel de la clinique — ADMIN (holding) et PHARMACIST restent en lecture seule.
-const CLINICAL_WRITE_ROLES = ["COORDINATOR", "CAREGIVER"];
+const CLINICAL_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 function assertClinicalWriteAccess(role: string) {
   if (!CLINICAL_WRITE_ROLES.includes(role)) {
-    throw new Error("Non autorisé. Seuls un coordinateur ou un soignant peuvent effectuer cette action.");
+    throw new Error("Non autorisé. Seuls un coordinateur, un médecin ou un infirmier(e) peuvent effectuer cette action.");
   }
 }
 
@@ -31,6 +31,7 @@ export async function createPatient(data: {
   lastName: string;
   phone?: string;
   dateOfBirth: string;
+  sex?: string;
   address: string;
   emergencyContact?: string;
   dependencyLevel: number;
@@ -87,6 +88,7 @@ export async function createPatient(data: {
         data: {
           userId: user.id,
           dateOfBirth: new Date(data.dateOfBirth),
+          sex: data.sex || null,
           address: data.address,
           emergencyContact: data.emergencyContact,
           dependencyLevel: Number(data.dependencyLevel),
@@ -150,6 +152,7 @@ export async function createMedicalRecord(data: {
         title: data.title,
         description: data.description,
         documentUrl: data.documentUrl || null,
+        createdById: activeUser.id,
       },
     });
 
@@ -167,6 +170,45 @@ export async function createMedicalRecord(data: {
   } catch (error: any) {
     console.error("Error creating medical record:", error);
     return { success: false, error: toErrorMessage(error, "Erreur lors de la création du document médical") };
+  }
+}
+
+// Utilisé notamment par le Dashboard Médecin ("mes notes cliniques / historique de mes
+// consultations") : listMedicalRecords({ createdById: currentUser.id }).
+export async function listMedicalRecords(options?: { patientId?: string; createdById?: string; organizationId?: string }) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertClinicalWriteAccess(activeUser.role);
+
+    const where: any = {};
+    if (options?.patientId) where.patientId = options.patientId;
+    if (options?.createdById) where.createdById = options.createdById;
+
+    const targetOrgId = options?.organizationId || activeUser.organizationId;
+    if (targetOrgId) {
+      if (activeUser.organization?.type === "HOLDING") {
+        where.patient = { OR: [{ organizationId: targetOrgId }, { organization: { parentId: targetOrgId } }] };
+      } else {
+        where.patient = { organizationId: targetOrgId };
+      }
+    } else {
+      where.patient = { organizationId: { in: [] } };
+    }
+
+    const records = await prisma.medicalRecord.findMany({
+      where,
+      include: {
+        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        createdBy: { select: { firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+
+    return { success: true, data: records };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des dossiers médicaux.") };
   }
 }
 

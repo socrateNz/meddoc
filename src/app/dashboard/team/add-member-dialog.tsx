@@ -33,13 +33,15 @@ const formSchema = z.object({
   lastName: z.string().min(2, "Nom trop court"),
   email: z.string().email("Email invalide"),
   phone: z.string().optional(),
-  role: z.enum(["CAREGIVER", "PHARMACIST", "COORDINATOR"]),
+  role: z.enum(["MEDECIN", "CAREGIVER", "PHARMACIST", "COORDINATOR"]),
   specialties: z.string().optional(),
+  licenseNumber: z.string().optional(),
   organizationId: z.string().optional(),
 });
 
 const ROLE_OPTIONS = [
-  { value: "CAREGIVER", label: "Soignant" },
+  { value: "MEDECIN", label: "Médecin" },
+  { value: "CAREGIVER", label: "Infirmier(e)" },
   { value: "PHARMACIST", label: "Pharmacien(ne)" },
 ];
 
@@ -103,7 +105,7 @@ export default function AddMemberDialog({
           <DialogDescription>
             {isHoldingAdmin
               ? "Affectez le coordinateur qui administrera au quotidien l'une de vos cliniques."
-              : "Ajoutez un soignant ou un pharmacien à l'équipe de votre clinique."}{" "}
+              : "Ajoutez un médecin, un infirmier(e) ou un pharmacien à l'équipe de votre clinique."}{" "}
             Un mot de passe par défaut lui sera attribué.
           </DialogDescription>
         </DialogHeader>
@@ -153,10 +155,21 @@ export default function AddMemberDialog({
             </div>
           )}
 
-          {selectedRole === "CAREGIVER" && (
+          {(selectedRole === "CAREGIVER" || selectedRole === "MEDECIN") && (
             <div className="space-y-2">
               <Label htmlFor="specialties">Spécialité principale</Label>
-              <Input id="specialties" {...register("specialties")} placeholder="ex: Infirmier, Kinésithérapeute..." />
+              <Input
+                id="specialties"
+                {...register("specialties")}
+                placeholder={selectedRole === "MEDECIN" ? "ex: Médecine générale, Cardiologie..." : "ex: Infirmier, Kinésithérapeute..."}
+              />
+            </div>
+          )}
+
+          {selectedRole === "MEDECIN" && (
+            <div className="space-y-2">
+              <Label htmlFor="licenseNumber">N° RPPS / Ordre (optionnel)</Label>
+              <Input id="licenseNumber" {...register("licenseNumber")} placeholder="ex: 10001234567" />
             </div>
           )}
 

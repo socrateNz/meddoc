@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { getFinanceSummary } from "@/actions/finance";
+import { getFinanceSummary, listPendingInvoices } from "@/actions/finance";
+import { getStockValuation } from "@/actions/stock";
 import FinanceView from "./finance-view";
 import { redirect } from "next/navigation";
 
@@ -45,6 +46,12 @@ export default async function FinancePage() {
 
   const orgName = (activeUser.organization as any)?.name || "ÉTABLISSEMENT MÉDICAL";
 
+  const pendingInvoicesRes = await listPendingInvoices();
+  const pendingInvoices = pendingInvoicesRes.success ? pendingInvoicesRes.data || [] : [];
+
+  const valuationRes = await getStockValuation();
+  const valuation = valuationRes.success ? valuationRes.data : undefined;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1 animate-fade-up">
@@ -56,7 +63,7 @@ export default async function FinancePage() {
         </p>
       </div>
 
-      <FinanceView summary={summary} patients={patients} organizationName={orgName} currentUserRole={activeUser.role} />
+      <FinanceView summary={summary} patients={patients} organizationName={orgName} currentUserRole={activeUser.role} pendingInvoices={pendingInvoices} valuation={valuation} />
     </div>
   );
 }

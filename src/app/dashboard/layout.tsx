@@ -24,6 +24,7 @@ export default async function DashboardLayout({
     appointment: 0,
     message: 0,
     ai: 0,
+    lab: 0,
   };
 
   if (currentUser) {
@@ -45,6 +46,7 @@ export default async function DashboardLayout({
       appointment: unreadNotifications.filter(n => n.type === "APPOINTMENT").length,
       message: unreadNotifications.filter(n => n.type === "MESSAGE").length,
       ai: unreadNotifications.filter(n => n.type === "AI").length,
+      lab: unreadNotifications.filter(n => n.type === "LAB_CRITICAL").length,
     };
   }
 

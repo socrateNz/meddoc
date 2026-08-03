@@ -7,6 +7,7 @@ export const createPatientSchema = z.object({
   lastName: z.string().min(2, "Le nom doit contenir au moins 2 caractères"),
   phone: z.string().optional(),
   dateOfBirth: z.string().min(1, "Date de naissance requise"),
+  sex: z.enum(["M", "F", "Autre"]).optional(),
   address: z.string().min(3, "Adresse requise"),
   emergencyContact: z.string().optional(),
   dependencyLevel: z.number().min(1).max(5),
