@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, User as UserIcon, CheckCircle2, XCircle, Filter } from "lucide-react";
+import { Search, User as UserIcon, CheckCircle2, XCircle, Filter, WifiOff } from "lucide-react";
 import Link from "next/link";
+import { useOfflinePatients } from "@/hooks/use-offline-patients";
 
 interface PatientWithUser {
   id: string;
@@ -24,11 +25,32 @@ interface PatientWithUser {
 interface PatientTableProps {
   patients: PatientWithUser[];
   clinicId?: string;
+  organizationId?: string;
 }
 
-export default function PatientTable({ patients, clinicId }: PatientTableProps) {
+export default function PatientTable({ patients, clinicId, organizationId }: PatientTableProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "DISCHARGED">("ALL");
+
+  // Repli hors-ligne : dès que le navigateur signale une coupure réseau, la liste bascule sur
+  // le cache local chiffré (RxDB) au lieu de la liste rendue côté serveur au dernier chargement.
+  // Limite connue de cette phase : le statut clôturé/actif offline ne s'appuie que sur
+  // `Patient.status` (répliqué), pas sur les CarePlans (non répliqués) — cf. checkIsDischarged.
+  const [isOffline, setIsOffline] = useState(false);
+  useEffect(() => {
+    setIsOffline(!navigator.onLine);
+    const goOnline = () => setIsOffline(false);
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
+  const offlineQuery = useOfflinePatients(organizationId, isOffline);
+  const effectivePatients: PatientWithUser[] = isOffline ? offlineQuery.data ?? [] : patients;
 
   const formatDate = (dateInput: Date | string) => {
     return new Intl.DateTimeFormat('fr-FR', {
@@ -46,10 +68,10 @@ export default function PatientTable({ patients, clinicId }: PatientTableProps) 
     return false;
   };
 
-  const activeCount = patients.filter(p => !checkIsDischarged(p)).length;
-  const dischargedCount = patients.filter(p => checkIsDischarged(p)).length;
+  const activeCount = effectivePatients.filter(p => !checkIsDischarged(p)).length;
+  const dischargedCount = effectivePatients.filter(p => checkIsDischarged(p)).length;
 
-  const filteredPatients = patients.filter((patient) => {
+  const filteredPatients = effectivePatients.filter((patient) => {
     const isDischarged = checkIsDischarged(patient);
     
     // Status filter logic
@@ -67,6 +89,15 @@ export default function PatientTable({ patients, clinicId }: PatientTableProps) 
 
   return (
     <div className="space-y-4">
+      {isOffline && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20 p-3 text-sm text-amber-800 dark:text-amber-300">
+          <WifiOff className="h-4 w-4 shrink-0" />
+          <span>
+            Mode hors-ligne — liste issue du cache local{offlineQuery.isLoading ? " (chargement...)" : ""}. Les créations/modifications de patients sont désactivées tant que la connexion n&apos;est pas rétablie.
+          </span>
+        </div>
+      )}
+
       {/* Search & Filter bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 animate-fade-up" style={{ animationDelay: "75ms" } as React.CSSProperties}>
         <div className="relative flex-1 max-w-md">
@@ -91,7 +122,7 @@ export default function PatientTable({ patients, clinicId }: PatientTableProps) 
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             }`}
           >
-            Tous ({patients.length})
+            Tous ({effectivePatients.length})
           </button>
           <button
             type="button"

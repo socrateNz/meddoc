@@ -76,7 +76,7 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
         )}
       </div>
 
-      <PatientTable patients={patients} clinicId={clinicId} />
+      <PatientTable patients={patients} clinicId={clinicId} organizationId={clinicId} />
     </div>
   );
 }

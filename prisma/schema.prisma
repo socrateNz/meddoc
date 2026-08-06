@@ -169,7 +169,10 @@ model Patient {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   userId          String   @unique @db.ObjectId
   user            User     @relation("UserPatient", fields: [userId], references: [id])
-  
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
   dateOfBirth     DateTime
   address         String
   emergencyContact String?
@@ -205,6 +208,7 @@ model Patient {
   consultationDrafts ConsultationDraft[]
 
   @@index([organizationId])
+  @@index([organizationId, updatedAt])
   @@index([wardId])
 }
 

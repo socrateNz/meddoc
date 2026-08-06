@@ -78,7 +78,7 @@ export default async function PatientsPage() {
         )}
       </div>
 
-      <PatientTable patients={patients} />
+      <PatientTable patients={patients} organizationId={activeUser.organizationId || undefined} />
     </div>
   );
 }
