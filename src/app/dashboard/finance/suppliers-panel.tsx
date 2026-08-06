@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,21 +26,28 @@ function formatFCFA(val: number) {
 }
 
 export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite }: { organizationId?: string; pharmacyItems: any[]; canWrite: boolean }) {
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([listSuppliers(organizationId), listPurchaseOrders({ organizationId })]).then(([sRes, oRes]) => {
-      if (cancelled) return;
-      if (sRes.success) setSuppliers(sRes.data || []);
-      if (oRes.success) setOrders(oRes.data || []);
-      setLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [organizationId]);
+  const { data: suppliers = [], isLoading: suppliersLoading } = useQuery({
+    queryKey: ["suppliers", organizationId],
+    queryFn: async () => {
+      const res = await listSuppliers(organizationId);
+      if (!res.success) throw new Error(res.error);
+      return res.data || [];
+    },
+  });
+
+  const { data: orders = [], isLoading: ordersLoading } = useQuery({
+    queryKey: ["purchaseOrders", organizationId],
+    queryFn: async () => {
+      const res = await listPurchaseOrders({ organizationId });
+      if (!res.success) throw new Error(res.error);
+      return res.data || [];
+    },
+  });
+
+  const loading = suppliersLoading || ordersLoading;
 
   const handleSend = async (orderId: string) => {
     setBusyOrderId(orderId);
@@ -47,7 +55,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
       const res = await updatePurchaseOrderStatus(orderId, "SENT");
       if (res.success) {
         toast.success("Commande envoyée au fournisseur.");
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? res.data : o)));
+        queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => prev.map((o) => (o.id === orderId ? res.data : o)));
       } else {
         toast.error(res.error || "Erreur.");
       }
@@ -62,7 +70,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
       const res = await updatePurchaseOrderStatus(orderId, "CANCELLED");
       if (res.success) {
         toast.success("Commande annulée.");
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? res.data : o)));
+        queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => prev.map((o) => (o.id === orderId ? res.data : o)));
       } else {
         toast.error(res.error || "Erreur.");
       }
@@ -89,7 +97,16 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
             <Truck className="h-5 w-5 text-indigo-500" />
             Fournisseurs ({suppliers.length})
           </h3>
-          {canWrite && <NewSupplierDialog organizationId={organizationId} onSuccess={(s) => setSuppliers((prev) => [...prev, s].sort((a, b) => a.name.localeCompare(b.name)))} />}
+          {canWrite && (
+            <NewSupplierDialog
+              organizationId={organizationId}
+              onSuccess={(s) =>
+                queryClient.setQueryData(["suppliers", organizationId], (prev: any[] = []) =>
+                  [...prev, s].sort((a, b) => a.name.localeCompare(b.name))
+                )
+              }
+            />
+          )}
         </div>
         {suppliers.length === 0 ? (
           <div className="border border-dashed rounded-xl p-8 text-center text-sm text-muted-foreground">Aucun fournisseur enregistré.</div>
@@ -123,7 +140,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
               suppliers={suppliers}
               pharmacyItems={pharmacyItems}
               organizationId={organizationId}
-              onSuccess={(o) => setOrders((prev) => [o, ...prev])}
+              onSuccess={(o) => queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => [o, ...prev])}
             />
           )}
         </div>
@@ -170,7 +187,12 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
                           </>
                         )}
                         {(order.status === "SENT" || order.status === "PARTIALLY_RECEIVED") && (
-                          <ReceivePurchaseOrderDialog order={order} onSuccess={(o) => setOrders((prev) => prev.map((x) => (x.id === o.id ? o : x)))} />
+                          <ReceivePurchaseOrderDialog
+                            order={order}
+                            onSuccess={(o) =>
+                              queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => prev.map((x) => (x.id === o.id ? o : x)))
+                            }
+                          />
                         )}
                       </div>
                     )}

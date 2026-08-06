@@ -108,9 +108,11 @@ model Organization {
 
   paymentAmount       Float?              // Tarif actuel (FCFA), éditable à tout moment
   paymentFrequency    PaymentFrequency?
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([parentId])
 }
 
 model User {
@@ -158,6 +160,9 @@ model User {
 
   organizationId      String?   @db.ObjectId
   organization        Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([organizationId, role])
 }
 
 model Patient {
@@ -198,16 +203,21 @@ model Patient {
   ward            Ward?     @relation("PatientWard", fields: [wardId], references: [id])
 
   consultationDrafts ConsultationDraft[]
+
+  @@index([organizationId])
+  @@index([wardId])
 }
 
 model FamilyMember {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   userId          String   @unique @db.ObjectId
   user            User     @relation("UserFamily", fields: [userId], references: [id])
-  
+
   patientId       String   @db.ObjectId
   patient         Patient  @relation(fields: [patientId], references: [id])
   relationship    String
+
+  @@index([patientId])
 }
 
 model Caregiver {
@@ -253,6 +263,9 @@ model MedicalRecord {
   pendingInvoices PendingInvoice[]
   labOrders       LabOrder[]
   prescriptions   Prescription[]
+
+  @@index([patientId])
+  @@index([appointmentId])
 }
 
 model CarePlan {
@@ -261,7 +274,7 @@ model CarePlan {
   patient          Patient  @relation(fields: [patientId], references: [id])
   coordinatorId    String   @db.ObjectId
   coordinator      MedicalCoordinator @relation(fields: [coordinatorId], references: [id])
-  
+
   title            String
   startDate        DateTime
   endDate          DateTime?
@@ -269,9 +282,12 @@ model CarePlan {
   dischargeSummary String?
   completedAt      DateTime?
   closedById       String?  @db.ObjectId
-  
+
   tasks            CareTask[]
   medications      Medication[]
+
+  @@index([patientId])
+  @@index([coordinatorId])
 }
 
 model CareTask {
@@ -280,23 +296,28 @@ model CareTask {
   carePlan        CarePlan @relation(fields: [carePlanId], references: [id])
   caregiverId     String?  @db.ObjectId
   caregiver       Caregiver? @relation(fields: [caregiverId], references: [id])
-  
+
   title           String
   description     String?
   scheduledFor    DateTime
   status          String   @default("PENDING")
   completedAt     DateTime?
+
+  @@index([carePlanId])
+  @@index([caregiverId])
 }
 
 model Medication {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   carePlanId      String   @db.ObjectId
   carePlan        CarePlan @relation(fields: [carePlanId], references: [id])
-  
+
   name            String
   dosage          String
   frequency       String
   instructions    String?
+
+  @@index([carePlanId])
 }
 
 model Appointment {
@@ -317,6 +338,9 @@ model Appointment {
   consultationDrafts ConsultationDraft[]
   medicalRecords  MedicalRecord[]
   vitalSigns      VitalSign[]
+
+  @@index([patientId, scheduledAt])
+  @@index([caregiverId, scheduledAt])
 }
 
 // Brouillon de consultation en cours — permet d'enregistrer symptômes/diagnostic/plan/
@@ -343,6 +367,9 @@ model ConsultationDraft {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([appointmentId])
+  @@index([patientId, createdById])
 }
 
 // Demande d'analyse de laboratoire — pas de catalogue structuré (les analyses demandées
@@ -391,6 +418,13 @@ model LabOrder {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([patientId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([appointmentId])
+  @@index([medicalRecordId])
+  @@index([orderedById])
+  @@index([pendingInvoiceId])
 }
 
 model LabResult {
@@ -415,6 +449,8 @@ model LabResult {
   validatedAt     DateTime?
 
   createdAt       DateTime @default(now())
+
+  @@index([labOrderId])
 }
 
 // Catalogue d'examens définis par le COORDINATOR (prix, durée, service). Les LabOrder.tests
@@ -444,6 +480,8 @@ model LabTest {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([organizationId, isActive])
 }
 
 model Incident {
@@ -451,13 +489,15 @@ model Incident {
   patientId       String   @db.ObjectId
   patient         Patient  @relation(fields: [patientId], references: [id])
   reportedById    String   @db.ObjectId
-  
+
   title           String
   description     String
   priority        Priority @default(MEDIUM)
   status          IncidentStatus @default(OPEN)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([patientId, createdAt])
 }
 
 model Message {
@@ -470,6 +510,8 @@ model Message {
   content         String
   attachmentUrl   String?
   createdAt       DateTime @default(now())
+
+  @@index([conversationId, createdAt])
 }
 
 model Conversation {
@@ -487,18 +529,23 @@ model ConversationParticipant {
   conversation    Conversation @relation(fields: [conversationId], references: [id])
   userId          String   @db.ObjectId
   user            User     @relation(fields: [userId], references: [id])
+
+  @@index([conversationId])
+  @@index([userId])
 }
 
 model AIAnalysis {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   patientId       String   @db.ObjectId
   patient         Patient  @relation(fields: [patientId], references: [id])
-  
+
   riskScore       Int
   riskFactors     String[]
   summary         String
   recommendations String[]
   createdAt       DateTime @default(now())
+
+  @@index([patientId, createdAt])
 }
 
 model AuditLog {
@@ -510,6 +557,9 @@ model AuditLog {
   entityId        String
   details         String?
   createdAt       DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
 }
 
 model Permission {
@@ -528,6 +578,8 @@ model Notification {
   isRead      Boolean  @default(false)
   type        String   @default("INFO")
   createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Contract {
@@ -536,7 +588,7 @@ model Contract {
   patient     Patient  @relation(fields: [patientId], references: [id])
   caregiverId String?  @db.ObjectId
   caregiver   Caregiver? @relation(fields: [caregiverId], references: [id])
-  
+
   title       String
   status      String   @default("ACTIVE")
   startDate   DateTime
@@ -546,6 +598,9 @@ model Contract {
   documentUrl String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([caregiverId])
 }
 
 model AIConversation {
@@ -554,21 +609,26 @@ model AIConversation {
   user        User     @relation(fields: [userId], references: [id])
   patientId   String?  @db.ObjectId
   patient     Patient? @relation(fields: [patientId], references: [id])
-  
+
   title       String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   messages    AIMessage[]
+
+  @@index([userId, createdAt])
+  @@index([patientId])
 }
 
 model AIMessage {
   id             String   @id @default(auto()) @map("_id") @db.ObjectId
   conversationId String   @db.ObjectId
   conversation   AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  
+
   role           String
   content        String
   createdAt      DateTime @default(now())
+
+  @@index([conversationId])
 }
 
 model Ward {
@@ -603,6 +663,9 @@ model VitalSign {
   painScore        Int?     // Échelle 0-10
   notes            String?
   createdAt        DateTime @default(now())
+
+  @@index([patientId, createdAt])
+  @@index([appointmentId])
 }
 
 model PharmacyItem {
@@ -630,6 +693,8 @@ model PharmacyItem {
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
 }
 
 // Un lot d'achat pour un produit de pharmacie. Chaque achat garde son propre
@@ -657,6 +722,9 @@ model StockPurchase {
   organization      Organization? @relation(fields: [organizationId], references: [id])
 
   createdAt         DateTime @default(now())
+
+  @@index([pharmacyItemId, createdAt])
+  @@index([organizationId])
 }
 
 // Correction de stock issue d'un inventaire (ou d'un ajustement manuel).
@@ -673,6 +741,8 @@ model StockAdjustment {
 
   createdById          String   @db.ObjectId
   createdAt            DateTime @default(now())
+
+  @@index([pharmacyItemId])
 }
 
 model InventoryCount {
@@ -688,6 +758,8 @@ model InventoryCount {
 
   lines          InventoryCountLine[]
   createdAt      DateTime @default(now())
+
+  @@index([organizationId])
 }
 
 model InventoryCountLine {
@@ -702,6 +774,9 @@ model InventoryCountLine {
   unitCost         Float?
 
   createdAt        DateTime @default(now())
+
+  @@index([inventoryCountId])
+  @@index([pharmacyItemId])
 }
 
 model ContactMessage {
@@ -722,6 +797,8 @@ model PasswordResetToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model FinancialTransaction {
@@ -745,6 +822,10 @@ model FinancialTransaction {
   organization   Organization?       @relation(fields: [organizationId], references: [id])
 
   createdAt      DateTime            @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([patientId])
+  @@index([pharmacyItemId])
 }
 
 // Facture générée automatiquement à la clôture d'une consultation par un CAREGIVER
@@ -775,6 +856,10 @@ model PendingInvoice {
 
   prescriptions           Prescription[]
   labOrders               LabOrder[]     @relation("LabOrderInvoice")
+
+  @@index([organizationId, status])
+  @@index([patientId])
+  @@index([medicalRecordId])
 }
 
 // Ordonnance électronique structurée. Rattachée à une consultation (medicalRecordId/
@@ -820,6 +905,12 @@ model Prescription {
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+
+  @@index([patientId, createdAt])
+  @@index([organizationId, status])
+  @@index([appointmentId])
+  @@index([medicalRecordId])
+  @@index([pendingInvoiceId])
 }
 
 model PrescriptionItem {
@@ -838,6 +929,8 @@ model PrescriptionItem {
   duration        String?  // ex: "7 jours"
   instructions    String?
   quantity        Int?     // Quantité totale à délivrer
+
+  @@index([prescriptionId])
 }
 
 // Modèle réutilisable — par pathologie ou personnel à un médecin (isShared=false).
@@ -856,6 +949,9 @@ model PrescriptionTemplate {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([createdById])
 }
 
 model Supplier {
@@ -875,6 +971,8 @@ model Supplier {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([organizationId])
 }
 
 model PurchaseOrder {
@@ -900,6 +998,9 @@ model PurchaseOrder {
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([organizationId, status])
+  @@index([supplierId])
 }
 
 model PurchaseOrderLine {
@@ -917,4 +1018,6 @@ model PurchaseOrderLine {
 
   batchNumber       String?
   expiryDate        DateTime?
+
+  @@index([purchaseOrderId])
 }

@@ -53,7 +53,11 @@ export default async function PatientsPage() {
       user: {
         lastName: "asc"
       }
-    }
+    },
+    // Garde-fou : la recherche/filtrage de PatientTable est client-side sur cette liste,
+    // donc pas de vraie pagination ici — juste une limite haute pour éviter de ramener une
+    // collection entière si l'organisation grossit fortement.
+    take: 500,
   });
 
   return (

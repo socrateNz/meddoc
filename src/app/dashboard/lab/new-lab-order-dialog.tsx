@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,15 +37,16 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
   const [tests, setTests] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [priority, setPriority] = useState<"ROUTINE" | "URGENT">("ROUTINE");
-  const [catalog, setCatalog] = useState<any[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
 
-  useEffect(() => {
-    if (open && catalog.length === 0) {
-      setCatalogLoading(true);
-      listLabTests().then((res) => { if (res.success) setCatalog(res.data || []); }).finally(() => setCatalogLoading(false));
-    }
-  }, [open, catalog.length]);
+  const { data: catalog = [], isLoading: catalogLoading } = useQuery({
+    queryKey: ["labTests"],
+    queryFn: async () => {
+      const res = await listLabTests();
+      if (!res.success) throw new Error(res.error);
+      return res.data || [];
+    },
+    enabled: open,
+  });
 
   const filteredCatalog = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();

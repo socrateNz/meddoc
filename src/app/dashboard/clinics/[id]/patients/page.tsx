@@ -50,7 +50,11 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
       user: {
         lastName: "asc"
       }
-    }
+    },
+    // Garde-fou : la recherche/filtrage de PatientTable est client-side sur cette liste,
+    // donc pas de vraie pagination ici — juste une limite haute pour éviter de ramener une
+    // collection entière si la clinique grossit fortement.
+    take: 500,
   });
 
   return (

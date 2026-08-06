@@ -248,6 +248,9 @@ export async function listLabOrders(options?: { patientId?: string; organization
       where,
       include: ORDER_INCLUDE,
       orderBy: { createdAt: "desc" },
+      // Garde-fou : évite de ramener une collection entière si le volume de demandes grossit
+      // fortement — pas une vraie pagination, juste une limite haute sur les plus récentes.
+      take: 500,
     });
 
     return { success: true, data: labOrders };

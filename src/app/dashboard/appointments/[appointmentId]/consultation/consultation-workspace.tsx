@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,7 @@ function calculateAge(birthDate: Date) {
 
 export default function ConsultationWorkspace({ patient, appointment, draft }: { patient: any, appointment?: any, draft?: any }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [activeTab, setActiveTab] = useState("notes");
@@ -57,7 +59,6 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
   const [currentMed, setCurrentMed] = useState({ name: "", dosage: "", frequency: "", instructions: "" });
 
   // Modèles d'ordonnance
-  const [templates, setTemplates] = useState<any[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState("");
@@ -65,39 +66,47 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
   const [templateShared, setTemplateShared] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
 
-  // Laboratoire
-  const [labOrders, setLabOrders] = useState<any[]>([]);
-  const [labLoading, setLabLoading] = useState(true);
+  const { data: templates = [] } = useQuery({
+    queryKey: ["prescriptionTemplates"],
+    queryFn: async () => {
+      const res = await listPrescriptionTemplates();
+      if (!res.success) throw new Error(res.error);
+      return res.data || [];
+    },
+  });
 
-  // Historique des ordonnances du patient
-  const [prescriptionHistory, setPrescriptionHistory] = useState<any[]>([]);
-  const [prescriptionHistoryLoading, setPrescriptionHistoryLoading] = useState(true);
+  // Laboratoire
   const [renewingId, setRenewingId] = useState<string | null>(null);
 
-  // Constantes vitales — vue de la dernière prise, visible pendant toute la consultation.
-  const [vitals, setVitals] = useState<any[]>([]);
-  const [vitalsLoading, setVitalsLoading] = useState(true);
-  const latestVital = vitals[0] || null;
+  const { data: labOrders = [], isLoading: labLoading } = useQuery({
+    queryKey: ["labOrders", patient.id],
+    queryFn: async () => {
+      const res = await listLabOrders({ patientId: patient.id });
+      if (!res.success) throw new Error(res.error);
+      return res.data || [];
+    },
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    listLabOrders({ patientId: patient.id }).then((res) => {
-      if (!cancelled && res.success) setLabOrders(res.data || []);
-      if (!cancelled) setLabLoading(false);
-    });
-    listPrescriptionTemplates().then((res) => {
-      if (!cancelled && res.success) setTemplates(res.data || []);
-    });
-    listPrescriptions({ patientId: patient.id }).then((res) => {
-      if (!cancelled && res.success) setPrescriptionHistory(res.data || []);
-      if (!cancelled) setPrescriptionHistoryLoading(false);
-    });
-    getPatientVitalSigns(patient.id).then((res) => {
-      if (!cancelled && res.success) setVitals(res.data || []);
-      if (!cancelled) setVitalsLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [patient.id]);
+  // Historique des ordonnances du patient
+  const { data: prescriptionHistory = [], isLoading: prescriptionHistoryLoading } = useQuery({
+    queryKey: ["prescriptions", patient.id],
+    queryFn: async () => {
+      const res = await listPrescriptions({ patientId: patient.id });
+      if (!res.success) throw new Error(res.error);
+      return res.data || [];
+    },
+  });
+
+  // Constantes vitales — vue de la dernière prise, visible pendant toute la consultation.
+  const { data: vitals = [], isLoading: vitalsLoading } = useQuery({
+    queryKey: ["vitals", patient.id],
+    queryFn: async () => {
+      const res = await getPatientVitalSigns(patient.id);
+      if (!res.success) throw new Error(res.error);
+      return res.data || [];
+    },
+  });
+  const latestVital = vitals[0] || null;
 
   const handleSaveDraft = async () => {
     setSavingDraft(true);
@@ -128,7 +137,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
       const res = await renewPrescription(prescriptionId);
       if (res.success && res.data) {
         toast.success("Ordonnance renouvelée.");
-        setPrescriptionHistory((prev) => [
+        queryClient.setQueryData(["prescriptions", patient.id], (prev: any[] = []) => [
           res.data,
           ...prev.map((p) => (p.id === prescriptionId ? { ...p, status: "SUPERSEDED" } : p)),
         ]);
@@ -221,7 +230,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
     if (!template || !Array.isArray(template.items)) return;
     setMedications((prev) => [
       ...prev,
-      ...template.items.map((item: any) => ({
+      ...(template.items as any[]).map((item: any) => ({
         name: item.drugName,
         dosage: item.dosage,
         frequency: item.frequency,
@@ -256,7 +265,9 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
       });
       if (res.success) {
         toast.success("Modèle d'ordonnance enregistré.");
-        setTemplates((prev) => [...prev, res.data].sort((a, b) => a.name.localeCompare(b.name)));
+        queryClient.setQueryData(["prescriptionTemplates"], (prev: any[] = []) =>
+          [...prev, res.data].sort((a, b) => a.name.localeCompare(b.name))
+        );
         setShowSaveTemplate(false);
         setTemplateName("");
         setTemplatePathology("");
@@ -704,7 +715,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                     patients={[patient]}
                     defaultPatientId={patient.id}
                     appointmentId={appointment?.id}
-                    onSuccess={(order) => setLabOrders((prev) => [{ ...order, orderedBy: null, results: [] }, ...prev])}
+                    onSuccess={(order) => queryClient.setQueryData(["labOrders", patient.id], (prev: any[] = []) => [{ ...order, orderedBy: null, results: [] }, ...prev])}
                   />
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -757,7 +768,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                 <CardDescription className="text-xs">Dernière prise relevée pour ce patient.</CardDescription>
               </div>
               {!isCompleted && (
-                <VitalSignsDialog patientId={patient.id} appointmentId={appointment?.id} onSuccess={(vital) => setVitals((prev) => [vital, ...prev])} />
+                <VitalSignsDialog patientId={patient.id} appointmentId={appointment?.id} onSuccess={(vital) => queryClient.setQueryData(["vitals", patient.id], (prev: any[] = []) => [vital, ...prev])} />
               )}
             </CardHeader>
             <CardContent>
