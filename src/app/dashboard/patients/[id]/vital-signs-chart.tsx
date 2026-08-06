@@ -1,6 +1,7 @@
 "use client";
 
-import { Activity, HeartPulse, Thermometer, Droplet, Weight, AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { Activity, HeartPulse, Thermometer, Droplet, Weight, AlertCircle, Stethoscope } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -20,6 +21,11 @@ interface VitalSignItem {
     lastName: string;
     role: string;
   };
+  appointment?: {
+    id: string;
+    title: string;
+    scheduledAt: Date;
+  } | null;
 }
 
 interface VitalSignsChartProps {
@@ -138,6 +144,14 @@ export default function VitalSignsChart({ vitalSigns }: VitalSignsChartProps) {
                       <Badge variant="outline" className="text-[10px]">
                         Par {item.recordedBy.firstName} {item.recordedBy.lastName}
                       </Badge>
+                    )}
+                    {item.appointment && (
+                      <Link href={`/dashboard/appointments/${item.appointment.id}/consultation`}>
+                        <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors">
+                          <Stethoscope className="h-2.5 w-2.5" />
+                          {item.appointment.title}
+                        </Badge>
+                      </Link>
                     )}
                   </div>
 

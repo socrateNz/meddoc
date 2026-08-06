@@ -10,14 +10,16 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { completeConsultation } from "@/actions/appointments";
+import { completeConsultation, saveConsultationDraft } from "@/actions/appointments";
 import { listLabOrders } from "@/actions/lab";
-import { listPrescriptionTemplates, createPrescriptionTemplate } from "@/actions/prescriptions";
+import { listPrescriptionTemplates, createPrescriptionTemplate, listPrescriptions, renewPrescription } from "@/actions/prescriptions";
+import { getPatientVitalSigns } from "@/actions/vitals";
 import { transcribeConsultationAudio } from "@/actions/ai";
-import { Loader2, FileText, Activity, Stethoscope, Pill, Plus, Trash2, Search, X, ShieldAlert, HeartPulse, FlaskConical, Mic, Square, ChevronRight, AlertTriangle } from "lucide-react";
+import { Loader2, FileText, Activity, Stethoscope, Pill, Plus, Trash2, Search, X, ShieldAlert, HeartPulse, FlaskConical, Mic, Square, ChevronRight, AlertTriangle, History, RotateCcw, Save, Thermometer } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { searchIcd10Codes, type Icd10Code } from "@/lib/icd10-codes";
 import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
+import VitalSignsDialog from "@/app/dashboard/patients/[id]/vital-signs-dialog";
 
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 
@@ -29,24 +31,29 @@ function calculateAge(birthDate: Date) {
   return age;
 }
 
-export default function ConsultationWorkspace({ patient, appointment }: { patient: any, appointment?: any }) {
+export default function ConsultationWorkspace({ patient, appointment, draft }: { patient: any, appointment?: any, draft?: any }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [activeTab, setActiveTab] = useState("notes");
 
-  // Form State
-  const [symptoms, setSymptoms] = useState("");
-  const [diagnosis, setDiagnosis] = useState("");
-  const [plan, setPlan] = useState("");
+  // Form State — pré-rempli depuis un brouillon existant (ConsultationDraft) le cas échéant.
+  const [symptoms, setSymptoms] = useState<string>(draft?.symptoms || "");
+  const [diagnosis, setDiagnosis] = useState<string>(draft?.diagnosis || "");
+  const [plan, setPlan] = useState<string>(draft?.plan || "");
 
   // Diagnostic ICD-10
-  const [diagnosisCode, setDiagnosisCode] = useState<Icd10Code | null>(null);
+  const [diagnosisCode, setDiagnosisCode] = useState<Icd10Code | null>(
+    draft?.diagnosisCode ? { code: draft.diagnosisCode, label: draft.diagnosisLabel || "", category: "" } : null
+  );
   const [icdQuery, setIcdQuery] = useState("");
   const [icdOpen, setIcdOpen] = useState(false);
   const icdResults = useMemo(() => (icdQuery.trim() ? searchIcd10Codes(icdQuery, 8) : []), [icdQuery]);
 
   // Medications State
-  const [medications, setMedications] = useState<{name: string, dosage: string, frequency: string, instructions: string}[]>([]);
+  const [medications, setMedications] = useState<{name: string, dosage: string, frequency: string, instructions: string}[]>(
+    Array.isArray(draft?.medications) ? draft.medications : []
+  );
   const [currentMed, setCurrentMed] = useState({ name: "", dosage: "", frequency: "", instructions: "" });
 
   // Modèles d'ordonnance
@@ -62,6 +69,16 @@ export default function ConsultationWorkspace({ patient, appointment }: { patien
   const [labOrders, setLabOrders] = useState<any[]>([]);
   const [labLoading, setLabLoading] = useState(true);
 
+  // Historique des ordonnances du patient
+  const [prescriptionHistory, setPrescriptionHistory] = useState<any[]>([]);
+  const [prescriptionHistoryLoading, setPrescriptionHistoryLoading] = useState(true);
+  const [renewingId, setRenewingId] = useState<string | null>(null);
+
+  // Constantes vitales — vue de la dernière prise, visible pendant toute la consultation.
+  const [vitals, setVitals] = useState<any[]>([]);
+  const [vitalsLoading, setVitalsLoading] = useState(true);
+  const latestVital = vitals[0] || null;
+
   useEffect(() => {
     let cancelled = false;
     listLabOrders({ patientId: patient.id }).then((res) => {
@@ -71,8 +88,57 @@ export default function ConsultationWorkspace({ patient, appointment }: { patien
     listPrescriptionTemplates().then((res) => {
       if (!cancelled && res.success) setTemplates(res.data || []);
     });
+    listPrescriptions({ patientId: patient.id }).then((res) => {
+      if (!cancelled && res.success) setPrescriptionHistory(res.data || []);
+      if (!cancelled) setPrescriptionHistoryLoading(false);
+    });
+    getPatientVitalSigns(patient.id).then((res) => {
+      if (!cancelled && res.success) setVitals(res.data || []);
+      if (!cancelled) setVitalsLoading(false);
+    });
     return () => { cancelled = true; };
   }, [patient.id]);
+
+  const handleSaveDraft = async () => {
+    setSavingDraft(true);
+    try {
+      const res = await saveConsultationDraft({
+        patientId: patient.id,
+        appointmentId: appointment?.id,
+        symptoms,
+        diagnosis,
+        plan,
+        medications,
+        diagnosisCode: diagnosisCode?.code,
+        diagnosisLabel: diagnosisCode?.label,
+      });
+      if (res.success) {
+        toast.success("Brouillon enregistré. Vous pourrez reprendre cette consultation plus tard.");
+      } else {
+        toast.error(res.error || "Erreur lors de l'enregistrement du brouillon.");
+      }
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handleRenewPrescription = async (prescriptionId: string) => {
+    setRenewingId(prescriptionId);
+    try {
+      const res = await renewPrescription(prescriptionId);
+      if (res.success && res.data) {
+        toast.success("Ordonnance renouvelée.");
+        setPrescriptionHistory((prev) => [
+          res.data,
+          ...prev.map((p) => (p.id === prescriptionId ? { ...p, status: "SUPERSEDED" } : p)),
+        ]);
+      } else {
+        toast.error(res.error || "Erreur lors du renouvellement.");
+      }
+    } finally {
+      setRenewingId(null);
+    }
+  };
 
   // Dictée vocale IA
   const [isRecording, setIsRecording] = useState(false);
@@ -287,20 +353,20 @@ export default function ConsultationWorkspace({ patient, appointment }: { patien
         {/* Colonne principale : onglets */}
         <div className="md:col-span-8 lg:col-span-9">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4 mb-6">
-              <TabsTrigger value="history" className="flex items-center gap-2">
+            <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl mb-6">
+              <TabsTrigger value="history" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
                 <Activity className="h-4 w-4" />
                 Historique
               </TabsTrigger>
-              <TabsTrigger value="notes" className="flex items-center gap-2">
+              <TabsTrigger value="notes" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
                 <Stethoscope className="h-4 w-4" />
                 Consultation
               </TabsTrigger>
-              <TabsTrigger value="prescriptions" className="flex items-center gap-2">
+              <TabsTrigger value="prescriptions" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
                 <Pill className="h-4 w-4" />
-                Prescriptions
+                Ordonnances
               </TabsTrigger>
-              <TabsTrigger value="lab" className="flex items-center gap-2">
+              <TabsTrigger value="lab" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
                 <FlaskConical className="h-4 w-4" />
                 Laboratoire
               </TabsTrigger>
@@ -426,9 +492,66 @@ export default function ConsultationWorkspace({ patient, appointment }: { patien
 
             <TabsContent value="prescriptions" className="space-y-4">
               <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <History className="h-4 w-4" /> Historique des ordonnances
+                  </CardTitle>
+                  <CardDescription>
+                    Ordonnances déjà rédigées pour ce patient. Renouveler recopie les médicaments dans une nouvelle ordonnance active.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {prescriptionHistoryLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : prescriptionHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">Aucune ordonnance antérieure pour ce patient.</p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {prescriptionHistory.map((p) => (
+                        <div key={p.id} className="border rounded-xl p-3 flex items-start justify-between gap-3 flex-wrap">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs text-muted-foreground">
+                                {new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(p.createdAt))}
+                              </span>
+                              <Badge variant="outline" className={`text-[10px] ${p.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : p.status === "SUPERSEDED" ? "bg-slate-500/10 text-slate-500 border-slate-500/20" : ""}`}>
+                                {p.status === "ACTIVE" ? "Active" : p.status === "SUPERSEDED" ? "Remplacée" : p.status}
+                              </Badge>
+                              {p.prescribedBy && (
+                                <span className="text-[11px] text-muted-foreground">Dr. {p.prescribedBy.firstName} {p.prescribedBy.lastName}</span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {p.items.map((item: any) => (
+                                <Badge key={item.id} variant="secondary" className="text-[11px]">{item.drugName} — {item.dosage}</Badge>
+                              ))}
+                            </div>
+                          </div>
+                          {p.status === "ACTIVE" && !isCompleted && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5 rounded-lg shrink-0"
+                              disabled={renewingId === p.id}
+                              onClick={() => handleRenewPrescription(p.id)}
+                            >
+                              {renewingId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                              Renouveler
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                   <div>
-                    <CardTitle>Prescriptions & Médicaments</CardTitle>
+                    <CardTitle>Ordonnance & Médicaments</CardTitle>
                     <CardDescription>
                       Ajoutez les médicaments prescrits. Génération automatique de l'ordonnance médicale PDF.
                     </CardDescription>
@@ -580,6 +703,7 @@ export default function ConsultationWorkspace({ patient, appointment }: { patien
                   <NewLabOrderDialog
                     patients={[patient]}
                     defaultPatientId={patient.id}
+                    appointmentId={appointment?.id}
                     onSuccess={(order) => setLabOrders((prev) => [{ ...order, orderedBy: null, results: [] }, ...prev])}
                   />
                 </CardHeader>
@@ -624,8 +748,46 @@ export default function ConsultationWorkspace({ patient, appointment }: { patien
           </Tabs>
         </div>
 
-        {/* Panneau latéral : Diagnostic ICD-10 + clôture */}
+        {/* Panneau latéral : Constantes + Diagnostic ICD-10 + clôture */}
         <div className="md:col-span-4 lg:col-span-3 space-y-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2"><Thermometer className="h-4 w-4" /> Constantes</CardTitle>
+                <CardDescription className="text-xs">Dernière prise relevée pour ce patient.</CardDescription>
+              </div>
+              {!isCompleted && (
+                <VitalSignsDialog patientId={patient.id} appointmentId={appointment?.id} onSuccess={(vital) => setVitals((prev) => [vital, ...prev])} />
+              )}
+            </CardHeader>
+            <CardContent>
+              {vitalsLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              ) : !latestVital ? (
+                <p className="text-xs text-muted-foreground text-center py-2">Aucune constante enregistrée pour ce patient.</p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-muted-foreground">
+                    {new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(latestVital.createdAt))}
+                    {latestVital.recordedBy && ` • ${latestVital.recordedBy.firstName} ${latestVital.recordedBy.lastName}`}
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5 text-xs">
+                    {latestVital.temperature != null && <div><span className="text-muted-foreground">Temp. :</span> {latestVital.temperature} °C</div>}
+                    {latestVital.bloodPressure && <div><span className="text-muted-foreground">Tension :</span> {latestVital.bloodPressure}</div>}
+                    {latestVital.heartRate != null && <div><span className="text-muted-foreground">Pouls :</span> {latestVital.heartRate} bpm</div>}
+                    {latestVital.oxygenSaturation != null && <div><span className="text-muted-foreground">SpO2 :</span> {latestVital.oxygenSaturation}%</div>}
+                    {latestVital.bloodSugar != null && <div><span className="text-muted-foreground">Glycémie :</span> {latestVital.bloodSugar} g/L</div>}
+                    {latestVital.weight != null && <div><span className="text-muted-foreground">Poids :</span> {latestVital.weight} kg</div>}
+                    {latestVital.painScore != null && <div><span className="text-muted-foreground">Douleur :</span> {latestVital.painScore}/10</div>}
+                  </div>
+                  {latestVital.notes && <p className="text-xs italic text-muted-foreground pt-1 border-t">{latestVital.notes}</p>}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Diagnostic</CardTitle>
@@ -676,6 +838,18 @@ export default function ConsultationWorkspace({ patient, appointment }: { patien
               )}
             </CardContent>
           </Card>
+
+          {!isCompleted && (
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={handleSaveDraft}
+              disabled={savingDraft || loading}
+            >
+              {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Enregistrer sans clôturer
+            </Button>
+          )}
 
           <Button
             className="w-full"

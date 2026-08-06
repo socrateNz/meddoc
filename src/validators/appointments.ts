@@ -29,3 +29,23 @@ export const completeConsultationSchema = z.object({
   diagnosisCode: z.string().optional(),
   diagnosisLabel: z.string().optional(),
 });
+
+export const saveConsultationDraftSchema = z.object({
+  appointmentId: z.string().optional(),
+  patientId: z.string().min(1, "Patient requis"),
+  symptoms: z.string().optional(),
+  diagnosis: z.string().optional(),
+  plan: z.string().optional(),
+  medications: z
+    .array(
+      z.object({
+        name: z.string().min(1, "Nom du médicament requis"),
+        dosage: z.string().min(1, "Dosage requis"),
+        frequency: z.string().min(1, "Fréquence requise"),
+        instructions: z.string().optional().default(""),
+      })
+    )
+    .optional(),
+  diagnosisCode: z.string().optional(),
+  diagnosisLabel: z.string().optional(),
+});

@@ -154,6 +154,7 @@ model User {
   prescriptionsWritten         Prescription[]         @relation("PrescriptionPrescribedBy")
   prescriptionTemplatesCreated PrescriptionTemplate[]  @relation("PrescriptionTemplateCreatedBy")
   purchaseOrdersCreated        PurchaseOrder[]         @relation("PurchaseOrderCreatedBy")
+  consultationDraftsCreated    ConsultationDraft[]     @relation("ConsultationDraftCreatedBy")
 
   organizationId      String?   @db.ObjectId
   organization        Organization? @relation(fields: [organizationId], references: [id])
@@ -195,6 +196,8 @@ model Patient {
 
   wardId          String?   @db.ObjectId
   ward            Ward?     @relation("PatientWard", fields: [wardId], references: [id])
+
+  consultationDrafts ConsultationDraft[]
 }
 
 model FamilyMember {
@@ -234,6 +237,9 @@ model MedicalRecord {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   patientId       String   @db.ObjectId
   patient         Patient  @relation(fields: [patientId], references: [id])
+
+  appointmentId   String?  @db.ObjectId
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
 
   title           String
   description     String
@@ -307,6 +313,36 @@ model Appointment {
   status          String   @default("SCHEDULED")
 
   prescriptions   Prescription[]
+  labOrders       LabOrder[]
+  consultationDrafts ConsultationDraft[]
+  medicalRecords  MedicalRecord[]
+  vitalSigns      VitalSign[]
+}
+
+// Brouillon de consultation en cours — permet d'enregistrer symptômes/diagnostic/plan/
+// médicaments sans clôturer (donc sans créer le MedicalRecord/l'ordonnance/la facture
+// définitifs). Un seul brouillon actif par consultation : identifié par appointmentId
+// quand la consultation vient d'un rendez-vous planifié, sinon par (patientId + auteur)
+// pour le flux ad-hoc où aucun Appointment n'existe. Supprimé dès que la consultation
+// est clôturée avec succès (cf. completeConsultation).
+model ConsultationDraft {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String   @db.ObjectId
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  appointmentId   String?  @db.ObjectId
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+  createdById     String   @db.ObjectId
+  createdBy       User     @relation("ConsultationDraftCreatedBy", fields: [createdById], references: [id])
+
+  symptoms        String?
+  diagnosis       String?
+  plan            String?
+  diagnosisCode   String?
+  diagnosisLabel  String?
+  medications     Json?    // [{ name, dosage, frequency, instructions }]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // Demande d'analyse de laboratoire — pas de catalogue structuré (les analyses demandées
@@ -320,6 +356,9 @@ model LabOrder {
   medicalRecordId String?  @db.ObjectId
   medicalRecord   MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
 
+  appointmentId   String?  @db.ObjectId
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+
   organizationId  String?  @db.ObjectId
   organization    Organization? @relation(fields: [organizationId], references: [id])
 
@@ -329,6 +368,13 @@ model LabOrder {
   // TO_VALIDATE, VALIDATED, DELIVERED, CANCELLED (cf. src/actions/lab.ts pour les transitions).
   status          String   @default("PRESCRIBED")
   priority        String   @default("ROUTINE")  // ROUTINE, URGENT
+
+  // Statut de règlement, orthogonal au statut de workflow labo ci-dessus : NOT_REQUIRED
+  // (aucun examen de la demande n'exige la caisse d'abord), PENDING (bloque collectSample),
+  // PAID (facture liée finalisée — cf. finalizePendingInvoice dans src/actions/finance.ts).
+  paymentStatus    String   @default("NOT_REQUIRED")
+  pendingInvoiceId String?  @db.ObjectId
+  pendingInvoice   PendingInvoice? @relation("LabOrderInvoice", fields: [pendingInvoiceId], references: [id])
 
   orderedById     String   @db.ObjectId
   orderedBy       User     @relation("LabOrderOrderedBy", fields: [orderedById], references: [id])
@@ -378,11 +424,19 @@ model LabTest {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
   name            String
   department      String?  // ex: "Hématologie", "Biochimie"
-  price           Float?   // FCFA
   durationMinutes Int?
   criticalLow     Float?   // Seuil bas critique (examens à résultat numérique uniquement)
   criticalHigh    Float?   // Seuil haut critique
-  consumables     Json?    // Recette de consommables : [{ pharmacyItemId, name, quantity }]
+  consumables     Json?    // Recette de consommables annexes : [{ pharmacyItemId, name, quantity }]
+
+  // Le prix n'est plus saisi manuellement : il vient de pharmacyItem.unitPrice. Le produit
+  // représente l'examen lui-même (kit, réactif, bandelette...) et est décompté du stock à
+  // chaque prélèvement, comme les consommables mais séparément.
+  pharmacyItemId       String?  @db.ObjectId
+  pharmacyItem         PharmacyItem? @relation("LabTestProduct", fields: [pharmacyItemId], references: [id])
+  // true (défaut) = la demande attend le règlement en caisse avant de partir au labo ;
+  // false = part directement au labo (examens urgents/critiques).
+  requiresPaymentFirst Boolean  @default(true)
 
   organizationId  String?  @db.ObjectId
   organization    Organization? @relation(fields: [organizationId], references: [id])
@@ -537,7 +591,9 @@ model VitalSign {
   patient          Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
   recordedById     String   @db.ObjectId
   recordedBy       User     @relation("RecordedVitals", fields: [recordedById], references: [id])
-  
+  appointmentId    String?  @db.ObjectId
+  appointment      Appointment? @relation(fields: [appointmentId], references: [id])
+
   temperature      Float?   // Degrés Celsius (ex: 37.5)
   bloodPressure    String?  // Systolique/Diastolique (ex: "120/80")
   heartRate        Int?     // BPM (ex: 72)
@@ -570,6 +626,7 @@ model PharmacyItem {
   inventoryLines InventoryCountLine[]
   prescriptionItems PrescriptionItem[]
   purchaseOrderLines PurchaseOrderLine[]
+  labTests       LabTest[] @relation("LabTestProduct")
 
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -717,6 +774,7 @@ model PendingInvoice {
   finalizedAt             DateTime?
 
   prescriptions           Prescription[]
+  labOrders               LabOrder[]     @relation("LabOrderInvoice")
 }
 
 // Ordonnance électronique structurée. Rattachée à une consultation (medicalRecordId/

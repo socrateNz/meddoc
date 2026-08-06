@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const recordVitalSignSchema = z.object({
   patientId: z.string().min(1, "Patient requis"),
+  appointmentId: z.string().optional(),
   temperature: z.number().min(25).max(45).optional(),
   bloodPressure: z.string().optional(),
   heartRate: z.number().min(20).max(300).optional(),

@@ -714,7 +714,16 @@ export async function finalizePendingInvoice(
       },
     });
 
+    // Débloque toute demande d'analyse labo liée à cette facture qui attendait le règlement
+    // (cf. src/actions/lab.ts:createLabOrder — paymentStatus). No-op si la facture ne concerne
+    // pas un examen labo.
+    await prisma.labOrder.updateMany({
+      where: { pendingInvoiceId, paymentStatus: "PENDING" },
+      data: { paymentStatus: "PAID" },
+    });
+
     revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard/lab");
     revalidatePath("/dashboard", "layout");
 
     return { success: true, data: invoiceRes.data };

@@ -347,6 +347,7 @@ export async function listPrescriptions(options?: {
         items: true,
         prescribedBy: { select: { firstName: true, lastName: true } },
         patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        appointment: { select: { id: true, title: true, scheduledAt: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 100,

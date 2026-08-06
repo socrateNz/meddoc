@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ArrowLeft, FlaskConical, ShieldAlert, Droplet, User, FileText, Stethoscope,
-  Loader2, CheckCircle2, Lock, PackageCheck, Truck, Sparkles, TrendingUp, AlertTriangle,
+  Loader2, CheckCircle2, Lock, PackageCheck, Truck, Sparkles, TrendingUp, AlertTriangle, Wallet,
 } from "lucide-react";
 import { collectSample, receiveAtLab, validateLabResult, markDelivered, analyzeLabResults } from "@/actions/lab";
 import RecordLabResultDialog from "@/app/dashboard/lab/record-lab-result-dialog";
@@ -166,7 +166,19 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
             <FlaskConical className="h-6 w-6 text-blue-500" />
             Demande d&apos;analyse
           </h1>
-          <p className="text-sm text-muted-foreground">Statut actuel : <Badge variant="outline">{STATUS_LABELS[order.status] || order.status}</Badge></p>
+          <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+            Statut actuel : <Badge variant="outline">{STATUS_LABELS[order.status] || order.status}</Badge>
+            {order.paymentStatus === "PENDING" && (
+              <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
+                <Wallet className="h-3 w-3" /> Paiement en attente
+              </Badge>
+            )}
+            {order.paymentStatus === "PAID" && (
+              <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                <Wallet className="h-3 w-3" /> Réglé
+              </Badge>
+            )}
+          </p>
         </div>
       </div>
 
@@ -206,6 +218,14 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
           {order.medicalRecord?.diagnosisLabel && (
             <p><span className="text-muted-foreground">Diagnostic suspecté :</span> {order.medicalRecord.diagnosisLabel}</p>
           )}
+          {order.appointment && (
+            <p>
+              <span className="text-muted-foreground">Consultation d&apos;origine :</span>{" "}
+              <Link href={`/dashboard/appointments/${order.appointment.id}/consultation`} className="text-blue-600 dark:text-blue-400 hover:underline">
+                {order.appointment.title} • {formatDateTime(order.appointment.scheduledAt)}
+              </Link>
+            </p>
+          )}
           <div className="flex flex-wrap gap-1.5 pt-1">
             <span className="text-muted-foreground text-sm">Examens demandés :</span>
             {order.tests.map((t: string) => <Badge key={t} variant="secondary" className="text-[11px]">{t}</Badge>)}
@@ -219,7 +239,12 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
           <CardTitle className="text-base flex items-center gap-2"><PackageCheck className="h-4 w-4" /> Prélèvement</CardTitle>
         </CardHeader>
         <CardContent>
-          {order.status === "PRESCRIBED" ? (
+          {order.status === "PRESCRIBED" && order.paymentStatus === "PENDING" ? (
+            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20 p-3.5 text-sm text-amber-800 dark:text-amber-300">
+              <Wallet className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>Cette demande est en attente de règlement en caisse. Le prélèvement sera possible dès la facture finalisée (Finance &gt; Factures en attente).</span>
+            </div>
+          ) : order.status === "PRESCRIBED" ? (
             canWrite ? (
               <form onSubmit={handleCollectSample} className="grid gap-3 sm:grid-cols-4 items-end">
                 <div className="space-y-1.5 sm:col-span-2">

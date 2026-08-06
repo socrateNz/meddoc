@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FlaskConical, Clock, CheckCircle2, AlertTriangle, ChevronRight, Settings, Zap } from "lucide-react";
+import { FlaskConical, Clock, CheckCircle2, AlertTriangle, ChevronRight, Settings, Zap, Wallet } from "lucide-react";
 import NewLabOrderDialog from "./new-lab-order-dialog";
 
 function formatDateTime(date: string | Date) {
@@ -106,7 +106,7 @@ export default function LabView({ labOrders, patients, currentUserRole }: LabVie
           <button
             type="button"
             onClick={() => setStatusFilter("ALL")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${statusFilter === "ALL" ? "bg-white dark:bg-slate-900 shadow-xs" : "text-slate-500"}`}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${statusFilter === "ALL" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
           >
             Toutes ({labOrders.length})
           </button>
@@ -118,7 +118,7 @@ export default function LabView({ labOrders, patients, currentUserRole }: LabVie
                 key={status}
                 type="button"
                 onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${statusFilter === status ? "bg-white dark:bg-slate-900 shadow-xs" : "text-slate-500"}`}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${statusFilter === status ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
               >
                 {info.label} ({count})
               </button>
@@ -164,6 +164,11 @@ export default function LabView({ labOrders, patients, currentUserRole }: LabVie
                         {order.priority === "URGENT" && (
                           <Badge variant="outline" className="bg-blue-500/10 text-blue-600 border-blue-500/20 text-[10px] gap-1">
                             <Zap className="h-3 w-3" /> Urgent
+                          </Badge>
+                        )}
+                        {order.paymentStatus === "PENDING" && (
+                          <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px] gap-1">
+                            <Wallet className="h-3 w-3" /> En attente de paiement
                           </Badge>
                         )}
                         {hasCritical && (

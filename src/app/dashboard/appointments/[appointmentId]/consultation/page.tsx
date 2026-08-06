@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
 import ConsultationWorkspace from "./consultation-workspace";
+import { getConsultationDraft } from "@/actions/appointments";
 
 export const metadata = {
   title: "Espace Consultation | MedDoc",
@@ -37,6 +38,8 @@ export default async function ConsultationPage({ params }: ConsultationPageProps
     notFound();
   }
 
+  const draftRes = await getConsultationDraft({ appointmentId, patientId: appointment.patientId });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
@@ -46,7 +49,7 @@ export default async function ConsultationPage({ params }: ConsultationPageProps
         </p>
       </div>
 
-      <ConsultationWorkspace appointment={appointment} patient={appointment.patient} />
+      <ConsultationWorkspace appointment={appointment} patient={appointment.patient} draft={draftRes.success ? draftRes.data : null} />
     </div>
   );
 }

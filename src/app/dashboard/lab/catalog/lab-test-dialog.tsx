@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit, Loader2, FlaskConical, X } from "lucide-react";
+import { Plus, Edit, Loader2, FlaskConical, X, Wallet, Zap } from "lucide-react";
 import { createOrUpdateLabTest } from "@/actions/lab";
 import { toast } from "sonner";
 
@@ -16,12 +16,17 @@ interface LabTestDialogProps {
   onSuccess?: (test: any) => void;
 }
 
+function formatFCFA(val: number) {
+  return Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
+}
+
 export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }: LabTestDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(labTest?.name || "");
   const [department, setDepartment] = useState(labTest?.department || "");
-  const [price, setPrice] = useState(labTest?.price?.toString() || "");
+  const [pharmacyItemId, setPharmacyItemId] = useState(labTest?.pharmacyItemId || "");
+  const [requiresPaymentFirst, setRequiresPaymentFirst] = useState(labTest?.requiresPaymentFirst ?? true);
   const [durationMinutes, setDurationMinutes] = useState(labTest?.durationMinutes?.toString() || "");
   const [criticalLow, setCriticalLow] = useState(labTest?.criticalLow?.toString() || "");
   const [criticalHigh, setCriticalHigh] = useState(labTest?.criticalHigh?.toString() || "");
@@ -31,7 +36,8 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
   const [newItemId, setNewItemId] = useState("");
   const [newItemQty, setNewItemQty] = useState("1");
 
-  const pharmacyItemOptions = pharmacyItems.map((p) => ({ value: p.id, label: p.name }));
+  const pharmacyItemOptions = pharmacyItems.map((p) => ({ value: p.id, label: `${p.name}${p.unitPrice != null ? ` — ${formatFCFA(p.unitPrice)}` : ""}` }));
+  const selectedProduct = pharmacyItems.find((p) => p.id === pharmacyItemId);
 
   const handleAddConsumable = () => {
     if (!newItemId) return;
@@ -57,6 +63,10 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
       toast.error("Le nom de l'examen est requis.");
       return;
     }
+    if (!pharmacyItemId) {
+      toast.error("Sélectionnez le produit pharmacie qui représente cet examen.");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -64,7 +74,8 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
         id: labTest?.id,
         name: name.trim(),
         department: department.trim() || undefined,
-        price: price ? Number(price) : undefined,
+        pharmacyItemId,
+        requiresPaymentFirst,
         durationMinutes: durationMinutes ? Number(durationMinutes) : undefined,
         criticalLow: criticalLow ? Number(criticalLow) : undefined,
         criticalHigh: criticalHigh ? Number(criticalHigh) : undefined,
@@ -100,7 +111,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
             {labTest ? "Modifier l'examen" : "Nouvel examen"}
           </DialogTitle>
           <DialogDescription>
-            Définissez le prix et, si pertinent, les seuils critiques (résultats numériques) de cet examen.
+            Reliez cet examen à un produit pharmacie : son prix de vente sert de tarif, et il est décompté du stock à chaque prélèvement.
           </DialogDescription>
         </DialogHeader>
 
@@ -122,8 +133,47 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
           </div>
 
           <div className="space-y-1.5">
-            <Label>Prix (FCFA)</Label>
-            <Input type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="ex: 5000" className="rounded-xl" />
+            <Label>Produit pharmacie *</Label>
+            <Select items={pharmacyItemOptions} value={pharmacyItemId} onValueChange={(v: any) => setPharmacyItemId(v || "")}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Choisir le produit lié à cet examen..." />
+              </SelectTrigger>
+              <SelectContent>
+                {pharmacyItemOptions.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedProduct && (
+              <p className="text-[11px] text-muted-foreground">
+                Prix facturé : <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(selectedProduct.unitPrice)}</span> (basé sur le produit lié) — Stock actuel : {selectedProduct.stockQuantity}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Circuit</Label>
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setRequiresPaymentFirst(true)}
+                className={`flex-1 px-3 py-2 rounded-xl font-semibold border flex items-center justify-center gap-1.5 ${requiresPaymentFirst ? "bg-amber-600 text-white border-amber-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
+              >
+                <Wallet className="h-3.5 w-3.5" /> Caisse d&apos;abord
+              </button>
+              <button
+                type="button"
+                onClick={() => setRequiresPaymentFirst(false)}
+                className={`flex-1 px-3 py-2 rounded-xl font-semibold border flex items-center justify-center gap-1.5 ${!requiresPaymentFirst ? "bg-emerald-600 text-white border-emerald-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
+              >
+                <Zap className="h-3.5 w-3.5" /> Labo direct
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {requiresPaymentFirst
+                ? "La demande attend le règlement en caisse avant de pouvoir être prélevée."
+                : "La demande part directement au prélèvement, même non réglée (examens urgents/critiques)."}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -138,7 +188,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
           </div>
 
           <div className="space-y-1.5">
-            <Label>Consommables (décomptés automatiquement au prélèvement)</Label>
+            <Label>Consommables annexes (tubes, gants... décomptés au prélèvement)</Label>
             {consumables.length > 0 && (
               <div className="space-y-1.5">
                 {consumables.map((c) => (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FlaskConical, Loader2, PlusCircle, X, Search } from "lucide-react";
+import { FlaskConical, Loader2, PlusCircle, X, Search, Wallet, Zap, CheckSquare, Square } from "lucide-react";
 import { createLabOrder, listLabTests } from "@/actions/lab";
 import { toast } from "sonner";
 
@@ -17,56 +17,56 @@ const PRIORITY_OPTIONS = [
   { value: "URGENT", label: "Urgent" },
 ];
 
+function formatFCFA(val: number) {
+  return Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
+}
+
 interface NewLabOrderDialogProps {
   patients: any[];
   defaultPatientId?: string;
+  appointmentId?: string;
   onSuccess?: (order: any) => void;
 }
 
-export default function NewLabOrderDialog({ patients, defaultPatientId, onSuccess }: NewLabOrderDialogProps) {
+export default function NewLabOrderDialog({ patients, defaultPatientId, appointmentId, onSuccess }: NewLabOrderDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [patientId, setPatientId] = useState(defaultPatientId || "");
-  const [testInput, setTestInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [tests, setTests] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [priority, setPriority] = useState<"ROUTINE" | "URGENT">("ROUTINE");
   const [catalog, setCatalog] = useState<any[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [catalogLoading, setCatalogLoading] = useState(false);
 
   useEffect(() => {
     if (open && catalog.length === 0) {
-      listLabTests().then((res) => { if (res.success) setCatalog(res.data || []); });
+      setCatalogLoading(true);
+      listLabTests().then((res) => { if (res.success) setCatalog(res.data || []); }).finally(() => setCatalogLoading(false));
     }
   }, [open, catalog.length]);
 
-  const suggestions = testInput.trim()
-    ? catalog.filter((t) => t.name.toLowerCase().includes(testInput.trim().toLowerCase()) && !tests.includes(t.name)).slice(0, 6)
-    : [];
+  const filteredCatalog = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return catalog;
+    return catalog.filter((t) => t.name.toLowerCase().includes(q) || t.department?.toLowerCase().includes(q));
+  }, [catalog, searchQuery]);
 
-  const addTest = (name: string) => {
-    if (!tests.includes(name)) setTests((prev) => [...prev, name]);
-    setTestInput("");
-    setShowSuggestions(false);
+  const selectedTests = useMemo(() => catalog.filter((t) => tests.includes(t.name)), [catalog, tests]);
+  const totalPrice = selectedTests.reduce((sum, t) => sum + (t.pharmacyItem?.unitPrice || 0), 0);
+  const willRequirePayment = selectedTests.some((t) => t.requiresPaymentFirst !== false);
+
+  const toggleTest = (test: any) => {
+    if (!test.pharmacyItemId) return; // Non configuré — non sélectionnable
+    setTests((prev) => (prev.includes(test.name) ? prev.filter((n) => n !== test.name) : [...prev, test.name]));
   };
 
   const resetForm = () => {
     setPatientId(defaultPatientId || "");
-    setTestInput("");
+    setSearchQuery("");
     setTests([]);
     setNotes("");
     setPriority("ROUTINE");
-  };
-
-  const handleAddTest = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && testInput.trim()) {
-      e.preventDefault();
-      addTest(testInput.trim());
-    }
-  };
-
-  const handleRemoveTest = (idx: number) => {
-    setTests(tests.filter((_, i) => i !== idx));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,15 +76,15 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, onSucces
       return;
     }
     if (tests.length === 0) {
-      toast.error("Ajoutez au moins une analyse (appuyez sur Entrée pour valider).");
+      toast.error("Sélectionnez au moins un examen du catalogue.");
       return;
     }
 
     setLoading(true);
     try {
-      const res = await createLabOrder({ patientId, tests, notes: notes || undefined, priority });
+      const res = await createLabOrder({ patientId, tests, notes: notes || undefined, priority, appointmentId });
       if (res.success) {
-        toast.success("Demande d'analyse envoyée au laboratoire.");
+        toast.success("Demande d'analyse envoyée.");
         setOpen(false);
         resetForm();
         onSuccess?.(res.data);
@@ -102,14 +102,14 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, onSucces
         <PlusCircle className="h-4 w-4" />
         Nouvelle demande d&apos;analyse
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[520px] rounded-2xl">
+      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl text-blue-600 dark:text-blue-400">
             <FlaskConical className="h-5 w-5" />
             Nouvelle demande d&apos;analyse
           </DialogTitle>
           <DialogDescription>
-            Envoyez une demande d&apos;analyse de laboratoire pour un patient.
+            Sélectionnez les examens du catalogue à prescrire pour ce patient.
           </DialogDescription>
         </DialogHeader>
 
@@ -132,44 +132,79 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, onSucces
           )}
 
           <div className="space-y-1.5">
-            <Label>Analyses demandées * (catalogue ou saisie libre, Entrée pour ajouter)</Label>
+            <Label>Examens demandés *</Label>
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
-                placeholder="Ex: NFS, Glycémie à jeun..."
-                value={testInput}
-                onChange={(e) => { setTestInput(e.target.value); setShowSuggestions(true); }}
-                onKeyDown={handleAddTest}
-                onFocus={() => setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                placeholder="Rechercher un examen du catalogue..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-8 rounded-xl"
               />
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute z-10 mt-1 w-full max-h-52 overflow-y-auto rounded-xl border bg-popover shadow-md">
-                  {suggestions.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors flex items-center justify-between gap-2"
-                      onClick={() => addTest(t.name)}
-                    >
-                      <span>{t.name}</span>
-                      {t.price != null && <span className="text-muted-foreground shrink-0">{Math.round(t.price)} FCFA</span>}
-                    </button>
-                  ))}
+            </div>
+
+            <div className="max-h-56 overflow-y-auto rounded-xl border divide-y">
+              {catalogLoading ? (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Chargement du catalogue...
                 </div>
+              ) : filteredCatalog.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-8">
+                  {catalog.length === 0 ? "Aucun examen au catalogue — ajoutez-en depuis \"Catalogue des examens\"." : "Aucun résultat."}
+                </p>
+              ) : (
+                filteredCatalog.map((t) => {
+                  const checked = tests.includes(t.name);
+                  const unconfigured = !t.pharmacyItemId;
+                  return (
+                    <button
+                      type="button"
+                      key={t.id}
+                      disabled={unconfigured}
+                      onClick={() => toggleTest(t)}
+                      className={`w-full text-left px-3 py-2.5 flex items-center gap-2.5 transition-colors ${
+                        unconfigured ? "opacity-50 cursor-not-allowed" : "hover:bg-accent cursor-pointer"
+                      } ${checked ? "bg-blue-50 dark:bg-blue-950/20" : ""}`}
+                    >
+                      {checked ? <CheckSquare className="h-4 w-4 text-blue-600 shrink-0" /> : <Square className="h-4 w-4 text-muted-foreground shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-sm font-medium">{t.name}</span>
+                          {t.department && <Badge variant="outline" className="text-[10px]">{t.department}</Badge>}
+                          {unconfigured ? (
+                            <Badge variant="outline" className="text-[10px] bg-slate-500/10 text-slate-500 border-slate-500/20">Produit non configuré</Badge>
+                          ) : t.requiresPaymentFirst !== false ? (
+                            <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1"><Wallet className="h-2.5 w-2.5" />Caisse d&apos;abord</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1"><Zap className="h-2.5 w-2.5" />Labo direct</Badge>
+                          )}
+                        </div>
+                      </div>
+                      {t.pharmacyItem?.unitPrice != null && (
+                        <span className="text-xs font-semibold text-muted-foreground shrink-0">{formatFCFA(t.pharmacyItem.unitPrice)}</span>
+                      )}
+                    </button>
+                  );
+                })
               )}
             </div>
-            {tests.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1.5">
-                {tests.map((t, idx) => (
-                  <Badge key={idx} variant="secondary" className="gap-1 pr-1.5 py-0.5">
-                    {t}
-                    <button type="button" onClick={() => handleRemoveTest(idx)} className="text-muted-foreground hover:text-destructive transition-colors rounded-full">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
+
+            {selectedTests.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedTests.map((t) => (
+                    <Badge key={t.id} variant="secondary" className="gap-1 pr-1.5 py-0.5">
+                      {t.name}
+                      <button type="button" onClick={() => toggleTest(t)} className="text-muted-foreground hover:text-destructive transition-colors rounded-full">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Total estimé : <span className="font-bold text-slate-700 dark:text-slate-300">{formatFCFA(totalPrice)}</span>
+                  {willRequirePayment && " — passera par la caisse avant le laboratoire."}
+                </p>
               </div>
             )}
           </div>

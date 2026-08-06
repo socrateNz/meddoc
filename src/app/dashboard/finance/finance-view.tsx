@@ -346,19 +346,19 @@ export default function FinanceView({ summary, patients, organizationId, organiz
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/60 dark:border-slate-800/60 pb-3">
           <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl">
-            <TabsTrigger value="journal" className="rounded-lg text-xs font-semibold gap-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+            <TabsTrigger value="journal" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <Receipt className="h-4 w-4 text-blue-500" />
               Journal de Caisse ({summary.transactions.length})
             </TabsTrigger>
-            <TabsTrigger value="pharmacie" className="rounded-lg text-xs font-semibold gap-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+            <TabsTrigger value="pharmacie" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <Package className="h-4 w-4 text-indigo-500" />
               Stock Pharmacie ({summary.pharmacyItems.length})
             </TabsTrigger>
-            <TabsTrigger value="inventaire" className="rounded-lg text-xs font-semibold gap-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+            <TabsTrigger value="inventaire" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <ClipboardList className="h-4 w-4 text-rose-500" />
               Inventaire
             </TabsTrigger>
-            <TabsTrigger value="fournisseurs" className="rounded-lg text-xs font-semibold gap-1.5 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900">
+            <TabsTrigger value="fournisseurs" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <Truck className="h-4 w-4 text-emerald-500" />
               Fournisseurs
             </TabsTrigger>
@@ -390,28 +390,28 @@ export default function FinanceView({ summary, patients, organizationId, organiz
               <button
                 type="button"
                 onClick={() => setFilterType("ALL")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "ALL" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-500"}`}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "ALL" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
               >
                 Tous ({summary.transactions.length})
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType("INCOME")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "INCOME" ? "bg-white dark:bg-slate-900 text-emerald-600 shadow-xs" : "text-slate-500"}`}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "INCOME" ? "bg-white dark:bg-slate-900 text-emerald-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
               >
                 Encaissements (+)
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType("EXPENSE")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "EXPENSE" ? "bg-white dark:bg-slate-900 text-rose-600 shadow-xs" : "text-slate-500"}`}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "EXPENSE" ? "bg-white dark:bg-slate-900 text-rose-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
               >
                 Dépenses (-)
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType("PHARMACY")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "PHARMACY" ? "bg-white dark:bg-slate-900 text-blue-600 shadow-xs" : "text-slate-500"}`}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "PHARMACY" ? "bg-white dark:bg-slate-900 text-blue-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
               >
                 Ventes Pharmacie
               </button>
@@ -555,7 +555,7 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                 onClick={() => setCategoryFilter(f.value as any)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${categoryFilter === f.value
                     ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
                   }`}
               >
                 {f.label}

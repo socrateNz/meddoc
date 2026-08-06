@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
-import { createAppointmentSchema, completeConsultationSchema } from "@/validators/appointments";
+import { createAppointmentSchema, completeConsultationSchema, saveConsultationDraftSchema } from "@/validators/appointments";
 import { revalidatePath } from "next/cache";
 import { runInteractionCheck } from "@/actions/prescriptions";
 
@@ -115,6 +115,24 @@ export async function completeConsultation(data: {
       throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
     }
 
+    // Le plan de traitement / l'ordonnance ne doivent pas être figés avant que le médecin ait
+    // vu les résultats des analyses qu'il a lui-même demandées pendant cette consultation.
+    // Contrôle limité aux demandes rattachées à ce rendez-vous (appointmentId) — pas de moyen
+    // fiable de faire ce lien pour une consultation ad-hoc sans rendez-vous.
+    if (data.appointmentId) {
+      const pendingLabOrders = await prisma.labOrder.count({
+        where: {
+          appointmentId: data.appointmentId,
+          status: { notIn: ["VALIDATED", "DELIVERED", "CANCELLED"] },
+        },
+      });
+      if (pendingLabOrders > 0) {
+        throw new Error(
+          `Impossible de clôturer : ${pendingLabOrders} demande(s) d'analyse de cette consultation sont encore en attente de résultats validés. Utilisez "Enregistrer" pour sauvegarder vos notes sans clôturer, en attendant le retour du laboratoire.`
+        );
+      }
+    }
+
     let description = `**Symptômes / Observations :**\n${data.symptoms}\n\n**Diagnostic / Évaluation :**\n${data.diagnosis}\n\n**Plan de traitement / Recommandations :**\n${data.plan}`;
     if (data.diagnosisCode && data.diagnosisLabel) {
       description = `**Diagnostic CIM-10 :** ${data.diagnosisCode} — ${data.diagnosisLabel}\n\n${description}`;
@@ -134,6 +152,7 @@ export async function completeConsultation(data: {
       const medicalRecord = await tx.medicalRecord.create({
         data: {
           patientId: data.patientId,
+          appointmentId: data.appointmentId || null,
           title: `Consultation du ${new Date().toLocaleDateString('fr-FR')}`,
           description: description,
           diagnosisCode: data.diagnosisCode || null,
@@ -236,6 +255,12 @@ export async function completeConsultation(data: {
         }
       }
 
+      // Le brouillon de cette consultation n'a plus lieu d'être une fois clôturée.
+      const draftWhere = data.appointmentId
+        ? { appointmentId: data.appointmentId }
+        : { patientId: data.patientId, appointmentId: null, createdById: activeUser.id };
+      await tx.consultationDraft.deleteMany({ where: draftWhere });
+
       return { appointment, medicalRecord, pendingInvoice, prescription };
     });
 
@@ -262,5 +287,75 @@ export async function completeConsultation(data: {
   } catch (error: any) {
     console.error("Error completing consultation:", error);
     return { success: false, error: toErrorMessage(error, "Erreur lors de la clôture de la consultation") };
+  }
+}
+
+// Enregistre/actualise le brouillon d'une consultation en cours, sans la clôturer : ni
+// MedicalRecord, ni Prescription, ni PendingInvoice ne sont créés. Un seul brouillon actif à la
+// fois par consultation — cf. le modèle ConsultationDraft pour la logique d'identification
+// (appointmentId si rendez-vous planifié, sinon patientId + auteur pour le flux ad-hoc).
+export async function saveConsultationDraft(data: {
+  appointmentId?: string;
+  patientId: string;
+  symptoms?: string;
+  diagnosis?: string;
+  plan?: string;
+  medications?: { name: string; dosage: string; frequency: string; instructions: string }[];
+  diagnosisCode?: string;
+  diagnosisLabel?: string;
+}) {
+  try {
+    saveConsultationDraftSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertConsultationWriteAccess(activeUser.role);
+
+    const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
+    if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+
+    const where = data.appointmentId
+      ? { appointmentId: data.appointmentId }
+      : { patientId: data.patientId, appointmentId: null, createdById: activeUser.id };
+
+    const existing = await prisma.consultationDraft.findFirst({ where });
+
+    const payload = {
+      patientId: data.patientId,
+      appointmentId: data.appointmentId || null,
+      createdById: activeUser.id,
+      symptoms: data.symptoms || null,
+      diagnosis: data.diagnosis || null,
+      plan: data.plan || null,
+      diagnosisCode: data.diagnosisCode || null,
+      diagnosisLabel: data.diagnosisLabel || null,
+      medications: data.medications || [],
+    };
+
+    const draft = existing
+      ? await prisma.consultationDraft.update({ where: { id: existing.id }, data: payload })
+      : await prisma.consultationDraft.create({ data: payload });
+
+    return { success: true, data: draft };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement du brouillon.") };
+  }
+}
+
+export async function getConsultationDraft(options: { appointmentId?: string; patientId: string }) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const hasAccess = await verifyPatientAccess(options.patientId, activeUser);
+    if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+
+    const where = options.appointmentId
+      ? { appointmentId: options.appointmentId }
+      : { patientId: options.patientId, appointmentId: null, createdById: activeUser.id };
+
+    const draft = await prisma.consultationDraft.findFirst({ where });
+    return { success: true, data: draft };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement du brouillon.") };
   }
 }

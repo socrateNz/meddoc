@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, User as UserIcon, Calendar, Clock, AlertTriangle, FileText, Activity, ShieldAlert, BrainCircuit, HeartPulse, Stethoscope } from "lucide-react";
+import { ArrowLeft, User as UserIcon, Calendar, Clock, AlertTriangle, FileText, Activity, ShieldAlert, BrainCircuit, HeartPulse, Stethoscope, FlaskConical, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,8 @@ import { getPatientVitalSigns } from "@/actions/vitals";
 import { listPrescriptions } from "@/actions/prescriptions";
 import PrescriptionsPanel from "./prescriptions-panel";
 import { Pill } from "lucide-react";
+import { listLabOrders } from "@/actions/lab";
+import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -47,6 +49,8 @@ export default async function PatientDetailPage({ params }: PageProps) {
   const canWrite = ["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(currentUser.role);
   // Rédiger/renouveler/envoyer une ordonnance reste réservé à l'autorité clinique complète.
   const canPrescribe = ["COORDINATOR", "MEDECIN"].includes(currentUser.role);
+  // Prescrire un examen labo (autorité diagnostique) — mêmes rôles que LAB_ORDER_ROLES côté serveur.
+  const canOrderLab = ["COORDINATOR", "MEDECIN"].includes(currentUser.role);
   const isPharmacist = currentUser.role === "PHARMACIST";
   let clinics: { id: string; name: string }[] = [];
   if (isHoldingAdmin) {
@@ -61,6 +65,9 @@ export default async function PatientDetailPage({ params }: PageProps) {
     include: {
       user: true,
       medicalRecords: {
+        include: {
+          appointment: { select: { id: true, title: true, scheduledAt: true } },
+        },
         orderBy: { createdAt: "desc" }
       },
       carePlans: {
@@ -112,6 +119,16 @@ export default async function PatientDetailPage({ params }: PageProps) {
       if (prescriptionsRes.success) prescriptions = prescriptionsRes.data || [];
     } catch (e) {
       prescriptions = [];
+    }
+  }
+
+  let labOrders: any[] = [];
+  if (!isPharmacist) {
+    try {
+      const labOrdersRes = await listLabOrders({ patientId: id });
+      if (labOrdersRes.success) labOrders = labOrdersRes.data || [];
+    } catch (e) {
+      labOrders = [];
     }
   }
 
@@ -310,46 +327,52 @@ export default async function PatientDetailPage({ params }: PageProps) {
 
       {/* Tabs Menu */}
       <Tabs defaultValue="records" className="w-full">
-        <TabsList className="w-full justify-start border-b rounded-none h-12 bg-transparent p-0 gap-6">
+        <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl h-auto flex-wrap justify-start">
           <TabsTrigger
             value="vitals"
-            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
             Évolution & Constantes ({(patient as any).vitalSigns?.length || 0})
           </TabsTrigger>
           <TabsTrigger
             value="records"
-            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
             Dossier médical
           </TabsTrigger>
           <TabsTrigger
             value="prescriptions"
-            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
             Ordonnances ({prescriptions.length})
           </TabsTrigger>
           <TabsTrigger
+            value="lab"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
+          >
+            Laboratoire ({labOrders.length})
+          </TabsTrigger>
+          <TabsTrigger
             value="careplans"
-            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
             Plan de soins
           </TabsTrigger>
           <TabsTrigger
             value="appointments"
-            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
             Rendez-vous
           </TabsTrigger>
           <TabsTrigger
             value="incidents"
-            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
             Incidents ({patient.incidents.length})
           </TabsTrigger>
           <TabsTrigger
             value="ai"
-            className="border-b-2 border-transparent data-[state=active]:border-primary rounded-none bg-transparent px-2 pb-3 pt-2 font-medium text-muted-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none gap-1.5"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
             <BrainCircuit className="h-4 w-4 text-indigo-500" />
             Analyse IA
@@ -432,8 +455,16 @@ export default async function PatientDetailPage({ params }: PageProps) {
                         <div className="flex justify-between items-start gap-4">
                           <div>
                             <CardTitle className="text-base font-semibold">{record.title}</CardTitle>
-                            <CardDescription className="mt-1">
-                              Ajouté le {formatDateTime(record.createdAt)}
+                            <CardDescription className="mt-1 flex items-center gap-2 flex-wrap">
+                              <span>Ajouté le {formatDateTime(record.createdAt)}</span>
+                              {record.appointment && (
+                                <Link href={`/dashboard/appointments/${record.appointment.id}/consultation`}>
+                                  <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors">
+                                    <Stethoscope className="h-2.5 w-2.5" />
+                                    {record.appointment.title}
+                                  </Badge>
+                                </Link>
+                              )}
                             </CardDescription>
                           </div>
                           <PDFDownloadButton
@@ -466,6 +497,58 @@ export default async function PatientDetailPage({ params }: PageProps) {
             Historique des ordonnances
           </h3>
           <PrescriptionsPanel prescriptions={prescriptions} canPrescribe={canPrescribe} />
+        </TabsContent>
+
+        {/* Tab Content: Laboratoire */}
+        <TabsContent value="lab" className="pt-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+              <FlaskConical className="h-5 w-5 text-blue-500" />
+              Demandes d&apos;analyses
+            </h3>
+            {canOrderLab && !isDischarged && (
+              <NewLabOrderDialog patients={[patient]} defaultPatientId={patient.id} />
+            )}
+          </div>
+
+          {labOrders.length === 0 ? (
+            <div className="border border-dashed rounded-xl p-12 text-center bg-card">
+              <FlaskConical className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
+              <h4 className="font-medium text-base">Aucune demande d&apos;analyse</h4>
+              <p className="text-sm text-muted-foreground mt-1">Les demandes d&apos;analyses de laboratoire pour ce patient apparaîtront ici.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {labOrders.map((order: any) => {
+                const hasCritical = (order.results || []).some((r: any) => r.isAbnormal && !r.validatedAt);
+                return (
+                  <Link key={order.id} href={`/dashboard/lab/${order.id}`}>
+                    <div className={`border rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors ${hasCritical ? "border-red-400/60 dark:border-red-900/50" : ""}`}>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap gap-1.5">
+                          {order.tests.map((t: string) => (
+                            <Badge key={t} variant="outline" className="text-[11px]">{t}</Badge>
+                          ))}
+                          {order.paymentStatus === "PENDING" && (
+                            <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">En attente de paiement</Badge>
+                          )}
+                          {hasCritical && (
+                            <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20 gap-1 animate-pulse">
+                              <AlertTriangle className="h-3 w-3" /> Critique
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Prescrit le {formatDateTime(order.createdAt)} • Statut : {order.status}
+                        </p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </TabsContent>
 
         {/* Tab Content: Plan de Soins */}
@@ -584,37 +667,43 @@ export default async function PatientDetailPage({ params }: PageProps) {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {patient.appointments.map((apt: any) => (
-                <Card key={apt.id} className="hover:shadow-sm transition-all">
-                  <CardHeader className="pb-3">
-                    <div className="flex justify-between items-center">
-                      <Badge variant={apt.status === "SCHEDULED" ? "default" : "secondary"}>
-                        {apt.status === "SCHEDULED" ? "Planifié" : apt.status}
-                      </Badge>
-                      <Badge variant="outline">{apt.type}</Badge>
-                    </div>
-                    <CardTitle className="text-base font-semibold mt-3">{apt.title}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm text-muted-foreground space-y-2">
-                    <p className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-primary" />
-                      {formatDateTime(apt.scheduledAt)}
-                    </p>
-                    <p className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-primary" />
-                      {apt.durationMinutes} minutes
-                    </p>
-                    {apt.caregiver && (
-                      <div className="pt-3 border-t mt-3 flex items-center gap-2">
-                        <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-[10px] font-bold text-muted-foreground">
-                          {apt.caregiver.user.lastName[0]}{apt.caregiver.user.firstName[0]}
-                        </div>
-                        <span className="text-xs text-foreground font-medium">
-                          Soignant : {apt.caregiver.user.lastName} {apt.caregiver.user.firstName}
-                        </span>
+                <Link key={apt.id} href={`/dashboard/appointments/${apt.id}/consultation`}>
+                  <Card className="hover:shadow-sm hover:border-primary/30 transition-all cursor-pointer h-full">
+                    <CardHeader className="pb-3">
+                      <div className="flex justify-between items-center">
+                        <Badge variant={apt.status === "SCHEDULED" ? "default" : "secondary"}>
+                          {apt.status === "SCHEDULED" ? "Planifié" : apt.status}
+                        </Badge>
+                        <Badge variant="outline">{apt.type}</Badge>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
+                      <CardTitle className="text-base font-semibold mt-3">{apt.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground space-y-2">
+                      <p className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-primary" />
+                        {formatDateTime(apt.scheduledAt)}
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-primary" />
+                        {apt.durationMinutes} minutes
+                      </p>
+                      {apt.caregiver && (
+                        <div className="pt-3 border-t mt-3 flex items-center gap-2">
+                          <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                            {apt.caregiver.user.lastName[0]}{apt.caregiver.user.firstName[0]}
+                          </div>
+                          <span className="text-xs text-foreground font-medium">
+                            Soignant : {apt.caregiver.user.lastName} {apt.caregiver.user.firstName}
+                          </span>
+                        </div>
+                      )}
+                      <p className="text-xs font-medium text-primary flex items-center gap-1 pt-1">
+                        <Stethoscope className="h-3.5 w-3.5" />
+                        {apt.status === "COMPLETED" ? "Voir la consultation" : "Ouvrir l'espace consultation"}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
               ))}
             </div>
           )}

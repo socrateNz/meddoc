@@ -9,6 +9,7 @@ import { revalidatePath } from "next/cache";
 
 export interface RecordVitalSignInput {
   patientId: string;
+  appointmentId?: string;
   temperature?: number;
   bloodPressure?: string;
   heartRate?: number;
@@ -40,6 +41,7 @@ export async function recordVitalSign(data: RecordVitalSignInput) {
     const vital = await (prisma as any).vitalSign.create({
       data: {
         patientId: data.patientId,
+        appointmentId: data.appointmentId || null,
         recordedById: activeUser.id,
         temperature: data.temperature ?? null,
         bloodPressure: data.bloodPressure || null,
@@ -79,6 +81,7 @@ export async function getPatientVitalSigns(patientId: string) {
             role: true,
           },
         },
+        appointment: { select: { id: true, title: true, scheduledAt: true } },
       },
       orderBy: { createdAt: "desc" },
     });

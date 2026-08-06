@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/db";
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import ConsultationWorkspace from "@/app/dashboard/appointments/[appointmentId]/consultation/consultation-workspace";
+import { getConsultationDraft } from "@/actions/appointments";
 
 export const metadata = {
   title: "Première Consultation | MedDoc",
@@ -36,8 +40,17 @@ export default async function PatientConsultationPage({ params }: PatientConsult
     redirect(`/dashboard/patients/${patientId}`);
   }
 
+  const draftRes = await getConsultationDraft({ patientId });
+
   return (
     <div className="space-y-6">
+      <Link href={`/dashboard/patients/${patientId}`}>
+        <Button variant="ghost" className="gap-2 pl-2">
+          <ArrowLeft className="h-4 w-4" />
+          Retour au patient
+        </Button>
+      </Link>
+
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Nouvelle Consultation</h1>
         <p className="text-muted-foreground">
@@ -45,7 +58,7 @@ export default async function PatientConsultationPage({ params }: PatientConsult
         </p>
       </div>
 
-      <ConsultationWorkspace patient={patient} />
+      <ConsultationWorkspace patient={patient} draft={draftRes.success ? draftRes.data : null} />
     </div>
   );
 }

@@ -20,9 +20,11 @@ import { toast } from "sonner";
 
 interface VitalSignsDialogProps {
   patientId: string;
+  appointmentId?: string;
+  onSuccess?: (vital: any) => void;
 }
 
-export default function VitalSignsDialog({ patientId }: VitalSignsDialogProps) {
+export default function VitalSignsDialog({ patientId, appointmentId, onSuccess }: VitalSignsDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -41,6 +43,7 @@ export default function VitalSignsDialog({ patientId }: VitalSignsDialogProps) {
 
     const res = await recordVitalSign({
       patientId,
+      appointmentId,
       temperature: temperature ? parseFloat(temperature) : undefined,
       bloodPressure: bloodPressure || undefined,
       heartRate: heartRate ? parseInt(heartRate, 10) : undefined,
@@ -56,6 +59,7 @@ export default function VitalSignsDialog({ patientId }: VitalSignsDialogProps) {
       toast.error(res.error);
     } else {
       toast.success("Constantes enregistrées avec succès.");
+      onSuccess?.(res.data);
       setOpen(false);
       setTemperature("");
       setBloodPressure("");

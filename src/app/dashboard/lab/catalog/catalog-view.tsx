@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FlaskConical, Trash2 } from "lucide-react";
+import { FlaskConical, Trash2, Wallet, Zap } from "lucide-react";
 import LabTestDialog from "./lab-test-dialog";
 import { deactivateLabTest } from "@/actions/lab";
 import { toast } from "sonner";
@@ -55,7 +55,18 @@ export default function CatalogView({ labTests: initial, pharmacyItems }: { labT
                   <p className="font-semibold text-sm">{test.name}</p>
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
                     {test.department && <Badge variant="outline" className="text-[10px]">{test.department}</Badge>}
-                    {test.price != null && <Badge variant="secondary" className="text-[10px]">{formatFCFA(test.price)}</Badge>}
+                    {test.pharmacyItem?.unitPrice != null ? (
+                      <Badge variant="secondary" className="text-[10px]">{formatFCFA(test.pharmacyItem.unitPrice)}</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] bg-slate-500/10 text-slate-500 border-slate-500/20">Produit non configuré</Badge>
+                    )}
+                    {test.pharmacyItemId && (
+                      test.requiresPaymentFirst !== false ? (
+                        <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1"><Wallet className="h-2.5 w-2.5" />Caisse d&apos;abord</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1"><Zap className="h-2.5 w-2.5" />Labo direct</Badge>
+                      )
+                    )}
                     {test.durationMinutes != null && <Badge variant="outline" className="text-[10px]">{test.durationMinutes} min</Badge>}
                     {(test.criticalLow != null || test.criticalHigh != null) && (
                       <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20">

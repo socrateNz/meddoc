@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Pill, RefreshCw, Send, AlertTriangle } from "lucide-react";
+import { Loader2, Pill, RefreshCw, Send, AlertTriangle, Stethoscope } from "lucide-react";
 import { renewPrescription, sendPrescriptionToPharmacy } from "@/actions/prescriptions";
 import { toast } from "sonner";
 
@@ -85,7 +86,17 @@ export default function PrescriptionsPanel({ prescriptions, canPrescribe }: { pr
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <div>
                 <CardTitle className="text-base">Ordonnance du {formatDate(p.createdAt)}</CardTitle>
-                <CardDescription>Par {p.prescribedBy?.firstName} {p.prescribedBy?.lastName}</CardDescription>
+                <CardDescription className="flex items-center gap-2 flex-wrap">
+                  <span>Par {p.prescribedBy?.firstName} {p.prescribedBy?.lastName}</span>
+                  {p.appointment && (
+                    <Link href={`/dashboard/appointments/${p.appointment.id}/consultation`}>
+                      <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors">
+                        <Stethoscope className="h-2.5 w-2.5" />
+                        {p.appointment.title}
+                      </Badge>
+                    </Link>
+                  )}
+                </CardDescription>
               </div>
               <Badge variant="outline" className={status.className}>{status.label}</Badge>
             </CardHeader>
