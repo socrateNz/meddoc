@@ -58,7 +58,8 @@ export async function getTeamMembers() {
         }
       }
     },
-    orderBy: { lastName: "asc" }
+    orderBy: { lastName: "asc" },
+    take: 500,
   });
 
   return { success: true, data: members };

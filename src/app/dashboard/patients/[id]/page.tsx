@@ -26,6 +26,9 @@ import PrescriptionsPanel from "./prescriptions-panel";
 import { Pill } from "lucide-react";
 import { listLabOrders } from "@/actions/lab";
 import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
+import { listPregnancies } from "@/actions/maternity";
+import MaternityPanel from "./maternity-panel";
+import { Baby } from "lucide-react";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -132,6 +135,17 @@ export default async function PatientDetailPage({ params }: PageProps) {
     }
   }
 
+  let pregnancies: any[] = [];
+  if (!isPharmacist) {
+    try {
+      const pregnanciesRes = await listPregnancies(id);
+      if (pregnanciesRes.success) pregnancies = pregnanciesRes.data || [];
+    } catch (e) {
+      pregnancies = [];
+    }
+  }
+  const showMaternityTab = patient.sex === "F" || pregnancies.length > 0;
+
   const calculateAge = (birthDate: Date) => {
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
@@ -185,7 +199,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
                 {patient.user.lastName} {patient.user.firstName}
               </h1>
               <p className="text-muted-foreground mt-1">
-                {calculateAge(patient.dateOfBirth)} ans • Né(e) le {formatDate(patient.dateOfBirth)}
+                {calculateAge(patient.dateOfBirth)} ans • {patient.sex === "M" ? "Homme" : patient.sex === "F" ? "Femme" : patient.sex || "Sexe non renseigné"} • Né(e) le {formatDate(patient.dateOfBirth)}
               </p>
             </div>
           </div>
@@ -297,7 +311,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
                 </Badge>
               </div>
               <p className="text-muted-foreground mt-1">
-                {calculateAge(patient.dateOfBirth)} ans • Né(e) le {formatDate(patient.dateOfBirth)}
+                {calculateAge(patient.dateOfBirth)} ans • {patient.sex === "M" ? "Homme" : patient.sex === "F" ? "Femme" : patient.sex || "Sexe non renseigné"} • Né(e) le {formatDate(patient.dateOfBirth)}
               </p>
             </div>
           </div>
@@ -352,6 +366,15 @@ export default async function PatientDetailPage({ params }: PageProps) {
           >
             Laboratoire ({labOrders.length})
           </TabsTrigger>
+          {showMaternityTab && (
+            <TabsTrigger
+              value="maternity"
+              className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
+            >
+              <Baby className="h-4 w-4 text-pink-500" />
+              Maternité ({pregnancies.length})
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="careplans"
             className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
@@ -550,6 +573,13 @@ export default async function PatientDetailPage({ params }: PageProps) {
             </div>
           )}
         </TabsContent>
+
+        {/* Tab Content: Maternité */}
+        {showMaternityTab && (
+          <TabsContent value="maternity" className="pt-6">
+            <MaternityPanel patientId={patient.id} pregnancies={pregnancies} canWrite={canWrite} isDischarged={isDischarged} />
+          </TabsContent>
+        )}
 
         {/* Tab Content: Plan de Soins */}
         <TabsContent value="careplans" className="pt-6">

@@ -53,7 +53,8 @@ export default async function ClinicIncidentsPage({ params, searchParams }: Page
     },
     orderBy: {
       createdAt: "desc"
-    }
+    },
+    take: 500,
   });
 
   const patients = await prisma.patient.findMany({

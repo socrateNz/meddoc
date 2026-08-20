@@ -60,7 +60,8 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
     },
     orderBy: {
       createdAt: "desc"
-    }
+    },
+    take: 500,
   });
 
   const patients = await prisma.patient.findMany({

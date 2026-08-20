@@ -568,7 +568,8 @@ export async function getFinanceSummary(organizationId?: string) {
           patient: { include: { user: { select: { firstName: true, lastName: true } } } },
           pharmacyItem: { select: { name: true, dosage: true } }
         },
-        orderBy: { createdAt: "desc" }
+        orderBy: { createdAt: "desc" },
+        take: 500,
       });
 
     // Fetch pharmacy items directly via raw MongoDB command to return all custom fields

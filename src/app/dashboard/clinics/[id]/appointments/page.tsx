@@ -41,7 +41,8 @@ export default async function ClinicAppointmentsPage({ params }: PageProps) {
     },
     orderBy: {
       scheduledAt: "asc"
-    }
+    },
+    take: 500,
   });
 
   const patients = await prisma.patient.findMany({

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -29,16 +30,39 @@ interface InventoryPanelProps {
 }
 
 export default function InventoryPanel({ organizationId, canWrite = true }: InventoryPanelProps) {
-  const [loading, setLoading] = useState(true);
-  const [count, setCount] = useState<any>(null);
+  const queryClient = useQueryClient();
   const [countedValues, setCountedValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [history, setHistory] = useState<any[]>([]);
   const [lastClosure, setLastClosure] = useState<{ totalLossValue: number } | null>(null);
+
+  const countQueryKey = ["activeInventoryCount", organizationId];
+  const historyQueryKey = ["inventoryHistory", organizationId];
+
+  const { data: count = null, isLoading: countLoading } = useQuery({
+    queryKey: countQueryKey,
+    queryFn: async () => {
+      const res = await getActiveInventoryCount(organizationId!);
+      if (!res.success) throw new Error(res.error);
+      return res.data ?? null;
+    },
+    enabled: !!organizationId,
+  });
+
+  const { data: history = [], isLoading: historyLoading, refetch: refetchHistory } = useQuery({
+    queryKey: historyQueryKey,
+    queryFn: async () => {
+      const res = await getInventoryHistory(organizationId!);
+      if (!res.success) throw new Error(res.error);
+      return res.data ?? [];
+    },
+    enabled: !!organizationId,
+  });
+
+  const loading = countLoading || historyLoading;
 
   const closureSummary = () => {
     let conforming = 0, negative = 0, positive = 0, lossValue = 0;
@@ -55,26 +79,6 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     });
     return { conforming, negative, positive, lossValue };
   };
-
-  const loadAll = async () => {
-    if (!organizationId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    const [activeRes, historyRes] = await Promise.all([
-      getActiveInventoryCount(organizationId),
-      getInventoryHistory(organizationId),
-    ]);
-    if (activeRes.success) setCount(activeRes.data);
-    if (historyRes.success) setHistory(historyRes.data || []);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId]);
 
   useEffect(() => {
     if (count?.lines) {
@@ -101,7 +105,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     try {
       const res = await startInventoryCount(organizationId);
       if (res.success) {
-        setCount(res.data);
+        queryClient.setQueryData(countQueryKey, res.data);
         setLastClosure(null);
       } else {
         setMsg({ type: "error", text: res.error || "Erreur lors du démarrage." });
@@ -150,10 +154,9 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
       const res = await completeInventoryCount(count.id);
       if (res.success) {
         setLastClosure(res.data ?? null);
-        setCount(null);
+        queryClient.setQueryData(countQueryKey, null);
         setMsg({ type: "success", text: "Inventaire clôturé avec succès." });
-        const historyRes = await getInventoryHistory(organizationId);
-        if (historyRes.success) setHistory(historyRes.data || []);
+        refetchHistory();
       } else {
         setMsg({ type: "error", text: res.error || "Erreur lors de la clôture de l'inventaire." });
       }

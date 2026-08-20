@@ -25,6 +25,7 @@ const restrictedSections: Record<string, string[]> = {
   team: ['ADMIN', 'COORDINATOR'],
   incidents: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  rooms: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   appointments: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
   'ai-assistant': ['ADMIN', 'COORDINATOR', 'MEDECIN'],
   medecin: ['MEDECIN'],

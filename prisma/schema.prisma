@@ -86,6 +86,8 @@ model Organization {
   users     User[]
   patients  Patient[]
   wards     Ward[]
+  rooms     Room[]
+  beds      Bed[]
   pharmacyItems PharmacyItem[]
   financialTransactions FinancialTransaction[]
   stockPurchases StockPurchase[]
@@ -157,6 +159,9 @@ model User {
   prescriptionTemplatesCreated PrescriptionTemplate[]  @relation("PrescriptionTemplateCreatedBy")
   purchaseOrdersCreated        PurchaseOrder[]         @relation("PurchaseOrderCreatedBy")
   consultationDraftsCreated    ConsultationDraft[]     @relation("ConsultationDraftCreatedBy")
+  pregnanciesCreated           Pregnancy[]             @relation("PregnancyCreatedBy")
+  prenatalVisitsRecorded       PrenatalVisit[]          @relation("PrenatalVisitRecordedBy")
+  deliveriesRecorded           Delivery[]              @relation("DeliveryRecordedBy")
 
   organizationId      String?   @db.ObjectId
   organization        Organization? @relation(fields: [organizationId], references: [id])
@@ -202,14 +207,19 @@ model Patient {
   organizationId  String?   @db.ObjectId
   organization    Organization? @relation(fields: [organizationId], references: [id])
 
-  wardId          String?   @db.ObjectId
-  ward            Ward?     @relation("PatientWard", fields: [wardId], references: [id])
+  // Pas de @unique ici : un index unique non-sparse sur MongoDB entre en conflit avec les
+  // nombreux patients existants sans lit (bedId absent = traité comme null par Mongo pour
+  // l'unicité, sauf index sparse — non exposé par le DSL Prisma pour ce connecteur). L'unicité
+  // « un lit = au plus un patient » est donc garantie procéduralement par transaction
+  // (cf. assignPatientToBed dans src/actions/wards.ts), pas au niveau du schéma.
+  bedId           String?   @db.ObjectId
+  bed             Bed?      @relation("PatientBed", fields: [bedId], references: [id])
 
   consultationDrafts ConsultationDraft[]
+  pregnancies     Pregnancy[]
 
   @@index([organizationId])
   @@index([organizationId, updatedAt])
-  @@index([wardId])
 }
 
 model FamilyMember {
@@ -637,16 +647,148 @@ model AIMessage {
 
 model Ward {
   id             String       @id @default(auto()) @map("_id") @db.ObjectId
-  name           String       // Nom d'affichage: "Urgences", "Soins Intensifs", etc.
-  code           String       // Code unique: "EMERGENCY", "ICU", "SURGERY"
-  capacity       Int          // Capacité maximale en lits
+  name           String       // Nom d'affichage: "Urgences", "Soins Intensifs", "Maternité"...
+  code           String       // Code unique: "EMERGENCY", "ICU", "SURGERY", "MATERNITY"...
   organizationId String       @db.ObjectId
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  patients       Patient[]    @relation("PatientWard")
+  rooms          Room[]
+  beds           Bed[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model Room {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  name           String       // ex: "Chambre 12", "Box 3"
+  wardId         String       @db.ObjectId
+  ward           Ward         @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  organizationId String       @db.ObjectId  // dénormalisé depuis ward.organizationId — scoping direct
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  beds           Bed[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([wardId, name])
+  @@index([wardId])
+  @@index([organizationId])
+}
+
+// Seule source de vérité pour « où est ce patient ». `status` est dénormalisé (redondant avec
+// la présence de `patient`) pour permettre un comptage bon marché (lits libres) sans jointure —
+// toute écriture le synchronise avec Patient.bedId dans la même transaction (cf. assignPatientToBed).
+model Bed {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  label          String       // ex: "A", "1", "Lit 2" — unique dans sa chambre
+  roomId         String       @db.ObjectId
+  room           Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  wardId         String       @db.ObjectId  // dénormalisé depuis room.wardId
+  ward           Ward         @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  organizationId String       @db.ObjectId  // dénormalisé depuis room.organizationId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  status         String       @default("AVAILABLE") // AVAILABLE, OCCUPIED
+  // Tableau (pas une valeur unique) : évite d'exiger un @unique côté Patient.bedId (cf. commentaire
+  // sur Patient.bedId). En pratique jamais plus d'un élément — garanti par la transaction de
+  // assignPatientToBed, pas par le schéma.
+  patients       Patient[]    @relation("PatientBed")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([roomId, label])
+  @@index([roomId])
+  @@index([wardId])
+  @@index([organizationId, status])
+}
+
+// Suivi de grossesse — scopé patient (comme CarePlan/VitalSign), pas d'organizationId propre :
+// pas de vue clinique transverse dans ce périmètre, tout se lit via la fiche patiente.
+model Pregnancy {
+  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
+  patientId           String   @db.ObjectId
+  patient             Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  lastMenstrualPeriod DateTime // DDR — date des dernières règles
+  expectedDueDate     DateTime // DPA — date prévue d'accouchement, éditable (redatage échographique)
+  gravidity           Int      // G — nombre total de grossesses
+  parity              Int      // P — nombre d'accouchements antérieurs
+  riskFactors         String[] @default([])
+  status              String   @default("ACTIVE") // ACTIVE, DELIVERED, MISCARRIED, TERMINATED
+
+  createdById         String   @db.ObjectId
+  createdBy           User     @relation("PregnancyCreatedBy", fields: [createdById], references: [id])
+
+  prenatalVisits      PrenatalVisit[]
+  delivery            Delivery?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([patientId, status])
+  @@index([createdById])
+}
+
+model PrenatalVisit {
+  id                     String    @id @default(auto()) @map("_id") @db.ObjectId
+  pregnancyId            String    @db.ObjectId
+  pregnancy              Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+
+  visitDate              DateTime  @default(now())
+  gestationalWeeks       Int?      // âge gestationnel au moment de la visite (semaines)
+  weightKg               Float?
+  bloodPressureSystolic  Int?
+  bloodPressureDiastolic Int?
+  fundalHeightCm         Float?    // hauteur utérine
+  fetalHeartRateBpm      Int?      // BCF
+  notes                  String?
+
+  recordedById           String    @db.ObjectId
+  recordedBy             User      @relation("PrenatalVisitRecordedBy", fields: [recordedById], references: [id])
+
+  createdAt              DateTime  @default(now())
+
+  @@index([pregnancyId])
+  @@index([recordedById])
+}
+
+model Delivery {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  pregnancyId   String    @unique @db.ObjectId // une grossesse => au plus un accouchement
+  pregnancy     Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+
+  deliveredAt   DateTime  @default(now())
+  mode          String    // VAGINAL, C_SECTION, ASSISTED
+  complications String[]  @default([])
+  notes         String?
+
+  newborns      Newborn[]
+
+  recordedById  String    @db.ObjectId
+  recordedBy    User      @relation("DeliveryRecordedBy", fields: [recordedById], references: [id])
+
+  createdAt     DateTime  @default(now())
+
+  @@index([recordedById])
+}
+
+// Pas de lien vers Patient/User : ouvrir un dossier patient pour un nouveau-né exigerait un
+// compte User (Patient.userId est requis et unique) — hors périmètre pour un relevé de naissance.
+model Newborn {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  deliveryId  String   @db.ObjectId
+  delivery    Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  sex         String   // M, F, Indéterminé
+  weightGrams Int
+  apgarScore1 Int?     // score d'Apgar à 1 minute
+  apgarScore5 Int?     // score d'Apgar à 5 minutes
+  vitalStatus String   @default("LIVE_BIRTH") // LIVE_BIRTH, STILLBIRTH
+  notes       String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([deliveryId])
 }
 
 model VitalSign {

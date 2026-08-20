@@ -56,6 +56,7 @@ export async function listContracts(organizationId?: string) {
         caregiver: { include: { user: true } },
       },
       orderBy: { createdAt: "desc" },
+      take: 500,
     });
 
     return { success: true, data: contracts };

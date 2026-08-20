@@ -395,9 +395,17 @@ export async function reassignPatient(patientId: string, newOrganizationId: stri
 
     // Update patient and its user record
     const updatedPatient = await prisma.$transaction(async (tx) => {
+      const existing = await tx.patient.findUnique({ where: { id: patientId }, select: { bedId: true } });
+
+      // Un lit appartient à une clinique précise : le libérer avant de réaffecter le patient
+      // ailleurs, sinon il reste marqué occupé indéfiniment (cf. assignPatientToBed).
+      if (existing?.bedId) {
+        await tx.bed.update({ where: { id: existing.bedId }, data: { status: "AVAILABLE" } });
+      }
+
       const p = await tx.patient.update({
         where: { id: patientId },
-        data: { organizationId: newOrganizationId }
+        data: { organizationId: newOrganizationId, bedId: null }
       });
       await tx.user.update({
         where: { id: p.userId },

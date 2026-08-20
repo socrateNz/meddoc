@@ -48,12 +48,16 @@ export default async function MessagesPage({ searchParams }: PageProps) {
     },
     orderBy: {
       createdAt: "desc"
-    }
+    },
+    // Garde-fou : évite de ramener une collection entière si le nombre de conversations
+    // grossit fortement — pas une vraie pagination, juste une limite haute sur les plus récentes.
+    take: 500,
   });
 
-  // Retrieve initial messages if conversation is selected
+  // Retrieve initial messages if conversation is selected — les 200 plus récents, remis
+  // en ordre chronologique pour l'affichage (même garde-fou que ci-dessus).
   const initialMessages = activeConversationId
-    ? await prisma.message.findMany({
+    ? (await prisma.message.findMany({
         where: { conversationId: activeConversationId },
         include: {
           sender: {
@@ -68,16 +72,25 @@ export default async function MessagesPage({ searchParams }: PageProps) {
           }
         },
         orderBy: {
-          createdAt: "asc"
-        }
-      })
+          createdAt: "desc"
+        },
+        take: 200,
+      })).reverse()
     : [];
 
-  // Fetch potential chat recipients (excluding self)
+  // Fetch potential chat recipients (excluding self) — bornés à l'organisation de
+  // l'utilisateur (et aux cliniques filles pour une holding), comme le fait déjà la variante
+  // /dashboard/clinics/[id]/messages. Auparavant, cette liste incluait TOUS les utilisateurs
+  // actifs de la plateforme, toutes cliniques et holdings confondues.
+  const orgFilter =
+    currentUser.organization?.type === "HOLDING"
+      ? { OR: [{ organizationId: currentUser.organizationId }, { organization: { parentId: currentUser.organizationId } }] }
+      : { organizationId: currentUser.organizationId };
   const otherUsers = await prisma.user.findMany({
     where: {
       id: { not: currentUser.id },
       isActive: true,
+      ...orgFilter,
     },
     select: {
       id: true,

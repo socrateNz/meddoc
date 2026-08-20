@@ -345,6 +345,7 @@ export async function getConsultationDraft(options: { appointmentId?: string; pa
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertConsultationWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(options.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");

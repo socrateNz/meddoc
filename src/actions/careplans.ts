@@ -13,6 +13,18 @@ import {
 } from "@/validators/careplans";
 import { revalidatePath } from "next/cache";
 
+// Écrire sur un plan de soins (créer/clôturer/réouvrir, ajouter ou cocher une tâche) est
+// réservé au personnel opérationnel de la clinique — même périmètre que CLINICAL_WRITE_ROLES
+// dans src/actions/patients.ts. Avant ce contrôle, seul l'accès au dossier patient était
+// vérifié : un rôle non clinique (PHARMACIST, FAMILY, PATIENT...) partageant l'organisation
+// du patient pouvait déclencher ces écritures.
+const CLINICAL_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
+function assertClinicalWriteAccess(role: string) {
+  if (!CLINICAL_WRITE_ROLES.includes(role)) {
+    throw new Error("Non autorisé. Réservé au personnel clinique (coordinateur, médecin ou infirmier(e)).");
+  }
+}
+
 export async function createCarePlan(data: {
   patientId: string;
   title: string;
@@ -23,6 +35,7 @@ export async function createCarePlan(data: {
     createCarePlanSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -64,6 +77,7 @@ export async function createCareTask(data: {
     createCareTaskSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -91,6 +105,7 @@ export async function toggleTaskStatus(taskId: string, patientId: string, isComp
     toggleTaskStatusSchema.parse({ taskId, patientId, isCompleted });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -120,6 +135,7 @@ export async function closeCarePlan(
     closeCarePlanSchema.parse({ carePlanId, patientId, dischargeSummary });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -143,6 +159,16 @@ export async function closeCarePlan(
       });
     } catch (e) {
       // Ignorer si le champ status du patient n'est pas reconnu par le client JS actuellement chargé
+    }
+
+    // Libérer le lit occupé, s'il y en a un — un patient sorti ne doit pas garder son lit
+    // indéfiniment occupé (cf. assignPatientToBed dans src/actions/wards.ts).
+    const dischargedPatient = await prisma.patient.findUnique({ where: { id: patientId }, select: { bedId: true } });
+    if (dischargedPatient?.bedId) {
+      await prisma.$transaction([
+        prisma.bed.update({ where: { id: dischargedPatient.bedId }, data: { status: "AVAILABLE" } }),
+        prisma.patient.update({ where: { id: patientId }, data: { bedId: null } }),
+      ]);
     }
 
     // Enregistrer le bilan médical de sortie dans le dossier médical du patient (MedicalRecord)
@@ -172,6 +198,7 @@ export async function reopenCarePlan(patientId: string, title?: string) {
     reopenCarePlanSchema.parse({ patientId, title });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertClinicalWriteAccess(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");

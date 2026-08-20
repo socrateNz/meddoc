@@ -51,12 +51,16 @@ export default async function ClinicMessagesPage({ params, searchParams }: PageP
     },
     orderBy: {
       createdAt: "desc"
-    }
+    },
+    // Garde-fou : évite de ramener une collection entière si le nombre de conversations
+    // grossit fortement — pas une vraie pagination, juste une limite haute sur les plus récentes.
+    take: 500,
   });
 
-  // Retrieve initial messages if conversation is selected
+  // Retrieve initial messages if conversation is selected — les 200 plus récents, remis
+  // en ordre chronologique pour l'affichage (même garde-fou que ci-dessus).
   const initialMessages = activeConversationId
-    ? await prisma.message.findMany({
+    ? (await prisma.message.findMany({
         where: { conversationId: activeConversationId },
         include: {
           sender: {
@@ -71,9 +75,10 @@ export default async function ClinicMessagesPage({ params, searchParams }: PageP
           }
         },
         orderBy: {
-          createdAt: "asc"
-        }
-      })
+          createdAt: "desc"
+        },
+        take: 200,
+      })).reverse()
     : [];
 
   // Fetch potential chat recipients (excluding self) only in the current clinic

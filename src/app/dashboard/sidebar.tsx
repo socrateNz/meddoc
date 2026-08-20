@@ -26,7 +26,8 @@ import {
   ShieldCheck,
   MessageCircle,
   FlaskConical,
-  HeartPulse
+  HeartPulse,
+  BedDouble
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -149,6 +150,13 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: FlaskConical,
         count: unreadCounts?.lab || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
+      },
+      {
+        name: "Chambres & Lits",
+        href: `/dashboard/clinics/${activeClinicId}/rooms`,
+        icon: BedDouble,
         roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
         section: "Clinique",
       },
@@ -563,14 +571,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
               <Settings className="h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:rotate-12" />
               <span>Paramètres</span>
             </Link>
-            <Link
-              href="/login"
+            <a
+              href="/api/auth/logout"
               onClick={() => setIsOpen(false)}
               className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-500/10 dark:hover:bg-red-500/15 hover:translate-x-1 transition-all duration-300 ease-out group"
             >
               <LogOut className="h-4 w-4 transition-all duration-300 group-hover:scale-110 group-hover:translate-x-0.5" />
               <span>Déconnexion</span>
-            </Link>
+            </a>
           </nav>
         </div>
       </div>

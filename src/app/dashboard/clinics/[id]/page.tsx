@@ -80,11 +80,12 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
 
     wardsWithOccupancy = await Promise.all(
       wards.map(async (ward) => {
-        const patientCount = await prisma.patient.count({
-          where: { wardId: ward.id }
-        });
-        const occupancyRate = ward.capacity > 0 ? Math.min(100, Math.round((patientCount / ward.capacity) * 100)) : 0;
-        return { ...ward, patientCount, occupancyRate };
+        const [capacity, patientCount] = await Promise.all([
+          prisma.bed.count({ where: { wardId: ward.id } }),
+          prisma.bed.count({ where: { wardId: ward.id, status: "OCCUPIED" } }),
+        ]);
+        const occupancyRate = capacity > 0 ? Math.min(100, Math.round((patientCount / capacity) * 100)) : 0;
+        return { ...ward, patientCount, capacity, occupancyRate };
       })
     );
   }
@@ -335,9 +336,14 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
                 <Bed className="h-5 w-5 text-blue-500" />
                 Occupation des Lits & Capacité
               </h3>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                Global : {globalOccupancyRate}%
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                  Global : {globalOccupancyRate}%
+                </span>
+                <Link href={`/dashboard/clinics/${clinic.id}/rooms`} className="text-xs font-semibold text-primary hover:underline">
+                  Gérer les chambres
+                </Link>
+              </div>
             </div>
             <div className="space-y-4">
               <div>
