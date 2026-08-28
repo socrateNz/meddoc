@@ -50,8 +50,6 @@ export default async function MedecinDashboardPage({ params }: PageProps) {
     redirect(`/dashboard/clinics/${clinicId}`);
   }
 
-  const caregiverProfile = await prisma.caregiver.findUnique({ where: { userId: currentUser.id } });
-
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const endOfToday = new Date(startOfToday);
@@ -59,26 +57,34 @@ export default async function MedecinDashboardPage({ params }: PageProps) {
   const in14Days = new Date(startOfToday);
   in14Days.setDate(in14Days.getDate() + 14);
 
-  const [todayAppointments, upcomingAppointments, patients, labOrdersRes, medicalRecordsRes] = await Promise.all([
-    caregiverProfile
-      ? prisma.appointment.findMany({
-          where: { caregiverId: caregiverProfile.id, scheduledAt: { gte: startOfToday, lt: endOfToday } },
-          include: { patient: { include: { user: true } } },
-          orderBy: { scheduledAt: "asc" },
-        })
-      : Promise.resolve([]),
-    caregiverProfile
-      ? prisma.appointment.findMany({
-          where: {
-            caregiverId: caregiverProfile.id,
-            scheduledAt: { gte: endOfToday, lt: in14Days },
-            status: "SCHEDULED",
-          },
-          include: { patient: { include: { user: true } } },
-          orderBy: { scheduledAt: "asc" },
-          take: 8,
-        })
-      : Promise.resolve([]),
+  // Le profil soignant doit être résolu avant de pouvoir filtrer les RDV par caregiverId,
+  // mais cette chaîne interne n'a pas besoin de bloquer les requêtes patients/labo/notes
+  // ci-dessous — elles sont indépendantes et tournent en parallèle via le Promise.all global.
+  async function fetchAppointments() {
+    const caregiverProfile = await prisma.caregiver.findUnique({ where: { userId: currentUser!.id } });
+    if (!caregiverProfile) return { todayAppointments: [] as any[], upcomingAppointments: [] as any[] };
+    const [todayAppointments, upcomingAppointments] = await Promise.all([
+      prisma.appointment.findMany({
+        where: { caregiverId: caregiverProfile.id, scheduledAt: { gte: startOfToday, lt: endOfToday } },
+        include: { patient: { include: { user: true } } },
+        orderBy: { scheduledAt: "asc" },
+      }),
+      prisma.appointment.findMany({
+        where: {
+          caregiverId: caregiverProfile.id,
+          scheduledAt: { gte: endOfToday, lt: in14Days },
+          status: "SCHEDULED",
+        },
+        include: { patient: { include: { user: true } } },
+        orderBy: { scheduledAt: "asc" },
+        take: 8,
+      }),
+    ]);
+    return { todayAppointments, upcomingAppointments };
+  }
+
+  const [{ todayAppointments, upcomingAppointments }, patients, labOrdersRes, medicalRecordsRes] = await Promise.all([
+    fetchAppointments(),
     prisma.patient.findMany({
       where: { organizationId: clinicId },
       include: { user: true, carePlans: { select: { id: true, status: true } } },

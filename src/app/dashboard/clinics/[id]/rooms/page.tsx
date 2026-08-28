@@ -18,12 +18,9 @@ interface RoomsPageProps {
 export default async function RoomsPage({ params }: RoomsPageProps) {
   const { id: clinicId } = await params;
 
-  const currentUser = await getCurrentUser();
-  if (!currentUser) {
-    redirect("/login");
-  }
-
-  const [wardsRes, patients] = await Promise.all([
+  // L'utilisateur courant ne dépend pas de clinicId : on le charge en parallèle des requêtes de la clinique.
+  const [currentUser, wardsRes, patients] = await Promise.all([
+    getCurrentUser(),
     listWardsWithRooms(clinicId),
     prisma.patient.findMany({
       where: { organizationId: clinicId, status: { not: "DISCHARGED" } },
@@ -31,6 +28,10 @@ export default async function RoomsPage({ params }: RoomsPageProps) {
       orderBy: { user: { lastName: "asc" } },
     }),
   ]);
+
+  if (!currentUser) {
+    redirect("/login");
+  }
 
   if (!wardsRes.success) {
     redirect("/dashboard");

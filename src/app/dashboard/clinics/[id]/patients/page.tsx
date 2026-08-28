@@ -24,38 +24,39 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
   if (!activeUser) return null;
 
   const isHoldingAdmin = activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING";
-  let clinics: { id: string; name: string }[] = [];
-  if (isHoldingAdmin) {
-    const clinicsRes = await getClinics();
-    if (clinicsRes.clinics) {
-      clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
-    }
-  }
 
   // Strictly filter patients belonging to this clinic ID
-  const patients = await prisma.patient.findMany({
-    where: {
-      organizationId: clinicId,
-    },
-    include: {
-      user: true,
-      carePlans: {
-        select: {
-          id: true,
-          status: true,
+  const [clinicsRes, patients] = await Promise.all([
+    isHoldingAdmin ? getClinics() : Promise.resolve(null),
+    prisma.patient.findMany({
+      where: {
+        organizationId: clinicId,
+      },
+      include: {
+        user: true,
+        carePlans: {
+          select: {
+            id: true,
+            status: true,
+          }
         }
-      }
-    },
-    orderBy: {
-      user: {
-        lastName: "asc"
-      }
-    },
-    // Garde-fou : la recherche/filtrage de PatientTable est client-side sur cette liste,
-    // donc pas de vraie pagination ici — juste une limite haute pour éviter de ramener une
-    // collection entière si la clinique grossit fortement.
-    take: 500,
-  });
+      },
+      orderBy: {
+        user: {
+          lastName: "asc"
+        }
+      },
+      // Garde-fou : la recherche/filtrage de PatientTable est client-side sur cette liste,
+      // donc pas de vraie pagination ici — juste une limite haute pour éviter de ramener une
+      // collection entière si la clinique grossit fortement.
+      take: 500,
+    }),
+  ]);
+
+  let clinics: { id: string; name: string }[] = [];
+  if (isHoldingAdmin && clinicsRes?.clinics) {
+    clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
+  }
 
   return (
     <div className="space-y-6">

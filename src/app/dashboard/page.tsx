@@ -24,12 +24,14 @@ export default async function DashboardPage() {
 
   if (isSuperAdmin) {
     // For Super Admin, we just show a totally different layout early return
-    const holdingsCount = await prisma.organization.count({ where: { type: "HOLDING" } });
-    const clinicsCount = await prisma.organization.count({ where: { type: "CLINIC" } });
-    const usersCount = await prisma.user.count({ where: { role: { not: "SUPER_ADMIN" } } });
-    const patientsCount = await prisma.patient.count();
-
-    const overviewRes = await getSuperAdminOverview();
+    // — les 5 requêtes ci-dessous sont indépendantes, on les lance en parallèle.
+    const [holdingsCount, clinicsCount, usersCount, patientsCount, overviewRes] = await Promise.all([
+      prisma.organization.count({ where: { type: "HOLDING" } }),
+      prisma.organization.count({ where: { type: "CLINIC" } }),
+      prisma.user.count({ where: { role: { not: "SUPER_ADMIN" } } }),
+      prisma.patient.count(),
+      getSuperAdminOverview(),
+    ]);
     const overview = overviewRes.success ? overviewRes.data! : {
       mrr: 0,
       planBreakdown: [] as { plan: string; count: number }[],
@@ -231,81 +233,83 @@ export default async function DashboardPage() {
     orgFilter.organizationId = { in: [] };
   }
 
-  // Query database for actual stats
-  const patientsCount = await prisma.patient.count({
-    where: orgFilter,
-  });
-
-  const appointmentsCount = await prisma.appointment.count({
-    where: {
-      status: "SCHEDULED",
-      patient: orgFilter
-    },
-  });
-
-  const openIncidentsCount = await prisma.incident.count({
-    where: {
-      status: "OPEN",
-      patient: orgFilter
-    },
-  });
-
-  const activePlansCount = await prisma.carePlan.count({
-    where: {
-      status: "ACTIVE",
-      patient: orgFilter
-    },
-  });
-
   // Query recent notifications for current user
   const mutedNotificationTypes = currentUser.mutedNotificationTypes ?? [];
-  const notifications = await prisma.notification.findMany({
-    where: {
-      userId: currentUser.id,
-      ...(mutedNotificationTypes.length > 0 ? { type: { notIn: mutedNotificationTypes } } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
 
-  // Query recent AI analyses
-  const aiAnalyses = await prisma.aIAnalysis.findMany({
-    where: {
-      patient: orgFilter
-    },
-    include: {
-      patient: {
-        include: { user: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 3,
-  });
+  // Regroupe les stats sous forme d'un helper pour pouvoir la lancer en parallèle
+  // avec les autres requêtes indépendantes ci-dessous, tout en gardant sa propre
+  // dépendance interne (clinics + patientsGroupByOrg ne dépendent que de orgFilter).
+  async function fetchClinicStats(): Promise<any[]> {
+    if (!isHoldingAdmin) return [];
 
-  let clinicStats: any[] = [];
-  if (isHoldingAdmin) {
-    const clinics = await prisma.organization.findMany({
-      where: { parentId: currentUser.organizationId, type: "CLINIC" },
-      select: { id: true, name: true }
-    });
+    const [clinics, patientsGroupByOrg] = await Promise.all([
+      prisma.organization.findMany({
+        where: { parentId: currentUser!.organizationId, type: "CLINIC" },
+        select: { id: true, name: true }
+      }),
+      prisma.patient.groupBy({
+        by: ['organizationId'],
+        _count: true,
+        where: orgFilter
+      }),
+    ]);
 
-    // Group patients by organization
-    const patientsGroupByOrg = await prisma.patient.groupBy({
-      by: ['organizationId'],
-      _count: true,
-      where: orgFilter
-    });
+    const holdingPatientsCount = patientsGroupByOrg.find(g => g.organizationId === currentUser!.organizationId)?._count || 0;
 
-    const holdingPatientsCount = patientsGroupByOrg.find(g => g.organizationId === currentUser.organizationId)?._count || 0;
-
-    clinicStats = [
-      { id: currentUser.organizationId, name: "Siège (Holding)", count: holdingPatientsCount },
+    return [
+      { id: currentUser!.organizationId, name: "Siège (Holding)", count: holdingPatientsCount },
       ...clinics.map(clinic => {
         const count = patientsGroupByOrg.find(g => g.organizationId === clinic.id)?._count || 0;
         return { id: clinic.id, name: clinic.name, count };
       })
     ].sort((a, b) => b.count - a.count);
   }
+
+  // Query database for actual stats — toutes ces requêtes sont indépendantes.
+  const [patientsCount, appointmentsCount, openIncidentsCount, activePlansCount, notifications, aiAnalyses, clinicStats] = await Promise.all([
+    prisma.patient.count({
+      where: orgFilter,
+    }),
+    prisma.appointment.count({
+      where: {
+        status: "SCHEDULED",
+        patient: orgFilter
+      },
+    }),
+    prisma.incident.count({
+      where: {
+        status: "OPEN",
+        patient: orgFilter
+      },
+    }),
+    prisma.carePlan.count({
+      where: {
+        status: "ACTIVE",
+        patient: orgFilter
+      },
+    }),
+    prisma.notification.findMany({
+      where: {
+        userId: currentUser.id,
+        ...(mutedNotificationTypes.length > 0 ? { type: { notIn: mutedNotificationTypes } } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    prisma.aIAnalysis.findMany({
+      where: {
+        patient: orgFilter
+      },
+      include: {
+        patient: {
+          include: { user: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+    }),
+    fetchClinicStats(),
+  ]);
 
   return (
     <div className="space-y-6">

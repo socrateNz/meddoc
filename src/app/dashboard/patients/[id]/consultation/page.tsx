@@ -20,16 +20,21 @@ export default async function PatientConsultationPage({ params }: PatientConsult
   const resolvedParams = await params;
   const patientId = resolvedParams.id;
 
-  const patient = await prisma.patient.findUnique({
-    where: { id: patientId },
-    include: {
-      user: true,
-      carePlans: true,
-      medicalRecords: {
-        orderBy: { createdAt: 'desc' }
+  // Le brouillon de consultation ne dépend que du patientId (déjà connu via les params),
+  // pas du patient chargé ci-dessous : les deux requêtes peuvent partir en parallèle.
+  const [patient, draftRes] = await Promise.all([
+    prisma.patient.findUnique({
+      where: { id: patientId },
+      include: {
+        user: true,
+        carePlans: true,
+        medicalRecords: {
+          orderBy: { createdAt: 'desc' }
+        }
       }
-    }
-  });
+    }),
+    getConsultationDraft({ patientId }),
+  ]);
 
   if (!patient) {
     notFound();
@@ -39,8 +44,6 @@ export default async function PatientConsultationPage({ params }: PatientConsult
   if (isDischarged) {
     redirect(`/dashboard/patients/${patientId}`);
   }
-
-  const draftRes = await getConsultationDraft({ patientId });
 
   return (
     <div className="space-y-6">

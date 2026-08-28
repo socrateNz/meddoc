@@ -22,84 +22,87 @@ export default async function ClinicMessagesPage({ params, searchParams }: PageP
     redirect("/login");
   }
 
-  // Retrieve user's conversations
-  const conversations = await prisma.conversation.findMany({
-    where: {
-      participants: {
-        some: { userId: currentUser.id }
-      }
-    },
-    include: {
-      participants: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              role: true,
-              avatarUrl: true,
-            }
-          }
+  // Les 3 requêtes ci-dessous sont indépendantes (aucune ne dépend du résultat d'une autre),
+  // on les lance en parallèle.
+  const [conversations, rawInitialMessages, otherUsers] = await Promise.all([
+    // Retrieve user's conversations
+    prisma.conversation.findMany({
+      where: {
+        participants: {
+          some: { userId: currentUser.id }
         }
       },
-      messages: {
-        orderBy: { createdAt: "desc" },
-        take: 1
-      }
-    },
-    orderBy: {
-      createdAt: "desc"
-    },
-    // Garde-fou : évite de ramener une collection entière si le nombre de conversations
-    // grossit fortement — pas une vraie pagination, juste une limite haute sur les plus récentes.
-    take: 500,
-  });
-
-  // Retrieve initial messages if conversation is selected — les 200 plus récents, remis
-  // en ordre chronologique pour l'affichage (même garde-fou que ci-dessus).
-  const initialMessages = activeConversationId
-    ? (await prisma.message.findMany({
-        where: { conversationId: activeConversationId },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              email: true,
-              role: true,
-              avatarUrl: true,
+      include: {
+        participants: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+                avatarUrl: true,
+              }
             }
           }
         },
-        orderBy: {
-          createdAt: "desc"
-        },
-        take: 200,
-      })).reverse()
-    : [];
-
-  // Fetch potential chat recipients (excluding self) only in the current clinic
-  const otherUsers = await prisma.user.findMany({
-    where: {
-      id: { not: currentUser.id },
-      isActive: true,
-      organizationId: clinicId, // Filter by clinic
-    },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      role: true,
-      avatarUrl: true,
-    },
-    orderBy: {
-      lastName: "asc"
-    }
-  });
+        messages: {
+          orderBy: { createdAt: "desc" },
+          take: 1
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      // Garde-fou : évite de ramener une collection entière si le nombre de conversations
+      // grossit fortement — pas une vraie pagination, juste une limite haute sur les plus récentes.
+      take: 500,
+    }),
+    // Retrieve initial messages if conversation is selected — les 200 plus récents, remis
+    // en ordre chronologique pour l'affichage (même garde-fou que ci-dessus).
+    activeConversationId
+      ? prisma.message.findMany({
+          where: { conversationId: activeConversationId },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+                avatarUrl: true,
+              }
+            }
+          },
+          orderBy: {
+            createdAt: "desc"
+          },
+          take: 200,
+        })
+      : Promise.resolve([]),
+    // Fetch potential chat recipients (excluding self) only in the current clinic
+    prisma.user.findMany({
+      where: {
+        id: { not: currentUser.id },
+        isActive: true,
+        organizationId: clinicId, // Filter by clinic
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        role: true,
+        avatarUrl: true,
+      },
+      orderBy: {
+        lastName: "asc"
+      }
+    }),
+  ]);
+  const initialMessages = rawInitialMessages.reverse();
 
   return (
     <div className="space-y-6 flex-1 flex flex-col min-h-0 overflow-hidden">

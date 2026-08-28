@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { prisma } from "./db";
 
 function requireEnv(name: string): string {
@@ -37,7 +38,14 @@ export function verifyRefreshToken(token: string) {
   }
 }
 
-export async function getCurrentUser() {
+// Mémoïsé par requête (React cache()) : de nombreuses pages appellent getCurrentUser()
+// à la fois dans le layout et dans la page elle-même, et chaque action serveur invoquée
+// pendant le rendu (verifyPatientAccess, listX...) le rappelle aussi en interne. Sans ce
+// cache, chaque appel déclenche un aller-retour MongoDB Atlas distinct — sur une page qui
+// enchaîne plusieurs de ces actions séquentiellement, cela peut multiplier la latence par
+// un facteur important, même avec un jeu de données de test minuscule (le coût vient du
+// nombre d'allers-retours réseau, pas du volume de données).
+export const getCurrentUser = cache(async function getCurrentUser() {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
@@ -96,7 +104,7 @@ export async function getCurrentUser() {
   } catch (error) {
     return null;
   }
-}
+});
 
 export async function verifyPatientAccess(patientId: string, currentUser?: any) {
   if (!currentUser) {

@@ -25,51 +25,51 @@ export default async function ClinicAppointmentsPage({ params }: PageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
 
-  const appointments = await prisma.appointment.findMany({
-    where: {
-      patient: {
-        organizationId: clinicId
-      }
-    },
-    include: {
-      patient: {
-        include: { user: true }
+  const [appointments, patients, caregivers] = await Promise.all([
+    prisma.appointment.findMany({
+      where: {
+        patient: {
+          organizationId: clinicId
+        }
       },
-      caregiver: {
-        include: { user: true }
-      }
-    },
-    orderBy: {
-      scheduledAt: "asc"
-    },
-    take: 500,
-  });
-
-  const patients = await prisma.patient.findMany({
-    where: {
-      organizationId: clinicId
-    },
-    include: { user: true },
-    orderBy: {
-      user: {
-        lastName: "asc"
-      }
-    }
-  });
-
-  const caregivers = await prisma.caregiver.findMany({
-    where: {
-      user: {
+      include: {
+        patient: {
+          include: { user: true }
+        },
+        caregiver: {
+          include: { user: true }
+        }
+      },
+      orderBy: {
+        scheduledAt: "asc"
+      },
+      take: 500,
+    }),
+    prisma.patient.findMany({
+      where: {
         organizationId: clinicId
+      },
+      include: { user: true },
+      orderBy: {
+        user: {
+          lastName: "asc"
+        }
       }
-    },
-    include: { user: true },
-    orderBy: {
-      user: {
-        lastName: "asc"
+    }),
+    prisma.caregiver.findMany({
+      where: {
+        user: {
+          organizationId: clinicId
+        }
+      },
+      include: { user: true },
+      orderBy: {
+        user: {
+          lastName: "asc"
+        }
       }
-    }
-  });
+    }),
+  ]);
 
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('fr-FR', {

@@ -40,41 +40,41 @@ export default async function AppointmentsPage() {
     orgFilter.organizationId = { in: [] };
   }
 
-  const appointments = await prisma.appointment.findMany({
-    where: { patient: orgFilter },
-    include: {
-      patient: {
-        include: { user: true }
+  const [appointments, patients, caregivers] = await Promise.all([
+    prisma.appointment.findMany({
+      where: { patient: orgFilter },
+      include: {
+        patient: {
+          include: { user: true }
+        },
+        caregiver: {
+          include: { user: true }
+        }
       },
-      caregiver: {
-        include: { user: true }
+      orderBy: {
+        scheduledAt: "asc"
+      },
+      take: 500,
+    }),
+    prisma.patient.findMany({
+      where: orgFilter,
+      include: { user: true },
+      orderBy: {
+        user: {
+          lastName: "asc"
+        }
       }
-    },
-    orderBy: {
-      scheduledAt: "asc"
-    },
-    take: 500,
-  });
-
-  const patients = await prisma.patient.findMany({
-    where: orgFilter,
-    include: { user: true },
-    orderBy: {
-      user: {
-        lastName: "asc"
+    }),
+    prisma.caregiver.findMany({
+      where: { user: orgFilter },
+      include: { user: true },
+      orderBy: {
+        user: {
+          lastName: "asc"
+        }
       }
-    }
-  });
-
-  const caregivers = await prisma.caregiver.findMany({
-    where: { user: orgFilter },
-    include: { user: true },
-    orderBy: {
-      user: {
-        lastName: "asc"
-      }
-    }
-  });
+    }),
+  ]);
 
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('fr-FR', {

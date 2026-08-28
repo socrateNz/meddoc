@@ -12,6 +12,70 @@ function formatFCFA(amount: number) {
   return Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
 }
 
+async function fetchWardsAndStaff(clinicId: string) {
+  const [staffMembers, wardsResult] = await Promise.all([
+    prisma.user.findMany({
+      where: { organizationId: clinicId, role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR"] } },
+      take: 3,
+    }),
+    getOrCreateClinicWards(clinicId),
+  ]);
+  const wards = wardsResult.success ? wardsResult.wards || [] : [];
+
+  const wardsWithOccupancy = await Promise.all(
+    wards.map(async (ward) => {
+      const [capacity, patientCount] = await Promise.all([
+        prisma.bed.count({ where: { wardId: ward.id } }),
+        prisma.bed.count({ where: { wardId: ward.id, status: "OCCUPIED" } }),
+      ]);
+      const occupancyRate = capacity > 0 ? Math.min(100, Math.round((patientCount / capacity) * 100)) : 0;
+      return { ...ward, patientCount, capacity, occupancyRate };
+    })
+  );
+
+  return { staffMembers, wardsWithOccupancy };
+}
+
+async function fetchFinanceSummary(clinicId: string) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const [todayTransactions, allTransactions, pharmacyItems] = await Promise.all([
+    prisma.financialTransaction.findMany({
+      where: { organizationId: clinicId, type: "INCOME", createdAt: { gte: startOfToday } },
+      select: { amount: true },
+    }),
+    prisma.financialTransaction.findMany({
+      where: { organizationId: clinicId },
+      select: { amount: true, type: true },
+    }),
+    prisma.pharmacyItem.findMany({
+      where: { organizationId: clinicId },
+      select: { stockQuantity: true, reorderLevel: true },
+    }),
+  ]);
+
+  const todayIncome = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const cashBalance = allTransactions.reduce((sum, t) => sum + (t.type === "INCOME" ? t.amount : -t.amount), 0);
+  const lowStockCount = pharmacyItems.filter((item) => item.stockQuantity <= item.reorderLevel).length;
+
+  return { todayIncome, cashBalance, lowStockCount };
+}
+
+async function fetchMyAppointmentsToday(userId: string) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date(startOfToday);
+  endOfToday.setDate(endOfToday.getDate() + 1);
+
+  const caregiverProfile = await prisma.caregiver.findUnique({ where: { userId } });
+  if (!caregiverProfile) return 0;
+
+  return prisma.appointment.count({
+    where: { caregiverId: caregiverProfile.id, scheduledAt: { gte: startOfToday, lt: endOfToday } },
+  });
+}
+
 export default async function ClinicDetailsPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
   const user = await getCurrentUser();
@@ -63,32 +127,20 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     redirect("/dashboard");
   }
 
-  // --- Lits & garde du jour : pertinent pour tout rôle clinique, pas pour PHARMACIST ---
-  let staffMembers: any[] = [];
-  let wardsWithOccupancy: any[] = [];
-  if (showWardsAndStaff) {
-    staffMembers = await prisma.user.findMany({
-      where: {
-        organizationId: clinic.id,
-        role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR"] }
-      },
-      take: 3,
-    });
-
-    const wardsResult = await getOrCreateClinicWards(clinic.id);
-    const wards = wardsResult.success ? wardsResult.wards || [] : [];
-
-    wardsWithOccupancy = await Promise.all(
-      wards.map(async (ward) => {
-        const [capacity, patientCount] = await Promise.all([
-          prisma.bed.count({ where: { wardId: ward.id } }),
-          prisma.bed.count({ where: { wardId: ward.id, status: "OCCUPIED" } }),
-        ]);
-        const occupancyRate = capacity > 0 ? Math.min(100, Math.round((patientCount / capacity) * 100)) : 0;
-        return { ...ward, patientCount, capacity, occupancyRate };
-      })
-    );
-  }
+  // Ces quatre blocs sont indépendants les uns des autres (chacun alimente une section
+  // d'écran différente, gatée par rôle) — les lancer en parallèle plutôt que
+  // séquentiellement évite de multiplier les allers-retours réseau vers la base.
+  const [
+    { staffMembers, wardsWithOccupancy },
+    { todayIncome, cashBalance, lowStockCount },
+    openIncidentsCount,
+    myAppointmentsTodayCount,
+  ] = await Promise.all([
+    showWardsAndStaff ? fetchWardsAndStaff(clinic.id) : Promise.resolve({ staffMembers: [] as any[], wardsWithOccupancy: [] as any[] }),
+    isCoordinator || isPharmacist ? fetchFinanceSummary(clinic.id) : Promise.resolve({ todayIncome: 0, cashBalance: 0, lowStockCount: 0 }),
+    isCoordinator || isCaregiver ? prisma.incident.count({ where: { status: "OPEN", patient: { organizationId: clinic.id } } }) : Promise.resolve(0),
+    isCaregiver ? fetchMyAppointmentsToday(user.id) : Promise.resolve(0),
+  ]);
 
   const occupiedBeds = wardsWithOccupancy.reduce((acc, curr) => acc + curr.patientCount, 0);
   const totalCapacity = wardsWithOccupancy.reduce((acc, curr) => acc + curr.capacity, 0);
@@ -109,61 +161,6 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   const surgeryPatientsCount = surgeryWard?.patientCount || 0;
   const surgeryCapacity = surgeryWard?.capacity || 30;
   const surgeryPercentage = surgeryWard?.occupancyRate || 0;
-
-  // --- Aperçu finance/pharmacie : COORDINATOR (gère) et PHARMACIST (son cœur de métier) ---
-  let todayIncome = 0;
-  let cashBalance = 0;
-  let lowStockCount = 0;
-  if (isCoordinator || isPharmacist) {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const [todayTransactions, allTransactions, pharmacyItems] = await Promise.all([
-      prisma.financialTransaction.findMany({
-        where: { organizationId: clinic.id, type: "INCOME", createdAt: { gte: startOfToday } },
-        select: { amount: true },
-      }),
-      prisma.financialTransaction.findMany({
-        where: { organizationId: clinic.id },
-        select: { amount: true, type: true },
-      }),
-      prisma.pharmacyItem.findMany({
-        where: { organizationId: clinic.id },
-        select: { stockQuantity: true, reorderLevel: true },
-      }),
-    ]);
-
-    todayIncome = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
-    cashBalance = allTransactions.reduce((sum, t) => sum + (t.type === "INCOME" ? t.amount : -t.amount), 0);
-    lowStockCount = pharmacyItems.filter((item) => item.stockQuantity <= item.reorderLevel).length;
-  }
-
-  // --- Incidents ouverts : COORDINATOR et CAREGIVER (soins de la clinique) ---
-  let openIncidentsCount = 0;
-  if (isCoordinator || isCaregiver) {
-    openIncidentsCount = await prisma.incident.count({
-      where: { status: "OPEN", patient: { organizationId: clinic.id } },
-    });
-  }
-
-  // --- Mes rendez-vous du jour : CAREGIVER uniquement ---
-  let myAppointmentsTodayCount = 0;
-  if (isCaregiver) {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(startOfToday);
-    endOfToday.setDate(endOfToday.getDate() + 1);
-
-    const caregiverProfile = await prisma.caregiver.findUnique({ where: { userId: user.id } });
-    if (caregiverProfile) {
-      myAppointmentsTodayCount = await prisma.appointment.count({
-        where: {
-          caregiverId: caregiverProfile.id,
-          scheduledAt: { gte: startOfToday, lt: endOfToday },
-        },
-      });
-    }
-  }
 
   return (
     <div className="space-y-6">

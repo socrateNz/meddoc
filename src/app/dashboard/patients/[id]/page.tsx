@@ -103,47 +103,18 @@ export default async function PatientDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  let vitalSigns: any[] = [];
-  try {
-    const vitalsRes = await getPatientVitalSigns(id);
-    if (vitalsRes.success && vitalsRes.data) {
-      vitalSigns = vitalsRes.data;
-    }
-  } catch (e) {
-    vitalSigns = [];
-  }
+  // Ces quatre lectures sont indépendantes les unes des autres — les lancer en parallèle
+  // plutôt que séquentiellement évite de multiplier les allers-retours réseau vers la base
+  // (chacune reste défensive : une erreur individuelle retombe sur un tableau vide, comme
+  // avant).
+  const [vitalSigns, prescriptions, labOrders, pregnancies] = await Promise.all([
+    getPatientVitalSigns(id).then((r) => (r.success && r.data ? r.data : [])).catch(() => []),
+    isPharmacist ? Promise.resolve([]) : listPrescriptions({ patientId: id }).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
+    isPharmacist ? Promise.resolve([]) : listLabOrders({ patientId: id }).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
+    isPharmacist ? Promise.resolve([]) : listPregnancies(id).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
+  ]);
 
   (patient as any).vitalSigns = vitalSigns;
-
-  let prescriptions: any[] = [];
-  if (!isPharmacist) {
-    try {
-      const prescriptionsRes = await listPrescriptions({ patientId: id });
-      if (prescriptionsRes.success) prescriptions = prescriptionsRes.data || [];
-    } catch (e) {
-      prescriptions = [];
-    }
-  }
-
-  let labOrders: any[] = [];
-  if (!isPharmacist) {
-    try {
-      const labOrdersRes = await listLabOrders({ patientId: id });
-      if (labOrdersRes.success) labOrders = labOrdersRes.data || [];
-    } catch (e) {
-      labOrders = [];
-    }
-  }
-
-  let pregnancies: any[] = [];
-  if (!isPharmacist) {
-    try {
-      const pregnanciesRes = await listPregnancies(id);
-      if (pregnanciesRes.success) pregnancies = pregnanciesRes.data || [];
-    } catch (e) {
-      pregnancies = [];
-    }
-  }
   const showMaternityTab = patient.sex === "F" || pregnancies.length > 0;
 
   const calculateAge = (birthDate: Date) => {

@@ -22,15 +22,17 @@ export default async function ClinicNotificationsPage({ params, searchParams }: 
   if (filter === "unread") where.isRead = false;
   if (filter === "read") where.isRead = true;
 
-  const notifications = await prisma.notification.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take: 500,
-  });
-
-  const unreadCount = await prisma.notification.count({
-    where: { userId: currentUser.id, isRead: false },
-  });
+  // Les 2 requêtes ci-dessous sont indépendantes, on les lance en parallèle.
+  const [notifications, unreadCount] = await Promise.all([
+    prisma.notification.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    }),
+    prisma.notification.count({
+      where: { userId: currentUser.id, isRead: false },
+    }),
+  ]);
 
   return (
     <NotificationsClient

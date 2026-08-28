@@ -13,12 +13,16 @@ interface LabOrderDetailPageProps {
 
 export default async function LabOrderDetailPage({ params }: LabOrderDetailPageProps) {
   const resolvedParams = await params;
-  const currentUser = await getCurrentUser();
+
+  // Indépendants : la demande d'analyse ne dépend pas de l'utilisateur courant chargé ici.
+  const [currentUser, res] = await Promise.all([
+    getCurrentUser(),
+    getLabOrder(resolvedParams.id),
+  ]);
   if (!currentUser) {
     redirect("/login");
   }
 
-  const res = await getLabOrder(resolvedParams.id);
   if (!res.success || !res.data) {
     notFound();
   }

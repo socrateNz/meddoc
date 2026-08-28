@@ -44,30 +44,32 @@ export default async function ClinicIncidentsPage({ params, searchParams }: Page
     where.status = statusFilter as IncidentStatus;
   }
 
-  const incidents = await prisma.incident.findMany({
-    where,
-    include: {
-      patient: {
-        include: { user: true }
+  // Les 2 requêtes ci-dessous sont indépendantes, on les lance en parallèle.
+  const [incidents, patients] = await Promise.all([
+    prisma.incident.findMany({
+      where,
+      include: {
+        patient: {
+          include: { user: true }
+        }
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      take: 500,
+    }),
+    prisma.patient.findMany({
+      where: {
+        organizationId: clinicId
+      },
+      include: { user: true },
+      orderBy: {
+        user: {
+          lastName: "asc"
+        }
       }
-    },
-    orderBy: {
-      createdAt: "desc"
-    },
-    take: 500,
-  });
-
-  const patients = await prisma.patient.findMany({
-    where: {
-      organizationId: clinicId
-    },
-    include: { user: true },
-    orderBy: {
-      user: {
-        lastName: "asc"
-      }
-    }
-  });
+    }),
+  ]);
 
   const formatDate = (date: Date) => {
     return new Intl.DateTimeFormat('fr-FR', {

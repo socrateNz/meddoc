@@ -15,16 +15,18 @@ export default async function TeamPage() {
   const currentUser = await getCurrentUser();
   if (!currentUser) redirect("/login");
 
-  const response = await getTeamMembers();
+  const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
+
+  // Requêtes indépendantes : la liste de l'équipe ne dépend pas des cliniques, et vice-versa.
+  const [response, clinicsRes] = await Promise.all([
+    getTeamMembers(),
+    isHoldingAdmin ? getClinics() : Promise.resolve({ clinics: [] as any[], error: null }),
+  ]);
   const members = response.success ? response.data : [];
 
-  const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
   let clinics: { id: string; name: string }[] = [];
-  if (isHoldingAdmin) {
-    const clinicsRes = await getClinics();
-    if (clinicsRes.clinics) {
-      clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
-    }
+  if (isHoldingAdmin && clinicsRes.clinics) {
+    clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
   }
 
   return (

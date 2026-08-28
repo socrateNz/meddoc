@@ -22,45 +22,46 @@ export default async function ClinicTeamPage({ params }: PageProps) {
   const currentUser = await getCurrentUser();
   if (!currentUser) redirect("/login");
 
-  // Fetch only members in this clinic
-  const members = await prisma.user.findMany({
-    where: {
-      organizationId: clinicId,
-      role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
-    },
-    include: {
-      caregiverProfile: {
-        include: {
-          _count: {
-            select: { appointments: true, tasks: true }
-          }
-        }
-      },
-      coordinatorProfile: {
-        include: {
-          _count: {
-            select: { managedPlans: true }
-          }
-        }
-      },
-      organization: {
-        select: {
-          id: true,
-          name: true,
-          type: true
-        }
-      }
-    },
-    orderBy: { lastName: "asc" }
-  });
-
   const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
+
+  // Fetch only members in this clinic
+  const [members, clinicsRes] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        organizationId: clinicId,
+        role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
+      },
+      include: {
+        caregiverProfile: {
+          include: {
+            _count: {
+              select: { appointments: true, tasks: true }
+            }
+          }
+        },
+        coordinatorProfile: {
+          include: {
+            _count: {
+              select: { managedPlans: true }
+            }
+          }
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            type: true
+          }
+        }
+      },
+      orderBy: { lastName: "asc" }
+    }),
+    isHoldingAdmin ? getClinics() : Promise.resolve(null),
+  ]);
+
   let clinics: { id: string; name: string }[] = [];
-  if (isHoldingAdmin) {
-    const clinicsRes = await getClinics();
-    if (clinicsRes.clinics) {
-      clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
-    }
+  if (isHoldingAdmin && clinicsRes?.clinics) {
+    clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
   }
 
   return (

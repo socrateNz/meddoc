@@ -21,19 +21,20 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
   if (filter === "read") where.isRead = true;
   if (mutedTypes.length > 0) where.type = { notIn: mutedTypes };
 
-  const notifications = await prisma.notification.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take: 500,
-  });
-
-  const unreadCount = await prisma.notification.count({
-    where: {
-      userId: currentUser.id,
-      isRead: false,
-      ...(mutedTypes.length > 0 ? { type: { notIn: mutedTypes } } : {}),
-    },
-  });
+  const [notifications, unreadCount] = await Promise.all([
+    prisma.notification.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    }),
+    prisma.notification.count({
+      where: {
+        userId: currentUser.id,
+        isRead: false,
+        ...(mutedTypes.length > 0 ? { type: { notIn: mutedTypes } } : {}),
+      },
+    }),
+  ]);
 
   return (
     <NotificationsClient
