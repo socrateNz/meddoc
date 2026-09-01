@@ -9,6 +9,7 @@ import NewPatientDialog from "@/app/dashboard/patients/new-patient-dialog";
 import Link from "next/link";
 import { Patient, User } from "@prisma/client";
 import { getClinics } from "@/actions/organizations";
+import CacheWriter from "@/components/cache-writer";
 
 import PatientTable from "@/app/dashboard/patients/patient-table";
 
@@ -19,6 +20,12 @@ interface PageProps {
 export default async function ClinicPatientsPage({ params }: PageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
+
+  // Utilisé par CacheWriter/loading.tsx pour l'aperçu instantané au prochain chargement —
+  // cf. plan « Affichage instantané depuis un cache local ». Indépendant du mécanisme RxDB de
+  // use-offline-patients.ts / patient-table.tsx (vrai mode hors-ligne recherchable) : ici, on ne
+  // fait que rejouer la dernière liste vue pendant le rafraîchissement serveur.
+  const cachedAt = new Date().toISOString();
 
   const activeUser = await getCurrentUser();
   if (!activeUser) return null;
@@ -78,6 +85,21 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
       </div>
 
       <PatientTable patients={patients} clinicId={clinicId} organizationId={clinicId} />
+
+      <CacheWriter
+        cacheKey={`patients-list:${clinicId}`}
+        updatedAt={cachedAt}
+        data={{
+          totalCount: patients.length,
+          patients: patients.slice(0, 30).map((p) => ({
+            id: p.id,
+            firstName: p.user.firstName,
+            lastName: p.user.lastName,
+            status: p.status,
+            dependencyLevel: p.dependencyLevel,
+          })),
+        }}
+      />
     </div>
   );
 }

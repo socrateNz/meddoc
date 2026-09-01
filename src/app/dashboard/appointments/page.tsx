@@ -7,6 +7,7 @@ import { Calendar as CalendarIcon, Clock, User as UserIcon } from "lucide-react"
 import NewAppointmentDialog from "./new-appointment-dialog";
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
+import CacheWriter from "@/components/cache-writer";
 
 type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
   include: {
@@ -24,6 +25,10 @@ export default async function AppointmentsPage() {
   if (!currentUser) {
     redirect("/login");
   }
+
+  // Utilisé par CacheWriter/loading.tsx pour l'aperçu instantané au prochain chargement —
+  // cf. plan « Affichage instantané depuis un cache local ».
+  const cachedAt = new Date().toISOString();
 
   // Filtrage par organisation : une holding voit ses cliniques, une clinique
   // ne voit que ses propres données (cf. src/app/dashboard/page.tsx:82-91).
@@ -170,6 +175,26 @@ export default async function AppointmentsPage() {
           ))
         )}
       </div>
+
+      <CacheWriter
+        cacheKey={`appointments:${currentUser.organizationId ?? "none"}`}
+        updatedAt={cachedAt}
+        routeFamily="appointments"
+        contextHint={{ organizationId: currentUser.organizationId ?? "none" }}
+        data={{
+          totalCount: appointments.length,
+          appointments: appointments.slice(0, 20).map((apt: AppointmentWithRelations) => ({
+            id: apt.id,
+            title: apt.title,
+            status: apt.status,
+            type: apt.type,
+            scheduledAt: apt.scheduledAt.toISOString(),
+            durationMinutes: apt.durationMinutes,
+            patientName: `${apt.patient.user.lastName} ${apt.patient.user.firstName}`,
+            caregiverName: apt.caregiver ? apt.caregiver.user.lastName : null,
+          })),
+        }}
+      />
     </div>
   );
 }

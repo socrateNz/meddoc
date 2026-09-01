@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Building2, Users, FileText, Settings, Bed, Clock, Phone, Wallet, AlertTriangle, Package, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getOrCreateClinicWards } from "@/actions/wards";
+import CacheWriter from "@/components/cache-writer";
 
 export const dynamic = "force-dynamic";
 
@@ -104,6 +105,11 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   const isCaregiver = user.role === "CAREGIVER";
   const isPharmacist = user.role === "PHARMACIST";
   const showWardsAndStaff = isReadOnlyOverview || isCoordinator || isCaregiver;
+
+  // Utilisés par CacheWriter/loading.tsx pour l'aperçu instantané au prochain chargement —
+  // cf. plan « Affichage instantané depuis un cache local ».
+  const cachedAt = new Date().toISOString();
+  const roleKey = isReadOnlyOverview ? "READ_ONLY" : isCoordinator ? "COORDINATOR" : isCaregiver ? "CAREGIVER" : isPharmacist ? "PHARMACIST" : "OTHER";
 
   const queryFilter: any = {
     id: params.id,
@@ -411,6 +417,31 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
           </div>
         </div>
       )}
+
+      <CacheWriter
+        cacheKey={`clinic-dashboard:${clinic.id}:${roleKey}`}
+        updatedAt={cachedAt}
+        routeFamily="clinic-dashboard"
+        contextHint={{ role: roleKey }}
+        data={{
+          clinicName: clinic.name,
+          usersCount: clinic._count.users,
+          patientsCount: clinic._count.patients,
+          roleKey,
+          todayIncome,
+          cashBalance,
+          lowStockCount,
+          openIncidentsCount,
+          myAppointmentsTodayCount,
+          globalOccupancyRate,
+          wards: [
+            { key: "emergency", label: "Urgences", count: emergencyPatientsCount, capacity: emergencyCapacity, pct: emergencyPercentage },
+            { key: "icu", label: "Soins Intensifs (Réanimation)", count: icuPatientsCount, capacity: icuCapacity, pct: icuPercentage },
+            { key: "surgery", label: "Chirurgie & Ambulatoire", count: surgeryPatientsCount, capacity: surgeryCapacity, pct: surgeryPercentage },
+          ],
+          staff: staffMembers.slice(0, 3).map((m: any) => ({ id: m.id, firstName: m.firstName, lastName: m.lastName, role: m.role })),
+        }}
+      />
     </div>
   );
 }

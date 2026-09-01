@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSuperAdminOverview } from "@/actions/super-admin";
+import CacheWriter from "@/components/cache-writer";
 
 export default async function DashboardPage() {
   const currentUser = await getCurrentUser();
@@ -21,6 +22,12 @@ export default async function DashboardPage() {
   const orgFilter: any = {};
   const isHoldingAdmin = currentUser.organization?.type === "HOLDING";
   const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
+
+  // Utilisés par CacheWriter/loading.tsx pour l'aperçu instantané au prochain chargement —
+  // cf. plan « Affichage instantané depuis un cache local ». Cette route n'a aucun id dans son
+  // URL : organizationId vient donc entièrement du hint côté loading.tsx (seul cas autorisé).
+  const cachedAt = new Date().toISOString();
+  const orgIdForCache = currentUser.organizationId ?? "none";
 
   if (isSuperAdmin) {
     // For Super Admin, we just show a totally different layout early return
@@ -215,6 +222,40 @@ export default async function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+
+        <CacheWriter
+          cacheKey={`dashboard:${orgIdForCache}:SUPER_ADMIN`}
+          updatedAt={cachedAt}
+          routeFamily="dashboard"
+          contextHint={{ organizationId: orgIdForCache, isSuperAdmin: true, isHoldingAdmin: false, role: currentUser.role }}
+          data={{
+            holdingsCount,
+            clinicsCount,
+            usersCount,
+            patientsCount,
+            mrr: overview.mrr,
+            planBreakdown: overview.planBreakdown,
+            holdingsToWatch: overview.holdingsToWatch.slice(0, 6).map((h) => ({
+              id: h.id,
+              name: h.name,
+              licenseExpiresAt: h.licenseExpiresAt ? new Date(h.licenseExpiresAt).toISOString() : null,
+              subscriptionStatus: h.subscriptionStatus,
+              reasons: h.reasons,
+            })),
+            recentHoldings: overview.recentHoldings.slice(0, 5).map((h) => ({
+              id: h.id,
+              name: h.name,
+              createdAt: new Date(h.createdAt).toISOString(),
+            })),
+            recentContactMessages: overview.recentContactMessages.slice(0, 5).map((m) => ({
+              id: m.id,
+              name: m.name,
+              subject: m.subject,
+              status: m.status,
+              createdAt: new Date(m.createdAt).toISOString(),
+            })),
+          }}
+        />
       </div>
     );
   }
@@ -477,6 +518,33 @@ export default async function DashboardPage() {
           </div>
         </div>
       )}
+
+      <CacheWriter
+        cacheKey={`dashboard:${orgIdForCache}:${currentUser.role}`}
+        updatedAt={cachedAt}
+        routeFamily="dashboard"
+        contextHint={{ organizationId: orgIdForCache, isSuperAdmin: false, isHoldingAdmin, role: currentUser.role }}
+        data={{
+          patientsCount,
+          appointmentsCount,
+          openIncidentsCount,
+          activePlansCount,
+          notifications: notifications.map((n) => ({
+            id: n.id,
+            type: n.type,
+            title: n.title,
+            message: n.message,
+            createdAt: new Date(n.createdAt).toISOString(),
+          })),
+          aiAnalyses: aiAnalyses.map((a) => ({
+            id: a.id,
+            riskScore: a.riskScore,
+            summary: a.summary,
+            patient: { firstName: a.patient.user.firstName, lastName: a.patient.user.lastName },
+          })),
+          clinicStats: clinicStats.map((s: any) => ({ id: s.id, name: s.name, count: s.count })),
+        }}
+      />
     </div>
   );
 }

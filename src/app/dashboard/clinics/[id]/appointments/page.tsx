@@ -5,6 +5,7 @@ import { Calendar as CalendarIcon, Clock, User as UserIcon } from "lucide-react"
 import NewAppointmentDialog from "@/app/dashboard/appointments/new-appointment-dialog";
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
+import CacheWriter from "@/components/cache-writer";
 
 type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
   include: {
@@ -24,6 +25,10 @@ interface PageProps {
 export default async function ClinicAppointmentsPage({ params }: PageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
+
+  // Utilisé par CacheWriter/loading.tsx pour l'aperçu instantané au prochain chargement —
+  // cf. plan « Affichage instantané depuis un cache local ».
+  const cachedAt = new Date().toISOString();
 
   const [appointments, patients, caregivers] = await Promise.all([
     prisma.appointment.findMany({
@@ -165,6 +170,24 @@ export default async function ClinicAppointmentsPage({ params }: PageProps) {
           ))
         )}
       </div>
+
+      <CacheWriter
+        cacheKey={`appointments:${clinicId}`}
+        updatedAt={cachedAt}
+        data={{
+          totalCount: appointments.length,
+          appointments: appointments.slice(0, 20).map((apt: AppointmentWithRelations) => ({
+            id: apt.id,
+            title: apt.title,
+            status: apt.status,
+            type: apt.type,
+            scheduledAt: apt.scheduledAt.toISOString(),
+            durationMinutes: apt.durationMinutes,
+            patientName: `${apt.patient.user.lastName} ${apt.patient.user.firstName}`,
+            caregiverName: apt.caregiver ? apt.caregiver.user.lastName : null,
+          })),
+        }}
+      />
     </div>
   );
 }

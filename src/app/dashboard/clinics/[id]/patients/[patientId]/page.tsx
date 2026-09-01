@@ -28,6 +28,7 @@ import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
 import { listPregnancies } from "@/actions/maternity";
 import MaternityPanel from "@/app/dashboard/patients/[id]/maternity-panel";
 import { Baby } from "lucide-react";
+import CacheWriter from "@/components/cache-writer";
 
 interface PageProps {
   params: Promise<{ id: string; patientId: string }>;
@@ -63,6 +64,11 @@ export default async function PatientDetailPage({ params }: PageProps) {
       clinics = clinicsRes.clinics.map(c => ({ id: c.id, name: c.name }));
     }
   }
+
+  // Utilisé par CacheWriter/loading.tsx pour l'aperçu instantané au prochain chargement — cf.
+  // plan « Affichage instantané depuis un cache local ». Même clé de cache que la jumelle
+  // /dashboard/patients/[id] (même patient, même verifyPatientAccess) — cf. plan.
+  const cachedAt = new Date().toISOString();
 
   const patient = await prisma.patient.findUnique({
     where: { id: patientId },
@@ -180,6 +186,17 @@ export default async function PatientDetailPage({ params }: PageProps) {
           En tant que pharmacien(ne), vous n'avez pas accès au dossier médical de ce patient. Les informations
           nécessaires à la délivrance des traitements sont disponibles depuis le journal des ventes en Finance & Pharmacie.
         </div>
+        <CacheWriter
+          cacheKey={`patient-detail:${patient.id}:pharmacist`}
+          updatedAt={cachedAt}
+          routeFamily="patient-detail"
+          contextHint={{ isPharmacist: true }}
+          data={{
+            firstName: patient.user.firstName,
+            lastName: patient.user.lastName,
+            dateOfBirth: patient.dateOfBirth.toISOString(),
+          }}
+        />
       </div>
     );
   }
@@ -739,6 +756,30 @@ export default async function PatientDetailPage({ params }: PageProps) {
             )}
           </TabsContent>
         </Tabs>
+
+        <CacheWriter
+          cacheKey={`patient-detail:${patient.id}:full`}
+          updatedAt={cachedAt}
+          routeFamily="patient-detail"
+          contextHint={{ isPharmacist: false }}
+          data={{
+            firstName: patient.user.firstName,
+            lastName: patient.user.lastName,
+            sex: patient.sex,
+            dateOfBirth: patient.dateOfBirth.toISOString(),
+            status: (patient as any).status,
+            dependencyLevel: patient.dependencyLevel,
+            isDischarged,
+            pathologiesCount: patient.pathologies.length,
+            allergiesCount: patient.allergies.length,
+            medicalRecordsCount: patient.medicalRecords.length,
+            prescriptionsCount: prescriptions.length,
+            labOrdersCount: labOrders.length,
+            carePlansCount: patient.carePlans.length,
+            incidentsCount: patient.incidents.length,
+            activeCarePlanTitle: activeCarePlan?.title ?? null,
+          }}
+        />
     </div>
   );
 }
