@@ -1,6 +1,10 @@
 import { userRepository } from "@/repositories/UserRepository";
 import { signJwt, signRefreshToken } from "@/lib/auth";
-import bcrypt from "bcryptjs";
+// bcrypt (binding natif), pas bcryptjs (réimplémentation JS pure, nettement plus lente pour
+// compare() — les deux produisent/lisent le même format de hash, donc compatible avec les
+// mots de passe déjà hashés). bcrypt est déjà une dépendance du projet, utilisée ailleurs pour
+// le hachage (ex. src/actions/super-admin.ts) — on aligne la vérification sur la même lib.
+import bcrypt from "bcrypt";
 import { LoginInput } from "@/validators/auth";
 import { AuthResponse } from "@/types/auth";
 

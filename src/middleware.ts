@@ -66,15 +66,6 @@ export async function middleware(request: NextRequest) {
     return withSecurityHeaders(NextResponse.next());
   }
 
-  // Tunnel Sentry (tunnelRoute côté client, cf. next.config.ts) : relaie les
-  // événements d'erreur vers Sentry pour contourner les bloqueurs de pub.
-  // Doit rester accessible sans session (une erreur peut survenir avant
-  // connexion, ex. sur la page de login) sous peine de casser silencieusement
-  // la remontée d'erreurs côté client.
-  if (pathname.startsWith('/monitoring')) {
-    return withSecurityHeaders(NextResponse.next());
-  }
-
   let token = request.cookies.get('token')?.value;
   const refreshToken = request.cookies.get('refreshToken')?.value;
   let newAccessToken: string | null = null;

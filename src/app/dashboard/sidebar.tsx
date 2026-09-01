@@ -379,7 +379,12 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       const active = isActive(item);
       const Icon = item.icon;
       return (
-        <Link key={item.href} href={item.href} className={getLinkClass(item)}>
+        // Ces liens sont visibles en permanence (menu latéral) : le préchargement automatique
+        // de Next.js déclenchait un rendu serveur en arrière-plan pour CHAQUE lien du menu à
+        // chaque navigation (~15-20 requêtes parasites par changement de page, mesuré). Comme
+        // ces pages sont toutes force-dynamic, ce préchargement n'apporte rien — le nouveau
+        // cache d'aperçu instantané (loading.tsx) remplit déjà ce rôle.
+        <Link key={item.href} href={item.href} className={getLinkClass(item)} prefetch={false}>
           {/* Visual active left border accent */}
           {active && (
             <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-gradient-to-b from-blue-500 to-indigo-500 rounded-r-full shadow-md shadow-blue-500/50" />
@@ -459,6 +464,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
           <nav className="grid gap-1">
             <Link
               href="/dashboard/settings"
+              prefetch={false}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300 hover:translate-x-1 group ${
                 pathname.startsWith("/dashboard/settings")
                   ? "bg-gradient-to-r from-blue-500/10 to-indigo-500/10 text-blue-600 dark:text-blue-400 font-semibold shadow-xs"
@@ -561,6 +567,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
           <nav className="grid gap-1">
             <Link
               href="/dashboard/settings"
+              prefetch={false}
               onClick={() => setIsOpen(false)}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-300 hover:translate-x-1 group ${
                 pathname.startsWith("/dashboard/settings")

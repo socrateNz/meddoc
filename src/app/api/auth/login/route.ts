@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { loginSchema } from "@/validators/auth";
 import { AuthService } from "@/services/AuthService";
@@ -47,19 +47,25 @@ export async function POST(req: Request) {
 
     const response = NextResponse.json({ user: result.user });
 
-    // Write Audit Log for successful login
-    try {
-      const { logAuditAction } = await import("@/middlewares/auditLogger");
-      await logAuditAction(
-        result.user.id,
-        "LOGIN_SUCCESS",
-        "User",
-        result.user.id,
-        { ip }
-      );
-    } catch (auditError) {
-      console.error("Failed to write login audit log:", auditError);
-    }
+    // Journal d'audit différé (after()) : ce n'est pas ce que l'utilisateur attend pour se
+    // connecter — l'écrire après l'envoi de la réponse retire un aller-retour base de données
+    // complet du chemin critique du login, sans risquer d'être coupé en cours d'écriture comme
+    // le serait un simple "fire and forget" en environnement serverless (after() garantit
+    // l'exécution jusqu'au bout même une fois la réponse envoyée).
+    after(async () => {
+      try {
+        const { logAuditAction } = await import("@/middlewares/auditLogger");
+        await logAuditAction(
+          result.user.id,
+          "LOGIN_SUCCESS",
+          "User",
+          result.user.id,
+          { ip }
+        );
+      } catch (auditError) {
+        console.error("Failed to write login audit log:", auditError);
+      }
+    });
 
     // Set HTTP-only cookie for the short-lived access token (15 mins)
     response.cookies.set({
@@ -93,26 +99,29 @@ export async function POST(req: Request) {
     const message = error instanceof Error ? error.message : "Erreur interne";
     Sentry.captureException(error);
 
-    // Write audit log for login failure if we can find the user email
-    try {
-      const body = await req.clone().json().catch(() => null);
-      if (body && body.email) {
-        const { prisma } = await import("@/lib/db");
-        const { logAuditAction } = await import("@/middlewares/auditLogger");
-        const user = await prisma.user.findUnique({ where: { email: body.email } });
-        if (user) {
-          await logAuditAction(
-            user.id,
-            "LOGIN_FAILURE",
-            "User",
-            user.id,
-            { ip, error: message }
-          );
+    // Même logique que sur le chemin de succès : le journal d'audit d'un échec de connexion
+    // ne doit pas retarder la réponse d'erreur renvoyée à l'utilisateur.
+    after(async () => {
+      try {
+        const body = await req.clone().json().catch(() => null);
+        if (body && body.email) {
+          const { prisma } = await import("@/lib/db");
+          const { logAuditAction } = await import("@/middlewares/auditLogger");
+          const user = await prisma.user.findUnique({ where: { email: body.email } });
+          if (user) {
+            await logAuditAction(
+              user.id,
+              "LOGIN_FAILURE",
+              "User",
+              user.id,
+              { ip, error: message }
+            );
+          }
         }
+      } catch (auditError) {
+        console.error("Failed to write failed login audit log:", auditError);
       }
-    } catch (auditError) {
-      console.error("Failed to write failed login audit log:", auditError);
-    }
+    });
 
     return NextResponse.json({ error: message }, { status: 401 });
   }

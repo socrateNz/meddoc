@@ -32,7 +32,7 @@ function mockRepository(user: any) {
 describe("AuthService.login", () => {
   it("refuse un email inconnu", async () => {
     mockRepository(null);
-    vi.doMock("bcryptjs", () => ({ default: { compare: vi.fn() } }));
+    vi.doMock("bcrypt", () => ({ default: { compare: vi.fn() } }));
     const { AuthService } = await import("./AuthService");
 
     await expect(AuthService.login({ email: "nobody@example.com", password: "x" })).rejects.toThrow(
@@ -42,7 +42,7 @@ describe("AuthService.login", () => {
 
   it("refuse un compte désactivé", async () => {
     mockRepository({ ...baseUser, isActive: false });
-    vi.doMock("bcryptjs", () => ({ default: { compare: vi.fn() } }));
+    vi.doMock("bcrypt", () => ({ default: { compare: vi.fn() } }));
     const { AuthService } = await import("./AuthService");
 
     await expect(AuthService.login({ email: baseUser.email, password: "x" })).rejects.toThrow(
@@ -62,7 +62,7 @@ describe("AuthService.login", () => {
         parent: { subscriptionStatus: "ACTIVE", licenseExpiresAt: new Date("2000-01-01") },
       },
     });
-    vi.doMock("bcryptjs", () => ({ default: { compare: vi.fn() } }));
+    vi.doMock("bcrypt", () => ({ default: { compare: vi.fn() } }));
     const { AuthService } = await import("./AuthService");
 
     await expect(AuthService.login({ email: baseUser.email, password: "x" })).rejects.toThrow(
@@ -72,7 +72,7 @@ describe("AuthService.login", () => {
 
   it("refuse un mot de passe incorrect", async () => {
     mockRepository(baseUser);
-    vi.doMock("bcryptjs", () => ({ default: { compare: vi.fn(async () => false) } }));
+    vi.doMock("bcrypt", () => ({ default: { compare: vi.fn(async () => false) } }));
     const { AuthService } = await import("./AuthService");
 
     await expect(AuthService.login({ email: baseUser.email, password: "wrong" })).rejects.toThrow("Identifiants invalides");
@@ -80,7 +80,7 @@ describe("AuthService.login", () => {
 
   it("retourne les tokens et le profil pour des identifiants valides", async () => {
     mockRepository(baseUser);
-    vi.doMock("bcryptjs", () => ({ default: { compare: vi.fn(async () => true) } }));
+    vi.doMock("bcrypt", () => ({ default: { compare: vi.fn(async () => true) } }));
     const { AuthService } = await import("./AuthService");
 
     const result = await AuthService.login({ email: baseUser.email, password: "correct" });
