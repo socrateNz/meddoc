@@ -3,6 +3,7 @@
 // importé par chemin absolu depuis src/app/dashboard/clinics/[id]/patients/page.tsx.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { CheckCircle2, User as UserIcon, XCircle } from "lucide-react";
 
 export interface PatientListPreviewItem {
@@ -87,6 +88,47 @@ export default function PatientsListPreview({ data }: { data: PatientsListPrevie
       {totalCount > patients.length && (
         <p className="text-xs text-center text-slate-500 dark:text-slate-400">+{totalCount - patients.length} autres</p>
       )}
+    </div>
+  );
+}
+
+// Squelette de la même table, utilisé par les deux loading.tsx jumeaux (global + clinique)
+// tant qu'aucun aperçu n'est encore en cache pour cette route sur cet appareil. Les en-têtes de
+// colonnes sont statiques (toujours les mêmes, indépendants des données) et s'affichent donc en
+// texte réel ; seules les cellules qui dépendraient de données patient prennent la forme d'un
+// squelette.
+export function PatientsListSkeleton({ rows = 8 }: { rows?: number }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs overflow-hidden">
+      <Table>
+        <TableHeader className="bg-slate-50/50 dark:bg-slate-900/40">
+          <TableRow className="border-b border-slate-200/50 dark:border-slate-800/50 hover:bg-transparent">
+            <TableHead className="text-xs uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 py-3.5">Nom complet</TableHead>
+            <TableHead className="text-xs uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 py-3.5">Statut</TableHead>
+            <TableHead className="text-xs uppercase tracking-wider font-bold text-slate-400 dark:text-slate-500 py-3.5">Dépendance</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: rows }).map((_, i) => (
+            <TableRow key={i} className="border-b border-slate-100 dark:border-slate-800/40">
+              <TableCell className="py-3.5">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 font-bold">
+                    <UserIcon className="h-4 w-4" />
+                  </div>
+                  <Skeleton className="h-4 w-32" />
+                </div>
+              </TableCell>
+              <TableCell className="py-3.5">
+                <Skeleton className="h-5 w-28 rounded-full" />
+              </TableCell>
+              <TableCell className="py-3.5">
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Calendar as CalendarIcon, Clock, User as UserIcon } from "lucide-react";
-import { PageLoading } from "@/components/ui/page-loading";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface AppointmentPreview {
   id: string;
@@ -54,7 +54,63 @@ export default function Loading() {
     };
   }, []);
 
-  if (!preview) return <PageLoading />;
+  // Pas encore de cache pour cette route (première visite sur cet appareil) — le titre et le
+  // sous-titre de la page ne dépendent d'aucune donnée : ils s'affichent tout de suite, seules
+  // les cartes de rendez-vous prennent la forme d'un squelette pendant le chargement.
+  if (!preview) {
+    return (
+      <div className="space-y-6" aria-hidden="true">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
+            <p className="text-muted-foreground">
+              Visualisez et planifiez les rendez-vous et consultations médicales.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="flex flex-col rounded-xl border bg-card p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+
+              <Skeleton className="h-5 w-3/4 mb-2" />
+
+              <div className="space-y-3 mt-auto">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CalendarIcon className="h-4 w-4 text-primary" />
+                  <Skeleton className="h-3.5 w-32" />
+                </div>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="h-4 w-4 text-primary" />
+                  <Skeleton className="h-3.5 w-24" />
+                </div>
+
+                <div className="pt-4 mt-4 border-t flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center">
+                      <UserIcon className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="text-sm space-y-1.5">
+                      <Skeleton className="h-3.5 w-24" />
+                      <Skeleton className="h-2.5 w-12" />
+                    </div>
+                  </div>
+                  <div className="text-right space-y-1.5">
+                    <Skeleton className="h-2.5 w-14 ml-auto" />
+                    <Skeleton className="h-3.5 w-16 ml-auto" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const { totalCount, appointments } = preview;
   const shown = appointments.slice(0, 6);

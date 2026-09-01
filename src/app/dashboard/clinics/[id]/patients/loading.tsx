@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PageLoading } from "@/components/ui/page-loading";
-import PatientsListPreview, { PatientsListPreviewData } from "@/app/dashboard/patients/patients-list-preview";
+import PatientsListPreview, { PatientsListPreviewData, PatientsListSkeleton } from "@/app/dashboard/patients/patients-list-preview";
 
 export default function Loading() {
   // undefined = lecture du cache en cours, null = pas de cache disponible
@@ -31,7 +30,25 @@ export default function Loading() {
     };
   }, []);
 
-  if (!preview) return <PageLoading />;
+  // Pas encore de cache pour cette clinique (première visite sur cet appareil) — le titre et le
+  // sous-titre de la page ne dépendent d'aucune donnée : ils s'affichent tout de suite, seule la
+  // liste des patients prend la forme d'un squelette pendant le chargement.
+  if (!preview) {
+    return (
+      <div className="space-y-6" aria-hidden="true">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Patients</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              Gérez la liste des patients, leurs statuts (actifs / clôturés) et leurs dossiers pour cette clinique.
+            </p>
+          </div>
+        </div>
+
+        <PatientsListSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pointer-events-none select-none" aria-hidden="true" inert>

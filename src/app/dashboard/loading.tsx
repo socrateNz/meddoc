@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Activity, Users, Calendar, AlertCircle, Bell, Building2, Wallet, AlertTriangle, Clock, Mail } from "lucide-react";
-import { PageLoading } from "@/components/ui/page-loading";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -75,7 +75,49 @@ export default function DashboardLoading() {
     };
   }, []);
 
-  if (!preview) return <PageLoading />;
+  // Pas encore de cache pour ce compte (première visite sur cet appareil) — on ne sait pas
+  // encore si la vraie page sera la vue Super Admin ou la vue holding/clinique classique (le
+  // hint qui permettrait de trancher n'existe pas non plus tant que rien n'est en cache), donc
+  // un squelette générique plausible pour les deux formes est affiché en attendant.
+  if (!preview) {
+    return (
+      <div className="space-y-6" aria-hidden="true">
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-9 w-64" />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Card key={i} className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-9 w-9 rounded-xl" />
+              </CardHeader>
+              <CardContent className="pt-0">
+                <Skeleton className="h-8 w-16 mt-1" />
+                <Skeleton className="h-3 w-32 mt-2" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          {[0, 1].map((i) => (
+            <Card key={i} className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+              <CardHeader className="pb-2">
+                <Skeleton className="h-5 w-40" />
+              </CardHeader>
+              <CardContent className="space-y-3 pt-2">
+                {[0, 1, 2].map((j) => (
+                  <Skeleton key={j} className="h-4 w-full" />
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return preview.kind === "super-admin" ? (
     <SuperAdminPreview data={preview.data} />

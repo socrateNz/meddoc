@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PageLoading } from "@/components/ui/page-loading";
 import {
   PharmacistPatientPreviewCard,
   FullPatientPreviewCard,
+  PatientDetailSkeleton,
   type PharmacistPatientPreview,
   type FullPatientPreview,
 } from "./patient-detail-preview";
@@ -48,7 +48,10 @@ export default function Loading() {
     };
   }, []);
 
-  if (!preview) return <PageLoading />;
+  // Pas encore de cache pour ce patient (première visite sur cet appareil) — la forme exacte
+  // (vue pharmacien vs vue clinique complète) n'est pas connue à ce stade non plus, d'où le
+  // squelette générique partagé plutôt qu'un loader plein écran.
+  if (!preview) return <PatientDetailSkeleton />;
 
   return preview.kind === "pharmacist" ? (
     <PharmacistPatientPreviewCard preview={preview.data} />

@@ -12,6 +12,7 @@
 
 import { User as UserIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export interface PharmacistPatientPreview {
   firstName: string;
@@ -62,6 +63,45 @@ function UpdatingBadge() {
       <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
       Mise à jour…
     </span>
+  );
+}
+
+// Squelette générique partagé par les deux `loading.tsx` jumeaux tant qu'aucun aperçu n'est
+// encore en cache pour ce patient (première visite sur cet appareil). La forme exacte (vue
+// pharmacien vs vue clinique complète) n'est pas connue à ce stade — le hint qui permettrait de
+// trancher n'existe pas non plus tant que rien n'est en cache — donc une approximation générique
+// plausible pour les deux cas est utilisée, calquée sur `FullPatientPreviewCard` ci-dessous.
+export function PatientDetailSkeleton() {
+  const chipLabels = ["Dossier médical", "Ordonnances", "Laboratoire", "Plan de soins", "Incidents"];
+
+  return (
+    <div className="space-y-6" aria-hidden="true">
+      <div className="rounded-2xl border bg-card text-card-foreground shadow-md overflow-hidden relative">
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-primary via-indigo-500 to-purple-500" />
+        <div className="p-6 md:p-8 flex items-center gap-5">
+          <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
+            <UserIcon className="h-8 w-8 text-primary" />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-5 w-28 rounded-full" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+            <Skeleton className="h-4 w-64" />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {chipLabels.map((label) => (
+          <div key={label} className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 text-sm flex items-center gap-2 shadow-sm">
+            <span className="font-medium text-slate-600 dark:text-slate-300">{label}</span>
+            <Skeleton className="h-4 w-5" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

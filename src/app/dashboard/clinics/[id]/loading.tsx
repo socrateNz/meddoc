@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Building2, Users, FileText, Bed, Clock, Wallet, AlertTriangle, Package, Calendar } from "lucide-react";
-import { PageLoading } from "@/components/ui/page-loading";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ClinicDashboardPreview {
   clinicName: string;
@@ -62,7 +62,75 @@ export default function Loading() {
     };
   }, []);
 
-  if (!preview) return <PageLoading />;
+  // Pas encore de cache pour cette clinique (première visite sur cet appareil) — le titre exact
+  // et le rôle ne sont pas connus, mais le sous-titre et la structure générale de la page, eux,
+  // ne dépendent d'aucune donnée : ils s'affichent tout de suite, seules les zones chiffrées
+  // prennent la forme d'un squelette pendant le chargement.
+  if (!preview) {
+    return (
+      <div className="space-y-6" aria-hidden="true">
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-50 flex items-center gap-3">
+              <Building2 className="h-8 w-8 text-blue-500" />
+              <Skeleton className="h-8 w-48" />
+            </h1>
+            <p className="text-muted-foreground mt-1">Tableau de bord spécifique à cette clinique.</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+              <Skeleton className="h-12 w-12 rounded-full mb-4" />
+              <Skeleton className="h-5 w-32 mb-2" />
+              <Skeleton className="h-8 w-16 mb-2" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center justify-between border-b pb-4 mb-4">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <Bed className="h-5 w-5 text-blue-500" />
+                Occupation des Lits & Capacité
+              </h3>
+            </div>
+            <div className="space-y-4">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="space-y-1.5">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-2 w-full rounded-full" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex items-center justify-between border-b pb-4 mb-4">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <Clock className="h-5 w-5 text-violet-500" />
+                Garde & Astreintes du Jour
+              </h3>
+            </div>
+            <div className="space-y-4">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
+                  <Skeleton className="h-9 w-9 rounded-full" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-3.5 w-32" />
+                    <Skeleton className="h-2.5 w-20" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const {
     clinicName, usersCount, patientsCount, roleKey, todayIncome, cashBalance, lowStockCount,
