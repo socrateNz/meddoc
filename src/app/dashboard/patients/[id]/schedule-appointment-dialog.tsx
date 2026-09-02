@@ -1,0 +1,209 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CalendarPlus, Loader2 } from "lucide-react";
+import { createAppointment } from "@/actions/appointments";
+import { toast } from "sonner";
+
+// Version allégée de NewAppointmentDialog (src/app/dashboard/appointments/) : le patient est
+// déjà connu (on est sur sa fiche), donc pas de sélecteur de patient — on va droit à l'essentiel.
+interface ScheduleAppointmentDialogProps {
+  patientId: string;
+  caregivers: {
+    id: string;
+    user: { firstName: string; lastName: string };
+  }[];
+}
+
+export default function ScheduleAppointmentDialog({ patientId, caregivers }: ScheduleAppointmentDialogProps) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const [caregiverId, setCaregiverId] = useState("unassigned");
+  const [title, setTitle] = useState("");
+  const [type, setType] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("60");
+
+  const resetForm = () => {
+    setCaregiverId("unassigned");
+    setTitle("");
+    setType("");
+    setDate("");
+    setTime("");
+    setDurationMinutes("60");
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title || !type || !date || !time) {
+      toast.error("Veuillez remplir tous les champs obligatoires.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const scheduledAt = new Date(`${date}T${time}`).toISOString();
+      const response = await createAppointment({
+        patientId,
+        caregiverId: caregiverId === "unassigned" ? undefined : caregiverId,
+        title,
+        type,
+        scheduledAt,
+        durationMinutes: Number(durationMinutes),
+      });
+
+      if (response.success) {
+        toast.success("Rendez-vous planifié avec succès.");
+        setOpen(false);
+        resetForm();
+        router.refresh();
+      } else {
+        toast.error(response.error || "Erreur lors de la planification.");
+      }
+    } catch (err: any) {
+      toast.error("Une erreur inattendue est survenue.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
+      <DialogTrigger render={<Button size="sm" className="gap-2" />}>
+        <CalendarPlus className="h-4 w-4" />
+        Planifier un rendez-vous
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[500px] bg-card border border-border/40 shadow-2xl rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-2xl font-bold tracking-tight">Planifier un Rendez-vous</DialogTitle>
+          <DialogDescription>
+            Créez une nouvelle consultation ou un rendez-vous en clinique pour ce patient.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-5 pt-4">
+          <div className="space-y-2">
+            <Label>Intervenant (Soignant) *</Label>
+            <Select onValueChange={(val) => val && setCaregiverId(val)} value={caregiverId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sélectionner un soignant">
+                  {(val: any) => {
+                    if (!val || val === "unassigned") return "Non assigné (À définir)";
+                    const c = caregivers.find((c) => c.id === val);
+                    return c ? `${c.user.lastName} ${c.user.firstName}` : val;
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="unassigned">Non assigné (À définir)</SelectItem>
+                {caregivers.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.user.lastName} {c.user.firstName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="title">Titre de l&apos;intervention *</Label>
+            <Input
+              id="title"
+              placeholder="Ex: Aide à la toilette / Soins quotidiens"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Type d&apos;acte *</Label>
+              <Select onValueChange={(val) => val && setType(val)} value={type}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Type d'acte">
+                    {(val: any) => val || "Type d'acte"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Soins infirmiers">Soins infirmiers</SelectItem>
+                  <SelectItem value="Toilette">Aide à la toilette</SelectItem>
+                  <SelectItem value="Repas">Préparation de repas</SelectItem>
+                  <SelectItem value="Visite médicale">Visite médicale</SelectItem>
+                  <SelectItem value="Aide ménagère">Aide ménagère</SelectItem>
+                  <SelectItem value="Autre">Autre</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Durée *</Label>
+              <Select onValueChange={(val) => val && setDurationMinutes(val)} value={durationMinutes}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Durée">
+                    {(val: any) => {
+                      if (!val) return "Durée";
+                      const labels: Record<string, string> = {
+                        "30": "30 minutes",
+                        "45": "45 minutes",
+                        "60": "1 heure",
+                        "90": "1h30",
+                        "120": "2 heures",
+                        "180": "3 heures",
+                      };
+                      return labels[val] || val;
+                    }}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">30 minutes</SelectItem>
+                  <SelectItem value="45">45 minutes</SelectItem>
+                  <SelectItem value="60">1 heure</SelectItem>
+                  <SelectItem value="90">1h30</SelectItem>
+                  <SelectItem value="120">2 heures</SelectItem>
+                  <SelectItem value="180">3 heures</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="date">Date de passage *</Label>
+              <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="time">Heure de passage *</Label>
+              <Input id="time" type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+              Annuler
+            </Button>
+            <Button type="submit" disabled={loading} className="flex flex-row gap-2 min-w-[100px]">
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Planification...
+                </>
+              ) : (
+                "Valider"
+              )}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

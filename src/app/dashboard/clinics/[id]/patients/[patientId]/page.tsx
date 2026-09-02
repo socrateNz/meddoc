@@ -27,6 +27,7 @@ import { listLabOrders } from "@/actions/lab";
 import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
 import { listPregnancies } from "@/actions/maternity";
 import MaternityPanel from "@/app/dashboard/patients/[id]/maternity-panel";
+import ScheduleAppointmentDialog from "@/app/dashboard/patients/[id]/schedule-appointment-dialog";
 import { Baby } from "lucide-react";
 import CacheWriter from "@/components/cache-writer";
 
@@ -115,11 +116,18 @@ export default async function PatientDetailPage({ params }: PageProps) {
   // plutôt que séquentiellement évite de multiplier les allers-retours réseau vers la base
   // (chacune reste défensive : une erreur individuelle retombe sur un tableau vide, comme
   // avant).
-  const [vitalSigns, prescriptions, labOrders, pregnancies] = await Promise.all([
+  const [vitalSigns, prescriptions, labOrders, pregnancies, caregivers] = await Promise.all([
     getPatientVitalSigns(patientId).then((r) => (r.success && r.data ? r.data : [])).catch(() => []),
     isPharmacist ? Promise.resolve([]) : listPrescriptions({ patientId: patient.id }).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
     isPharmacist ? Promise.resolve([]) : listLabOrders({ patientId: patient.id }).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
     isPharmacist ? Promise.resolve([]) : listPregnancies(patient.id).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
+    isPharmacist
+      ? Promise.resolve([])
+      : prisma.caregiver.findMany({
+          where: { user: { organizationId: clinicId } },
+          include: { user: true },
+          orderBy: { user: { lastName: "asc" } },
+        }),
   ]);
 
   (patient as any).vitalSigns = vitalSigns;
@@ -673,6 +681,9 @@ export default async function PatientDetailPage({ params }: PageProps) {
           <TabsContent value="appointments" className="pt-6 space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold tracking-tight">Historique des visites</h3>
+              {canWrite && !isDischarged && (
+                <ScheduleAppointmentDialog patientId={patient.id} caregivers={caregivers as any} />
+              )}
             </div>
             {patient.appointments.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">Aucun rendez-vous planifié.</p>

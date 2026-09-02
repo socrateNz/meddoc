@@ -85,6 +85,13 @@ export async function createAppointment(data: {
     );
 
     revalidatePath("/dashboard/appointments");
+    // Permet au bouton « Planifier un rendez-vous » de la fiche patient (onglet Rendez-vous) de
+    // refléter immédiatement la nouvelle entrée, sans rechargement manuel.
+    revalidatePath(`/dashboard/patients/${data.patientId}`);
+    // Forme "template" (segments entre crochets non résolus) : on ne connaît pas clinicId ici,
+    // seulement patientId — revalide donc la route dynamique clinics/[id]/patients/[patientId]
+    // pour toutes les cliniques plutôt qu'une instance précise.
+    revalidatePath("/dashboard/clinics/[id]/patients/[patientId]", "page");
     return { success: true, data: appointment };
   } catch (error: any) {
     console.error("Error creating appointment:", error);

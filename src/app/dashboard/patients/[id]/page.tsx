@@ -28,6 +28,7 @@ import { listLabOrders } from "@/actions/lab";
 import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
 import { listPregnancies } from "@/actions/maternity";
 import MaternityPanel from "./maternity-panel";
+import ScheduleAppointmentDialog from "./schedule-appointment-dialog";
 import { Baby } from "lucide-react";
 import CacheWriter from "@/components/cache-writer";
 
@@ -113,11 +114,18 @@ export default async function PatientDetailPage({ params }: PageProps) {
   // plutôt que séquentiellement évite de multiplier les allers-retours réseau vers la base
   // (chacune reste défensive : une erreur individuelle retombe sur un tableau vide, comme
   // avant).
-  const [vitalSigns, prescriptions, labOrders, pregnancies] = await Promise.all([
+  const [vitalSigns, prescriptions, labOrders, pregnancies, caregivers] = await Promise.all([
     getPatientVitalSigns(id).then((r) => (r.success && r.data ? r.data : [])).catch(() => []),
     isPharmacist ? Promise.resolve([]) : listPrescriptions({ patientId: id }).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
     isPharmacist ? Promise.resolve([]) : listLabOrders({ patientId: id }).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
     isPharmacist ? Promise.resolve([]) : listPregnancies(id).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
+    isPharmacist || !patient.organizationId
+      ? Promise.resolve([])
+      : prisma.caregiver.findMany({
+          where: { user: { organizationId: patient.organizationId } },
+          include: { user: true },
+          orderBy: { user: { lastName: "asc" } },
+        }),
   ]);
 
   (patient as any).vitalSigns = vitalSigns;
@@ -675,12 +683,23 @@ export default async function PatientDetailPage({ params }: PageProps) {
         </TabsContent>
 
         {/* Tab Content: Rendez-vous */}
-        <TabsContent value="appointments" className="pt-6">
+        <TabsContent value="appointments" className="pt-6 space-y-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold tracking-tight">Historique des visites</h3>
+            {canWrite && !isDischarged && (
+              <ScheduleAppointmentDialog patientId={patient.id} caregivers={caregivers as any} />
+            )}
+          </div>
           {patient.appointments.length === 0 ? (
             <div className="border border-dashed rounded-xl p-12 text-center bg-card">
               <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium text-base">Aucun rendez-vous</h4>
               <p className="text-sm text-muted-foreground mt-1">Aucune intervention n'a été planifiée.</p>
+              {canWrite && !isDischarged && (
+                <div className="mt-4 flex justify-center">
+                  <ScheduleAppointmentDialog patientId={patient.id} caregivers={caregivers as any} />
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
