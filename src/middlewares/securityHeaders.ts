@@ -5,10 +5,18 @@ export function appendSecurityHeaders(headers: Headers) {
 
   // 'unsafe-eval' est nécessaire au Fast Refresh de Next.js en développement,
   // quel que soit le bundler (webpack ou Turbopack) — mais pas en production.
+  // 'wasm-unsafe-eval' reste nécessaire dans les DEUX environnements : @react-pdf/renderer
+  // compile son moteur de mise en page (yoga-layout) en WebAssembly via WebAssembly.instantiate(),
+  // ce que Chrome/Firefox traitent comme une forme d'eval y compris pour du WASM légitime — sans
+  // cette entrée, la génération de PDF échouait immédiatement en production ("Impossible de
+  // générer le PDF"), alors qu'elle fonctionnait en développement où 'unsafe-eval' (plus large)
+  // couvrait aussi ce cas. 'wasm-unsafe-eval' autorise spécifiquement la compilation WASM sans
+  // réintroduire eval()/Function() sur du texte arbitraire — vérifié en testant un vrai
+  // téléchargement de PDF contre un build de production local (next build && next start).
   const isDev = process.env.NODE_ENV !== "production";
   const scriptSrc = isDev
-    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval';"
-    : "script-src 'self' 'unsafe-inline';";
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval';"
+    : "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval';";
 
   // Élargit connect-src pour l'ingestion Sentry uniquement si un DSN client
   // est configuré (sinon Sentry.init() est désactivé et rien n'est envoyé).
