@@ -1,12 +1,15 @@
 "use client";
 
 import React from "react";
-import { Document, Page, Text, View, StyleSheet, Font } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Font, Image } from "@react-pdf/renderer";
 
 // Styles
 const styles = StyleSheet.create({
   page: {
-    padding: 40,
+    paddingTop: 40,
+    paddingBottom: 60,
+    paddingLeft: 40,
+    paddingRight: 40,
     fontFamily: "Helvetica",
     color: "#0f172a",
     fontSize: 10,
@@ -22,6 +25,12 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flexDirection: "column",
+  },
+  logoImage: {
+    width: 40,
+    height: 40,
+    objectFit: "contain",
+    marginBottom: 4,
   },
   logo: {
     fontSize: 18,
@@ -158,6 +167,29 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: "#334155",
   },
+  // Bloc signature — normal flow (pas fixed) : apparaît une seule fois, là où le contenu se
+  // termine réellement, contrairement à l'en-tête/pied de page qui eux se répètent.
+  signArea: {
+    marginTop: 30,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
+  signBox: {
+    width: 200,
+    borderTopWidth: 1,
+    borderTopColor: "#cbd5e1",
+    paddingTop: 8,
+    textAlign: "center",
+  },
+  signTitle: {
+    fontSize: 8,
+    color: "#64748b",
+  },
+  signName: {
+    fontSize: 9,
+    fontWeight: "bold",
+    marginTop: 4,
+  },
   footer: {
     position: "absolute",
     bottom: 25,
@@ -175,9 +207,11 @@ const styles = StyleSheet.create({
 
 interface PatientPDFDocumentProps {
   patient: any;
+  organizationName?: string;
+  organizationLogoUrl?: string | null;
 }
 
-export default function PatientPDFDocument({ patient }: PatientPDFDocumentProps) {
+export default function PatientPDFDocument({ patient, organizationName, organizationLogoUrl }: PatientPDFDocumentProps) {
   const age = patient.dateOfBirth
     ? new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()
     : "N/A";
@@ -201,10 +235,11 @@ export default function PatientPDFDocument({ patient }: PatientPDFDocumentProps)
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header — fixed : répété identique sur chaque page */}
+        <View style={styles.header} fixed>
           <View style={styles.headerLeft}>
-            <Text style={styles.logo}>MedDoc</Text>
+            {organizationLogoUrl && <Image src={organizationLogoUrl} style={styles.logoImage} />}
+            <Text style={styles.logo}>{organizationName || "MedDoc"}</Text>
             <Text style={styles.subtitle}>Plateforme de Gestion Clinique & Hospitalière</Text>
           </View>
           <View style={styles.headerRight}>
@@ -362,10 +397,19 @@ export default function PatientPDFDocument({ patient }: PatientPDFDocumentProps)
           )}
         </View>
 
-        {/* Footer */}
-        <View style={styles.footer}>
+        {/* Signature du médecin */}
+        <View style={styles.signArea}>
+          <View style={styles.signBox}>
+            <Text style={styles.signTitle}>Signature du Médecin</Text>
+            <Text style={styles.signName}>Visa {organizationName || "MedDoc"}</Text>
+          </View>
+        </View>
+
+        {/* Footer — fixed + position absolute : répété identique en bas de chaque page, avec
+            un paddingBottom de page assez grand (60) pour que le contenu qui défile ne vienne
+            jamais chevaucher cette zone réservée. */}
+        <View style={styles.footer} fixed>
           <Text>Document Médical Confidentiel - MedDoc SaaS Platform</Text>
-          <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
         </View>
       </Page>
     </Document>

@@ -1,11 +1,14 @@
 "use client";
 
 import React from "react";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 
 const styles = StyleSheet.create({
   page: {
-    padding: 40,
+    paddingTop: 40,
+    paddingBottom: 60,
+    paddingLeft: 40,
+    paddingRight: 40,
     fontFamily: "Helvetica",
     color: "#334155",
     fontSize: 9,
@@ -21,6 +24,12 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     flexDirection: "column",
+  },
+  logoImage: {
+    width: 36,
+    height: 36,
+    objectFit: "contain",
+    marginBottom: 4,
   },
   logo: {
     fontSize: 16,
@@ -137,9 +146,11 @@ const styles = StyleSheet.create({
 interface CarePlanPDFDocumentProps {
   patient: any;
   plan: any;
+  organizationName?: string;
+  organizationLogoUrl?: string | null;
 }
 
-export default function CarePlanPDFDocument({ patient, plan }: CarePlanPDFDocumentProps) {
+export default function CarePlanPDFDocument({ patient, plan, organizationName, organizationLogoUrl }: CarePlanPDFDocumentProps) {
   const formattedStartDate = new Date(plan.startDate).toLocaleDateString("fr-FR", {
     day: "2-digit",
     month: "long",
@@ -157,10 +168,11 @@ export default function CarePlanPDFDocument({ patient, plan }: CarePlanPDFDocume
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Header */}
-        <View style={styles.header}>
+        {/* Header — fixed : répété identique sur chaque page */}
+        <View style={styles.header} fixed>
           <View style={styles.logoContainer}>
-            <Text style={styles.logo}>MedDoc</Text>
+            {organizationLogoUrl && <Image src={organizationLogoUrl} style={styles.logoImage} />}
+            <Text style={styles.logo}>{organizationName || "MedDoc"}</Text>
             <Text style={styles.subtitle}>Planification et Protocole Clinique</Text>
           </View>
           <View style={styles.titleContainer}>
@@ -258,10 +270,10 @@ export default function CarePlanPDFDocument({ patient, plan }: CarePlanPDFDocume
           )}
         </View>
 
-        {/* Footer */}
-        <View style={styles.footer}>
+        {/* Footer — fixed + position absolute : répété identique en bas de chaque page, avec
+            un paddingBottom de page assez grand (60) pour ne jamais chevaucher le contenu. */}
+        <View style={styles.footer} fixed>
           <Text>Document Médical Confidentiel - Coordination MedDoc</Text>
-          <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
         </View>
       </Page>
     </Document>

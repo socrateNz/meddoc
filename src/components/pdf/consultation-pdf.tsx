@@ -1,11 +1,14 @@
 "use client";
 
 import React from "react";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 
 const styles = StyleSheet.create({
   page: {
-    padding: 50,
+    paddingTop: 50,
+    paddingBottom: 90,
+    paddingLeft: 50,
+    paddingRight: 50,
     fontFamily: "Helvetica",
     color: "#1e293b",
     fontSize: 10,
@@ -21,6 +24,12 @@ const styles = StyleSheet.create({
   },
   clinicInfo: {
     flexDirection: "column",
+  },
+  logoImage: {
+    width: 38,
+    height: 38,
+    objectFit: "contain",
+    marginBottom: 4,
   },
   clinicName: {
     fontSize: 14,
@@ -146,9 +155,11 @@ const styles = StyleSheet.create({
 interface ConsultationPDFDocumentProps {
   patient: any;
   record: any;
+  organizationName?: string;
+  organizationLogoUrl?: string | null;
 }
 
-export default function ConsultationPDFDocument({ patient, record }: ConsultationPDFDocumentProps) {
+export default function ConsultationPDFDocument({ patient, record, organizationName, organizationLogoUrl }: ConsultationPDFDocumentProps) {
   const age = patient.dateOfBirth
     ? new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()
     : "N/A";
@@ -181,12 +192,12 @@ export default function ConsultationPDFDocument({ patient, record }: Consultatio
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Letterhead */}
-        <View style={styles.letterhead}>
+        {/* Letterhead — fixed : répété identique sur chaque page */}
+        <View style={styles.letterhead} fixed>
           <View style={styles.clinicInfo}>
-            <Text style={styles.clinicName}>MEDDOC CLINIQUE</Text>
+            {organizationLogoUrl && <Image src={organizationLogoUrl} style={styles.logoImage} />}
+            <Text style={styles.clinicName}>{organizationName || "MEDDOC - CENTRE MÉDICAL"}</Text>
             <Text style={styles.clinicSub}>Services de Soins Médicaux Coordonnés</Text>
-            <Text style={[styles.clinicSub, { marginTop: 1 }]}>Tél : 01 40 00 00 00 | contact@meddoc.fr</Text>
           </View>
           <View style={styles.docTitleContainer}>
             <Text style={styles.docTitle}>RAPPORT DE CONSULTATION</Text>
@@ -237,8 +248,10 @@ export default function ConsultationPDFDocument({ patient, record }: Consultatio
           </View>
         </View>
 
-        {/* Footer */}
-        <View style={styles.footer}>
+        {/* Footer — fixed + position absolute : répété identique en bas de chaque page, avec
+            un paddingBottom de page assez grand (90, ce footer tenant sur 2 lignes) pour ne
+            jamais chevaucher le contenu. */}
+        <View style={styles.footer} fixed>
           <Text>Ce document contient des informations médicales confidentielles soumises au secret professionnel.</Text>
           <Text style={{ marginTop: 2 }}>MedDoc SAS - Éditeur de Logiciels Médicaux Certifiés</Text>
         </View>

@@ -8,7 +8,7 @@ import { revalidatePath } from "next/cache";
 import { Role } from "@prisma/client";
 import { z } from "zod";
 
-const ALL_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.COORDINATOR, Role.MEDECIN, Role.CAREGIVER, Role.PHARMACIST, Role.FAMILY, Role.PATIENT];
+const ALL_ROLES: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.COORDINATOR, Role.MEDECIN, Role.CAREGIVER, Role.PHARMACIST, Role.CASHIER, Role.FAMILY, Role.PATIENT];
 
 function assertAdmin(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");

@@ -14,6 +14,7 @@ enum Role {
   MEDECIN
   CAREGIVER
   PHARMACIST
+  CASHIER
   FAMILY
   PATIENT
 }
@@ -76,40 +77,48 @@ enum PharmacyCategory {
 }
 
 model Organization {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String
-  type      OrgType
-  parentId  String?  @db.ObjectId
-  parent    Organization?  @relation("OrgHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  children  Organization[] @relation("OrgHierarchy")
-  
-  users     User[]
-  patients  Patient[]
-  wards     Ward[]
-  rooms     Room[]
-  beds      Bed[]
-  pharmacyItems PharmacyItem[]
+  id       String         @id @default(auto()) @map("_id") @db.ObjectId
+  name     String
+  type     OrgType
+  // Logo affiché sur tous les documents PDF générés pour cette clinique (reçus, ordonnances,
+  // rapports labo, dossiers patient...). Stocké en data URI (base64) directement plutôt que via
+  // un service de stockage externe : évite toute dépendance réseau/CDN pendant la génération du
+  // PDF (@react-pdf/renderer accepte un data URI nativement) et reste minuscule pour un simple
+  // logo redimensionné côté client avant l'envoi (cf. src/app/dashboard/clinics/[id]/settings).
+  logoUrl  String?
+  parentId String?        @db.ObjectId
+  parent   Organization?  @relation("OrgHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children Organization[] @relation("OrgHierarchy")
+
+  users                 User[]
+  patients              Patient[]
+  wards                 Ward[]
+  rooms                 Room[]
+  beds                  Bed[]
+  pharmacyItems         PharmacyItem[]
   financialTransactions FinancialTransaction[]
-  stockPurchases StockPurchase[]
-  inventoryCounts InventoryCount[]
-  pendingInvoices PendingInvoice[]
-  labOrders       LabOrder[]
-  labTests        LabTest[]
+  stockPurchases        StockPurchase[]
+  inventoryCounts       InventoryCount[]
+  pendingInvoices       PendingInvoice[]
+  labOrders             LabOrder[]
+  labTests              LabTest[]
   prescriptions         Prescription[]
   prescriptionTemplates PrescriptionTemplate[]
   suppliers             Supplier[]
   purchaseOrders        PurchaseOrder[]
+  cashRegisters         CashRegister[]
+  cashSessions          CashSession[]
 
-  plan                SubscriptionPlan @default(TRIAL)
-  subscriptionStatus  SubscriptionStatus @default(TRIALING)
-  licenseExpiresAt    DateTime?
-  stripeCustomerId    String?
-  maxClinics          Int @default(1)
-  maxUsers            Int @default(10)
-  isActive            Boolean @default(true)   // Permet à un ADMIN (holding) de suspendre une clinique
+  plan               SubscriptionPlan   @default(TRIAL)
+  subscriptionStatus SubscriptionStatus @default(TRIALING)
+  licenseExpiresAt   DateTime?
+  stripeCustomerId   String?
+  maxClinics         Int                @default(1)
+  maxUsers           Int                @default(10)
+  isActive           Boolean            @default(true) // Permet à un ADMIN (holding) de suspendre une clinique
 
-  paymentAmount       Float?              // Tarif actuel (FCFA), éditable à tout moment
-  paymentFrequency    PaymentFrequency?
+  paymentAmount    Float? // Tarif actuel (FCFA), éditable à tout moment
+  paymentFrequency PaymentFrequency?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -118,161 +127,164 @@ model Organization {
 }
 
 model User {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  email         String    @unique
-  passwordHash  String
-  firstName     String
-  lastName      String
-  role          Role
-  phone         String?
-  avatarUrl     String?
-  isActive               Boolean   @default(true)
-  requiresPasswordChange Boolean   @default(false)
+  id                     String   @id @default(auto()) @map("_id") @db.ObjectId
+  email                  String   @unique
+  passwordHash           String
+  firstName              String
+  lastName               String
+  role                   Role
+  phone                  String?
+  avatarUrl              String?
+  isActive               Boolean  @default(true)
+  requiresPasswordChange Boolean  @default(false)
   // Types de Notification (ex: "INCIDENT", "APPOINTMENT") que l'utilisateur a
   // désactivés depuis Paramètres > Notifications. Vide = tout est affiché.
-  mutedNotificationTypes String[]  @default([])
-  createdAt              DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  mutedNotificationTypes String[] @default([])
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
-  patientProfile      Patient?            @relation("UserPatient")
-  familyProfile       FamilyMember?       @relation("UserFamily")
-  caregiverProfile    Caregiver?          @relation("UserCaregiver")
-  coordinatorProfile  MedicalCoordinator? @relation("UserCoordinator")
+  patientProfile     Patient?            @relation("UserPatient")
+  familyProfile      FamilyMember?       @relation("UserFamily")
+  caregiverProfile   Caregiver?          @relation("UserCaregiver")
+  coordinatorProfile MedicalCoordinator? @relation("UserCoordinator")
 
-  auditLogs           AuditLog[]
-  messagesSent        Message[]           @relation("Sender")
-  conversations       ConversationParticipant[]
-  notifications       Notification[]
-  aiConversations     AIConversation[]
-  vitalsRecorded      VitalSign[]         @relation("RecordedVitals")
-  financialTransactions FinancialTransaction[] @relation("RecordedTransactions")
-  passwordResetTokens PasswordResetToken[]
-  stockPurchasesRecorded StockPurchase[]
-  inventoryCountsStarted InventoryCount[]
-  pendingInvoicesCreated PendingInvoice[] @relation("PendingInvoiceCreatedBy")
-  labOrdersOrdered      LabOrder[] @relation("LabOrderOrderedBy")
-  labOrdersSampleCollected LabOrder[] @relation("LabOrderSampleCollectedBy")
-  labResultsRecorded    LabResult[] @relation("LabResultRecordedBy")
-  labResultsValidated   LabResult[] @relation("LabResultValidatedBy")
-  medicalRecordsCreated MedicalRecord[] @relation("MedicalRecordCreatedBy")
-  prescriptionsWritten         Prescription[]         @relation("PrescriptionPrescribedBy")
-  prescriptionTemplatesCreated PrescriptionTemplate[]  @relation("PrescriptionTemplateCreatedBy")
-  purchaseOrdersCreated        PurchaseOrder[]         @relation("PurchaseOrderCreatedBy")
-  consultationDraftsCreated    ConsultationDraft[]     @relation("ConsultationDraftCreatedBy")
-  pregnanciesCreated           Pregnancy[]             @relation("PregnancyCreatedBy")
-  prenatalVisitsRecorded       PrenatalVisit[]          @relation("PrenatalVisitRecordedBy")
-  deliveriesRecorded           Delivery[]              @relation("DeliveryRecordedBy")
+  auditLogs                    AuditLog[]
+  messagesSent                 Message[]                 @relation("Sender")
+  conversations                ConversationParticipant[]
+  notifications                Notification[]
+  aiConversations              AIConversation[]
+  vitalsRecorded               VitalSign[]               @relation("RecordedVitals")
+  financialTransactions        FinancialTransaction[]    @relation("RecordedTransactions")
+  passwordResetTokens          PasswordResetToken[]
+  stockPurchasesRecorded       StockPurchase[]
+  inventoryCountsStarted       InventoryCount[]
+  pendingInvoicesCreated       PendingInvoice[]          @relation("PendingInvoiceCreatedBy")
+  labOrdersOrdered             LabOrder[]                @relation("LabOrderOrderedBy")
+  labOrdersSampleCollected     LabOrder[]                @relation("LabOrderSampleCollectedBy")
+  labResultsRecorded           LabResult[]               @relation("LabResultRecordedBy")
+  labResultsValidated          LabResult[]               @relation("LabResultValidatedBy")
+  medicalRecordsCreated        MedicalRecord[]           @relation("MedicalRecordCreatedBy")
+  prescriptionsWritten         Prescription[]            @relation("PrescriptionPrescribedBy")
+  prescriptionTemplatesCreated PrescriptionTemplate[]    @relation("PrescriptionTemplateCreatedBy")
+  purchaseOrdersCreated        PurchaseOrder[]           @relation("PurchaseOrderCreatedBy")
+  consultationDraftsCreated    ConsultationDraft[]       @relation("ConsultationDraftCreatedBy")
+  pregnanciesCreated           Pregnancy[]               @relation("PregnancyCreatedBy")
+  prenatalVisitsRecorded       PrenatalVisit[]           @relation("PrenatalVisitRecordedBy")
+  deliveriesRecorded           Delivery[]                @relation("DeliveryRecordedBy")
+  cashSessionsOpened           CashSession[]             @relation("CashSessionOpenedBy")
+  cashSessionsClosed           CashSession[]             @relation("CashSessionClosedBy")
+  prescriptionsDispensed       Prescription[]            @relation("PrescriptionDispensedBy")
 
-  organizationId      String?   @db.ObjectId
-  organization        Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId])
   @@index([organizationId, role])
 }
 
 model Patient {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String   @unique @db.ObjectId
-  user            User     @relation("UserPatient", fields: [userId], references: [id])
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @unique @db.ObjectId
+  user   User   @relation("UserPatient", fields: [userId], references: [id])
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  dateOfBirth     DateTime
-  address         String
+  dateOfBirth      DateTime
+  address          String
   emergencyContact String?
-  dependencyLevel Int      @default(1)
-  bloodType       String?  // ex: "O+", "AB-"
-  sex             String?  // ex: "M", "F", "Autre"
+  dependencyLevel  Int      @default(1)
+  bloodType        String? // ex: "O+", "AB-"
+  sex              String? // ex: "M", "F", "Autre"
 
-  status          String   @default("ADMITTED") // ADMITTED, DISCHARGED, ARCHIVED
+  status String @default("ADMITTED") // ADMITTED, DISCHARGED, ARCHIVED
 
-  pathologies     String[]
-  allergies       String[]
+  pathologies String[]
+  allergies   String[]
 
-  familyMembers   FamilyMember[]
-  carePlans       CarePlan[]
-  appointments    Appointment[]
-  incidents       Incident[]
-  medicalRecords  MedicalRecord[]
-  aiAnalyses      AIAnalysis[]
-  contracts       Contract[]
-  aiConversations AIConversation[]
-  vitalSigns      VitalSign[]
+  familyMembers         FamilyMember[]
+  carePlans             CarePlan[]
+  appointments          Appointment[]
+  incidents             Incident[]
+  medicalRecords        MedicalRecord[]
+  aiAnalyses            AIAnalysis[]
+  contracts             Contract[]
+  aiConversations       AIConversation[]
+  vitalSigns            VitalSign[]
   financialTransactions FinancialTransaction[]
-  pendingInvoices PendingInvoice[]
-  labOrders       LabOrder[]
-  prescriptions   Prescription[]
+  pendingInvoices       PendingInvoice[]
+  labOrders             LabOrder[]
+  prescriptions         Prescription[]
 
-  organizationId  String?   @db.ObjectId
-  organization    Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   // Pas de @unique ici : un index unique non-sparse sur MongoDB entre en conflit avec les
   // nombreux patients existants sans lit (bedId absent = traité comme null par Mongo pour
   // l'unicité, sauf index sparse — non exposé par le DSL Prisma pour ce connecteur). L'unicité
   // « un lit = au plus un patient » est donc garantie procéduralement par transaction
   // (cf. assignPatientToBed dans src/actions/wards.ts), pas au niveau du schéma.
-  bedId           String?   @db.ObjectId
-  bed             Bed?      @relation("PatientBed", fields: [bedId], references: [id])
+  bedId String? @db.ObjectId
+  bed   Bed?    @relation("PatientBed", fields: [bedId], references: [id])
 
   consultationDrafts ConsultationDraft[]
-  pregnancies     Pregnancy[]
+  pregnancies        Pregnancy[]
 
   @@index([organizationId])
   @@index([organizationId, updatedAt])
 }
 
 model FamilyMember {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String   @unique @db.ObjectId
-  user            User     @relation("UserFamily", fields: [userId], references: [id])
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @unique @db.ObjectId
+  user   User   @relation("UserFamily", fields: [userId], references: [id])
 
-  patientId       String   @db.ObjectId
-  patient         Patient  @relation(fields: [patientId], references: [id])
-  relationship    String
+  patientId    String  @db.ObjectId
+  patient      Patient @relation(fields: [patientId], references: [id])
+  relationship String
 
   @@index([patientId])
 }
 
 model Caregiver {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String   @unique @db.ObjectId
-  user            User     @relation("UserCaregiver", fields: [userId], references: [id])
-  
-  specialties     String[]
-  certifications  String[]
-  isAvailable     Boolean  @default(true)
-  licenseNumber   String?  // N° RPPS/Ordre — renseigné pour un MEDECIN, null pour un infirmier(e)
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @unique @db.ObjectId
+  user   User   @relation("UserCaregiver", fields: [userId], references: [id])
 
-  tasks           CareTask[]
-  appointments    Appointment[]
-  contracts       Contract[]
+  specialties    String[]
+  certifications String[]
+  isAvailable    Boolean  @default(true)
+  licenseNumber  String? // N° RPPS/Ordre — renseigné pour un MEDECIN, null pour un infirmier(e)
+
+  tasks        CareTask[]
+  appointments Appointment[]
+  contracts    Contract[]
 }
 
 model MedicalCoordinator {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String   @unique @db.ObjectId
-  user            User     @relation("UserCoordinator", fields: [userId], references: [id])
-  
-  managedPlans    CarePlan[]
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @unique @db.ObjectId
+  user   User   @relation("UserCoordinator", fields: [userId], references: [id])
+
+  managedPlans CarePlan[]
 }
 
 model MedicalRecord {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId       String   @db.ObjectId
-  patient         Patient  @relation(fields: [patientId], references: [id])
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  patientId String  @db.ObjectId
+  patient   Patient @relation(fields: [patientId], references: [id])
 
-  appointmentId   String?  @db.ObjectId
-  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+  appointmentId String?      @db.ObjectId
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
-  title           String
-  description     String
-  documentUrl     String?
-  diagnosisCode   String?  // Code ICD-10 (liste curatée, cf. src/lib/icd10-codes.ts)
-  diagnosisLabel  String?
-  createdById     String?  @db.ObjectId  // Optionnel : pas de backfill des dossiers historiques
-  createdBy       User?    @relation("MedicalRecordCreatedBy", fields: [createdById], references: [id])
-  createdAt       DateTime @default(now())
+  title          String
+  description    String
+  documentUrl    String?
+  diagnosisCode  String? // Code ICD-10 (liste curatée, cf. src/lib/icd10-codes.ts)
+  diagnosisLabel String?
+  createdById    String?  @db.ObjectId // Optionnel : pas de backfill des dossiers historiques
+  createdBy      User?    @relation("MedicalRecordCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime @default(now())
 
   pendingInvoices PendingInvoice[]
   labOrders       LabOrder[]
@@ -283,63 +295,63 @@ model MedicalRecord {
 }
 
 model CarePlan {
-  id               String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId        String   @db.ObjectId
-  patient          Patient  @relation(fields: [patientId], references: [id])
-  coordinatorId    String   @db.ObjectId
-  coordinator      MedicalCoordinator @relation(fields: [coordinatorId], references: [id])
+  id            String             @id @default(auto()) @map("_id") @db.ObjectId
+  patientId     String             @db.ObjectId
+  patient       Patient            @relation(fields: [patientId], references: [id])
+  coordinatorId String             @db.ObjectId
+  coordinator   MedicalCoordinator @relation(fields: [coordinatorId], references: [id])
 
   title            String
   startDate        DateTime
   endDate          DateTime?
-  status           String   @default("ACTIVE") // ACTIVE, COMPLETED, ARCHIVED
+  status           String    @default("ACTIVE") // ACTIVE, COMPLETED, ARCHIVED
   dischargeSummary String?
   completedAt      DateTime?
-  closedById       String?  @db.ObjectId
+  closedById       String?   @db.ObjectId
 
-  tasks            CareTask[]
-  medications      Medication[]
+  tasks       CareTask[]
+  medications Medication[]
 
   @@index([patientId])
   @@index([coordinatorId])
 }
 
 model CareTask {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  carePlanId      String   @db.ObjectId
-  carePlan        CarePlan @relation(fields: [carePlanId], references: [id])
-  caregiverId     String?  @db.ObjectId
-  caregiver       Caregiver? @relation(fields: [caregiverId], references: [id])
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  carePlanId  String     @db.ObjectId
+  carePlan    CarePlan   @relation(fields: [carePlanId], references: [id])
+  caregiverId String?    @db.ObjectId
+  caregiver   Caregiver? @relation(fields: [caregiverId], references: [id])
 
-  title           String
-  description     String?
-  scheduledFor    DateTime
-  status          String   @default("PENDING")
-  completedAt     DateTime?
+  title        String
+  description  String?
+  scheduledFor DateTime
+  status       String    @default("PENDING")
+  completedAt  DateTime?
 
   @@index([carePlanId])
   @@index([caregiverId])
 }
 
 model Medication {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  carePlanId      String   @db.ObjectId
-  carePlan        CarePlan @relation(fields: [carePlanId], references: [id])
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  carePlanId String   @db.ObjectId
+  carePlan   CarePlan @relation(fields: [carePlanId], references: [id])
 
-  name            String
-  dosage          String
-  frequency       String
-  instructions    String?
+  name         String
+  dosage       String
+  frequency    String
+  instructions String?
 
   @@index([carePlanId])
 }
 
 model Appointment {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId       String   @db.ObjectId
-  patient         Patient  @relation(fields: [patientId], references: [id])
-  caregiverId     String?  @db.ObjectId
-  caregiver       Caregiver? @relation(fields: [caregiverId], references: [id])
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  patientId   String     @db.ObjectId
+  patient     Patient    @relation(fields: [patientId], references: [id])
+  caregiverId String?    @db.ObjectId
+  caregiver   Caregiver? @relation(fields: [caregiverId], references: [id])
 
   title           String
   scheduledAt     DateTime
@@ -347,11 +359,11 @@ model Appointment {
   type            String
   status          String   @default("SCHEDULED")
 
-  prescriptions   Prescription[]
-  labOrders       LabOrder[]
+  prescriptions      Prescription[]
+  labOrders          LabOrder[]
   consultationDrafts ConsultationDraft[]
-  medicalRecords  MedicalRecord[]
-  vitalSigns      VitalSign[]
+  medicalRecords     MedicalRecord[]
+  vitalSigns         VitalSign[]
 
   @@index([patientId, scheduledAt])
   @@index([caregiverId, scheduledAt])
@@ -364,23 +376,23 @@ model Appointment {
 // pour le flux ad-hoc où aucun Appointment n'existe. Supprimé dès que la consultation
 // est clôturée avec succès (cf. completeConsultation).
 model ConsultationDraft {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId       String   @db.ObjectId
-  patient         Patient  @relation(fields: [patientId], references: [id])
-  appointmentId   String?  @db.ObjectId
-  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
-  createdById     String   @db.ObjectId
-  createdBy       User     @relation("ConsultationDraftCreatedBy", fields: [createdById], references: [id])
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  patientId     String       @db.ObjectId
+  patient       Patient      @relation(fields: [patientId], references: [id])
+  appointmentId String?      @db.ObjectId
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  createdById   String       @db.ObjectId
+  createdBy     User         @relation("ConsultationDraftCreatedBy", fields: [createdById], references: [id])
 
-  symptoms        String?
-  diagnosis       String?
-  plan            String?
-  diagnosisCode   String?
-  diagnosisLabel  String?
-  medications     Json?    // [{ name, dosage, frequency, instructions }]
+  symptoms       String?
+  diagnosis      String?
+  plan           String?
+  diagnosisCode  String?
+  diagnosisLabel String?
+  medications    Json? // [{ name, dosage, frequency, instructions }]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([appointmentId])
   @@index([patientId, createdById])
@@ -390,48 +402,48 @@ model ConsultationDraft {
 // sont une liste de libellés en texte libre), pour éviter d'avoir à gérer un référentiel
 // de tests en plus de ce périmètre.
 model LabOrder {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId       String   @db.ObjectId
-  patient         Patient  @relation(fields: [patientId], references: [id])
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  patientId String  @db.ObjectId
+  patient   Patient @relation(fields: [patientId], references: [id])
 
-  medicalRecordId String?  @db.ObjectId
+  medicalRecordId String?        @db.ObjectId
   medicalRecord   MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
 
-  appointmentId   String?  @db.ObjectId
-  appointment     Appointment? @relation(fields: [appointmentId], references: [id])
+  appointmentId String?      @db.ObjectId
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
-  organizationId  String?  @db.ObjectId
-  organization    Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  tests           String[] // Libellés des analyses demandées (ex: "NFS", "Glycémie à jeun") — catalogué ou libre
-  notes           String?  // Indications cliniques / contexte transmis au laboratoire
+  tests    String[] // Libellés des analyses demandées (ex: "NFS", "Glycémie à jeun") — catalogué ou libre
+  notes    String? // Indications cliniques / contexte transmis au laboratoire
   // Cycle de vie complet : PRESCRIBED, SAMPLE_COLLECTED, RECEIVED_AT_LAB, IN_ANALYSIS,
   // TO_VALIDATE, VALIDATED, DELIVERED, CANCELLED (cf. src/actions/lab.ts pour les transitions).
-  status          String   @default("PRESCRIBED")
-  priority        String   @default("ROUTINE")  // ROUTINE, URGENT
+  status   String   @default("PRESCRIBED")
+  priority String   @default("ROUTINE") // ROUTINE, URGENT
 
   // Statut de règlement, orthogonal au statut de workflow labo ci-dessus : NOT_REQUIRED
   // (aucun examen de la demande n'exige la caisse d'abord), PENDING (bloque collectSample),
   // PAID (facture liée finalisée — cf. finalizePendingInvoice dans src/actions/finance.ts).
-  paymentStatus    String   @default("NOT_REQUIRED")
-  pendingInvoiceId String?  @db.ObjectId
+  paymentStatus    String          @default("NOT_REQUIRED")
+  pendingInvoiceId String?         @db.ObjectId
   pendingInvoice   PendingInvoice? @relation("LabOrderInvoice", fields: [pendingInvoiceId], references: [id])
 
-  orderedById     String   @db.ObjectId
-  orderedBy       User     @relation("LabOrderOrderedBy", fields: [orderedById], references: [id])
+  orderedById String @db.ObjectId
+  orderedBy   User   @relation("LabOrderOrderedBy", fields: [orderedById], references: [id])
 
   // Prélèvement
-  sampleType          String?   // BLOOD, URINE, STOOL, SALIVA, BIOPSY, CSF, OTHER
+  sampleType          String? // BLOOD, URINE, STOOL, SALIVA, BIOPSY, CSF, OTHER
   sampleCollectedAt   DateTime?
   sampleCollectedById String?   @db.ObjectId
   sampleCollectedBy   User?     @relation("LabOrderSampleCollectedBy", fields: [sampleCollectedById], references: [id])
   sampleQuantity      String?
   sampleCondition     String?
 
-  results         LabResult[]
+  results LabResult[]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([patientId, createdAt])
   @@index([organizationId, createdAt])
@@ -442,27 +454,27 @@ model LabOrder {
 }
 
 model LabResult {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  labOrderId      String   @db.ObjectId
-  labOrder        LabOrder @relation(fields: [labOrderId], references: [id])
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  labOrderId String   @db.ObjectId
+  labOrder   LabOrder @relation(fields: [labOrderId], references: [id])
 
-  testName        String
-  value           String
-  unit            String?
-  referenceRange  String?
-  isAbnormal      Boolean  @default(false)
-  notes           String?
+  testName       String
+  value          String
+  unit           String?
+  referenceRange String?
+  isAbnormal     Boolean @default(false)
+  notes          String?
 
-  recordedById    String   @db.ObjectId
-  recordedBy      User     @relation("LabResultRecordedBy", fields: [recordedById], references: [id])
+  recordedById String @db.ObjectId
+  recordedBy   User   @relation("LabResultRecordedBy", fields: [recordedById], references: [id])
 
   // Validation biologique (maker-checker) : une fois posé, le résultat est verrouillé —
   // src/actions/lab.ts refuse toute modification directe, pas seulement l'UI.
-  validatedById   String?   @db.ObjectId
-  validatedBy     User?     @relation("LabResultValidatedBy", fields: [validatedById], references: [id])
-  validatedAt     DateTime?
+  validatedById String?   @db.ObjectId
+  validatedBy   User?     @relation("LabResultValidatedBy", fields: [validatedById], references: [id])
+  validatedAt   DateTime?
 
-  createdAt       DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([labOrderId])
 }
@@ -471,87 +483,87 @@ model LabResult {
 // restent en texte libre — une correspondance par nom avec un LabTest actif permet de
 // facturer automatiquement et de détecter les valeurs critiques (cf. Phases B et E).
 model LabTest {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  id              String  @id @default(auto()) @map("_id") @db.ObjectId
   name            String
-  department      String?  // ex: "Hématologie", "Biochimie"
+  department      String? // ex: "Hématologie", "Biochimie"
   durationMinutes Int?
-  criticalLow     Float?   // Seuil bas critique (examens à résultat numérique uniquement)
-  criticalHigh    Float?   // Seuil haut critique
-  consumables     Json?    // Recette de consommables annexes : [{ pharmacyItemId, name, quantity }]
+  criticalLow     Float? // Seuil bas critique (examens à résultat numérique uniquement)
+  criticalHigh    Float? // Seuil haut critique
+  consumables     Json? // Recette de consommables annexes : [{ pharmacyItemId, name, quantity }]
 
   // Le prix n'est plus saisi manuellement : il vient de pharmacyItem.unitPrice. Le produit
   // représente l'examen lui-même (kit, réactif, bandelette...) et est décompté du stock à
   // chaque prélèvement, comme les consommables mais séparément.
-  pharmacyItemId       String?  @db.ObjectId
+  pharmacyItemId       String?       @db.ObjectId
   pharmacyItem         PharmacyItem? @relation("LabTestProduct", fields: [pharmacyItemId], references: [id])
   // true (défaut) = la demande attend le règlement en caisse avant de partir au labo ;
   // false = part directement au labo (examens urgents/critiques).
-  requiresPaymentFirst Boolean  @default(true)
+  requiresPaymentFirst Boolean       @default(true)
 
-  organizationId  String?  @db.ObjectId
-  organization    Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId, isActive])
 }
 
 model Incident {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId       String   @db.ObjectId
-  patient         Patient  @relation(fields: [patientId], references: [id])
-  reportedById    String   @db.ObjectId
+  id           String  @id @default(auto()) @map("_id") @db.ObjectId
+  patientId    String  @db.ObjectId
+  patient      Patient @relation(fields: [patientId], references: [id])
+  reportedById String  @db.ObjectId
 
-  title           String
-  description     String
-  priority        Priority @default(MEDIUM)
-  status          IncidentStatus @default(OPEN)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  title       String
+  description String
+  priority    Priority       @default(MEDIUM)
+  status      IncidentStatus @default(OPEN)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
   @@index([patientId, createdAt])
 }
 
 model Message {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  conversationId  String   @db.ObjectId
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  senderId        String   @db.ObjectId
-  sender          User     @relation("Sender", fields: [senderId], references: [id])
-  
-  content         String
-  attachmentUrl   String?
-  createdAt       DateTime @default(now())
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String       @db.ObjectId
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  senderId       String       @db.ObjectId
+  sender         User         @relation("Sender", fields: [senderId], references: [id])
+
+  content       String
+  attachmentUrl String?
+  createdAt     DateTime @default(now())
 
   @@index([conversationId, createdAt])
 }
 
 model Conversation {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  title           String?
-  createdAt       DateTime @default(now())
-  
-  participants    ConversationParticipant[]
-  messages        Message[]
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  title     String?
+  createdAt DateTime @default(now())
+
+  participants ConversationParticipant[]
+  messages     Message[]
 }
 
 model ConversationParticipant {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  conversationId  String   @db.ObjectId
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  userId          String   @db.ObjectId
-  user            User     @relation(fields: [userId], references: [id])
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String       @db.ObjectId
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  userId         String       @db.ObjectId
+  user           User         @relation(fields: [userId], references: [id])
 
   @@index([conversationId])
   @@index([userId])
 }
 
 model AIAnalysis {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId       String   @db.ObjectId
-  patient         Patient  @relation(fields: [patientId], references: [id])
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  patientId String  @db.ObjectId
+  patient   Patient @relation(fields: [patientId], references: [id])
 
   riskScore       Int
   riskFactors     String[]
@@ -563,92 +575,92 @@ model AIAnalysis {
 }
 
 model AuditLog {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId          String   @db.ObjectId
-  user            User     @relation(fields: [userId], references: [id])
-  action          String
-  entityType      String
-  entityId        String
-  details         String?
-  createdAt       DateTime @default(now())
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  user       User     @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  details    String?
+  createdAt  DateTime @default(now())
 
   @@index([userId, createdAt])
   @@index([entityType, entityId])
 }
 
 model Permission {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  name        String   @unique
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  name        String  @unique
   description String?
   roles       Role[]
 }
 
 model Notification {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id])
-  title       String
-  message     String
-  isRead      Boolean  @default(false)
-  type        String   @default("INFO")
-  createdAt   DateTime @default(now())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  type      String   @default("INFO")
+  createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
 }
 
 model Contract {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId   String   @db.ObjectId
-  patient     Patient  @relation(fields: [patientId], references: [id])
-  caregiverId String?  @db.ObjectId
+  id          String     @id @default(auto()) @map("_id") @db.ObjectId
+  patientId   String     @db.ObjectId
+  patient     Patient    @relation(fields: [patientId], references: [id])
+  caregiverId String?    @db.ObjectId
   caregiver   Caregiver? @relation(fields: [caregiverId], references: [id])
 
-  title       String
-  status      String   @default("ACTIVE")
-  startDate   DateTime
-  endDate     DateTime?
-  hourlyRate  Float
+  title        String
+  status       String    @default("ACTIVE")
+  startDate    DateTime
+  endDate      DateTime?
+  hourlyRate   Float
   hoursPerWeek Int
-  documentUrl String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  documentUrl  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([patientId])
   @@index([caregiverId])
 }
 
 model AIConversation {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String   @db.ObjectId
-  user        User     @relation(fields: [userId], references: [id])
-  patientId   String?  @db.ObjectId
-  patient     Patient? @relation(fields: [patientId], references: [id])
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  patientId String?  @db.ObjectId
+  patient   Patient? @relation(fields: [patientId], references: [id])
 
-  title       String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  messages    AIMessage[]
+  title     String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  messages  AIMessage[]
 
   @@index([userId, createdAt])
   @@index([patientId])
 }
 
 model AIMessage {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  conversationId String   @db.ObjectId
+  id             String         @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String         @db.ObjectId
   conversation   AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  role           String
-  content        String
-  createdAt      DateTime @default(now())
+  role      String
+  content   String
+  createdAt DateTime @default(now())
 
   @@index([conversationId])
 }
 
 model Ward {
   id             String       @id @default(auto()) @map("_id") @db.ObjectId
-  name           String       // Nom d'affichage: "Urgences", "Soins Intensifs", "Maternité"...
-  code           String       // Code unique: "EMERGENCY", "ICU", "SURGERY", "MATERNITY"...
+  name           String // Nom d'affichage: "Urgences", "Soins Intensifs", "Maternité"...
+  code           String // Code unique: "EMERGENCY", "ICU", "SURGERY", "MATERNITY"...
   organizationId String       @db.ObjectId
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   rooms          Room[]
@@ -662,10 +674,10 @@ model Ward {
 
 model Room {
   id             String       @id @default(auto()) @map("_id") @db.ObjectId
-  name           String       // ex: "Chambre 12", "Box 3"
+  name           String // ex: "Chambre 12", "Box 3"
   wardId         String       @db.ObjectId
   ward           Ward         @relation(fields: [wardId], references: [id], onDelete: Cascade)
-  organizationId String       @db.ObjectId  // dénormalisé depuis ward.organizationId — scoping direct
+  organizationId String       @db.ObjectId // dénormalisé depuis ward.organizationId — scoping direct
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   beds           Bed[]
   createdAt      DateTime     @default(now())
@@ -681,12 +693,12 @@ model Room {
 // toute écriture le synchronise avec Patient.bedId dans la même transaction (cf. assignPatientToBed).
 model Bed {
   id             String       @id @default(auto()) @map("_id") @db.ObjectId
-  label          String       // ex: "A", "1", "Lit 2" — unique dans sa chambre
+  label          String // ex: "A", "1", "Lit 2" — unique dans sa chambre
   roomId         String       @db.ObjectId
   room           Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  wardId         String       @db.ObjectId  // dénormalisé depuis room.wardId
+  wardId         String       @db.ObjectId // dénormalisé depuis room.wardId
   ward           Ward         @relation(fields: [wardId], references: [id], onDelete: Cascade)
-  organizationId String       @db.ObjectId  // dénormalisé depuis room.organizationId
+  organizationId String       @db.ObjectId // dénormalisé depuis room.organizationId
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   status         String       @default("AVAILABLE") // AVAILABLE, OCCUPIED
   // Tableau (pas une valeur unique) : évite d'exiger un @unique côté Patient.bedId (cf. commentaire
@@ -705,69 +717,69 @@ model Bed {
 // Suivi de grossesse — scopé patient (comme CarePlan/VitalSign), pas d'organizationId propre :
 // pas de vue clinique transverse dans ce périmètre, tout se lit via la fiche patiente.
 model Pregnancy {
-  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId           String   @db.ObjectId
-  patient             Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  patientId String  @db.ObjectId
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
   lastMenstrualPeriod DateTime // DDR — date des dernières règles
   expectedDueDate     DateTime // DPA — date prévue d'accouchement, éditable (redatage échographique)
-  gravidity           Int      // G — nombre total de grossesses
-  parity              Int      // P — nombre d'accouchements antérieurs
+  gravidity           Int // G — nombre total de grossesses
+  parity              Int // P — nombre d'accouchements antérieurs
   riskFactors         String[] @default([])
   status              String   @default("ACTIVE") // ACTIVE, DELIVERED, MISCARRIED, TERMINATED
 
-  createdById         String   @db.ObjectId
-  createdBy           User     @relation("PregnancyCreatedBy", fields: [createdById], references: [id])
+  createdById String @db.ObjectId
+  createdBy   User   @relation("PregnancyCreatedBy", fields: [createdById], references: [id])
 
-  prenatalVisits      PrenatalVisit[]
-  delivery            Delivery?
+  prenatalVisits PrenatalVisit[]
+  delivery       Delivery?
 
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([patientId, status])
   @@index([createdById])
 }
 
 model PrenatalVisit {
-  id                     String    @id @default(auto()) @map("_id") @db.ObjectId
-  pregnancyId            String    @db.ObjectId
-  pregnancy              Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  pregnancyId String    @db.ObjectId
+  pregnancy   Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
 
-  visitDate              DateTime  @default(now())
-  gestationalWeeks       Int?      // âge gestationnel au moment de la visite (semaines)
+  visitDate              DateTime @default(now())
+  gestationalWeeks       Int? // âge gestationnel au moment de la visite (semaines)
   weightKg               Float?
   bloodPressureSystolic  Int?
   bloodPressureDiastolic Int?
-  fundalHeightCm         Float?    // hauteur utérine
-  fetalHeartRateBpm      Int?      // BCF
+  fundalHeightCm         Float? // hauteur utérine
+  fetalHeartRateBpm      Int? // BCF
   notes                  String?
 
-  recordedById           String    @db.ObjectId
-  recordedBy             User      @relation("PrenatalVisitRecordedBy", fields: [recordedById], references: [id])
+  recordedById String @db.ObjectId
+  recordedBy   User   @relation("PrenatalVisitRecordedBy", fields: [recordedById], references: [id])
 
-  createdAt              DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([pregnancyId])
   @@index([recordedById])
 }
 
 model Delivery {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  pregnancyId   String    @unique @db.ObjectId // une grossesse => au plus un accouchement
-  pregnancy     Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  pregnancyId String    @unique @db.ObjectId // une grossesse => au plus un accouchement
+  pregnancy   Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
 
-  deliveredAt   DateTime  @default(now())
-  mode          String    // VAGINAL, C_SECTION, ASSISTED
-  complications String[]  @default([])
+  deliveredAt   DateTime @default(now())
+  mode          String // VAGINAL, C_SECTION, ASSISTED
+  complications String[] @default([])
   notes         String?
 
-  newborns      Newborn[]
+  newborns Newborn[]
 
-  recordedById  String    @db.ObjectId
-  recordedBy    User      @relation("DeliveryRecordedBy", fields: [recordedById], references: [id])
+  recordedById String @db.ObjectId
+  recordedBy   User   @relation("DeliveryRecordedBy", fields: [recordedById], references: [id])
 
-  createdAt     DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   @@index([recordedById])
 }
@@ -775,38 +787,38 @@ model Delivery {
 // Pas de lien vers Patient/User : ouvrir un dossier patient pour un nouveau-né exigerait un
 // compte User (Patient.userId est requis et unique) — hors périmètre pour un relevé de naissance.
 model Newborn {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  deliveryId  String   @db.ObjectId
-  delivery    Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  deliveryId String   @db.ObjectId
+  delivery   Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
 
-  sex         String   // M, F, Indéterminé
+  sex         String // M, F, Indéterminé
   weightGrams Int
-  apgarScore1 Int?     // score d'Apgar à 1 minute
-  apgarScore5 Int?     // score d'Apgar à 5 minutes
-  vitalStatus String   @default("LIVE_BIRTH") // LIVE_BIRTH, STILLBIRTH
+  apgarScore1 Int? // score d'Apgar à 1 minute
+  apgarScore5 Int? // score d'Apgar à 5 minutes
+  vitalStatus String  @default("LIVE_BIRTH") // LIVE_BIRTH, STILLBIRTH
   notes       String?
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([deliveryId])
 }
 
 model VitalSign {
-  id               String   @id @default(auto()) @map("_id") @db.ObjectId
-  patientId        String   @db.ObjectId
-  patient          Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  recordedById     String   @db.ObjectId
-  recordedBy       User     @relation("RecordedVitals", fields: [recordedById], references: [id])
-  appointmentId    String?  @db.ObjectId
-  appointment      Appointment? @relation(fields: [appointmentId], references: [id])
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  patientId     String       @db.ObjectId
+  patient       Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  recordedById  String       @db.ObjectId
+  recordedBy    User         @relation("RecordedVitals", fields: [recordedById], references: [id])
+  appointmentId String?      @db.ObjectId
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
-  temperature      Float?   // Degrés Celsius (ex: 37.5)
-  bloodPressure    String?  // Systolique/Diastolique (ex: "120/80")
-  heartRate        Int?     // BPM (ex: 72)
-  oxygenSaturation Int?     // SpO2 % (ex: 98)
-  bloodSugar       Float?   // g/L (ex: 1.05)
-  weight           Float?   // kg (ex: 70.5)
-  painScore        Int?     // Échelle 0-10
+  temperature      Float? // Degrés Celsius (ex: 37.5)
+  bloodPressure    String? // Systolique/Diastolique (ex: "120/80")
+  heartRate        Int? // BPM (ex: 72)
+  oxygenSaturation Int? // SpO2 % (ex: 98)
+  bloodSugar       Float? // g/L (ex: 1.05)
+  weight           Float? // kg (ex: 70.5)
+  painScore        Int? // Échelle 0-10
   notes            String?
   createdAt        DateTime @default(now())
 
@@ -815,30 +827,30 @@ model VitalSign {
 }
 
 model PharmacyItem {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
   name           String
-  dosage         String?  // ex: "500mg, Comprimé"
+  dosage         String? // ex: "500mg, Comprimé"
   category       PharmacyCategory @default(MEDICATION)
-  stockQuantity  Int      @default(0)
-  reorderLevel   Int      @default(10)
-  unitPrice      Float    // Prix unitaire en FCFA
-  batchNumber    String?  // Numéro de lot
+  stockQuantity  Int              @default(0)
+  reorderLevel   Int              @default(10)
+  unitPrice      Float // Prix unitaire en FCFA
+  batchNumber    String? // Numéro de lot
   expiryDate     DateTime? // Date de péremption
-  supplier       String?  // Fournisseur
-  location       String?  // Rayon / Emplacement
-  organizationId String?  @db.ObjectId
-  organization   Organization? @relation(fields: [organizationId], references: [id])
+  supplier       String? // Fournisseur
+  location       String? // Rayon / Emplacement
+  organizationId String?          @db.ObjectId
+  organization   Organization?    @relation(fields: [organizationId], references: [id])
 
-  transactions   FinancialTransaction[]
-  stockPurchases StockPurchase[]
-  stockAdjustments StockAdjustment[]
-  inventoryLines InventoryCountLine[]
-  prescriptionItems PrescriptionItem[]
+  transactions       FinancialTransaction[]
+  stockPurchases     StockPurchase[]
+  stockAdjustments   StockAdjustment[]
+  inventoryLines     InventoryCountLine[]
+  prescriptionItems  PrescriptionItem[]
   purchaseOrderLines PurchaseOrderLine[]
-  labTests       LabTest[] @relation("LabTestProduct")
+  labTests           LabTest[]              @relation("LabTestProduct")
 
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId])
 }
@@ -848,26 +860,26 @@ model PharmacyItem {
 // les ventes et les ajustements d'inventaire, ce qui permet de valoriser le
 // stock restant aux prix réellement payés plutôt qu'à un prix moyen unique.
 model StockPurchase {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
-  pharmacyItemId    String   @db.ObjectId
-  pharmacyItem      PharmacyItem @relation(fields: [pharmacyItemId], references: [id])
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  pharmacyItemId String       @db.ObjectId
+  pharmacyItem   PharmacyItem @relation(fields: [pharmacyItemId], references: [id])
 
   quantity          Int
   remainingQuantity Int
-  purchasePrice     Float    // Prix d'achat unitaire de ce lot précis (FCFA)
+  purchasePrice     Float // Prix d'achat unitaire de ce lot précis (FCFA)
   totalCost         Float
 
-  supplier          String?
-  batchNumber       String?
-  expiryDate        DateTime?
-  invoiceRef        String?
+  supplier    String?
+  batchNumber String?
+  expiryDate  DateTime?
+  invoiceRef  String?
 
-  purchasedById     String   @db.ObjectId
-  purchasedBy       User     @relation(fields: [purchasedById], references: [id])
-  organizationId    String?  @db.ObjectId
-  organization      Organization? @relation(fields: [organizationId], references: [id])
+  purchasedById  String        @db.ObjectId
+  purchasedBy    User          @relation(fields: [purchasedById], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  createdAt         DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([pharmacyItemId, createdAt])
   @@index([organizationId])
@@ -876,50 +888,50 @@ model StockPurchase {
 // Correction de stock issue d'un inventaire (ou d'un ajustement manuel).
 // quantityDelta négatif = perte, positif = surplus retrouvé.
 model StockAdjustment {
-  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
-  pharmacyItemId       String   @db.ObjectId
+  id                   String       @id @default(auto()) @map("_id") @db.ObjectId
+  pharmacyItemId       String       @db.ObjectId
   pharmacyItem         PharmacyItem @relation(fields: [pharmacyItemId], references: [id])
-  inventoryCountLineId String?  @db.ObjectId
+  inventoryCountLineId String?      @db.ObjectId
 
-  quantityDelta        Int
-  valuationAmount      Float?
-  reason               String   @default("INVENTORY") // INVENTORY, MANUAL
+  quantityDelta   Int
+  valuationAmount Float?
+  reason          String @default("INVENTORY") // INVENTORY, MANUAL
 
-  createdById          String   @db.ObjectId
-  createdAt            DateTime @default(now())
+  createdById String   @db.ObjectId
+  createdAt   DateTime @default(now())
 
   @@index([pharmacyItemId])
 }
 
 model InventoryCount {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  organizationId String   @db.ObjectId
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
   organization   Organization @relation(fields: [organizationId], references: [id])
-  status         String   @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+  status         String       @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
 
-  startedById    String   @db.ObjectId
-  startedBy      User     @relation(fields: [startedById], references: [id])
-  completedAt    DateTime?
-  notes          String?
+  startedById String    @db.ObjectId
+  startedBy   User      @relation(fields: [startedById], references: [id])
+  completedAt DateTime?
+  notes       String?
 
-  lines          InventoryCountLine[]
-  createdAt      DateTime @default(now())
+  lines     InventoryCountLine[]
+  createdAt DateTime             @default(now())
 
   @@index([organizationId])
 }
 
 model InventoryCountLine {
-  id               String   @id @default(auto()) @map("_id") @db.ObjectId
-  inventoryCountId String   @db.ObjectId
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  inventoryCountId String         @db.ObjectId
   inventoryCount   InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
-  pharmacyItemId   String   @db.ObjectId
-  pharmacyItem     PharmacyItem @relation(fields: [pharmacyItemId], references: [id])
+  pharmacyItemId   String         @db.ObjectId
+  pharmacyItem     PharmacyItem   @relation(fields: [pharmacyItemId], references: [id])
 
-  systemQuantity   Int
-  countedQuantity  Int?
-  unitCost         Float?
+  systemQuantity  Int
+  countedQuantity Int?
+  unitCost        Float?
 
-  createdAt        DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([inventoryCountId])
   @@index([pharmacyItemId])
@@ -936,76 +948,150 @@ model ContactMessage {
 }
 
 model PasswordResetToken {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId    String   @db.ObjectId
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String    @db.ObjectId
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
 
+// Une caisse physique d'une clinique (guichet). Opérée par sessions successives —
+// cf. CashSession — jamais directement : encaisser exige toujours une session OPEN.
+model CashRegister {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  organizationId String        @db.ObjectId
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  isActive       Boolean       @default(true)
+  sessions       CashSession[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+// Un service (shift) de caissier sur une caisse donnée : ouverte avec un fond de caisse,
+// fermée avec un comptage — l'écart (countedAmount - expectedAmount) n'est jamais persisté,
+// il est recalculé à la lecture à partir des FinancialTransaction/PendingInvoice liés
+// (cf. getSessionSummary dans src/actions/registers.ts) pour ne jamais devenir périmé.
+model CashSession {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  registerId     String       @db.ObjectId
+  register       CashRegister @relation(fields: [registerId], references: [id], onDelete: Cascade)
+  organizationId String       @db.ObjectId // dénormalisé depuis register.organizationId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  openedById   String   @db.ObjectId
+  openedBy     User     @relation("CashSessionOpenedBy", fields: [openedById], references: [id])
+  openedAt     DateTime @default(now())
+  openingFloat Float    @default(0)
+
+  closedById    String?   @db.ObjectId
+  closedBy      User?     @relation("CashSessionClosedBy", fields: [closedById], references: [id])
+  closedAt      DateTime?
+  countedAmount Float?
+  notes         String?
+
+  status String @default("OPEN") // OPEN, CLOSED
+
+  transactions    FinancialTransaction[]
+  pendingInvoices PendingInvoice[]
+
+  @@index([registerId, status])
+  @@index([organizationId, status])
+}
+
 model FinancialTransaction {
-  id             String              @id @default(auto()) @map("_id") @db.ObjectId
-  type           TransactionType
-  category       TransactionCategory @default(OTHER)
-  amount         Float               // Montant en FCFA
-  description    String              // Motif / Libellé de l'opération
-  
-  patientId      String?             @db.ObjectId
-  patient        Patient?            @relation(fields: [patientId], references: [id])
-  
-  pharmacyItemId String?             @db.ObjectId
-  pharmacyItem   PharmacyItem?       @relation(fields: [pharmacyItemId], references: [id])
-  quantity       Int?                // Pour les ventes de pharmacie
+  id          String              @id @default(auto()) @map("_id") @db.ObjectId
+  type        TransactionType
+  category    TransactionCategory @default(OTHER)
+  amount      Float // Montant en FCFA
+  description String // Motif / Libellé de l'opération
 
-  recordedById   String              @db.ObjectId
-  recordedBy     User                @relation("RecordedTransactions", fields: [recordedById], references: [id])
+  patientId String?  @db.ObjectId
+  patient   Patient? @relation(fields: [patientId], references: [id])
 
-  organizationId String?             @db.ObjectId
-  organization   Organization?       @relation(fields: [organizationId], references: [id])
+  pharmacyItemId String?       @db.ObjectId
+  pharmacyItem   PharmacyItem? @relation(fields: [pharmacyItemId], references: [id])
+  quantity       Int? // Pour les ventes de pharmacie
 
-  createdAt      DateTime            @default(now())
+  recordedById String @db.ObjectId
+  recordedBy   User   @relation("RecordedTransactions", fields: [recordedById], references: [id])
+
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  // Rattachement à la session de caisse qui l'a encaissée — présent uniquement pour les
+  // encaissements/dépenses passés par la caisse (payPendingInvoice, createCaisseSale,
+  // recordExpense) ; absent pour les mouvements hors-session (achats/ajustements de stock).
+  cashSessionId String?      @db.ObjectId
+  cashSession   CashSession? @relation(fields: [cashSessionId], references: [id])
+
+  pendingInvoices PendingInvoice[]
+
+  createdAt DateTime @default(now())
 
   @@index([organizationId, createdAt])
   @@index([patientId])
   @@index([pharmacyItemId])
+  @@index([cashSessionId])
 }
 
-// Facture générée automatiquement à la clôture d'une consultation par un CAREGIVER
-// (qui n'a pas accès à la caisse) ; un COORDINATOR/PHARMACIST la finalise ensuite
-// en FinancialTransaction via recordMultiItemInvoice.
+// Facture émise à la caisse : PENDING (en attente de règlement — générée automatiquement à la
+// clôture d'une consultation par un CAREGIVER, une demande labo, ou un envoi d'ordonnance à la
+// pharmacie) -> PAID (réglée par un CASHIER/COORDINATOR via payPendingInvoice/createCaisseSale,
+// FinancialTransaction émise, ticket imprimable — le stock n'est PAS encore touché) ->
+// DISPENSED (un PHARMACIST a remis les articles au comptoir pharmacie via
+// dispensePendingInvoice, stock décrémenté à ce moment précis). Une facture sans ligne
+// PHARMACY reste terminale à PAID — rien à dispenser.
 model PendingInvoice {
-  id                      String         @id @default(auto()) @map("_id") @db.ObjectId
-  status                  String         @default("PENDING") // PENDING, FINALIZED
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  status String @default("PENDING") // PENDING, PAID, DISPENSED
 
-  patientId               String         @db.ObjectId
-  patient                 Patient        @relation(fields: [patientId], references: [id])
+  patientId String  @db.ObjectId
+  patient   Patient @relation(fields: [patientId], references: [id])
 
-  medicalRecordId         String?        @db.ObjectId
-  medicalRecord           MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
+  medicalRecordId String?        @db.ObjectId
+  medicalRecord   MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
 
-  organizationId          String?        @db.ObjectId
-  organization            Organization?  @relation(fields: [organizationId], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  items                   Json           // Même forme que le panier de recordMultiItemInvoice
+  items Json // Même forme que le panier de recordMultiItemInvoice
 
-  createdById             String         @db.ObjectId
-  createdBy               User           @relation("PendingInvoiceCreatedBy", fields: [createdById], references: [id])
+  createdById String @db.ObjectId
+  createdBy   User   @relation("PendingInvoiceCreatedBy", fields: [createdById], references: [id])
 
-  financialTransactionId  String?        @db.ObjectId
+  // Rattachement à la session de caisse qui a encaissé le règlement (posé par payPendingInvoice/
+  // createCaisseSale, jamais avant).
+  cashSessionId String?      @db.ObjectId
+  cashSession   CashSession? @relation(fields: [cashSessionId], references: [id])
 
-  createdAt               DateTime       @default(now())
-  finalizedAt             DateTime?
+  // Pas de @unique ici : plusieurs PendingInvoice existants n'ont pas encore de transaction liée
+  // (status PENDING), et un index unique non-sparse sur MongoDB entrerait en conflit avec ces
+  // nombreuses valeurs null — même raison que Patient.bedId ci-dessus. L'unicité « une transaction
+  // = au plus une facture » est garantie procéduralement (elle n'est posée qu'une fois, à la
+  // création de la FinancialTransaction dans payPendingInvoice/createCaisseSale).
+  financialTransactionId String?               @db.ObjectId
+  financialTransaction   FinancialTransaction? @relation(fields: [financialTransactionId], references: [id])
 
-  prescriptions           Prescription[]
-  labOrders               LabOrder[]     @relation("LabOrderInvoice")
+  createdAt   DateTime  @default(now())
+  paidAt      DateTime?
+  dispensedAt DateTime?
+  finalizedAt DateTime? // Historique (pré-caisse) — non écrit par le nouveau flux, cf. paidAt
+
+  prescriptions Prescription[]
+  labOrders     LabOrder[]     @relation("LabOrderInvoice")
 
   @@index([organizationId, status])
   @@index([patientId])
   @@index([medicalRecordId])
+  @@index([cashSessionId])
 }
 
 // Ordonnance électronique structurée. Rattachée à une consultation (medicalRecordId/
@@ -1013,44 +1099,50 @@ model PendingInvoice {
 // (IA, Gemini, à titre indicatif) est calculée après l'écriture et son résultat brut conservé
 // pour audit — jamais bloquant pour la création/le renouvellement de l'ordonnance.
 model Prescription {
-  id                String    @id @default(auto()) @map("_id") @db.ObjectId
-  patientId         String    @db.ObjectId
-  patient           Patient   @relation(fields: [patientId], references: [id])
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  patientId String  @db.ObjectId
+  patient   Patient @relation(fields: [patientId], references: [id])
 
-  prescribedById    String    @db.ObjectId
-  prescribedBy      User      @relation("PrescriptionPrescribedBy", fields: [prescribedById], references: [id])
+  prescribedById String @db.ObjectId
+  prescribedBy   User   @relation("PrescriptionPrescribedBy", fields: [prescribedById], references: [id])
 
-  medicalRecordId   String?   @db.ObjectId
-  medicalRecord     MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
+  medicalRecordId String?        @db.ObjectId
+  medicalRecord   MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
 
-  appointmentId     String?   @db.ObjectId
-  appointment       Appointment? @relation(fields: [appointmentId], references: [id])
+  appointmentId String?      @db.ObjectId
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
 
-  organizationId    String?   @db.ObjectId
-  organization      Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
   // Renouvellement : pointe vers l'ordonnance d'origine.
-  renewedFromId     String?   @db.ObjectId
-  renewedFrom       Prescription?  @relation("PrescriptionRenewal", fields: [renewedFromId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  renewals          Prescription[] @relation("PrescriptionRenewal")
+  renewedFromId String?        @db.ObjectId
+  renewedFrom   Prescription?  @relation("PrescriptionRenewal", fields: [renewedFromId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  renewals      Prescription[] @relation("PrescriptionRenewal")
 
-  templateId        String?   @db.ObjectId
-  template          PrescriptionTemplate? @relation(fields: [templateId], references: [id])
+  templateId String?               @db.ObjectId
+  template   PrescriptionTemplate? @relation(fields: [templateId], references: [id])
 
-  status            String    @default("ACTIVE") // ACTIVE, SENT_TO_PHARMACY, DISPENSED, SUPERSEDED, CANCELLED
-  notes             String?
+  status String  @default("ACTIVE") // ACTIVE, SENT_TO_PHARMACY, DISPENSED, SUPERSEDED, CANCELLED
+  notes  String?
 
   // Résultat brut de la vérification IA — jamais bloquant, affiché au médecin dès disponible.
-  interactionCheck  Json?     // { severity: "NONE"|"LOW"|"MODERATE"|"HIGH", warnings: [{drugs:[string], description}], checkedAt, error? }
+  interactionCheck Json? // { severity: "NONE"|"LOW"|"MODERATE"|"HIGH", warnings: [{drugs:[string], description}], checkedAt, error? }
 
-  items             PrescriptionItem[]
+  items PrescriptionItem[]
 
-  pendingInvoiceId  String?   @db.ObjectId
-  pendingInvoice    PendingInvoice? @relation(fields: [pendingInvoiceId], references: [id])
-  sentToPharmacyAt  DateTime?
+  pendingInvoiceId String?         @db.ObjectId
+  pendingInvoice   PendingInvoice? @relation(fields: [pendingInvoiceId], references: [id])
+  sentToPharmacyAt DateTime?
 
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  // Posés par dispensePendingInvoice (PHARMACIST uniquement) quand status passe à DISPENSED —
+  // même convention de nommage que LabOrder.sampleCollectedById/sampleCollectedAt.
+  dispensedById String?   @db.ObjectId
+  dispensedBy   User?     @relation("PrescriptionDispensedBy", fields: [dispensedById], references: [id])
+  dispensedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([patientId, createdAt])
   @@index([organizationId, status])
@@ -1060,110 +1152,110 @@ model Prescription {
 }
 
 model PrescriptionItem {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  prescriptionId  String   @db.ObjectId
-  prescription    Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  prescriptionId String       @db.ObjectId
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
 
   // Rapprochement optionnel avec le catalogue pharmacie (facturation) — un médicament
   // hors catalogue reste prescriptible en texte libre.
-  pharmacyItemId  String?  @db.ObjectId
-  pharmacyItem    PharmacyItem? @relation(fields: [pharmacyItemId], references: [id])
+  pharmacyItemId String?       @db.ObjectId
+  pharmacyItem   PharmacyItem? @relation(fields: [pharmacyItemId], references: [id])
 
-  drugName        String
-  dosage          String
-  frequency       String
-  duration        String?  // ex: "7 jours"
-  instructions    String?
-  quantity        Int?     // Quantité totale à délivrer
+  drugName     String
+  dosage       String
+  frequency    String
+  duration     String? // ex: "7 jours"
+  instructions String?
+  quantity     Int? // Quantité totale à délivrer
 
   @@index([prescriptionId])
 }
 
 // Modèle réutilisable — par pathologie ou personnel à un médecin (isShared=false).
 model PrescriptionTemplate {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  name            String
-  pathology       String?  // Libellé libre ou code CIM-10
-  createdById     String   @db.ObjectId
-  createdBy       User     @relation("PrescriptionTemplateCreatedBy", fields: [createdById], references: [id])
-  organizationId  String?  @db.ObjectId
-  organization    Organization? @relation(fields: [organizationId], references: [id])
-  isShared        Boolean  @default(false) // true = visible par tous les MEDECIN de la clinique
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  pathology      String? // Libellé libre ou code CIM-10
+  createdById    String        @db.ObjectId
+  createdBy      User          @relation("PrescriptionTemplateCreatedBy", fields: [createdById], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  isShared       Boolean       @default(false) // true = visible par tous les MEDECIN de la clinique
 
-  items           Json     // [{ drugName, dosage, frequency, duration, instructions }]
-  prescriptions   Prescription[]
+  items         Json // [{ drugName, dosage, frequency, duration, instructions }]
+  prescriptions Prescription[]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId])
   @@index([createdById])
 }
 
 model Supplier {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  name            String
-  contactName     String?
-  phone           String?
-  email           String?
-  address         String?
-  notes           String?
-  isActive        Boolean  @default(true)
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  isActive    Boolean @default(true)
 
-  organizationId  String?  @db.ObjectId
-  organization    Organization? @relation(fields: [organizationId], references: [id])
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  purchaseOrders  PurchaseOrder[]
+  purchaseOrders PurchaseOrder[]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId])
 }
 
 model PurchaseOrder {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  supplierId      String   @db.ObjectId
-  supplier        Supplier @relation(fields: [supplierId], references: [id])
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  supplierId String   @db.ObjectId
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
 
-  status          String   @default("DRAFT") // DRAFT, SENT, PARTIALLY_RECEIVED, RECEIVED, CANCELLED
-  reference       String?
-  expectedDate    DateTime?
-  notes           String?
+  status       String    @default("DRAFT") // DRAFT, SENT, PARTIALLY_RECEIVED, RECEIVED, CANCELLED
+  reference    String?
+  expectedDate DateTime?
+  notes        String?
 
-  organizationId  String   @db.ObjectId
-  organization    Organization @relation(fields: [organizationId], references: [id])
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
 
-  createdById     String   @db.ObjectId
-  createdBy       User     @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  createdById String @db.ObjectId
+  createdBy   User   @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
 
-  lines           PurchaseOrderLine[]
+  lines PurchaseOrderLine[]
 
-  sentAt          DateTime?
-  receivedAt      DateTime?
+  sentAt     DateTime?
+  receivedAt DateTime?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId, status])
   @@index([supplierId])
 }
 
 model PurchaseOrderLine {
-  id                String   @id @default(auto()) @map("_id") @db.ObjectId
-  purchaseOrderId   String   @db.ObjectId
-  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
+  purchaseOrderId String        @db.ObjectId
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
 
-  pharmacyItemId    String?  @db.ObjectId
-  pharmacyItem      PharmacyItem? @relation(fields: [pharmacyItemId], references: [id])
-  newItemName       String?  // Produit pas encore au catalogue, créé à la réception
+  pharmacyItemId String?       @db.ObjectId
+  pharmacyItem   PharmacyItem? @relation(fields: [pharmacyItemId], references: [id])
+  newItemName    String? // Produit pas encore au catalogue, créé à la réception
 
-  quantityOrdered   Int
-  quantityReceived  Int      @default(0)
-  unitCost          Float
+  quantityOrdered  Int
+  quantityReceived Int   @default(0)
+  unitCost         Float
 
-  batchNumber       String?
-  expiryDate        DateTime?
+  batchNumber String?
+  expiryDate  DateTime?
 
   @@index([purchaseOrderId])
 }

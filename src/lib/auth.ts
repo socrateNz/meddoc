@@ -71,6 +71,7 @@ export const getCurrentUser = cache(async function getCurrentUser() {
           select: {
             type: true,
             isActive: true,
+            logoUrl: true,
             subscriptionStatus: true,
             licenseExpiresAt: true,
             parent: {

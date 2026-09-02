@@ -96,9 +96,9 @@ export async function setClinicActive(id: string, isActive: boolean) {
   }
 }
 
-export async function updateClinic(id: string, data: { name: string }) {
+export async function updateClinic(id: string, data: { name: string; logoUrl?: string }) {
   try {
-    updateClinicSchema.parse({ id, name: data.name });
+    updateClinicSchema.parse({ id, name: data.name, logoUrl: data.logoUrl || "" });
     const user = await getCurrentUser();
     if (!user) throw new Error("Unauthorized");
 
@@ -121,11 +121,12 @@ export async function updateClinic(id: string, data: { name: string }) {
 
     const clinic = await prisma.organization.update({
       where: { id },
-      data: { name: data.name }
+      data: { name: data.name, logoUrl: data.logoUrl || null }
     });
 
     revalidatePath(`/dashboard/clinics/${id}`);
     revalidatePath("/dashboard/clinics");
+    revalidatePath(`/dashboard/clinics/${id}/settings`);
     return { clinic, error: null };
   } catch (error: any) {
     console.error("Error updating clinic:", error);

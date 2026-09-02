@@ -274,7 +274,7 @@ export async function getLabOrder(labOrderId: string) {
         },
         medicalRecord: { select: { title: true, diagnosisLabel: true, description: true } },
         appointment: { select: { id: true, title: true, scheduledAt: true, type: true } },
-        organization: { select: { name: true } },
+        organization: { select: { name: true, logoUrl: true } },
       },
     });
     if (!order) throw new Error("Demande d'analyse introuvable.");

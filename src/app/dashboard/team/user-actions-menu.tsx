@@ -27,7 +27,7 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
   // COORDINATOR ne gère que le personnel (médecin/infirmier/pharmacien) de sa clinique ;
   // ADMIN (holding) ne gère plus que les coordinateurs — reflète team.ts:assertCanManageStaffMember.
   const canManageStatus =
-    (currentUserRole === "COORDINATOR" && ["MEDECIN", "CAREGIVER", "PHARMACIST"].includes(member.role)) ||
+    (currentUserRole === "COORDINATOR" && ["MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"].includes(member.role)) ||
     (currentUserRole === "ADMIN" && member.role === "COORDINATOR");
 
   // Bascule Médecin ⇄ Infirmier(e) : seul un COORDINATOR peut reclasser son propre personnel

@@ -29,12 +29,19 @@ const restrictedSections: Record<string, string[]> = {
   appointments: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
   'ai-assistant': ['ADMIN', 'COORDINATOR', 'MEDECIN'],
   medecin: ['MEDECIN'],
-  finance: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+  // Finance & Pharmacie éclatées en 3 sections (séparation caisse/pharmacie) : la caisse
+  // encaisse (CASHIER dédié, COORDINATOR en secours), la pharmacie remet les médicaments
+  // (PHARMACIST), et Finance reste une vue de synthèse en lecture pour ADMIN/COORDINATOR.
+  caisse: ['ADMIN', 'COORDINATOR', 'CASHIER'],
+  pharmacie: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+  finance: ['ADMIN', 'COORDINATOR'],
   contracts: ['ADMIN', 'COORDINATOR'],
   permissions: ['ADMIN'],
   'audit-log': ['ADMIN'],
   'contact-messages': ['SUPER_ADMIN'],
   holdings: ['SUPER_ADMIN'],
+  // CASHIER n'a délibérément pas accès à la messagerie/manuel pour l'instant (périmètre
+  // minimal du rôle) — cf. plan caisse/pharmacie.
   messages: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
 };
 

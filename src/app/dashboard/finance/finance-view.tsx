@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,26 +10,36 @@ import {
   Wallet,
   TrendingUp,
   TrendingDown,
-  Search,
-  CheckCircle2,
   AlertTriangle,
-  XCircle,
-  Printer,
   Receipt,
-  Package,
-  ClipboardList,
+  PieChart,
   Activity,
   ArrowRight,
-  Truck,
+  History,
+  CircleDot,
+  Circle,
 } from "lucide-react";
-import PharmacyDialog from "./pharmacy-dialog";
-import StockPurchaseDialog from "./stock-purchase-dialog";
-import InventoryPanel from "./inventory-panel";
 import InvoiceModal from "./invoice-modal";
-import SaleInvoiceDialog from "./sale-invoice-dialog";
-import ExpenseDialog from "./expense-dialog";
-import FinalizePendingInvoiceDialog from "./finalize-pending-invoice-dialog";
-import SuppliersPanel from "./suppliers-panel";
+import ZReportDownloadButton from "./z-report-download-button";
+import FinanceJournal from "./finance-journal";
+
+interface CashSessionRow {
+  id: string;
+  registerName: string;
+  status: string;
+  openedAt: string | Date;
+  openedBy: { firstName: string; lastName: string } | null;
+  openingFloat: number;
+  closedAt: string | Date | null;
+  closedBy: { firstName: string; lastName: string } | null;
+  countedAmount: number | null;
+  notes: string | null;
+  totalIncome: number;
+  totalExpenses: number;
+  expectedAmount: number;
+  variance: number | null;
+  transactionCount: number;
+}
 
 interface FinanceViewProps {
   summary: {
@@ -43,11 +52,11 @@ interface FinanceViewProps {
     transactions: any[];
     pharmacyItems: any[];
   };
-  patients: any[];
   organizationId?: string;
   organizationName?: string;
+  organizationLogoUrl?: string | null;
   currentUserRole?: string;
-  pendingInvoices?: any[];
+  sessions?: CashSessionRow[];
   valuation?: {
     totalCostValue: number;
     totalSaleValue: number;
@@ -63,16 +72,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   EQUIPMENT: "Matériel médical",
 };
 
-export default function FinanceView({ summary, patients, organizationId, organizationName, currentUserRole, pendingInvoices = [], valuation }: FinanceViewProps) {
+export default function FinanceView({ summary, organizationId, organizationName, organizationLogoUrl, currentUserRole, sessions = [], valuation }: FinanceViewProps) {
   const [selectedInvoiceTransaction, setSelectedInvoiceTransaction] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState("journal");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterType, setFilterType] = useState<"ALL" | "INCOME" | "EXPENSE" | "PHARMACY">("ALL");
-  const [pendingInvoicesState, setPendingInvoicesState] = useState(pendingInvoices);
-  const [categoryFilter, setCategoryFilter] = useState<"ALL" | "MEDICATION" | "CONSUMABLE" | "EQUIPMENT">("ALL");
-
-  // ADMIN (holding) consulte la finance en lecture seule ; COORDINATOR/PHARMACIST gèrent.
-  const canWrite = currentUserRole !== "ADMIN";
 
   const formatFCFA = (val: number) => {
     const num = Math.round(Number(val) || 0);
@@ -88,21 +90,6 @@ export default function FinanceView({ summary, patients, organizationId, organiz
       minute: "2-digit",
     }).format(new Date(dateInput));
   };
-
-  // Filter transactions (Journal tab)
-  const filteredTransactions = summary.transactions.filter((t) => {
-    if (filterType === "INCOME" && t.type !== "INCOME") return false;
-    if (filterType === "EXPENSE" && t.type !== "EXPENSE") return false;
-    if (filterType === "PHARMACY" && t.category !== "PHARMACY_SALE") return false;
-
-    if (!searchTerm.trim()) return true;
-    const q = searchTerm.toLowerCase();
-    const desc = (t.description || "").toLowerCase();
-    const patientName = t.patient?.user ? `${t.patient.user.firstName} ${t.patient.user.lastName}`.toLowerCase() : "";
-    const recorderName = t.recordedBy ? `${t.recordedBy.firstName} ${t.recordedBy.lastName}`.toLowerCase() : "";
-
-    return desc.includes(q) || patientName.includes(q) || recorderName.includes(q);
-  });
 
   // Recent activity preview (overview section)
   const recentTransactions = summary.transactions.slice(0, 5);
@@ -131,9 +118,7 @@ export default function FinanceView({ summary, patients, organizationId, organiz
     .sort((a, b) => (a.severity === "critical" ? 0 : 1) - (b.severity === "critical" ? 0 : 1))
     .slice(0, 5);
 
-  const filteredPharmacyItems = categoryFilter === "ALL"
-    ? summary.pharmacyItems
-    : summary.pharmacyItems.filter((item: any) => item.category === categoryFilter);
+  const pharmacieHref = organizationId ? `/dashboard/clinics/${organizationId}/pharmacie` : "/dashboard/pharmacie";
 
   return (
     <div className="space-y-6">
@@ -207,59 +192,6 @@ export default function FinanceView({ summary, patients, organizationId, organiz
         </Card>
       </div>
 
-      {/* Primary actions */}
-      {canWrite && (
-        <div className="flex flex-wrap gap-3 animate-fade-up">
-          <SaleInvoiceDialog
-            pharmacyItems={summary.pharmacyItems}
-            patients={patients}
-            organizationId={organizationId}
-            onSuccess={setSelectedInvoiceTransaction}
-          />
-          <ExpenseDialog organizationId={organizationId} onSuccess={setSelectedInvoiceTransaction} />
-        </div>
-      )}
-
-      {/* Factures en attente : créées à la clôture d'une consultation par un CAREGIVER,
-          à finaliser par un COORDINATOR/PHARMACIST (qui seuls ont accès à la caisse). */}
-      {canWrite && pendingInvoicesState.length > 0 && (
-        <Card className="rounded-2xl border-amber-300/60 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/10 shadow-xs animate-fade-up">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-bold flex items-center gap-2 text-amber-700 dark:text-amber-400">
-              <Receipt className="h-4 w-4" />
-              Factures en attente ({pendingInvoicesState.length})
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Générées à la clôture de consultations par les soignants — à valider avant encaissement.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-2 space-y-2">
-            {pendingInvoicesState.map((inv: any) => {
-              const total = (inv.items || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-              const patientName = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : "Client comptant";
-              return (
-                <div key={inv.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/70 dark:bg-slate-900/50 border border-amber-200/50 dark:border-amber-900/30">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{patientName}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {inv.medicalRecord?.title || "Consultation"} • {formatDateTime(inv.createdAt)} • {formatFCFA(total)}
-                    </p>
-                  </div>
-                  <FinalizePendingInvoiceDialog
-                    pendingInvoice={inv}
-                    pharmacyItems={summary.pharmacyItems}
-                    onSuccess={(transaction) => {
-                      setPendingInvoicesState((prev) => prev.filter((p) => p.id !== inv.id));
-                      setSelectedInvoiceTransaction(transaction);
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
-
       {/* Overview: recent activity + stock alerts */}
       <div className="grid gap-6 lg:grid-cols-2 animate-fade-up">
         <Card className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
@@ -312,13 +244,12 @@ export default function FinanceView({ summary, patients, organizationId, organiz
               </CardTitle>
               <CardDescription className="text-xs">Ruptures, stock faible et péremptions proches.</CardDescription>
             </div>
-            <button
-              type="button"
-              onClick={() => setActiveTab("pharmacie")}
+            <Link
+              href={pharmacieHref}
               className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 shrink-0"
             >
               Voir tout <ArrowRight className="h-3 w-3" />
-            </button>
+            </Link>
           </CardHeader>
           <CardContent className="pt-2">
             {stockAlerts.length === 0 ? (
@@ -348,152 +279,127 @@ export default function FinanceView({ summary, patients, organizationId, organiz
           <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl">
             <TabsTrigger value="journal" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <Receipt className="h-4 w-4 text-blue-500" />
-              Journal de Caisse ({summary.transactions.length})
+              Journal de Caisse
             </TabsTrigger>
-            <TabsTrigger value="pharmacie" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
-              <Package className="h-4 w-4 text-indigo-500" />
-              Stock Pharmacie ({summary.pharmacyItems.length})
+            <TabsTrigger value="rapports" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+              <History className="h-4 w-4 text-purple-500" />
+              Rapport de Caisse ({sessions.length})
             </TabsTrigger>
-            <TabsTrigger value="inventaire" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
-              <ClipboardList className="h-4 w-4 text-rose-500" />
-              Inventaire
-            </TabsTrigger>
-            <TabsTrigger value="fournisseurs" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
-              <Truck className="h-4 w-4 text-emerald-500" />
-              Fournisseurs
+            <TabsTrigger value="valorisation" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+              <PieChart className="h-4 w-4 text-indigo-500" />
+              Valorisation
             </TabsTrigger>
           </TabsList>
-
-          {activeTab === "pharmacie" && canWrite && (
-            <div className="flex gap-2">
-              <StockPurchaseDialog pharmacyItems={summary.pharmacyItems} organizationId={organizationId} />
-              <PharmacyDialog organizationId={organizationId} />
-            </div>
-          )}
         </div>
 
-        {/* TAB: Journal de Caisse & Historique */}
-        <TabsContent value="journal" className="pt-6 space-y-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-              <Input
-                type="search"
-                placeholder="Rechercher par motif, patient ou caissier..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-4 py-2.5 h-10 rounded-xl"
-              />
-            </div>
+        {/* TAB: Journal de Caisse — recherche, filtres et pagination gérés côté serveur pour ne
+            jamais masquer de mouvements au-delà d'un plafond (cf. finance-journal.tsx). */}
+        <TabsContent value="journal" className="pt-6">
+          <FinanceJournal organizationId={organizationId} onSelectTransaction={setSelectedInvoiceTransaction} />
+        </TabsContent>
 
-            <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setFilterType("ALL")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "ALL" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
-              >
-                Tous ({summary.transactions.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterType("INCOME")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "INCOME" ? "bg-white dark:bg-slate-900 text-emerald-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
-              >
-                Encaissements (+)
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterType("EXPENSE")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "EXPENSE" ? "bg-white dark:bg-slate-900 text-rose-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
-              >
-                Dépenses (-)
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterType("PHARMACY")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${filterType === "PHARMACY" ? "bg-white dark:bg-slate-900 text-blue-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
-              >
-                Ventes Pharmacie
-              </button>
-            </div>
-          </div>
-
+        {/* TAB: Rapport de Caisse (ouvertures/fermetures de session) */}
+        <TabsContent value="rapports" className="pt-6 space-y-4">
           <div className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md overflow-hidden shadow-xs">
             <Table>
               <TableHeader className="bg-slate-50/50 dark:bg-slate-900/40">
                 <TableRow>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Date & Heure</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Type</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold max-w-[280px]">Motif / Description</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Patient / Rattaché</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Enregistré par</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Montant (FCFA)</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold">Caisse</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold">Ouverture</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold">Fermeture</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Fond initial</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Encaiss. / Dép.</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Théorique</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Compté</TableHead>
+                  <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Écart</TableHead>
                   <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredTransactions.length === 0 ? (
+                {sessions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-slate-500 font-medium">
-                      Aucune transaction trouvée.
+                    <TableCell colSpan={9} className="h-32 text-center text-slate-500 font-medium">
+                      Aucune session de caisse enregistrée pour le moment.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredTransactions.map((t) => {
-                    const isIncome = t.type === "INCOME";
-                    const isPharmacy = t.category === "PHARMACY_SALE";
-
-                    return (
-                      <TableRow key={t.id} className="border-b border-slate-100 dark:border-slate-800/40 hover:bg-slate-50/50">
-                        <TableCell className="text-xs font-medium text-slate-600 dark:text-slate-400 py-3.5">
-                          {formatDateTime(t.createdAt)}
-                        </TableCell>
-                        <TableCell className="py-3.5">
-                          {isIncome ? (
-                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[11px] font-semibold">
-                              {isPharmacy ? "Vente Pharmacie" : "Encaissement"}
-                            </Badge>
+                  sessions.map((s) => (
+                    <TableRow key={s.id} className="border-b border-slate-100 dark:border-slate-800/40 hover:bg-slate-50/50">
+                      <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5">
+                        <div className="flex items-center gap-1.5">
+                          {s.status === "OPEN" ? (
+                            <CircleDot className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                           ) : (
-                            <Badge variant="outline" className="bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20 text-[11px] font-semibold">
-                              Dépense / Retrait
-                            </Badge>
+                            <Circle className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                           )}
-                        </TableCell>
-                        <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5 max-w-[280px] truncate" title={t.description}>
-                          {t.description}
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
-                          {t.patient?.user ? `${t.patient.user.lastName} ${t.patient.user.firstName}` : "-"}
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
-                          {t.recordedBy ? `${t.recordedBy.firstName} ${t.recordedBy.lastName}` : "-"}
-                        </TableCell>
-                        <TableCell className={`text-right font-extrabold text-sm py-3.5 ${isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                          {isIncome ? "+" : "-"}{formatFCFA(t.amount)}
-                        </TableCell>
-                        <TableCell className="text-right py-3.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedInvoiceTransaction(t)}
-                            className="h-8 text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50/50 rounded-lg gap-1.5 text-xs font-medium"
-                          >
-                            <Printer className="h-3.5 w-3.5" />
-                            Facture
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                          {s.registerName}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs font-medium text-slate-600 dark:text-slate-400 py-3.5">
+                        <div>{formatDateTime(s.openedAt)}</div>
+                        <div className="text-[10px] text-slate-400">
+                          {s.openedBy ? `${s.openedBy.firstName} ${s.openedBy.lastName}` : "-"}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs font-medium text-slate-600 dark:text-slate-400 py-3.5">
+                        {s.closedAt ? (
+                          <>
+                            <div>{formatDateTime(s.closedAt)}</div>
+                            <div className="text-[10px] text-slate-400">
+                              {s.closedBy ? `${s.closedBy.firstName} ${s.closedBy.lastName}` : "-"}
+                            </div>
+                          </>
+                        ) : (
+                          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-semibold">
+                            En cours
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-slate-700 dark:text-slate-300 py-3.5">
+                        {formatFCFA(s.openingFloat)}
+                      </TableCell>
+                      <TableCell className="text-right py-3.5 text-xs">
+                        <div className="text-emerald-600 dark:text-emerald-400 font-semibold">+{formatFCFA(s.totalIncome)}</div>
+                        <div className="text-rose-600 dark:text-rose-400 font-semibold">-{formatFCFA(s.totalExpenses)}</div>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-slate-800 dark:text-slate-200 py-3.5">
+                        {formatFCFA(s.expectedAmount)}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-slate-800 dark:text-slate-200 py-3.5">
+                        {s.countedAmount != null ? formatFCFA(s.countedAmount) : "-"}
+                      </TableCell>
+                      <TableCell className="text-right py-3.5">
+                        {s.variance == null ? (
+                          <span className="text-slate-400">-</span>
+                        ) : (
+                          <span className={`font-extrabold text-sm ${s.variance === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                            {s.variance > 0 ? "+" : ""}{formatFCFA(s.variance)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right py-3.5">
+                        {s.status === "CLOSED" ? (
+                          <ZReportDownloadButton
+                            sessionId={s.id}
+                            registerName={s.registerName}
+                            organizationName={organizationName}
+                            organizationLogoUrl={organizationLogoUrl}
+                          />
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Session ouverte</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
                 )}
               </TableBody>
             </Table>
           </div>
         </TabsContent>
 
-        {/* TAB: Stock Pharmacie & Alertes */}
-        <TabsContent value="pharmacie" className="pt-6 space-y-4">
-          {valuation && (
+        {/* TAB: Valorisation du stock */}
+        <TabsContent value="valorisation" className="pt-6 space-y-4">
+          {valuation ? (
             <Card className="rounded-2xl">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Valorisation du stock</CardTitle>
@@ -540,154 +446,20 @@ export default function FinanceView({ summary, patients, organizationId, organiz
                 </div>
               </CardContent>
             </Card>
+          ) : (
+            <Card className="rounded-2xl border-dashed">
+              <CardContent className="py-10 text-center text-sm text-slate-500">
+                Valorisation du stock indisponible.
+              </CardContent>
+            </Card>
           )}
-
-          <div className="flex items-center gap-1.5 bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800/50 w-fit">
-            {[
-              { value: "ALL", label: `Tous (${summary.pharmacyItems.length})` },
-              { value: "MEDICATION", label: `Médicaments (${summary.pharmacyItems.filter((i: any) => i.category === "MEDICATION").length})` },
-              { value: "CONSUMABLE", label: `Consommables (${summary.pharmacyItems.filter((i: any) => i.category === "CONSUMABLE").length})` },
-              { value: "EQUIPMENT", label: `Matériel (${summary.pharmacyItems.filter((i: any) => i.category === "EQUIPMENT").length})` },
-            ].map((f) => (
-              <button
-                key={f.value}
-                type="button"
-                onClick={() => setCategoryFilter(f.value as any)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${categoryFilter === f.value
-                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
-                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
-                  }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <div className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md overflow-hidden shadow-xs">
-            <Table>
-              <TableHeader className="bg-slate-50/50 dark:bg-slate-900/40">
-                <TableRow>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Produit / Médicament</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Dosage & Emplacement</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">N° Lot & Péremption</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Prix unitaire (FCFA)</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">Stock actuel</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold">État & Traçabilité</TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider font-bold text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPharmacyItems.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-slate-500 font-medium">
-                      {summary.pharmacyItems.length === 0
-                        ? "Aucun produit en stock. Cliquez sur \"Nouveau produit\" pour ajouter des médicaments."
-                        : "Aucun produit dans cette catégorie."}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredPharmacyItems.map((item: any) => {
-                    const isOutOfStock = item.stockQuantity <= 0;
-                    const isLowStock = item.stockQuantity <= item.reorderLevel;
-
-                    const expDate = item.expiryDate ? new Date(item.expiryDate) : null;
-                    const isExpired = expDate ? expDate < now : false;
-                    const daysUntilExp = expDate ? Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 3600 * 24)) : null;
-                    const isExpiringSoon = daysUntilExp !== null && daysUntilExp >= 0 && daysUntilExp <= 30;
-
-                    return (
-                      <TableRow key={item.id} className="border-b border-slate-100 dark:border-slate-800/40 hover:bg-slate-50/50">
-                        <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5">
-                          <div className="flex items-center gap-2.5">
-                            <div className="h-8 w-8 rounded-lg bg-indigo-500/10 text-indigo-600 flex items-center justify-center shrink-0">
-                              <Package className="h-4 w-4" />
-                            </div>
-                            <div>
-                              <span>{item.name}</span>
-                              {item.supplier && (
-                                <p className="text-[10px] text-slate-400 font-normal">Fournisseur: {item.supplier}</p>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
-                          <div>{item.dosage || "-"}</div>
-                          {item.location && (
-                            <div className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">{item.location}</div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
-                          {item.batchNumber ? (
-                            <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300 block">{item.batchNumber}</span>
-                          ) : (
-                            <span className="text-slate-400 block">-</span>
-                          )}
-                          {expDate ? (
-                            <span className={`text-[10px] ${isExpired ? "text-rose-600 font-bold" : isExpiringSoon ? "text-amber-600 font-bold" : "text-slate-500"}`}>
-                              Exp: {new Intl.DateTimeFormat("fr-FR", { month: "short", year: "numeric" }).format(expDate)}
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-slate-400">Pas de date</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="font-bold text-slate-800 dark:text-slate-200 py-3.5">
-                          {formatFCFA(item.unitPrice)}
-                        </TableCell>
-                        <TableCell className="font-extrabold py-3.5">
-                          {item.stockQuantity} unités
-                        </TableCell>
-                        <TableCell className="py-3.5 space-y-1">
-                          {isOutOfStock ? (
-                            <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20 gap-1 text-[11px]">
-                              <XCircle className="h-3 w-3" />
-                              Rupture de stock
-                            </Badge>
-                          ) : isLowStock ? (
-                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-[11px]">
-                              <AlertTriangle className="h-3 w-3" />
-                              Stock faible ({item.reorderLevel})
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1 text-[11px]">
-                              <CheckCircle2 className="h-3 w-3" />
-                              En stock
-                            </Badge>
-                          )}
-
-                          {isExpired ? (
-                            <Badge variant="outline" className="bg-rose-600 text-white border-rose-600 gap-1 text-[10px] font-bold block w-fit">
-                              ⚠️ Périmé !
-                            </Badge>
-                          ) : isExpiringSoon ? (
-                            <Badge variant="outline" className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-[10px] font-bold block w-fit">
-                              ⏳ Péremption ({daysUntilExp}j)
-                            </Badge>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-right py-3.5">
-                          {canWrite && <PharmacyDialog item={item} organizationId={organizationId} />}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </TabsContent>
-
-        {/* TAB: Inventaire (comptage physique vs stock système) */}
-        <TabsContent value="inventaire" className="pt-6 space-y-4">
-          <InventoryPanel organizationId={organizationId} canWrite={canWrite} />
-        </TabsContent>
-
-        <TabsContent value="fournisseurs" className="pt-6">
-          <SuppliersPanel organizationId={organizationId} pharmacyItems={summary.pharmacyItems} canWrite={canWrite} />
         </TabsContent>
       </Tabs>
 
       <InvoiceModal
         transaction={selectedInvoiceTransaction}
         organizationName={organizationName}
+        organizationLogoUrl={organizationLogoUrl}
         open={!!selectedInvoiceTransaction}
         onOpenChange={(open) => !open && setSelectedInvoiceTransaction(null)}
       />

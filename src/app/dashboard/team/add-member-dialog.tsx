@@ -33,7 +33,7 @@ const formSchema = z.object({
   lastName: z.string().min(2, "Nom trop court"),
   email: z.string().email("Email invalide"),
   phone: z.string().optional(),
-  role: z.enum(["MEDECIN", "CAREGIVER", "PHARMACIST", "COORDINATOR"]),
+  role: z.enum(["MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "COORDINATOR"]),
   specialties: z.string().optional(),
   licenseNumber: z.string().optional(),
   organizationId: z.string().optional(),
@@ -43,6 +43,7 @@ const ROLE_OPTIONS = [
   { value: "MEDECIN", label: "Médecin" },
   { value: "CAREGIVER", label: "Infirmier(e)" },
   { value: "PHARMACIST", label: "Pharmacien(ne)" },
+  { value: "CASHIER", label: "Caissier(ère)" },
 ];
 
 // Un admin de holding ne fait plus que désigner le coordinateur d'une clinique ;
@@ -105,7 +106,7 @@ export default function AddMemberDialog({
           <DialogDescription>
             {isHoldingAdmin
               ? "Affectez le coordinateur qui administrera au quotidien l'une de vos cliniques."
-              : "Ajoutez un médecin, un infirmier(e) ou un pharmacien à l'équipe de votre clinique."}{" "}
+              : "Ajoutez un médecin, un infirmier(e), un pharmacien ou un(e) caissier(ère) à l'équipe de votre clinique."}{" "}
             Un mot de passe par défaut lui sera attribué.
           </DialogDescription>
         </DialogHeader>

@@ -18,7 +18,7 @@ export async function getTeamMembers() {
   if (!activeUser) throw new Error("Non authentifié.");
 
   const whereClause: any = {
-    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
+    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] },
   };
 
   if (activeUser.organization?.type === "HOLDING") {
@@ -105,8 +105,8 @@ export async function createTeamMember(data: any) {
 
     if (activeUser.role === "COORDINATOR") {
       // Le coordinateur ne recrute que pour sa propre clinique, jamais un autre coordinateur ou un admin.
-      if (!["CAREGIVER", "PHARMACIST", "MEDECIN"].includes(role)) {
-        throw new Error("Un coordinateur ne peut ajouter que des médecins, des infirmier(e)s ou des pharmaciens.");
+      if (!["CAREGIVER", "PHARMACIST", "MEDECIN", "CASHIER"].includes(role)) {
+        throw new Error("Un coordinateur ne peut ajouter que des médecins, des infirmier(e)s, des pharmaciens ou des caissier(ère)s.");
       }
       targetOrgId = activeUser.organizationId;
     } else if (activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING") {
@@ -166,7 +166,8 @@ export async function createTeamMember(data: any) {
         }
       });
     }
-    // PHARMACIST : pas de profil dédié, un User suffit (ventes/dépenses tracées via FinancialTransaction.recordedBy)
+    // PHARMACIST/CASHIER : pas de profil dédié, un User suffit (ventes/dépenses tracées via
+    // FinancialTransaction.recordedBy, sessions de caisse via CashSession.openedBy/closedBy)
 
     await logAuditAction(activeUser.id, "CREATE_TEAM_MEMBER", "User", newUser.id);
     revalidatePath("/dashboard/team");
@@ -182,8 +183,8 @@ export async function createTeamMember(data: any) {
 // (holding) ne gère plus que les coordinateurs de ses cliniques enfants (désignation/remplacement).
 async function assertCanManageStaffMember(activeUser: any, target: { role: string; organizationId: string | null }) {
   if (activeUser.role === "COORDINATOR") {
-    if (target.organizationId !== activeUser.organizationId || !["CAREGIVER", "PHARMACIST", "MEDECIN"].includes(target.role)) {
-      throw new Error("Vous ne pouvez gérer que le personnel (médecin, infirmier(e) ou pharmacien) de votre clinique.");
+    if (target.organizationId !== activeUser.organizationId || !["CAREGIVER", "PHARMACIST", "MEDECIN", "CASHIER"].includes(target.role)) {
+      throw new Error("Vous ne pouvez gérer que le personnel (médecin, infirmier(e), pharmacien ou caissier(ère)) de votre clinique.");
     }
     return;
   }
@@ -276,7 +277,7 @@ export async function getClinicTeam(clinicId: string) {
   const members = await prisma.user.findMany({
     where: {
       organizationId: clinicId,
-      role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "ADMIN"] },
+      role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] },
     },
     include: {
       caregiverProfile: {

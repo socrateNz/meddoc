@@ -361,7 +361,7 @@ export async function listPrescriptions(options?: {
 
 // Réutilise exactement le mécanisme PendingInvoice déjà en place (pas de nouveau système de
 // réservation) : rapprochement par nom avec le catalogue, le stock n'est décrémenté qu'à la
-// finalisation (finalizePendingInvoice → recordMultiItemInvoice), inchangé.
+// remise au comptoir pharmacie (dispensePendingInvoice), une fois la facture réglée à la caisse.
 export async function sendPrescriptionToPharmacy(prescriptionId: string) {
   try {
     const activeUser = await getCurrentUser();

@@ -1,11 +1,14 @@
 "use client";
 
 import React from "react";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 
 const styles = StyleSheet.create({
   page: {
-    padding: 45,
+    paddingTop: 45,
+    paddingBottom: 65,
+    paddingLeft: 45,
+    paddingRight: 45,
     fontFamily: "Helvetica",
     color: "#1e293b",
     fontSize: 10,
@@ -21,6 +24,12 @@ const styles = StyleSheet.create({
   },
   clinicInfo: {
     flexDirection: "column",
+  },
+  logoImage: {
+    width: 38,
+    height: 38,
+    objectFit: "contain",
+    marginBottom: 4,
   },
   clinicName: {
     fontSize: 15,
@@ -161,12 +170,21 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: "#64748b",
   },
-  watermark: {
+  // Petit pied de page répété identique sur chaque page (fixed) — distinct du bloc signature
+  // ci-dessus, qui n'apparaît qu'une fois là où le contenu se termine réellement.
+  pageFooter: {
+    position: "absolute",
+    bottom: 20,
+    left: 45,
+    right: 45,
+    borderTopWidth: 0.5,
+    borderTopColor: "#e2e8f0",
+    paddingTop: 6,
+    flexDirection: "row",
+    justifyContent: "space-between",
     fontSize: 7,
     color: "#94a3b8",
-    textAlign: "center",
-    marginTop: 25,
-  }
+  },
 });
 
 interface PrescriptionPDFProps {
@@ -179,10 +197,11 @@ interface PrescriptionPDFProps {
   }>;
   doctorName?: string;
   organizationName?: string;
+  organizationLogoUrl?: string | null;
   date?: string | Date;
 }
 
-export default function PrescriptionPDFDocument({ patient, medications = [], doctorName, organizationName, date }: PrescriptionPDFProps) {
+export default function PrescriptionPDFDocument({ patient, medications = [], doctorName, organizationName, organizationLogoUrl, date }: PrescriptionPDFProps) {
   const formattedDate = date
     ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "long", year: "numeric" }).format(new Date(date))
     : new Date().toLocaleDateString("fr-FR");
@@ -190,9 +209,10 @@ export default function PrescriptionPDFDocument({ patient, medications = [], doc
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* Letterhead */}
-        <View style={styles.letterhead}>
+        {/* Letterhead — fixed : répété identique sur chaque page */}
+        <View style={styles.letterhead} fixed>
           <View style={styles.clinicInfo}>
+            {organizationLogoUrl && <Image src={organizationLogoUrl} style={styles.logoImage} />}
             <Text style={styles.clinicName}>{organizationName || "MEDDOC - CENTRE MÉDICAL"}</Text>
             <Text style={styles.clinicSub}>Plateforme de Santé & Gestion Médicale</Text>
           </View>
@@ -271,9 +291,11 @@ export default function PrescriptionPDFDocument({ patient, medications = [], doc
           </View>
         </View>
 
-        <Text style={styles.watermark}>
-          Ordonnance officielle générée via MedDoc • Document sécurisé
-        </Text>
+        {/* fixed : répété identique en bas de chaque page (distinct du bloc signature
+            ci-dessus, qui n'apparaît qu'une fois à la fin réelle du contenu) */}
+        <View style={styles.pageFooter} fixed>
+          <Text>Ordonnance officielle générée via MedDoc • Document sécurisé</Text>
+        </View>
       </Page>
     </Document>
   );

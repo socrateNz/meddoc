@@ -104,12 +104,13 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   const isCoordinator = user.role === "COORDINATOR";
   const isCaregiver = user.role === "CAREGIVER";
   const isPharmacist = user.role === "PHARMACIST";
+  const isCashier = user.role === "CASHIER";
   const showWardsAndStaff = isReadOnlyOverview || isCoordinator || isCaregiver;
 
   // Utilisés par CacheWriter/loading.tsx pour l'aperçu instantané au prochain chargement —
   // cf. plan « Affichage instantané depuis un cache local ».
   const cachedAt = new Date().toISOString();
-  const roleKey = isReadOnlyOverview ? "READ_ONLY" : isCoordinator ? "COORDINATOR" : isCaregiver ? "CAREGIVER" : isPharmacist ? "PHARMACIST" : "OTHER";
+  const roleKey = isReadOnlyOverview ? "READ_ONLY" : isCoordinator ? "COORDINATOR" : isCaregiver ? "CAREGIVER" : isPharmacist ? "PHARMACIST" : isCashier ? "CASHIER" : "OTHER";
 
   const queryFilter: any = {
     id: params.id,
@@ -143,7 +144,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     myAppointmentsTodayCount,
   ] = await Promise.all([
     showWardsAndStaff ? fetchWardsAndStaff(clinic.id) : Promise.resolve({ staffMembers: [] as any[], wardsWithOccupancy: [] as any[] }),
-    isCoordinator || isPharmacist ? fetchFinanceSummary(clinic.id) : Promise.resolve({ todayIncome: 0, cashBalance: 0, lowStockCount: 0 }),
+    isCoordinator || isPharmacist || isCashier ? fetchFinanceSummary(clinic.id) : Promise.resolve({ todayIncome: 0, cashBalance: 0, lowStockCount: 0 }),
     isCoordinator || isCaregiver ? prisma.incident.count({ where: { status: "OPEN", patient: { organizationId: clinic.id } } }) : Promise.resolve(0),
     isCaregiver ? fetchMyAppointmentsToday(user.id) : Promise.resolve(0),
   ]);
@@ -298,7 +299,48 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
             <h3 className="text-lg font-semibold">Ventes du jour</h3>
             <p className="text-2xl font-bold mt-2">{formatFCFA(todayIncome)}</p>
             <p className="text-sm text-slate-500 mt-2">Encaissements enregistrés aujourd&apos;hui</p>
-            <Link href={`/dashboard/clinics/${clinic.id}/finance`} className="w-full mt-6">
+            <Link href={`/dashboard/clinics/${clinic.id}/pharmacie`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">File de remise</Button>
+            </Link>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-4">
+              <Wallet className="h-6 w-6 text-blue-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Solde de caisse</h3>
+            <p className="text-2xl font-bold mt-2">{formatFCFA(cashBalance)}</p>
+            <p className="text-sm text-slate-500 mt-2">Recettes − dépenses totales</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/pharmacie`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Voir le stock</Button>
+            </Link>
+          </div>
+
+          <div className={`bg-white dark:bg-slate-900 rounded-2xl p-6 border shadow-sm flex flex-col items-center text-center ${lowStockCount > 0 ? "border-amber-300/60 dark:border-amber-900/40" : "border-slate-200 dark:border-slate-800"}`}>
+            <div className="h-12 w-12 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mb-4">
+              <Package className="h-6 w-6 text-amber-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Alertes stock</h3>
+            <p className={`text-3xl font-bold mt-2 ${lowStockCount > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>{lowStockCount}</p>
+            <p className="text-sm text-slate-500 mt-2">{lowStockCount > 0 ? "Produits en rupture ou stock faible" : "Tous les stocks sont suffisants"}</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/pharmacie`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Gérer le stock</Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Cartes CASHIER */}
+      {isCashier && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <div className="h-12 w-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mb-4">
+              <Wallet className="h-6 w-6 text-emerald-500" />
+            </div>
+            <h3 className="text-lg font-semibold">Recettes du jour</h3>
+            <p className="text-2xl font-bold mt-2">{formatFCFA(todayIncome)}</p>
+            <p className="text-sm text-slate-500 mt-2">Encaissements enregistrés aujourd&apos;hui</p>
+            <Link href={`/dashboard/clinics/${clinic.id}/caisse`} className="w-full mt-6">
               <Button className="w-full" variant="outline">Ouvrir la caisse</Button>
             </Link>
           </div>
@@ -310,20 +352,8 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
             <h3 className="text-lg font-semibold">Solde de caisse</h3>
             <p className="text-2xl font-bold mt-2">{formatFCFA(cashBalance)}</p>
             <p className="text-sm text-slate-500 mt-2">Recettes − dépenses totales</p>
-            <Link href={`/dashboard/clinics/${clinic.id}/finance`} className="w-full mt-6">
-              <Button className="w-full" variant="outline">Voir le journal</Button>
-            </Link>
-          </div>
-
-          <div className={`bg-white dark:bg-slate-900 rounded-2xl p-6 border shadow-sm flex flex-col items-center text-center ${lowStockCount > 0 ? "border-amber-300/60 dark:border-amber-900/40" : "border-slate-200 dark:border-slate-800"}`}>
-            <div className="h-12 w-12 bg-amber-50 dark:bg-amber-900/20 rounded-full flex items-center justify-center mb-4">
-              <Package className="h-6 w-6 text-amber-500" />
-            </div>
-            <h3 className="text-lg font-semibold">Alertes stock</h3>
-            <p className={`text-3xl font-bold mt-2 ${lowStockCount > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>{lowStockCount}</p>
-            <p className="text-sm text-slate-500 mt-2">{lowStockCount > 0 ? "Produits en rupture ou stock faible" : "Tous les stocks sont suffisants"}</p>
-            <Link href={`/dashboard/clinics/${clinic.id}/finance`} className="w-full mt-6">
-              <Button className="w-full" variant="outline">Gérer le stock</Button>
+            <Link href={`/dashboard/clinics/${clinic.id}/caisse`} className="w-full mt-6">
+              <Button className="w-full" variant="outline">Voir la caisse</Button>
             </Link>
           </div>
         </div>

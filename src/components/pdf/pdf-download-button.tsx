@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 interface PDFDownloadButtonProps {
   documentName: string;
-  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport";
+  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport" | "zreport";
   data: any;
   buttonText?: string;
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
@@ -34,16 +34,37 @@ export default function PDFDownloadButton({
       
       if (type === "patient") {
         const PatientPDFDocument = (await import("./patient-pdf")).default;
-        element = <PatientPDFDocument patient={data} />;
+        element = <PatientPDFDocument patient={data} organizationName={data.organizationName} organizationLogoUrl={data.organizationLogoUrl} />;
       } else if (type === "consultation") {
         const ConsultationPDFDocument = (await import("./consultation-pdf")).default;
-        element = <ConsultationPDFDocument patient={data.patient} record={data.record} />;
+        element = (
+          <ConsultationPDFDocument
+            patient={data.patient}
+            record={data.record}
+            organizationName={data.organizationName}
+            organizationLogoUrl={data.organizationLogoUrl}
+          />
+        );
       } else if (type === "careplan") {
         const CarePlanPDFDocument = (await import("./careplan-pdf")).default;
-        element = <CarePlanPDFDocument patient={data.patient} plan={data.plan} />;
+        element = (
+          <CarePlanPDFDocument
+            patient={data.patient}
+            plan={data.plan}
+            organizationName={data.organizationName}
+            organizationLogoUrl={data.organizationLogoUrl}
+          />
+        );
       } else if (type === "invoice") {
         const InvoicePDFDocument = (await import("./invoice-pdf")).default;
-        element = <InvoicePDFDocument transaction={data.transaction} organizationName={data.organizationName} format={data.format} />;
+        element = (
+          <InvoicePDFDocument
+            transaction={data.transaction}
+            organizationName={data.organizationName}
+            organizationLogoUrl={data.organizationLogoUrl}
+            format={data.format}
+          />
+        );
       } else if (type === "prescription") {
         const PrescriptionPDFDocument = (await import("./prescription-pdf")).default;
         element = (
@@ -52,6 +73,7 @@ export default function PDFDownloadButton({
             medications={data.medications}
             doctorName={data.doctorName}
             organizationName={data.organizationName}
+            organizationLogoUrl={data.organizationLogoUrl}
             date={data.date}
           />
         );
@@ -67,8 +89,23 @@ export default function PDFDownloadButton({
           <LabReportPDFDocument
             order={data.order}
             organizationName={data.organizationName}
+            organizationLogoUrl={data.organizationLogoUrl}
             reportNumber={reportNumber}
             qrDataUrl={qrDataUrl}
+          />
+        );
+      } else if (type === "zreport") {
+        const ZReportPDFDocument = (await import("./z-report-pdf")).default;
+        element = (
+          <ZReportPDFDocument
+            session={data.session}
+            transactions={data.transactions}
+            totalIncome={data.totalIncome}
+            totalExpenses={data.totalExpenses}
+            expectedAmount={data.expectedAmount}
+            variance={data.variance}
+            organizationName={data.organizationName}
+            organizationLogoUrl={data.organizationLogoUrl}
           />
         );
       } else {

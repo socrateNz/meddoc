@@ -14,39 +14,35 @@ export const pharmacyItemSchema = z.object({
   organizationId: z.string().optional(),
 });
 
-export const recordPharmacySaleSchema = z.object({
-  pharmacyItemId: z.string().min(1),
-  quantity: z.number().positive("La quantité doit être supérieure à zéro"),
-  patientId: z.string().optional(),
-  organizationId: z.string().optional(),
-});
-
-export const recordSpecifiedIncomeSchema = z.object({
-  description: z.string().min(1, "Le motif est requis"),
-  amount: z.number().positive("Le montant doit être supérieur à zéro"),
-  patientId: z.string().optional(),
-  organizationId: z.string().optional(),
+const invoiceItemSchema = z.object({
+  type: z.enum(["PHARMACY", "SERVICE"]),
+  pharmacyItemId: z.string().optional(),
+  description: z.string().min(1),
+  quantity: z.number().min(0),
+  unitPrice: z.number().min(0),
+  amount: z.number().min(0),
 });
 
 export const recordExpenseSchema = z.object({
+  cashSessionId: z.string().min(1, "Aucune session de caisse ouverte."),
   description: z.string().min(1, "Le motif est requis"),
   amount: z.number().positive("Le montant doit être supérieur à zéro"),
   organizationId: z.string().optional(),
 });
 
-export const recordMultiItemInvoiceSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        type: z.enum(["PHARMACY", "SERVICE"]),
-        pharmacyItemId: z.string().optional(),
-        description: z.string().min(1),
-        quantity: z.number().min(0),
-        unitPrice: z.number().min(0),
-        amount: z.number().min(0),
-      })
-    )
-    .min(1, "Le panier de facturation est vide"),
+export const payPendingInvoiceSchema = z.object({
+  pendingInvoiceId: z.string().min(1),
+  cashSessionId: z.string().min(1, "Aucune session de caisse ouverte."),
+  items: z.array(invoiceItemSchema).min(1, "Le panier de facturation est vide"),
+});
+
+export const createCaisseSaleSchema = z.object({
+  cashSessionId: z.string().min(1, "Aucune session de caisse ouverte."),
+  items: z.array(invoiceItemSchema).min(1, "Le panier de facturation est vide"),
   patientId: z.string().optional(),
   organizationId: z.string().optional(),
+});
+
+export const dispensePendingInvoiceSchema = z.object({
+  pendingInvoiceId: z.string().min(1),
 });

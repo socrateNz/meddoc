@@ -575,7 +575,8 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                         patient,
                         medications,
                         date: new Date(),
-                        organizationName: patient.organization?.name || "MEDDOC - CENTRE MÉDICAL"
+                        organizationName: patient.organization?.name || "MEDDOC - CENTRE MÉDICAL",
+                        organizationLogoUrl: patient.organization?.logoUrl
                       }}
                       buttonText="Télécharger Ordonnance (PDF)"
                       variant="outline"

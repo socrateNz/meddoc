@@ -209,9 +209,9 @@ export async function completeConsultation(data: {
         });
       }
 
-      // 4. Facture en attente : un CAREGIVER/MEDECIN ne peut pas toucher la caisse
-      // (recordMultiItemInvoice est réservé à COORDINATOR/PHARMACIST), donc la clôture crée une
-      // facture à finaliser plutôt que d'enregistrer directement une transaction financière.
+      // 4. Facture en attente : un CAREGIVER/MEDECIN ne peut pas toucher la caisse (réservée à
+      // COORDINATOR/CASHIER), donc la clôture crée une facture PENDING à régler à la caisse
+      // plutôt que d'enregistrer directement une transaction financière.
       let pendingInvoice = null;
       if (patientRecord?.organizationId) {
         const items: any[] = [

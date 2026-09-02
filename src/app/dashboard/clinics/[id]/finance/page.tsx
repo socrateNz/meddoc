@@ -1,12 +1,13 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { getFinanceSummary, listPendingInvoices } from "@/actions/finance";
+import { getFinanceSummary } from "@/actions/finance";
 import { getStockValuation } from "@/actions/stock";
+import { listCashSessions } from "@/actions/registers";
 import FinanceView from "@/app/dashboard/finance/finance-view";
 import { redirect } from "next/navigation";
 
 export const metadata = {
-  title: "Finance & Pharmacie Clinique | MedDoc",
+  title: "Finance Clinique | MedDoc",
 };
 
 interface ClinicFinancePageProps {
@@ -22,21 +23,16 @@ export default async function ClinicFinancePage({ params }: ClinicFinancePagePro
     redirect("/login");
   }
 
-  // Les 5 requêtes ci-dessous ne dépendent que de clinicId / activeUser (déjà résolus),
+  // Les 4 requêtes ci-dessous ne dépendent que de clinicId / activeUser (déjà résolus),
   // elles sont indépendantes entre elles et peuvent donc partir en parallèle.
-  const [financeRes, patients, clinicOrg, pendingInvoicesRes, valuationRes] = await Promise.all([
+  const [financeRes, clinicOrg, valuationRes, sessionsRes] = await Promise.all([
     getFinanceSummary(clinicId),
-    prisma.patient.findMany({
-      where: { organizationId: clinicId },
-      include: { user: true },
-      orderBy: { user: { lastName: "asc" } }
-    }),
     prisma.organization.findUnique({
       where: { id: clinicId },
-      select: { name: true }
+      select: { name: true, logoUrl: true }
     }),
-    listPendingInvoices(clinicId),
     getStockValuation(clinicId),
+    listCashSessions(clinicId),
   ]);
 
   const summary = financeRes.success && financeRes.data ? financeRes.data : {
@@ -52,22 +48,29 @@ export default async function ClinicFinancePage({ params }: ClinicFinancePagePro
 
   const orgName = clinicOrg?.name || (activeUser.organization as any)?.name || "ÉTABLISSEMENT MÉDICAL";
 
-  const pendingInvoices = pendingInvoicesRes.success ? pendingInvoicesRes.data || [] : [];
-
   const valuation = valuationRes.success ? valuationRes.data : undefined;
+  const sessions = sessionsRes.success ? sessionsRes.data || [] : [];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1 animate-fade-up">
         <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-          Finance & Pharmacie (Clinique)
+          Finance (Clinique)
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Gestion de la caisse, ventes de pharmacie et dépenses pour cette clinique.
+          Synthèse du solde de caisse, journal des mouvements et valorisation du stock pour cette clinique.
         </p>
       </div>
 
-      <FinanceView summary={summary} patients={patients} organizationId={clinicId} organizationName={orgName} currentUserRole={activeUser.role} pendingInvoices={pendingInvoices} valuation={valuation} />
+      <FinanceView
+        summary={summary}
+        organizationId={clinicId}
+        organizationName={orgName}
+        organizationLogoUrl={clinicOrg?.logoUrl}
+        currentUserRole={activeUser.role}
+        sessions={sessions as any}
+        valuation={valuation}
+      />
     </div>
   );
 }

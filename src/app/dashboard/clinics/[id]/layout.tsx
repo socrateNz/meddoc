@@ -42,7 +42,7 @@ export default async function ClinicLayout(props: ClinicLayoutProps) {
   }
 
   // 3. Fallback check for standard medical staff roles
-  if (!["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST"].includes(currentUser.role)) {
+  if (!["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"].includes(currentUser.role)) {
     redirect("/dashboard");
   }
 

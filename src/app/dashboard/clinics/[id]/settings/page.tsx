@@ -61,7 +61,7 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
       </div>
 
       <div className="max-w-3xl">
-        <ClinicSettingsForm clinic={{ id: clinic.id, name: clinic.name }} readOnly={!canEdit} />
+        <ClinicSettingsForm clinic={{ id: clinic.id, name: clinic.name, logoUrl: clinic.logoUrl }} readOnly={!canEdit} />
       </div>
     </div>
   );

@@ -400,7 +400,7 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
           <PDFDownloadButton
             documentName={`rapport_labo_${patient?.user?.lastName || "patient"}`}
             type="labreport"
-            data={{ order, organizationName: order.organization?.name }}
+            data={{ order, organizationName: order.organization?.name, organizationLogoUrl: order.organization?.logoUrl }}
             buttonText="Télécharger le rapport (PDF)"
           />
         )}

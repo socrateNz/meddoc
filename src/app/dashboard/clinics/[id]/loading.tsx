@@ -8,7 +8,7 @@ interface ClinicDashboardPreview {
   clinicName: string;
   usersCount: number;
   patientsCount: number;
-  roleKey: "READ_ONLY" | "COORDINATOR" | "CAREGIVER" | "PHARMACIST" | "OTHER";
+  roleKey: "READ_ONLY" | "COORDINATOR" | "CAREGIVER" | "PHARMACIST" | "CASHIER" | "OTHER";
   todayIncome: number;
   cashBalance: number;
   lowStockCount: number;
@@ -229,6 +229,21 @@ export default function Loading() {
             <Package className="h-6 w-6 text-amber-500 mb-4" />
             <h3 className="text-lg font-semibold">Alertes stock</h3>
             <p className="text-3xl font-bold mt-2">{lowStockCount}</p>
+          </div>
+        </div>
+      )}
+
+      {roleKey === "CASHIER" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <Wallet className="h-6 w-6 text-emerald-500 mb-4" />
+            <h3 className="text-lg font-semibold">Recettes du jour</h3>
+            <p className="text-2xl font-bold mt-2">{formatFCFA(todayIncome)}</p>
+          </div>
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
+            <Wallet className="h-6 w-6 text-blue-500 mb-4" />
+            <h3 className="text-lg font-semibold">Solde de caisse</h3>
+            <p className="text-2xl font-bold mt-2">{formatFCFA(cashBalance)}</p>
           </div>
         </div>
       )}

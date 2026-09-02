@@ -102,7 +102,8 @@ export default async function PatientDetailPage({ params }: PageProps) {
       },
       aiAnalyses: {
         orderBy: { createdAt: "desc" }
-      }
+      },
+      organization: { select: { name: true, logoUrl: true } }
     }
   });
 
@@ -238,7 +239,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
             documentName={`Dossier_Medical_${patient.user.lastName}_${patient.user.firstName}`}
             buttonText="Exporter le Dossier (PDF)"
             type="patient"
-            data={patient}
+            data={{ ...patient, organizationName: patient.organization?.name, organizationLogoUrl: patient.organization?.logoUrl }}
             variant="outline"
           />
           {isHoldingAdmin && !isDischarged && (
@@ -476,7 +477,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
                             documentName={`Consultation_${patient.user.lastName}_${new Date(record.createdAt).toLocaleDateString("fr-FR").replace(/\//g, "-")}`}
                             buttonText="Télécharger"
                             type="consultation"
-                            data={{ patient, record }}
+                            data={{ patient, record, organizationName: patient.organization?.name, organizationLogoUrl: patient.organization?.logoUrl }}
                             variant="ghost"
                             size="sm"
                           />
@@ -601,7 +602,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
                           documentName={`Plan_Soins_${patient.user.lastName}_${plan.title}`}
                           buttonText="Télécharger"
                           type="careplan"
-                          data={{ patient, plan }}
+                          data={{ patient, plan, organizationName: patient.organization?.name, organizationLogoUrl: patient.organization?.logoUrl }}
                           variant="outline"
                           size="sm"
                         />

@@ -9,12 +9,13 @@ import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 interface InvoiceModalProps {
   transaction: any;
   organizationName?: string;
+  organizationLogoUrl?: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   triggerBtn?: React.ReactNode;
 }
 
-export default function InvoiceModal({ transaction, organizationName, open: externalOpen, onOpenChange: externalOnOpenChange, triggerBtn }: InvoiceModalProps) {
+export default function InvoiceModal({ transaction, organizationName, organizationLogoUrl, open: externalOpen, onOpenChange: externalOnOpenChange, triggerBtn }: InvoiceModalProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [viewFormat, setViewFormat] = useState<"thermal" | "a4">("thermal");
 
@@ -129,6 +130,8 @@ export default function InvoiceModal({ transaction, organizationName, open: exte
     });
   }
 
+  const hasPharmacyItem = itemList.some((item: any) => item.type === "PHARMACY");
+
   const handlePrint = () => {
     window.print();
   };
@@ -195,6 +198,10 @@ export default function InvoiceModal({ transaction, organizationName, open: exte
               {/* Receipt Top Jagged Effect / Header */}
               <div className="text-center space-y-1 mb-3">
                 <h3 className="text-sm font-extrabold tracking-wider uppercase text-black">*** REÇU DE CAISSE ***</h3>
+                {organizationLogoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={organizationLogoUrl} alt="" className="h-10 w-10 object-contain mx-auto" />
+                )}
                 <p className="text-xs font-extrabold uppercase text-slate-800">{organizationName || "MEDDOC - CENTRE MÉDICAL"}</p>
                 <p className="text-[10px] text-slate-600">Plateforme Médicale & Pharmacie</p>
                 <p className="text-[10px] text-slate-600">Tél: +241 01 02 03 04</p>
@@ -273,14 +280,25 @@ export default function InvoiceModal({ transaction, organizationName, open: exte
               <div className="text-center text-[11px] font-bold text-slate-800 mt-4 uppercase tracking-wider">
                 * THANK YOU / MERCI *
               </div>
+              {hasPharmacyItem && (
+                <div className="text-center text-[11px] font-extrabold text-slate-900 mt-2 uppercase tracking-wider">
+                  À PRÉSENTER AU COMPTOIR PHARMACIE
+                </div>
+              )}
             </div>
           ) : (
             /* Standard A4 Preview */
             <div id="printable-receipt" className="w-full bg-white text-slate-900 p-6 rounded-2xl shadow-xl text-xs space-y-5">
               <div className="flex items-start justify-between border-b-2 border-blue-600 pb-4">
-                <div>
-                  <h2 className="text-lg font-bold text-blue-700 uppercase tracking-tight">{organizationName || "ÉTABLISSEMENT MÉDICAL"}</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Plateforme de Gestion Médicale & Pharmacie</p>
+                <div className="flex items-center gap-3">
+                  {organizationLogoUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={organizationLogoUrl} alt="" className="h-12 w-12 object-contain shrink-0" />
+                  )}
+                  <div>
+                    <h2 className="text-lg font-bold text-blue-700 uppercase tracking-tight">{organizationName || "ÉTABLISSEMENT MÉDICAL"}</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Plateforme de Gestion Médicale & Pharmacie</p>
+                  </div>
                 </div>
                 <div className="text-right">
                   <span className="text-sm font-extrabold tracking-tight uppercase block text-slate-900">{docTitle}</span>
@@ -349,7 +367,7 @@ export default function InvoiceModal({ transaction, organizationName, open: exte
             <PDFDownloadButton
               documentName={`Ticket_${invoiceNum}`}
               type="invoice"
-              data={{ transaction, organizationName, format: viewFormat }}
+              data={{ transaction, organizationName, organizationLogoUrl, format: viewFormat }}
               buttonText="Télécharger PDF"
               variant="outline"
               size="default"

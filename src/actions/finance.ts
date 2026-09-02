@@ -6,18 +6,27 @@ import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import {
   pharmacyItemSchema,
-  recordPharmacySaleSchema,
-  recordSpecifiedIncomeSchema,
   recordExpenseSchema,
-  recordMultiItemInvoiceSchema,
+  payPendingInvoiceSchema,
+  createCaisseSaleSchema,
+  dispensePendingInvoiceSchema,
 } from "@/validators/finance";
-import { consumeStockLots } from "@/actions/stock";
+import { consumeStockLots, assertStockWrite } from "@/actions/stock";
+import { assertRegisterOperateRole } from "@/actions/register-permissions";
 import { revalidatePath } from "next/cache";
 
-// ADMIN (holding) garde une vue lecture seule de la finance/pharmacie ; seuls
-// COORDINATOR et PHARMACIST peuvent enregistrer des ventes/dépenses/articles.
-const FINANCE_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST"];
-const FINANCE_WRITE_ROLES = ["COORDINATOR", "PHARMACIST"];
+// ADMIN (holding) garde une vue lecture seule de la finance (KPI, journal, valorisation) ;
+// COORDINATOR seul y a un accès d'écriture directe (dépenses hors-session exceptées — voir
+// recordExpense, désormais rattaché à une session de caisse). Le catalogue pharmacie a son
+// propre rôle de lecture élargi (CASHIER en a besoin pour construire un panier de vente).
+const FINANCE_READ_ROLES = ["ADMIN", "COORDINATOR"];
+const PHARMACY_CATALOG_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST", "CASHIER"];
+const CAISSE_READ_ROLES = ["ADMIN", "COORDINATOR", "CASHIER"];
+// Remise des médicaments au comptoir : PHARMACIST uniquement, volontairement plus strict que
+// STOCK_WRITE_ROLES (COORDINATOR+PHARMACIST) qui régit le reste du stock — séparation caisse/
+// pharmacie voulue par cette fonctionnalité, seule dérogation à la convention habituelle de ce
+// module (partout ailleurs, COORDINATOR reste un rôle de secours).
+const PHARMACY_DISPENSE_ROLES = ["PHARMACIST"];
 
 function assertFinanceReadRole(role: string) {
   if (!FINANCE_READ_ROLES.includes(role)) {
@@ -25,9 +34,15 @@ function assertFinanceReadRole(role: string) {
   }
 }
 
-function assertFinanceWriteRole(role: string) {
-  if (!FINANCE_WRITE_ROLES.includes(role)) {
-    throw new Error("Non autorisé. Réservé aux coordinateurs et pharmaciens.");
+function assertPharmacyCatalogReadRole(role: string) {
+  if (!PHARMACY_CATALOG_READ_ROLES.includes(role)) {
+    throw new Error("Non autorisé.");
+  }
+}
+
+function assertPharmacyDispenseRole(role: string) {
+  if (!PHARMACY_DISPENSE_ROLES.includes(role)) {
+    throw new Error("Non autorisé. Réservé aux pharmacien(ne)s.");
   }
 }
 
@@ -67,7 +82,7 @@ export async function getPharmacyItems(organizationId?: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceReadRole(activeUser.role);
+    assertPharmacyCatalogReadRole(activeUser.role);
 
     const targetOrgId = organizationId || activeUser.organizationId;
 
@@ -105,16 +120,15 @@ export async function createOrUpdatePharmacyItem(data: {
   try {
     pharmacyItemSchema.parse(data);
     const activeUser = await getCurrentUser();
-    if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceWriteRole(activeUser.role);
+    await assertStockWrite(activeUser);
 
-    const targetOrgId = data.organizationId || activeUser.organizationId;
+    const targetOrgId = data.organizationId || activeUser!.organizationId;
     const nowISO = new Date().toISOString();
     const expiryISO = data.expiryDate ? new Date(data.expiryDate).toISOString() : null;
 
     // Ce formulaire ne porte que les métadonnées du produit : la quantité en
     // stock n'est plus modifiable ici, elle évolue uniquement via un achat
-    // (recordStockPurchase), une vente, ou une clôture d'inventaire.
+    // (recordStockPurchase), une remise en pharmacie, ou une clôture d'inventaire.
     let item: any;
     if (data.id) {
       await prisma.$runCommandRaw({
@@ -160,8 +174,9 @@ export async function createOrUpdatePharmacyItem(data: {
       item = { id: "created", name: data.name };
     }
 
-    await logAuditAction(activeUser.id, data.id ? "UPDATE_PHARMACY_ITEM" : "CREATE_PHARMACY_ITEM", "PharmacyItem", item.id || "new");
-    revalidatePath("/dashboard/finance");
+    await logAuditAction(activeUser!.id, data.id ? "UPDATE_PHARMACY_ITEM" : "CREATE_PHARMACY_ITEM", "PharmacyItem", item.id || "new");
+    revalidatePath("/dashboard/pharmacie");
+    if (targetOrgId) revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
     revalidatePath("/dashboard", "layout");
 
     return { success: true, data: item };
@@ -170,228 +185,180 @@ export async function createOrUpdatePharmacyItem(data: {
   }
 }
 
-export async function recordPharmacySale(data: {
-  pharmacyItemId: string;
-  quantity: number;
-  patientId?: string;
-  organizationId?: string;
-}) {
-  try {
-    recordPharmacySaleSchema.parse(data);
-    const activeUser = await getCurrentUser();
-    if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceWriteRole(activeUser.role);
-
-    const targetOrgId = data.organizationId || activeUser.organizationId;
-    const qty = Number(data.quantity);
-    if (qty <= 0) throw new Error("La quantité doit être supérieure à zéro.");
-    const nowISO = new Date().toISOString();
-
-    let item: any = null;
-    if ((prisma as any).pharmacyItem) {
-      item = await (prisma as any).pharmacyItem.findUnique({ where: { id: data.pharmacyItemId } });
-    } else {
-      const rawRes: any = await prisma.$runCommandRaw({
-        find: "PharmacyItem",
-        filter: { _id: { "$oid": data.pharmacyItemId } }
-      });
-      const docs = rawRes.cursor?.firstBatch || [];
-      if (docs.length > 0) item = formatMongoDoc(docs[0]);
-    }
-
-    if (!item) throw new Error("Article introuvable.");
-    if (item.stockQuantity < qty) {
-      throw new Error(`Stock insuffisant. Stock disponible : ${item.stockQuantity}`);
-    }
-
-    const totalAmount = item.unitPrice * qty;
-    const description = `Vente pharmacie: ${qty}x ${item.name}${item.dosage ? ` (${item.dosage})` : ''}`;
-
-    if ((prisma as any).financialTransaction && (prisma as any).pharmacyItem) {
-      const transaction = await prisma.$transaction(async (tx) => {
-        await (tx as any).pharmacyItem.update({
-          where: { id: data.pharmacyItemId },
-          data: { stockQuantity: { decrement: qty } }
-        });
-
-        // Garde les lots d'achat (StockPurchase) synchronisés avec la vente,
-        // en consommant en FEFO, pour préserver une valorisation de stock exacte.
-        await consumeStockLots(tx, data.pharmacyItemId, qty);
-
-        return await (tx as any).financialTransaction.create({
-          data: {
-            type: "INCOME",
-            category: "PHARMACY_SALE",
-            amount: totalAmount,
-            description: description,
-            pharmacyItemId: item.id,
-            quantity: qty,
-            patientId: data.patientId || null,
-            recordedById: activeUser.id,
-            organizationId: targetOrgId,
-          }
-        });
-      });
-      await logAuditAction(activeUser.id, "RECORD_PHARMACY_SALE", "FinancialTransaction", transaction.id);
-    } else {
-      // Fallback MongoDB raw commands
-      await prisma.$runCommandRaw({
-        update: "PharmacyItem",
-        updates: [{
-          q: { _id: { "$oid": data.pharmacyItemId } },
-          u: { "$inc": { stockQuantity: -qty } }
-        }]
-      });
-
-      await prisma.$runCommandRaw({
-        insert: "FinancialTransaction",
-        documents: [{
-          type: "INCOME",
-          category: "PHARMACY_SALE",
-          amount: totalAmount,
-          description: description,
-          pharmacyItemId: { "$oid": data.pharmacyItemId },
-          quantity: qty,
-          patientId: data.patientId ? { "$oid": data.patientId } : null,
-          recordedById: { "$oid": activeUser.id },
-          organizationId: targetOrgId ? { "$oid": targetOrgId } : null,
-          createdAt: { "$date": nowISO }
-        }]
-      });
-      await logAuditAction(activeUser.id, "RECORD_PHARMACY_SALE", "FinancialTransaction", data.pharmacyItemId);
-    }
-
-    // Alerte de rupture uniquement au franchissement du seuil (jamais à chaque vente sous le seuil).
-    if (item.stockQuantity > item.reorderLevel && item.stockQuantity - qty <= item.reorderLevel) {
-      const { appEvents } = await import("@/lib/events");
-      appEvents.emit("stock.low", {
-        pharmacyItemId: item.id,
-        itemName: item.name,
-        stockQuantity: item.stockQuantity - qty,
-        reorderLevel: item.reorderLevel,
-        organizationId: targetOrgId || null,
-      });
-    }
-
-    revalidatePath("/dashboard/finance");
-    revalidatePath("/dashboard", "layout");
-
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de la vente.") };
-  }
-}
-
-export async function recordSpecifiedIncome(data: {
-  description: string;
-  amount: number;
-  patientId?: string;
-  organizationId?: string;
-}) {
-  try {
-    recordSpecifiedIncomeSchema.parse(data);
-    const activeUser = await getCurrentUser();
-    if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceWriteRole(activeUser.role);
-
-    const amount = Number(data.amount);
-    const targetOrgId = data.organizationId || activeUser.organizationId;
-    const nowISO = new Date().toISOString();
-
-    if ((prisma as any).financialTransaction) {
-      const transaction = await (prisma as any).financialTransaction.create({
-        data: {
-          type: "INCOME",
-          category: "SERVICE_FEE",
-          amount: amount,
-          description: data.description.trim(),
-          patientId: data.patientId || null,
-          recordedById: activeUser.id,
-          organizationId: targetOrgId,
-        }
-      });
-      await logAuditAction(activeUser.id, "RECORD_INCOME", "FinancialTransaction", transaction.id);
-    } else {
-      // Fallback MongoDB raw command
-      await prisma.$runCommandRaw({
-        insert: "FinancialTransaction",
-        documents: [{
-          type: "INCOME",
-          category: "SERVICE_FEE",
-          amount: amount,
-          description: data.description.trim(),
-          patientId: data.patientId ? { "$oid": data.patientId } : null,
-          recordedById: { "$oid": activeUser.id },
-          organizationId: targetOrgId ? { "$oid": targetOrgId } : null,
-          createdAt: { "$date": nowISO }
-        }]
-      });
-      await logAuditAction(activeUser.id, "RECORD_INCOME", "FinancialTransaction", activeUser.id);
-    }
-
-    revalidatePath("/dashboard/finance");
-    revalidatePath("/dashboard", "layout");
-
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de l'encaissement.") };
-  }
-}
-
-export async function recordExpense(data: {
-  description: string;
-  amount: number;
-  organizationId?: string;
-}) {
+export async function recordExpense(data: { cashSessionId: string; description: string; amount: number; organizationId?: string }) {
   try {
     recordExpenseSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceWriteRole(activeUser.role);
+    assertRegisterOperateRole(activeUser.role);
 
-    const amount = Number(data.amount);
-    const targetOrgId = data.organizationId || activeUser.organizationId;
-    const nowISO = new Date().toISOString();
-
-    if ((prisma as any).financialTransaction) {
-      const transaction = await (prisma as any).financialTransaction.create({
-        data: {
-          type: "EXPENSE",
-          category: "OPERATIONAL_EXPENSE",
-          amount: amount,
-          description: data.description.trim(),
-          recordedById: activeUser.id,
-          organizationId: targetOrgId,
-        }
-      });
-      await logAuditAction(activeUser.id, "RECORD_EXPENSE", "FinancialTransaction", transaction.id);
-    } else {
-      // Fallback MongoDB raw command
-      await prisma.$runCommandRaw({
-        insert: "FinancialTransaction",
-        documents: [{
-          type: "EXPENSE",
-          category: "OPERATIONAL_EXPENSE",
-          amount: amount,
-          description: data.description.trim(),
-          recordedById: { "$oid": activeUser.id },
-          organizationId: targetOrgId ? { "$oid": targetOrgId } : null,
-          createdAt: { "$date": nowISO }
-        }]
-      });
-      await logAuditAction(activeUser.id, "RECORD_EXPENSE", "FinancialTransaction", activeUser.id);
+    const session = await prisma.cashSession.findUnique({ where: { id: data.cashSessionId } });
+    if (!session || session.status !== "OPEN") {
+      throw new Error("Aucune session de caisse ouverte. Ouvrez la caisse avant d'enregistrer une dépense.");
     }
 
+    const amount = Number(data.amount);
+
+    const transaction = await prisma.financialTransaction.create({
+      data: {
+        type: "EXPENSE",
+        category: "OPERATIONAL_EXPENSE",
+        amount,
+        description: data.description.trim(),
+        recordedById: activeUser.id,
+        organizationId: session.organizationId,
+        cashSessionId: session.id,
+      },
+    });
+
+    await logAuditAction(activeUser.id, "RECORD_EXPENSE", "FinancialTransaction", transaction.id);
+    revalidatePath(`/dashboard/clinics/${session.organizationId}/caisse`);
     revalidatePath("/dashboard/finance");
     revalidatePath("/dashboard", "layout");
 
-    return { success: true };
+    return { success: true, data: transaction };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de la dépense.") };
   }
 }
 
-export async function recordMultiItemInvoice(data: {
+async function decrementStockForItems(
+  tx: any,
+  items: Array<{ type: "PHARMACY" | "SERVICE"; pharmacyItemId?: string; description: string; quantity: number }>,
+  organizationId: string | null
+) {
+  const stockSnapshots = new Map<string, { name: string; stockQuantity: number; reorderLevel: number }>();
+  for (const item of items) {
+    if (item.type !== "PHARMACY" || !item.pharmacyItemId) continue;
+    const pItem = await tx.pharmacyItem.findUnique({ where: { id: item.pharmacyItemId } });
+    if (!pItem) throw new Error(`Produit introuvable : ${item.description}`);
+    if (pItem.stockQuantity < item.quantity) {
+      throw new Error(`Stock insuffisant pour "${pItem.name}". Disponible: ${pItem.stockQuantity}, Demandé: ${item.quantity}`);
+    }
+    stockSnapshots.set(item.pharmacyItemId, { name: pItem.name, stockQuantity: pItem.stockQuantity, reorderLevel: pItem.reorderLevel });
+  }
+
+  for (const item of items) {
+    if (item.type !== "PHARMACY" || !item.pharmacyItemId) continue;
+    await tx.pharmacyItem.update({
+      where: { id: item.pharmacyItemId },
+      data: { stockQuantity: { decrement: item.quantity } },
+    });
+    await consumeStockLots(tx, item.pharmacyItemId, item.quantity);
+  }
+
+  const lowStockAlerts: any[] = [];
+  for (const [pharmacyItemId, snapshot] of stockSnapshots) {
+    const soldQty = items
+      .filter((i) => i.type === "PHARMACY" && i.pharmacyItemId === pharmacyItemId)
+      .reduce((sum, i) => sum + Number(i.quantity), 0);
+    const newQty = snapshot.stockQuantity - soldQty;
+    if (snapshot.stockQuantity > snapshot.reorderLevel && newQty <= snapshot.reorderLevel) {
+      lowStockAlerts.push({
+        pharmacyItemId,
+        itemName: snapshot.name,
+        stockQuantity: newQty,
+        reorderLevel: snapshot.reorderLevel,
+        organizationId,
+      });
+    }
+  }
+  return lowStockAlerts;
+}
+
+// Règle le panier d'une facture en attente (créée à la clôture d'une consultation, une demande
+// labo, ou un envoi d'ordonnance à la pharmacie) : encaisse l'argent, émet la FinancialTransaction
+// et le ticket. Le stock N'est PAS touché ici — cf. dispensePendingInvoice, seul endroit où une
+// vente pharmacie décrémente le stock, une fois les articles physiquement remis au patient.
+export async function payPendingInvoice(
+  pendingInvoiceId: string,
+  cashSessionId: string,
+  items: Array<{
+    type: "PHARMACY" | "SERVICE";
+    pharmacyItemId?: string;
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    amount: number;
+  }>
+) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertRegisterOperateRole(activeUser.role);
+
+    // L'existence/l'état de la facture et de la session sont vérifiés avant la forme du panier :
+    // une facture déjà réglée ou une caisse fermée doit renvoyer son message dédié même si le
+    // panier transmis est vide, plutôt que l'erreur générique "panier vide" du schéma Zod.
+    const [pending, session] = await Promise.all([
+      prisma.pendingInvoice.findUnique({ where: { id: pendingInvoiceId } }),
+      prisma.cashSession.findUnique({ where: { id: cashSessionId } }),
+    ]);
+    if (!pending || pending.status !== "PENDING") {
+      throw new Error("Cette facture en attente n'existe plus ou a déjà été réglée.");
+    }
+    if (!session || session.status !== "OPEN") {
+      throw new Error("Aucune session de caisse ouverte. Ouvrez la caisse avant d'encaisser.");
+    }
+
+    payPendingInvoiceSchema.parse({ pendingInvoiceId, cashSessionId, items });
+
+    const totalAmount = items.reduce((sum, item) => sum + Number(item.amount), 0);
+    const summaryDescription = items.length === 1
+      ? items[0].description
+      : `Facture regroupée (${items.length} articles : ${items.map((i) => i.description).join(", ")})`;
+
+    const transaction = await prisma.financialTransaction.create({
+      data: {
+        type: "INCOME",
+        category: items.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
+        amount: totalAmount,
+        description: summaryDescription,
+        patientId: pending.patientId,
+        recordedById: activeUser.id,
+        organizationId: pending.organizationId,
+        cashSessionId: session.id,
+      },
+    });
+    (transaction as any).items = items;
+
+    const updated = await prisma.pendingInvoice.update({
+      where: { id: pendingInvoiceId },
+      data: {
+        status: "PAID",
+        items,
+        financialTransactionId: transaction.id,
+        cashSessionId: session.id,
+        paidAt: new Date(),
+      },
+    });
+
+    // Débloque toute demande d'analyse labo liée à cette facture qui attendait le règlement
+    // (cf. src/actions/lab.ts:createLabOrder — paymentStatus). No-op si la facture ne concerne
+    // pas un examen labo.
+    await prisma.labOrder.updateMany({
+      where: { pendingInvoiceId, paymentStatus: "PENDING" },
+      data: { paymentStatus: "PAID" },
+    });
+
+    await logAuditAction(activeUser.id, "PAY_PENDING_INVOICE", "PendingInvoice", pendingInvoiceId, { transactionId: transaction.id });
+    revalidatePath(`/dashboard/clinics/${pending.organizationId}/caisse`);
+    revalidatePath(`/dashboard/clinics/${pending.organizationId}/pharmacie`);
+    revalidatePath("/dashboard/lab");
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true, data: { transaction, pendingInvoice: updated } };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'encaissement de la facture.") };
+  }
+}
+
+// Vente comptant directement au guichet de la caisse (pas d'ordonnance/demande préalable) :
+// le paiement a lieu à la construction du panier, donc la PendingInvoice créée ici est déjà
+// PAID. Comme pour payPendingInvoice, le stock n'est décrémenté qu'à la remise en pharmacie.
+export async function createCaisseSale(data: {
+  cashSessionId: string;
   items: Array<{
     type: "PHARMACY" | "SERVICE";
     pharmacyItemId?: string;
@@ -404,138 +371,121 @@ export async function recordMultiItemInvoice(data: {
   organizationId?: string;
 }) {
   try {
-    recordMultiItemInvoiceSchema.parse(data);
+    createCaisseSaleSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceWriteRole(activeUser.role);
+    assertRegisterOperateRole(activeUser.role);
 
-    const targetOrgId = data.organizationId || activeUser.organizationId;
-    const nowISO = new Date().toISOString();
-
-    // 1. Verify stocks for all pharmacy items in the cart
-    const stockSnapshots = new Map<string, { name: string; stockQuantity: number; reorderLevel: number }>();
-    for (const item of data.items) {
-      if (item.type === "PHARMACY" && item.pharmacyItemId) {
-        let pItem: any = null;
-        if ((prisma as any).pharmacyItem) {
-          pItem = await (prisma as any).pharmacyItem.findUnique({ where: { id: item.pharmacyItemId } });
-        } else {
-          const rawRes: any = await prisma.$runCommandRaw({
-            find: "PharmacyItem",
-            filter: { _id: { "$oid": item.pharmacyItemId } }
-          });
-          const docs = rawRes.cursor?.firstBatch || [];
-          if (docs.length > 0) pItem = formatMongoDoc(docs[0]);
-        }
-
-        if (!pItem) throw new Error(`Produit introuvable : ${item.description}`);
-        if (pItem.stockQuantity < item.quantity) {
-          throw new Error(`Stock insuffisant pour "${pItem.name}". Disponible: ${pItem.stockQuantity}, Demandé: ${item.quantity}`);
-        }
-        stockSnapshots.set(item.pharmacyItemId, { name: pItem.name, stockQuantity: pItem.stockQuantity, reorderLevel: pItem.reorderLevel });
-      }
+    const session = await prisma.cashSession.findUnique({ where: { id: data.cashSessionId } });
+    if (!session || session.status !== "OPEN") {
+      throw new Error("Aucune session de caisse ouverte. Ouvrez la caisse avant d'encaisser.");
     }
 
-    // 2. Decrement stocks for pharmacy items
-    for (const item of data.items) {
-      if (item.type === "PHARMACY" && item.pharmacyItemId) {
-        if ((prisma as any).pharmacyItem) {
-          await (prisma as any).pharmacyItem.update({
-            where: { id: item.pharmacyItemId },
-            data: { stockQuantity: { decrement: item.quantity } }
-          });
-          // Garde les lots d'achat synchronisés (FEFO) pour la valorisation de stock.
-          await consumeStockLots(prisma, item.pharmacyItemId, item.quantity);
-        } else {
-          await prisma.$runCommandRaw({
-            update: "PharmacyItem",
-            updates: [{
-              q: { _id: { "$oid": item.pharmacyItemId } },
-              u: { "$inc": { stockQuantity: -item.quantity } }
-            }]
-          });
-        }
-      }
+    const targetOrgId = data.organizationId || session.organizationId;
+    const totalAmount = data.items.reduce((sum, item) => sum + Number(item.amount), 0);
+    const summaryDescription = data.items.length === 1
+      ? data.items[0].description
+      : `Vente comptant (${data.items.length} articles : ${data.items.map((i) => i.description).join(", ")})`;
+
+    const transaction = await prisma.financialTransaction.create({
+      data: {
+        type: "INCOME",
+        category: data.items.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
+        amount: totalAmount,
+        description: summaryDescription,
+        patientId: data.patientId || null,
+        recordedById: activeUser.id,
+        organizationId: targetOrgId,
+        cashSessionId: session.id,
+      },
+    });
+    (transaction as any).items = data.items;
+
+    let pendingInvoice = null;
+    if (data.patientId) {
+      pendingInvoice = await prisma.pendingInvoice.create({
+        data: {
+          status: "PAID",
+          patientId: data.patientId,
+          organizationId: targetOrgId,
+          items: data.items,
+          createdById: activeUser.id,
+          cashSessionId: session.id,
+          financialTransactionId: transaction.id,
+          paidAt: new Date(),
+        },
+      });
     }
 
-    // Alertes de rupture uniquement au franchissement du seuil (jamais à chaque vente sous le seuil).
-    const lowStockAlerts: any[] = [];
-    for (const [pharmacyItemId, snapshot] of stockSnapshots) {
-      const soldQty = data.items
-        .filter((i) => i.type === "PHARMACY" && i.pharmacyItemId === pharmacyItemId)
-        .reduce((sum, i) => sum + Number(i.quantity), 0);
-      const newQty = snapshot.stockQuantity - soldQty;
-      if (snapshot.stockQuantity > snapshot.reorderLevel && newQty <= snapshot.reorderLevel) {
-        lowStockAlerts.push({
-          pharmacyItemId,
-          itemName: snapshot.name,
-          stockQuantity: newQty,
-          reorderLevel: snapshot.reorderLevel,
-          organizationId: targetOrgId || null,
+    await logAuditAction(activeUser.id, "CREATE_CAISSE_SALE", "FinancialTransaction", transaction.id);
+    revalidatePath(`/dashboard/clinics/${targetOrgId}/caisse`);
+    revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true, data: { transaction, pendingInvoice } };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la validation de la vente.") };
+  }
+}
+
+// Remise physique des articles au comptoir pharmacie — PHARMACIST uniquement. Seul endroit du
+// nouveau flux où le stock pharmacie est décrémenté, une fois le ticket PAID présenté.
+export async function dispensePendingInvoice(pendingInvoiceId: string) {
+  try {
+    dispensePendingInvoiceSchema.parse({ pendingInvoiceId });
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertPharmacyDispenseRole(activeUser.role);
+
+    const pending = await prisma.pendingInvoice.findUnique({
+      where: { id: pendingInvoiceId },
+      include: { prescriptions: true },
+    });
+    if (!pending) throw new Error("Facture introuvable.");
+    if (pending.status !== "PAID") {
+      throw new Error(
+        pending.status === "PENDING"
+          ? "Cette facture n'est pas encore réglée à la caisse."
+          : "Les articles de cette facture ont déjà été remis."
+      );
+    }
+
+    const items = (pending.items as any[]) || [];
+    if (!items.some((i) => i.type === "PHARMACY")) {
+      throw new Error("Cette facture ne contient aucun médicament à remettre.");
+    }
+
+    let lowStockAlerts: any[] = [];
+    await prisma.$transaction(async (tx) => {
+      lowStockAlerts = await decrementStockForItems(tx, items, pending.organizationId);
+
+      await tx.pendingInvoice.update({
+        where: { id: pendingInvoiceId },
+        data: { status: "DISPENSED", dispensedAt: new Date() },
+      });
+
+      for (const prescription of pending.prescriptions) {
+        await tx.prescription.update({
+          where: { id: prescription.id },
+          data: { status: "DISPENSED", dispensedById: activeUser.id, dispensedAt: new Date() },
         });
       }
-    }
+    });
+
     if (lowStockAlerts.length > 0) {
       const { appEvents } = await import("@/lib/events");
       for (const alert of lowStockAlerts) appEvents.emit("stock.low", alert);
     }
 
-    // 3. Compute grand total and combined description
-    const totalAmount = data.items.reduce((sum, item) => sum + Number(item.amount), 0);
-    const summaryDescription = data.items.length === 1 
-      ? data.items[0].description 
-      : `Facture regroupée (${data.items.length} articles : ${data.items.map(i => i.description).join(', ')})`;
-
-    const itemsJsonStr = JSON.stringify(data.items);
-
-    let transaction: any = null;
-    if ((prisma as any).financialTransaction) {
-      transaction = await (prisma as any).financialTransaction.create({
-        data: {
-          type: "INCOME",
-          category: data.items.some(i => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
-          amount: totalAmount,
-          description: summaryDescription,
-          patientId: data.patientId || null,
-          recordedById: activeUser.id,
-          organizationId: targetOrgId,
-        }
-      });
-      transaction.items = data.items;
-      await logAuditAction(activeUser.id, "RECORD_MULTI_INVOICE", "FinancialTransaction", transaction.id);
-    } else {
-      // Fallback MongoDB raw command
-      await prisma.$runCommandRaw({
-        insert: "FinancialTransaction",
-        documents: [{
-          type: "INCOME",
-          category: data.items.some(i => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
-          amount: totalAmount,
-          description: summaryDescription,
-          itemsJson: itemsJsonStr,
-          patientId: data.patientId ? { "$oid": data.patientId } : null,
-          recordedById: { "$oid": activeUser.id },
-          organizationId: targetOrgId ? { "$oid": targetOrgId } : null,
-          createdAt: { "$date": nowISO }
-        }]
-      });
-      transaction = {
-        id: `fac-${Date.now()}`,
-        type: "INCOME",
-        amount: totalAmount,
-        description: summaryDescription,
-        items: data.items,
-        createdAt: nowISO
-      };
-      await logAuditAction(activeUser.id, "RECORD_MULTI_INVOICE", "FinancialTransaction", activeUser.id);
-    }
-
-    revalidatePath("/dashboard/finance");
+    await logAuditAction(activeUser.id, "DISPENSE_PENDING_INVOICE", "PendingInvoice", pendingInvoiceId);
+    revalidatePath(`/dashboard/clinics/${pending.organizationId}/pharmacie`);
+    revalidatePath("/dashboard/pharmacie");
     revalidatePath("/dashboard", "layout");
 
-    return { success: true, data: transaction };
+    return { success: true };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors de la validation du panier.") };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la remise des articles.") };
   }
 }
 
@@ -641,13 +591,179 @@ export async function getFinanceSummary(organizationId?: string) {
   }
 }
 
-// Créées automatiquement à la clôture d'une consultation par un CAREGIVER (qui n'a pas accès à
-// la caisse) — un COORDINATOR/PHARMACIST les retrouve ici et les finalise en vraie transaction.
-export async function listPendingInvoices(organizationId?: string) {
+// Journal de caisse détaillé et filtrable (page Finance) — distinct de getFinanceSummary : celui-ci
+// sert le tableau de bord (KPI + aperçu, plafonné à 500 lignes), celui-ci sert la consultation
+// exhaustive de l'historique (recherche, filtres combinés, pagination côté serveur) pour ne
+// jamais masquer de mouvements au-delà d'un plafond. Les totaux filtrés sont calculés par
+// agrégation Prisma sur l'ensemble filtré complet, pas seulement la page affichée.
+export async function listFinancialTransactions(filters: {
+  organizationId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  type?: "INCOME" | "EXPENSE";
+  category?: string;
+  search?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  page?: number;
+  pageSize?: number;
+} = {}) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertFinanceReadRole(activeUser.role);
+
+    const page = Math.max(1, Math.floor(filters.page || 1));
+    const pageSize = Math.min(200, Math.max(1, Math.floor(filters.pageSize || 50)));
+
+    // Toutes les conditions SAUF le type — réutilisées telles quelles pour calculer les totaux
+    // encaissé/dépensé indépendamment du filtre de type actif (voir plus bas).
+    const baseAnd: any[] = [];
+
+    if (activeUser.organization?.type === "HOLDING" && !filters.organizationId) {
+      baseAnd.push({
+        OR: [
+          { organizationId: activeUser.organizationId },
+          { organization: { parentId: activeUser.organizationId } },
+        ],
+      });
+    } else {
+      const targetOrgId = filters.organizationId || activeUser.organizationId;
+      if (targetOrgId) baseAnd.push({ organizationId: targetOrgId });
+    }
+
+    if (filters.dateFrom) {
+      const start = new Date(filters.dateFrom);
+      start.setHours(0, 0, 0, 0);
+      baseAnd.push({ createdAt: { gte: start } });
+    }
+    if (filters.dateTo) {
+      const end = new Date(filters.dateTo);
+      end.setHours(23, 59, 59, 999);
+      baseAnd.push({ createdAt: { lte: end } });
+    }
+    if (filters.category && filters.category !== "ALL") {
+      baseAnd.push({ category: filters.category });
+    }
+    if (filters.minAmount != null && !Number.isNaN(Number(filters.minAmount))) {
+      baseAnd.push({ amount: { gte: Number(filters.minAmount) } });
+    }
+    if (filters.maxAmount != null && !Number.isNaN(Number(filters.maxAmount))) {
+      baseAnd.push({ amount: { lte: Number(filters.maxAmount) } });
+    }
+    if (filters.search?.trim()) {
+      const q = filters.search.trim();
+      baseAnd.push({
+        OR: [
+          { description: { contains: q, mode: "insensitive" } },
+          {
+            patient: {
+              user: {
+                OR: [
+                  { firstName: { contains: q, mode: "insensitive" } },
+                  { lastName: { contains: q, mode: "insensitive" } },
+                ],
+              },
+            },
+          },
+          {
+            recordedBy: {
+              OR: [
+                { firstName: { contains: q, mode: "insensitive" } },
+                { lastName: { contains: q, mode: "insensitive" } },
+              ],
+            },
+          },
+        ],
+      });
+    }
+
+    const listWhere = filters.type ? { AND: [...baseAnd, { type: filters.type }] } : { AND: baseAnd };
+
+    const [transactions, totalCount, incomeAgg, expenseAgg] = await Promise.all([
+      prisma.financialTransaction.findMany({
+        where: listWhere,
+        include: {
+          recordedBy: { select: { firstName: true, lastName: true } },
+          patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+          pharmacyItem: { select: { name: true, dosage: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.financialTransaction.count({ where: listWhere }),
+      prisma.financialTransaction.aggregate({
+        where: { AND: [...baseAnd, { type: "INCOME" }] },
+        _sum: { amount: true },
+      }),
+      prisma.financialTransaction.aggregate({
+        where: { AND: [...baseAnd, { type: "EXPENSE" }] },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        transactions,
+        totalCount,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
+        filteredIncome: incomeAgg._sum.amount || 0,
+        filteredExpenses: expenseAgg._sum.amount || 0,
+      },
+    };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement du journal de caisse.") };
+  }
+}
+
+// File d'attente du comptoir pharmacie : factures réglées à la caisse (PAID) contenant au moins
+// un médicament, pas encore remises. Filtrage en mémoire après lecture (un champ Json ne se
+// filtre pas nativement côté Mongo/Prisma sur son contenu) — le volume de factures PAID en
+// attente de remise reste faible (pas d'historique à parcourir, seulement le flux courant).
+export async function listPharmacyDispenseQueue(organizationId?: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertPharmacyCatalogReadRole(activeUser.role);
+
+    const where: any = { status: "PAID" };
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      where.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else {
+      const targetOrgId = organizationId || activeUser.organizationId;
+      if (targetOrgId) where.organizationId = targetOrgId;
+    }
+
+    const invoices = await prisma.pendingInvoice.findMany({
+      where,
+      include: {
+        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+      },
+      orderBy: { paidAt: "desc" },
+    });
+
+    const queue = invoices.filter((inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY"));
+
+    return { success: true, data: queue };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Erreur lors du chargement de la file d'attente pharmacie." };
+  }
+}
+
+// Créées automatiquement à la clôture d'une consultation, d'une demande labo ou d'un envoi
+// d'ordonnance — en attente de règlement à la caisse (cf. src/app/dashboard/clinics/[id]/caisse).
+export async function listPendingInvoices(organizationId?: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    if (!CAISSE_READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
 
     const where: any = { status: "PENDING" };
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {
@@ -672,63 +788,5 @@ export async function listPendingInvoices(organizationId?: string) {
     return { success: true, data: invoices };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du chargement des factures en attente." };
-  }
-}
-
-export async function finalizePendingInvoice(
-  pendingInvoiceId: string,
-  items: Array<{
-    type: "PHARMACY" | "SERVICE";
-    pharmacyItemId?: string;
-    description: string;
-    quantity: number;
-    unitPrice: number;
-    amount: number;
-  }>
-) {
-  try {
-    const activeUser = await getCurrentUser();
-    if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceWriteRole(activeUser.role);
-
-    const pending = await prisma.pendingInvoice.findUnique({ where: { id: pendingInvoiceId } });
-    if (!pending || pending.status !== "PENDING") {
-      throw new Error("Cette facture en attente n'existe plus ou a déjà été finalisée.");
-    }
-
-    const invoiceRes = await recordMultiItemInvoice({
-      items,
-      patientId: pending.patientId,
-      organizationId: pending.organizationId || undefined,
-    });
-
-    if (!invoiceRes.success) {
-      throw new Error(invoiceRes.error || "Erreur lors de la génération de la facture.");
-    }
-
-    await prisma.pendingInvoice.update({
-      where: { id: pendingInvoiceId },
-      data: {
-        status: "FINALIZED",
-        financialTransactionId: (invoiceRes.data as any)?.id || null,
-        finalizedAt: new Date(),
-      },
-    });
-
-    // Débloque toute demande d'analyse labo liée à cette facture qui attendait le règlement
-    // (cf. src/actions/lab.ts:createLabOrder — paymentStatus). No-op si la facture ne concerne
-    // pas un examen labo.
-    await prisma.labOrder.updateMany({
-      where: { pendingInvoiceId, paymentStatus: "PENDING" },
-      data: { paymentStatus: "PAID" },
-    });
-
-    revalidatePath("/dashboard/finance");
-    revalidatePath("/dashboard/lab");
-    revalidatePath("/dashboard", "layout");
-
-    return { success: true, data: invoiceRes.data };
-  } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors de la finalisation de la facture.") };
   }
 }

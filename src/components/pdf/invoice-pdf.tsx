@@ -1,12 +1,15 @@
 "use client";
 
 import React from "react";
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 
 // Styles for standard A4 Invoice
 const a4Styles = StyleSheet.create({
   page: {
-    padding: 40,
+    paddingTop: 40,
+    paddingBottom: 60,
+    paddingLeft: 40,
+    paddingRight: 40,
     fontFamily: "Helvetica",
     color: "#1e293b",
     fontSize: 9,
@@ -22,6 +25,12 @@ const a4Styles = StyleSheet.create({
   },
   clinicInfo: {
     flexDirection: "column",
+  },
+  logoImage: {
+    width: 42,
+    height: 42,
+    objectFit: "contain",
+    marginBottom: 4,
   },
   companyName: {
     fontSize: 16,
@@ -170,12 +179,21 @@ const a4Styles = StyleSheet.create({
     fontSize: 8,
     color: "#64748b",
   },
-  watermark: {
+  // Petit pied de page répété identique sur chaque page (fixed) — distinct du bloc signature
+  // ci-dessus, qui n'apparaît qu'une fois là où le contenu se termine réellement.
+  pageFooter: {
+    position: "absolute",
+    bottom: 20,
+    left: 40,
+    right: 40,
+    borderTopWidth: 0.5,
+    borderTopColor: "#e2e8f0",
+    paddingTop: 6,
+    flexDirection: "row",
+    justifyContent: "space-between",
     fontSize: 7,
     color: "#94a3b8",
-    textAlign: "center",
-    marginTop: 20,
-  }
+  },
 });
 
 // Styles for 80mm Thermal Receipt (POS Ticket)
@@ -198,6 +216,12 @@ const thermalStyles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: 2,
     textAlign: "center",
+  },
+  logoImage: {
+    width: 32,
+    height: 32,
+    objectFit: "contain",
+    marginBottom: 2,
   },
   companyName: {
     fontSize: 9,
@@ -289,10 +313,11 @@ const thermalStyles = StyleSheet.create({
 interface InvoicePDFProps {
   transaction: any;
   organizationName?: string;
+  organizationLogoUrl?: string | null;
   format?: "thermal" | "a4";
 }
 
-export default function InvoicePDFDocument({ transaction, organizationName, format = "thermal" }: InvoicePDFProps) {
+export default function InvoicePDFDocument({ transaction, organizationName, organizationLogoUrl, format = "thermal" }: InvoicePDFProps) {
   const formatFCFA = (val: number) => {
     const num = Math.round(Number(val) || 0);
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
@@ -386,6 +411,8 @@ export default function InvoicePDFDocument({ transaction, organizationName, form
     });
   }
 
+  const hasPharmacyItem = itemList.some((item: any) => item.type === "PHARMACY");
+
   // Thermal 80mm format (default)
   if (format === "thermal") {
     const pageHeight = Math.max(320, 220 + itemList.length * 18);
@@ -396,6 +423,7 @@ export default function InvoicePDFDocument({ transaction, organizationName, form
           {/* Header */}
           <View style={thermalStyles.header}>
             <Text style={thermalStyles.receiptTitle}>*** REÇU DE CAISSE ***</Text>
+            {organizationLogoUrl && <Image src={organizationLogoUrl} style={thermalStyles.logoImage} />}
             <Text style={thermalStyles.companyName}>{organizationName || "MEDDOC - CENTRE MÉDICAL"}</Text>
             <Text style={thermalStyles.companySub}>Plateforme Médicale & Pharmacie</Text>
           </View>
@@ -458,6 +486,9 @@ export default function InvoicePDFDocument({ transaction, organizationName, form
           </View>
 
           <Text style={thermalStyles.footerMessage}>* MERCI DE VOTRE CONFIANCE *</Text>
+          {hasPharmacyItem && (
+            <Text style={thermalStyles.footerMessage}>À PRÉSENTER AU COMPTOIR PHARMACIE</Text>
+          )}
         </Page>
       </Document>
     );
@@ -467,9 +498,10 @@ export default function InvoicePDFDocument({ transaction, organizationName, form
   return (
     <Document>
       <Page size="A4" style={a4Styles.page}>
-        {/* En-tête */}
-        <View style={a4Styles.header}>
+        {/* En-tête — fixed : répété identique sur chaque page */}
+        <View style={a4Styles.header} fixed>
           <View style={a4Styles.clinicInfo}>
+            {organizationLogoUrl && <Image src={organizationLogoUrl} style={a4Styles.logoImage} />}
             <Text style={a4Styles.companyName}>{organizationName || "MEDDOC - CENTRE MÉDICAL"}</Text>
             <Text style={a4Styles.companySub}>Plateforme de Gestion Médicale & Pharmacie</Text>
           </View>
@@ -540,9 +572,11 @@ export default function InvoicePDFDocument({ transaction, organizationName, form
           </View>
         </View>
 
-        <Text style={a4Styles.watermark}>
-          Document officiel généré via MedDoc • Imprimante Thermal / Laser • Merci pour votre confiance
-        </Text>
+        {/* fixed : répété identique en bas de chaque page (distinct des signatures
+            ci-dessus, qui n'apparaissent qu'une fois à la fin réelle du contenu) */}
+        <View style={a4Styles.pageFooter} fixed>
+          <Text>Document officiel généré via MedDoc • Merci pour votre confiance</Text>
+        </View>
       </Page>
     </Document>
   );

@@ -27,7 +27,9 @@ import {
   MessageCircle,
   FlaskConical,
   HeartPulse,
-  BedDouble
+  BedDouble,
+  Banknote,
+  PackageSearch
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -171,10 +173,24 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         section: "Clinique",
       },
       {
-        name: "Finance & Pharmacie",
+        name: "Caisse",
+        href: `/dashboard/clinics/${activeClinicId}/caisse`,
+        icon: Banknote,
+        roles: ['ADMIN', 'COORDINATOR', 'CASHIER'],
+        section: "Finance",
+      },
+      {
+        name: "Pharmacie",
+        href: `/dashboard/clinics/${activeClinicId}/pharmacie`,
+        icon: PackageSearch,
+        roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+        section: "Finance",
+      },
+      {
+        name: "Finance",
         href: `/dashboard/clinics/${activeClinicId}/finance`,
         icon: Wallet,
-        roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+        roles: ['ADMIN', 'COORDINATOR'],
         section: "Finance",
       },
       {
@@ -225,10 +241,24 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         section: "Clinique",
       },
       {
-        name: "Finance & Pharmacie",
+        name: "Caisse",
+        href: "/dashboard/caisse",
+        icon: Banknote,
+        roles: ['ADMIN', 'COORDINATOR', 'CASHIER'],
+        section: "Finance",
+      },
+      {
+        name: "Pharmacie",
+        href: "/dashboard/pharmacie",
+        icon: PackageSearch,
+        roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+        section: "Finance",
+      },
+      {
+        name: "Finance",
         href: "/dashboard/finance",
         icon: Wallet,
-        roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+        roles: ['ADMIN', 'COORDINATOR'],
         section: "Finance",
       },
       {

@@ -25,7 +25,8 @@ export default async function ConsultationPage({ params }: ConsultationPageProps
           user: true,
           medicalRecords: {
             orderBy: { createdAt: 'desc' }
-          }
+          },
+          organization: { select: { name: true, logoUrl: true } }
         }
       },
       caregiver: {
