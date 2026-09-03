@@ -14,9 +14,12 @@ export const createHoldingSchema = z.object({
 
 export const updateHoldingSubscriptionSchema = z.object({
   holdingId: z.string().min(1),
+  name: z.string().trim().min(2, "Le nom est requis"),
   plan: z.nativeEnum(SubscriptionPlan),
   status: z.nativeEnum(SubscriptionStatus),
   licenseExpiresAt: z.date().nullable().optional(),
   paymentAmount: z.number().min(0, "Le montant doit être positif").nullable().optional(),
   paymentFrequency: z.nativeEnum(PaymentFrequency).nullable().optional(),
+  maxClinics: z.number().int().min(1, "Doit être au moins 1"),
+  maxUsers: z.number().int().min(1, "Doit être au moins 1"),
 });

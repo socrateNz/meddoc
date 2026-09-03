@@ -2,7 +2,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, Users, FileText, Settings, Bed, Clock, Phone, Wallet, AlertTriangle, Package, Calendar } from "lucide-react";
+import { ArrowLeft, Building2, Users, FileText, Settings, Bed, Clock, Phone, Wallet, AlertTriangle, Package, PackageCheck, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getOrCreateClinicWards } from "@/actions/wards";
 import CacheWriter from "@/components/cache-writer";
@@ -61,6 +61,34 @@ async function fetchFinanceSummary(clinicId: string) {
   const lowStockCount = pharmacyItems.filter((item) => item.stockQuantity <= item.reorderLevel).length;
 
   return { todayIncome, cashBalance, lowStockCount };
+}
+
+// Le tableau de bord du pharmacien ne doit afficher aucune donnée financière (recettes, solde
+// de caisse) — uniquement des indicateurs opérationnels de son propre comptoir.
+async function fetchPharmacyOverview(clinicId: string) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const [pendingInvoices, dispensedTodayCount, pharmacyItems] = await Promise.all([
+    prisma.pendingInvoice.findMany({
+      where: { organizationId: clinicId, status: "PAID" },
+      select: { items: true },
+    }),
+    prisma.pendingInvoice.count({
+      where: { organizationId: clinicId, status: "DISPENSED", dispensedAt: { gte: startOfToday } },
+    }),
+    prisma.pharmacyItem.findMany({
+      where: { organizationId: clinicId },
+      select: { stockQuantity: true, reorderLevel: true },
+    }),
+  ]);
+
+  const queueCount = pendingInvoices.filter(
+    (inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i: any) => i.type === "PHARMACY")
+  ).length;
+  const lowStockCount = pharmacyItems.filter((item) => item.stockQuantity <= item.reorderLevel).length;
+
+  return { queueCount, dispensedTodayCount, lowStockCount };
 }
 
 async function fetchMyAppointmentsToday(userId: string) {
@@ -139,15 +167,19 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   // séquentiellement évite de multiplier les allers-retours réseau vers la base.
   const [
     { staffMembers, wardsWithOccupancy },
-    { todayIncome, cashBalance, lowStockCount },
+    { todayIncome, cashBalance, lowStockCount: financeLowStockCount },
+    { queueCount, dispensedTodayCount, lowStockCount: pharmacyLowStockCount },
     openIncidentsCount,
     myAppointmentsTodayCount,
   ] = await Promise.all([
     showWardsAndStaff ? fetchWardsAndStaff(clinic.id) : Promise.resolve({ staffMembers: [] as any[], wardsWithOccupancy: [] as any[] }),
-    isCoordinator || isPharmacist || isCashier ? fetchFinanceSummary(clinic.id) : Promise.resolve({ todayIncome: 0, cashBalance: 0, lowStockCount: 0 }),
+    isCoordinator || isCashier ? fetchFinanceSummary(clinic.id) : Promise.resolve({ todayIncome: 0, cashBalance: 0, lowStockCount: 0 }),
+    isPharmacist ? fetchPharmacyOverview(clinic.id) : Promise.resolve({ queueCount: 0, dispensedTodayCount: 0, lowStockCount: 0 }),
     isCoordinator || isCaregiver ? prisma.incident.count({ where: { status: "OPEN", patient: { organizationId: clinic.id } } }) : Promise.resolve(0),
     isCaregiver ? fetchMyAppointmentsToday(user.id) : Promise.resolve(0),
   ]);
+
+  const lowStockCount = isPharmacist ? pharmacyLowStockCount : financeLowStockCount;
 
   const occupiedBeds = wardsWithOccupancy.reduce((acc, curr) => acc + curr.patientCount, 0);
   const totalCapacity = wardsWithOccupancy.reduce((acc, curr) => acc + curr.capacity, 0);
@@ -289,16 +321,17 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
         </div>
       )}
 
-      {/* Cartes PHARMACIST */}
+      {/* Cartes PHARMACIST — aucune donnée financière, uniquement des indicateurs opérationnels
+          du comptoir pharmacie (la caisse/finance restent hors du périmètre de ce rôle). */}
       {isPharmacist && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
             <div className="h-12 w-12 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mb-4">
-              <Wallet className="h-6 w-6 text-emerald-500" />
+              <PackageCheck className="h-6 w-6 text-emerald-500" />
             </div>
-            <h3 className="text-lg font-semibold">Ventes du jour</h3>
-            <p className="text-2xl font-bold mt-2">{formatFCFA(todayIncome)}</p>
-            <p className="text-sm text-slate-500 mt-2">Encaissements enregistrés aujourd&apos;hui</p>
+            <h3 className="text-lg font-semibold">File d&apos;attente</h3>
+            <p className="text-2xl font-bold mt-2">{queueCount}</p>
+            <p className="text-sm text-slate-500 mt-2">Tickets réglés en attente de remise</p>
             <Link href={`/dashboard/clinics/${clinic.id}/pharmacie`} className="w-full mt-6">
               <Button className="w-full" variant="outline">File de remise</Button>
             </Link>
@@ -306,13 +339,13 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
 
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
             <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-4">
-              <Wallet className="h-6 w-6 text-blue-500" />
+              <FileText className="h-6 w-6 text-blue-500" />
             </div>
-            <h3 className="text-lg font-semibold">Solde de caisse</h3>
-            <p className="text-2xl font-bold mt-2">{formatFCFA(cashBalance)}</p>
-            <p className="text-sm text-slate-500 mt-2">Recettes − dépenses totales</p>
+            <h3 className="text-lg font-semibold">Remis aujourd&apos;hui</h3>
+            <p className="text-2xl font-bold mt-2">{dispensedTodayCount}</p>
+            <p className="text-sm text-slate-500 mt-2">Tickets finalisés aujourd&apos;hui</p>
             <Link href={`/dashboard/clinics/${clinic.id}/pharmacie`} className="w-full mt-6">
-              <Button className="w-full" variant="outline">Voir le stock</Button>
+              <Button className="w-full" variant="outline">Voir l&apos;historique</Button>
             </Link>
           </div>
 
@@ -461,6 +494,8 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
           todayIncome,
           cashBalance,
           lowStockCount,
+          queueCount,
+          dispensedTodayCount,
           openIncidentsCount,
           myAppointmentsTodayCount,
           globalOccupancyRate,

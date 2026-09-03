@@ -134,7 +134,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Calendar,
         count: unreadCounts?.appointment || 0,
         badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
         section: "Clinique",
       },
       {

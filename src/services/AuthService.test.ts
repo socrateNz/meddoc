@@ -50,6 +50,19 @@ describe("AuthService.login", () => {
     );
   });
 
+  it("refuse une clinique désactivée (suspendue par l'admin de la holding)", async () => {
+    mockRepository({
+      ...baseUser,
+      organization: { ...baseUser.organization, isActive: false },
+    });
+    vi.doMock("bcrypt", () => ({ default: { compare: vi.fn() } }));
+    const { AuthService } = await import("./AuthService");
+
+    await expect(AuthService.login({ email: baseUser.email, password: "x" })).rejects.toThrow(
+      "L'abonnement de votre organisation est inactif ou annulé."
+    );
+  });
+
   it("refuse une organisation dont la licence a expiré (héritée de la holding parente)", async () => {
     mockRepository({
       ...baseUser,

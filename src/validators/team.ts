@@ -22,3 +22,17 @@ export const reassignTeamMemberSchema = z.object({
   userId: z.string().min(1),
   newOrganizationId: z.string().min(1),
 });
+
+export const updateTeamMemberSchema = z.object({
+  userId: z.string().min(1),
+  firstName: z.string().min(2, "Prénom requis"),
+  lastName: z.string().min(2, "Nom requis"),
+  email: z.string().email("Adresse email invalide"),
+  phone: z.string().optional(),
+  specialties: z.string().optional(),
+  licenseNumber: z.string().optional(),
+});
+
+export const resetTeamMemberPasswordSchema = z.object({
+  userId: z.string().min(1),
+});

@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { MoreHorizontal, Replace, UserX, UserCheck, Stethoscope } from "lucide-react";
+import { MoreHorizontal, Replace, UserX, UserCheck, Stethoscope, Pencil, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ReassignMemberDialog from "./reassign-member-dialog";
 import DeleteMemberAlert from "./delete-member-alert";
 import ReactivateMemberAlert from "./reactivate-member-alert";
 import ReclassifyRoleDialog from "./reclassify-role-dialog";
+import EditMemberDialog from "./edit-member-dialog";
+import ResetPasswordAlert from "./reset-password-alert";
 
 interface UserActionsMenuProps {
   member: any;
@@ -22,6 +24,8 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const userName = `${member.firstName} ${member.lastName}`;
 
   // COORDINATOR ne gère que le personnel (médecin/infirmier/pharmacien) de sa clinique ;
@@ -56,6 +60,18 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
             <DropdownMenuItem onClick={() => setReclassifyOpen(true)} className="cursor-pointer">
               <Stethoscope className="mr-2 h-4 w-4" />
               <span>Marquer comme {reclassifyTarget === "MEDECIN" ? "Médecin" : "Infirmier(e)"}</span>
+            </DropdownMenuItem>
+          )}
+          {canManageStatus && (
+            <DropdownMenuItem onClick={() => setEditOpen(true)} className="cursor-pointer">
+              <Pencil className="mr-2 h-4 w-4" />
+              <span>Modifier</span>
+            </DropdownMenuItem>
+          )}
+          {canManageStatus && member.isActive && (
+            <DropdownMenuItem onClick={() => setResetPasswordOpen(true)} className="cursor-pointer">
+              <KeyRound className="mr-2 h-4 w-4" />
+              <span>Réinitialiser le mot de passe</span>
             </DropdownMenuItem>
           )}
           {canManageStatus && (
@@ -106,6 +122,17 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
           userName={userName}
           targetRole={reclassifyTarget}
         />
+      )}
+      {canManageStatus && (
+        <>
+          <EditMemberDialog member={member} open={editOpen} onOpenChange={setEditOpen} />
+          <ResetPasswordAlert
+            open={resetPasswordOpen}
+            onOpenChange={setResetPasswordOpen}
+            userId={member.id}
+            userName={userName}
+          />
+        </>
       )}
     </>
   );

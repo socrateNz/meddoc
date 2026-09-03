@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 interface PDFDownloadButtonProps {
   documentName: string;
-  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport" | "zreport";
+  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport" | "zreport" | "holding-invoice";
   data: any;
   buttonText?: string;
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
@@ -106,6 +106,15 @@ export default function PDFDownloadButton({
             variance={data.variance}
             organizationName={data.organizationName}
             organizationLogoUrl={data.organizationLogoUrl}
+          />
+        );
+      } else if (type === "holding-invoice") {
+        const HoldingInvoicePDFDocument = (await import("./holding-invoice-pdf")).default;
+        element = (
+          <HoldingInvoicePDFDocument
+            holding={data.holding}
+            adminName={data.adminName}
+            adminEmail={data.adminEmail}
           />
         );
       } else {

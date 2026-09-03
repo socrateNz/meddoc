@@ -757,6 +757,98 @@ export async function listPharmacyDispenseQueue(organizationId?: string) {
   }
 }
 
+// Recherche un ticket réglé par sa référence unique (les 6 derniers caractères de son id,
+// affichés au patient sur le ticket de caisse — cf. invoice-modal.tsx) : c'est le seul chemin
+// permettant à un pharmacien de retrouver et finaliser une facture, il doit avoir la référence
+// que le patient a récupérée à la caisse plutôt que de parcourir une liste globale.
+export async function findPendingInvoiceByReference(organizationId: string | undefined, reference: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertPharmacyCatalogReadRole(activeUser.role);
+
+    const cleaned = reference.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (cleaned.length < 4) throw new Error("Référence trop courte. Vérifiez le numéro indiqué sur le ticket.");
+
+    const where: any = { status: "PAID" };
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      where.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else {
+      const targetOrgId = organizationId || activeUser.organizationId;
+      if (targetOrgId) where.organizationId = targetOrgId;
+    }
+
+    const candidates = await prisma.pendingInvoice.findMany({
+      where,
+      include: {
+        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+      },
+      orderBy: { paidAt: "desc" },
+      take: 500,
+    });
+
+    const match = candidates.find((inv) => cleaned.endsWith(String(inv.id).slice(-6).toUpperCase()));
+    if (!match) throw new Error("Aucun ticket réglé ne correspond à cette référence.");
+
+    const items = (match.items as any[]) || [];
+    if (!items.some((i) => i.type === "PHARMACY")) {
+      throw new Error("Ce ticket ne contient aucun médicament à remettre.");
+    }
+
+    return { success: true, data: match };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la recherche du ticket.") };
+  }
+}
+
+// Historique des remises effectuées (tickets DISPENSED) — traçabilité pour le comptoir
+// pharmacie, distinct de la file d'attente (PAID, pas encore remis).
+export async function listPharmacyDispenseHistory(organizationId?: string, options?: { search?: string; take?: number }) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertPharmacyCatalogReadRole(activeUser.role);
+
+    const where: any = { status: "DISPENSED" };
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      where.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else {
+      const targetOrgId = organizationId || activeUser.organizationId;
+      if (targetOrgId) where.organizationId = targetOrgId;
+    }
+
+    const invoices = await prisma.pendingInvoice.findMany({
+      where,
+      include: {
+        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+      },
+      orderBy: { dispensedAt: "desc" },
+      take: options?.take || 200,
+    });
+
+    let history = invoices.filter((inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY"));
+
+    const search = options?.search?.trim().toLowerCase();
+    if (search) {
+      history = history.filter((inv) => {
+        const ref = String(inv.id).slice(-6).toLowerCase();
+        const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}`.toLowerCase() : "";
+        return ref.includes(search) || name.includes(search);
+      });
+    }
+
+    return { success: true, data: history };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Erreur lors du chargement de l'historique." };
+  }
+}
+
 // Créées automatiquement à la clôture d'une consultation, d'une demande labo ou d'un envoi
 // d'ordonnance — en attente de règlement à la caisse (cf. src/app/dashboard/clinics/[id]/caisse).
 export async function listPendingInvoices(organizationId?: string) {

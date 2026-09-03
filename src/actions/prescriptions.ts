@@ -10,6 +10,7 @@ import {
   createPrescriptionSchema,
   renewPrescriptionSchema,
   createPrescriptionTemplateSchema,
+  updatePrescriptionSchema,
 } from "@/validators/prescriptions";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
@@ -254,6 +255,53 @@ export async function renewPrescription(prescriptionId: string, overrides?: { it
     return { success: true, data: updated };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors du renouvellement de l'ordonnance.") };
+  }
+}
+
+// Modifie une ordonnance en place — uniquement tant qu'elle est ACTIVE (pas encore envoyée à
+// la pharmacie/dispensée) : au-delà, l'ordonnance a déjà pu générer une PendingInvoice ou être
+// remise au patient, la modifier rétroactivement corromprait cet historique. Un renouvellement
+// (renewPrescription) reste le chemin pour changer une ordonnance déjà envoyée.
+export async function updatePrescription(data: {
+  prescriptionId: string;
+  items: PrescriptionItemInput[];
+  notes?: string;
+}) {
+  try {
+    updatePrescriptionSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertPrescriptionWriteRole(activeUser.role);
+
+    const source = await prisma.prescription.findUnique({ where: { id: data.prescriptionId } });
+    if (!source) throw new Error("Ordonnance introuvable.");
+    if (source.status !== "ACTIVE") {
+      throw new Error("Cette ordonnance a déjà été envoyée à la pharmacie et ne peut plus être modifiée.");
+    }
+
+    const hasAccess = await verifyPatientAccess(source.patientId, activeUser);
+    if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+
+    await prisma.$transaction([
+      prisma.prescriptionItem.deleteMany({ where: { prescriptionId: data.prescriptionId } }),
+      prisma.prescription.update({
+        where: { id: data.prescriptionId },
+        data: {
+          notes: data.notes ?? source.notes,
+          items: { create: data.items.map(toItemCreateData) },
+        },
+      }),
+    ]);
+
+    await logAuditAction(activeUser.id, "UPDATE_PRESCRIPTION", "Prescription", data.prescriptionId);
+    revalidatePath(`/dashboard/patients/${source.patientId}`);
+
+    await runInteractionCheck(data.prescriptionId);
+    const updated = await prisma.prescription.findUnique({ where: { id: data.prescriptionId }, include: { items: true } });
+
+    return { success: true, data: updated };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la modification de l'ordonnance.") };
   }
 }
 

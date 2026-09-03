@@ -8,6 +8,8 @@ import {
   toggleAvailabilitySchema,
   createTeamMemberSchema,
   reassignTeamMemberSchema,
+  updateTeamMemberSchema,
+  resetTeamMemberPasswordSchema,
 } from "@/validators/team";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
@@ -201,6 +203,92 @@ async function assertCanManageStaffMember(activeUser: any, target: { role: strin
     return;
   }
   throw new Error("Non autorisé.");
+}
+
+// Modifie les informations de contact/profil d'un membre déjà créé — jamais son rôle ni son
+// établissement, qui suivent leurs propres actions dédiées (reclassifyRole, reassignTeamMember).
+export async function updateTeamMember(data: {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  specialties?: string;
+  licenseNumber?: string;
+}) {
+  try {
+    updateTeamMemberSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const target = await prisma.user.findUnique({ where: { id: data.userId }, include: { caregiverProfile: true } });
+    if (!target) throw new Error("Utilisateur introuvable.");
+    await assertCanManageStaffMember(activeUser, target);
+
+    const existingWithEmail = await prisma.user.findUnique({ where: { email: data.email } });
+    if (existingWithEmail && existingWithEmail.id !== data.userId) {
+      throw new Error("Un autre utilisateur utilise déjà cet email.");
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: data.userId },
+      data: {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        phone: data.phone || null,
+      },
+    });
+
+    if (target.caregiverProfile && (data.specialties !== undefined || data.licenseNumber !== undefined)) {
+      await prisma.caregiver.update({
+        where: { id: target.caregiverProfile.id },
+        data: {
+          ...(data.specialties !== undefined ? { specialties: data.specialties ? [data.specialties] : [] } : {}),
+          ...(target.role === "MEDECIN" && data.licenseNumber !== undefined ? { licenseNumber: data.licenseNumber || null } : {}),
+        },
+      });
+    }
+
+    await logAuditAction(activeUser.id, "UPDATE_TEAM_MEMBER", "User", data.userId);
+    revalidatePath("/dashboard/team");
+    revalidatePath("/dashboard/clinics/[id]/team", "page");
+
+    return { success: true, data: updatedUser };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la modification du membre.") };
+  }
+}
+
+// Remet le mot de passe par défaut (même convention que createTeamMember) et force le
+// changement à la prochaine connexion — aucun canal d'envoi d'email n'existe pour ce compte,
+// le coordinateur/administrateur communique donc ce mot de passe de vive voix ou par SMS.
+export async function resetTeamMemberPassword(userId: string) {
+  try {
+    resetTeamMemberPasswordSchema.parse({ userId });
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) throw new Error("Utilisateur introuvable.");
+    await assertCanManageStaffMember(activeUser, target);
+
+    const defaultPassword = "ChangeMe!123";
+    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, requiresPasswordChange: true },
+    });
+
+    await logAuditAction(activeUser.id, "RESET_TEAM_MEMBER_PASSWORD", "User", userId);
+    revalidatePath("/dashboard/team");
+    revalidatePath("/dashboard/clinics/[id]/team", "page");
+
+    return { success: true, data: { defaultPassword } };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la réinitialisation du mot de passe.") };
+  }
 }
 
 export async function deactivateTeamMember(userId: string) {

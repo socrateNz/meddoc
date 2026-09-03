@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
+import { logAuditAction } from "@/middlewares/auditLogger";
 import { createHoldingSchema, updateHoldingSubscriptionSchema } from "@/validators/super-admin";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcrypt";
@@ -31,26 +32,35 @@ export async function getHoldings() {
 
     const holdings = await Promise.all(
       rawHoldings.map(async (holding) => {
-        const usersCount = await prisma.user.count({
-          where: {
-            OR: [
-              { organizationId: holding.id },
-              { organization: { parentId: holding.id } }
-            ]
-          }
-        });
-
-        const patientsCount = await prisma.patient.count({
-          where: {
-            OR: [
-              { organizationId: holding.id },
-              { organization: { parentId: holding.id } }
-            ]
-          }
-        });
+        const [usersCount, patientsCount, adminUser] = await Promise.all([
+          prisma.user.count({
+            where: {
+              OR: [
+                { organizationId: holding.id },
+                { organization: { parentId: holding.id } }
+              ]
+            }
+          }),
+          prisma.patient.count({
+            where: {
+              OR: [
+                { organizationId: holding.id },
+                { organization: { parentId: holding.id } }
+              ]
+            }
+          }),
+          // Premier administrateur de la holding — affiché sur la fiche détaillée et sur le
+          // reçu/facture téléchargeable (cf. holding-actions-menu.tsx).
+          prisma.user.findFirst({
+            where: { organizationId: holding.id, role: "ADMIN" },
+            orderBy: { createdAt: "asc" },
+            select: { firstName: true, lastName: true, email: true },
+          }),
+        ]);
 
         return {
           ...holding,
+          adminUser,
           _count: {
             children: holding._count.children,
             users: usersCount,
@@ -134,11 +144,14 @@ export async function createHolding(data: {
 }
 
 export async function updateHoldingSubscription(holdingId: string, data: {
+  name: string;
   plan: SubscriptionPlan;
   status: SubscriptionStatus;
   licenseExpiresAt?: Date | null;
   paymentAmount?: number | null;
   paymentFrequency?: PaymentFrequency | null;
+  maxClinics: number;
+  maxUsers: number;
 }) {
   try {
     updateHoldingSubscriptionSchema.parse({ holdingId, ...data });
@@ -150,19 +163,98 @@ export async function updateHoldingSubscription(holdingId: string, data: {
     const holding = await prisma.organization.update({
       where: { id: holdingId },
       data: {
+        name: data.name,
         plan: data.plan,
         subscriptionStatus: data.status,
         licenseExpiresAt: data.licenseExpiresAt,
         paymentAmount: data.paymentAmount ?? null,
         paymentFrequency: data.paymentFrequency ?? null,
+        maxClinics: data.maxClinics,
+        maxUsers: data.maxUsers,
       }
     });
 
+    await logAuditAction(user.id, "UPDATE_HOLDING", "Organization", holdingId, { name: data.name, plan: data.plan, status: data.status });
     revalidatePath("/dashboard/holdings");
     revalidatePath("/dashboard");
     return { holding, error: null };
   } catch (error: any) {
     return { holding: null, error: toErrorMessage(error, "Failed to update holding") };
+  }
+}
+
+// Suspend l'accès d'une holding sans rien supprimer — réversible via reactivateHolding.
+// Équivalent rapide (un clic) à changer le statut vers INACTIVE depuis "Modifier l'abonnement".
+export async function deactivateHolding(holdingId: string) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.role !== "SUPER_ADMIN") throw new Error("Unauthorized");
+
+    const holding = await prisma.organization.update({
+      where: { id: holdingId, type: "HOLDING" },
+      data: { subscriptionStatus: "INACTIVE" },
+    });
+
+    await logAuditAction(user.id, "DEACTIVATE_HOLDING", "Organization", holdingId, { name: holding.name });
+    revalidatePath("/dashboard/holdings");
+    revalidatePath("/dashboard");
+    return { holding, error: null };
+  } catch (error: any) {
+    return { holding: null, error: toErrorMessage(error, "Erreur lors de la désactivation.") };
+  }
+}
+
+export async function reactivateHolding(holdingId: string) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.role !== "SUPER_ADMIN") throw new Error("Unauthorized");
+
+    const holding = await prisma.organization.update({
+      where: { id: holdingId, type: "HOLDING" },
+      data: { subscriptionStatus: "ACTIVE" },
+    });
+
+    await logAuditAction(user.id, "REACTIVATE_HOLDING", "Organization", holdingId, { name: holding.name });
+    revalidatePath("/dashboard/holdings");
+    revalidatePath("/dashboard");
+    return { holding, error: null };
+  } catch (error: any) {
+    return { holding: null, error: toErrorMessage(error, "Erreur lors de la réactivation.") };
+  }
+}
+
+// Suppression définitive — irréversible, contrairement à deactivateHolding. Bloquée tant que la
+// holding a encore des cliniques rattachées : au-delà de ce garde-fou, la suppression en cascade
+// entraînerait la perte de patients, dossiers médicaux et mouvements financiers réels. Une fois
+// ce garde-fou passé, seule la holding elle-même et ses utilisateurs directement rattachés
+// (généralement son seul administrateur) sont supprimés.
+export async function deleteHolding(holdingId: string) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.role !== "SUPER_ADMIN") throw new Error("Unauthorized");
+
+    const holding = await prisma.organization.findFirst({
+      where: { id: holdingId, type: "HOLDING" },
+      include: { _count: { select: { children: true } } },
+    });
+    if (!holding) throw new Error("Holding introuvable.");
+    if (holding._count.children > 0) {
+      throw new Error(
+        "Impossible de supprimer : cette holding possède encore des cliniques rattachées. Retirez-les d'abord."
+      );
+    }
+
+    await prisma.$transaction([
+      prisma.user.deleteMany({ where: { organizationId: holdingId } }),
+      prisma.organization.delete({ where: { id: holdingId } }),
+    ]);
+
+    await logAuditAction(user.id, "DELETE_HOLDING", "Organization", holdingId, { name: holding.name });
+    revalidatePath("/dashboard/holdings");
+    revalidatePath("/dashboard");
+    return { error: null };
+  } catch (error: any) {
+    return { error: toErrorMessage(error, "Erreur lors de la suppression.") };
   }
 }
 
@@ -176,10 +268,13 @@ export async function getSuperAdminOverview() {
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    const [activeHoldingsForMrr, planGroups, watchExpiring, watchInactive, recentHoldings, recentContactMessages] = await Promise.all([
+    const [allHoldingsForRevenue, planGroups, watchExpiring, watchInactive, recentHoldings, recentContactMessages] = await Promise.all([
+      // Somme brute du coût de licence de TOUTES les holdings (peu importe le statut d'abonnement
+      // ou la fréquence de paiement) — remplace l'ancien MRR (revenu mensuel récurrent, réservé aux
+      // holdings ACTIVE et normalisé par mois) par un total cumulé plus simple, tel que demandé.
       prisma.organization.findMany({
-        where: { type: "HOLDING", subscriptionStatus: "ACTIVE", paymentAmount: { not: null } },
-        select: { paymentAmount: true, paymentFrequency: true },
+        where: { type: "HOLDING", paymentAmount: { not: null } },
+        select: { paymentAmount: true },
       }),
       prisma.organization.groupBy({
         by: ["plan"],
@@ -209,10 +304,7 @@ export async function getSuperAdminOverview() {
       }),
     ]);
 
-    const mrr = activeHoldingsForMrr.reduce((sum, h) => {
-      const amount = h.paymentAmount || 0;
-      return sum + (h.paymentFrequency === "YEARLY" ? amount / 12 : amount);
-    }, 0);
+    const totalRevenue = allHoldingsForRevenue.reduce((sum, h) => sum + (h.paymentAmount || 0), 0);
 
     const planBreakdown = planGroups.map((g) => ({ plan: g.plan, count: g._count._all }));
 
@@ -234,7 +326,7 @@ export async function getSuperAdminOverview() {
     return {
       success: true,
       data: {
-        mrr,
+        totalRevenue,
         planBreakdown,
         holdingsToWatch: Array.from(watchMap.values()),
         recentHoldings,

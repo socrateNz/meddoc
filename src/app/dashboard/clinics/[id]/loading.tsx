@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, Users, FileText, Bed, Clock, Wallet, AlertTriangle, Package, Calendar } from "lucide-react";
+import { Building2, Users, FileText, Bed, Clock, Wallet, AlertTriangle, Package, PackageCheck, Calendar } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface ClinicDashboardPreview {
@@ -12,6 +12,8 @@ interface ClinicDashboardPreview {
   todayIncome: number;
   cashBalance: number;
   lowStockCount: number;
+  queueCount: number;
+  dispensedTodayCount: number;
   openIncidentsCount: number;
   myAppointmentsTodayCount: number;
   globalOccupancyRate: number;
@@ -134,7 +136,7 @@ export default function Loading() {
 
   const {
     clinicName, usersCount, patientsCount, roleKey, todayIncome, cashBalance, lowStockCount,
-    openIncidentsCount, myAppointmentsTodayCount, globalOccupancyRate, wards, staff,
+    queueCount, dispensedTodayCount, openIncidentsCount, myAppointmentsTodayCount, globalOccupancyRate, wards, staff,
   } = preview;
 
   const showShortcuts = roleKey === "READ_ONLY" || roleKey === "COORDINATOR";
@@ -216,14 +218,14 @@ export default function Loading() {
       {roleKey === "PHARMACIST" && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
-            <Wallet className="h-6 w-6 text-emerald-500 mb-4" />
-            <h3 className="text-lg font-semibold">Ventes du jour</h3>
-            <p className="text-2xl font-bold mt-2">{formatFCFA(todayIncome)}</p>
+            <PackageCheck className="h-6 w-6 text-emerald-500 mb-4" />
+            <h3 className="text-lg font-semibold">File d&apos;attente</h3>
+            <p className="text-2xl font-bold mt-2">{queueCount}</p>
           </div>
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
-            <Wallet className="h-6 w-6 text-blue-500 mb-4" />
-            <h3 className="text-lg font-semibold">Solde de caisse</h3>
-            <p className="text-2xl font-bold mt-2">{formatFCFA(cashBalance)}</p>
+            <FileText className="h-6 w-6 text-blue-500 mb-4" />
+            <h3 className="text-lg font-semibold">Remis aujourd&apos;hui</h3>
+            <p className="text-2xl font-bold mt-2">{dispensedTodayCount}</p>
           </div>
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col items-center text-center">
             <Package className="h-6 w-6 text-amber-500 mb-4" />

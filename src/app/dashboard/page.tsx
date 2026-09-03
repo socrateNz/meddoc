@@ -40,7 +40,7 @@ export default async function DashboardPage() {
       getSuperAdminOverview(),
     ]);
     const overview = overviewRes.success ? overviewRes.data! : {
-      mrr: 0,
+      totalRevenue: 0,
       planBreakdown: [] as { plan: string; count: number }[],
       holdingsToWatch: [] as { id: string; name: string; licenseExpiresAt: Date | null; subscriptionStatus: string; reasons: string[] }[],
       recentHoldings: [] as { id: string; name: string; plan: string; createdAt: Date }[],
@@ -100,12 +100,12 @@ export default async function DashboardPage() {
           </Card>
           <Card className="rounded-2xl border border-emerald-200/50 dark:border-emerald-900/40 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200">Revenu mensuel (MRR)</CardTitle>
+              <CardTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200">Revenu</CardTitle>
               <Wallet className="h-4 w-4 text-emerald-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
-                {new Intl.NumberFormat("fr-FR").format(Math.round(overview.mrr))} FCFA
+                {new Intl.NumberFormat("fr-FR").format(Math.round(overview.totalRevenue))} FCFA
               </div>
             </CardContent>
           </Card>
@@ -233,7 +233,7 @@ export default async function DashboardPage() {
             clinicsCount,
             usersCount,
             patientsCount,
-            mrr: overview.mrr,
+            totalRevenue: overview.totalRevenue,
             planBreakdown: overview.planBreakdown,
             holdingsToWatch: overview.holdingsToWatch.slice(0, 6).map((h) => ({
               id: h.id,

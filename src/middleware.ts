@@ -26,7 +26,7 @@ const restrictedSections: Record<string, string[]> = {
   incidents: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   rooms: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  appointments: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+  appointments: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   'ai-assistant': ['ADMIN', 'COORDINATOR', 'MEDECIN'],
   medecin: ['MEDECIN'],
   // Finance & Pharmacie éclatées en 3 sections (séparation caisse/pharmacie) : la caisse

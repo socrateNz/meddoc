@@ -326,7 +326,10 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
   const isIncome = transaction.type === "INCOME";
   const isPharmacy = transaction.category === "PHARMACY_SALE";
   const docTitle = isIncome ? (isPharmacy ? "FACTURE VENTE PHARMACIE" : "REÇU DE CAISSE") : "PIÈCE DE SORTIE";
-  const invoiceNum = `FAC-${(transaction.id || "000000").slice(-6).toUpperCase()}`;
+  // Même référence que côté écran (invoice-modal.tsx) : celle que la pharmacie recherche
+  // (PendingInvoice.id), pas l'id interne de la transaction.
+  const referenceId = transaction.pendingInvoiceId || transaction.id || "000000";
+  const invoiceNum = `FAC-${String(referenceId).slice(-6).toUpperCase()}`;
 
   const qty = transaction.quantity || 1;
   const unitPrice = transaction.pharmacyItem?.unitPrice || (transaction.amount / qty);

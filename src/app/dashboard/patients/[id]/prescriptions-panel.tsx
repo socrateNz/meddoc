@@ -6,8 +6,9 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Pill, RefreshCw, Send, AlertTriangle, Stethoscope } from "lucide-react";
+import { Loader2, Pill, RefreshCw, Send, AlertTriangle, Stethoscope, Pencil } from "lucide-react";
 import { renewPrescription, sendPrescriptionToPharmacy } from "@/actions/prescriptions";
+import EditPrescriptionDialog from "./edit-prescription-dialog";
 import { toast } from "sonner";
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -31,6 +32,7 @@ function formatDate(date: string | Date) {
 export default function PrescriptionsPanel({ prescriptions, canPrescribe }: { prescriptions: any[]; canPrescribe: boolean }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [editingPrescription, setEditingPrescription] = useState<any | null>(null);
 
   const handleRenew = async (id: string) => {
     setBusyId(id);
@@ -130,10 +132,16 @@ export default function PrescriptionsPanel({ prescriptions, canPrescribe }: { pr
                     Renouveler
                   </Button>
                   {p.status === "ACTIVE" && (
-                    <Button size="sm" variant="outline" className="gap-1.5" disabled={busyId === p.id} onClick={() => handleSend(p.id)}>
-                      {busyId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                      Envoyer à la pharmacie
-                    </Button>
+                    <>
+                      <Button size="sm" variant="outline" className="gap-1.5" disabled={busyId === p.id} onClick={() => setEditingPrescription(p)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        Modifier
+                      </Button>
+                      <Button size="sm" variant="outline" className="gap-1.5" disabled={busyId === p.id} onClick={() => handleSend(p.id)}>
+                        {busyId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                        Envoyer à la pharmacie
+                      </Button>
+                    </>
                   )}
                 </div>
               )}
@@ -141,6 +149,14 @@ export default function PrescriptionsPanel({ prescriptions, canPrescribe }: { pr
           </Card>
         );
       })}
+
+      {editingPrescription && (
+        <EditPrescriptionDialog
+          prescription={editingPrescription}
+          open={!!editingPrescription}
+          onOpenChange={(v) => !v && setEditingPrescription(null)}
+        />
+      )}
     </div>
   );
 }

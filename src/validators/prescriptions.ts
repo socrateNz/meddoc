@@ -25,6 +25,12 @@ export const renewPrescriptionSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const updatePrescriptionSchema = z.object({
+  prescriptionId: z.string().min(1),
+  items: z.array(prescriptionItemSchema).min(1, "Au moins un médicament requis"),
+  notes: z.string().optional(),
+});
+
 export const createPrescriptionTemplateSchema = z.object({
   name: z.string().min(1, "Nom du modèle requis"),
   pathology: z.string().optional(),

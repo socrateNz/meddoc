@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/lib/auth";
-import { getPharmacyItems, listPharmacyDispenseQueue } from "@/actions/finance";
+import { getPharmacyItems, listPharmacyDispenseQueue, listPharmacyDispenseHistory } from "@/actions/finance";
 import PharmacieView from "@/app/dashboard/pharmacie/pharmacie-view";
 import { redirect } from "next/navigation";
 
@@ -17,13 +17,15 @@ export default async function ClinicPharmaciePage({ params }: ClinicPharmaciePag
   const activeUser = await getCurrentUser();
   if (!activeUser) redirect("/login");
 
-  const [pharmacyItemsRes, dispenseQueueRes] = await Promise.all([
+  const [pharmacyItemsRes, dispenseQueueRes, dispenseHistoryRes] = await Promise.all([
     getPharmacyItems(clinicId),
     listPharmacyDispenseQueue(clinicId),
+    listPharmacyDispenseHistory(clinicId),
   ]);
 
   const pharmacyItems = pharmacyItemsRes.success ? pharmacyItemsRes.data || [] : [];
   const dispenseQueue = dispenseQueueRes.success ? dispenseQueueRes.data || [] : [];
+  const dispenseHistory = dispenseHistoryRes.success ? dispenseHistoryRes.data || [] : [];
 
   return (
     <div className="space-y-6">
@@ -37,6 +39,7 @@ export default async function ClinicPharmaciePage({ params }: ClinicPharmaciePag
       <PharmacieView
         pharmacyItems={pharmacyItems}
         dispenseQueue={dispenseQueue}
+        dispenseHistory={dispenseHistory}
         organizationId={clinicId}
         currentUserRole={activeUser.role}
       />

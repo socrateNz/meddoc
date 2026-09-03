@@ -175,14 +175,19 @@ export async function getSessionSummary(sessionId: string) {
     if (!session) throw new Error("Session de caisse introuvable.");
     await assertClinicScope(session.organizationId, activeUser);
 
-    const transactions = await prisma.financialTransaction.findMany({
+    const rawTransactions = await prisma.financialTransaction.findMany({
       where: { cashSessionId: sessionId },
       include: {
         recordedBy: { select: { firstName: true, lastName: true } },
         patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        // Référence pour l'impression du ticket (cf. invoice-modal.tsx) : doit correspondre à
+        // celle que la pharmacie recherche (findPendingInvoiceByReference), pas à l'id interne
+        // de la transaction.
+        pendingInvoices: { select: { id: true }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
     });
+    const transactions = rawTransactions.map((t) => ({ ...t, pendingInvoiceId: t.pendingInvoices[0]?.id }));
 
     let totalIncome = 0;
     let totalExpenses = 0;

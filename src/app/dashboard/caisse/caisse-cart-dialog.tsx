@@ -151,7 +151,12 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
       if (res.success) {
         setOpen(false);
-        onSuccess((res.data as any)?.transaction || res.data);
+        const txn = (res.data as any)?.transaction || res.data;
+        const pendingInvoiceId = (res.data as any)?.pendingInvoice?.id;
+        // La référence imprimée sur le ticket doit être celle que la pharmacie recherchera
+        // (PendingInvoice.id), pas l'id interne de la transaction — cf. findPendingInvoiceByReference.
+        if (pendingInvoiceId) (txn as any).pendingInvoiceId = pendingInvoiceId;
+        onSuccess(txn);
         resetForm();
       } else {
         setMsg({ type: "error", text: res.error || "Erreur lors de la validation." });

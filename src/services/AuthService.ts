@@ -17,6 +17,14 @@ export class AuthService {
     }
 
     if (user.organization) {
+      // Organization.isActive n'est bascule que pour une CLINIC (cf. setClinicActive) — un ADMIN
+      // de holding peut suspendre une clinique sans toucher au statut d'abonnement de la holding
+      // elle-même. Avant cette vérification, ce champ n'était jamais lu au login : une clinique
+      // suspendue restait accessible à tout son personnel.
+      if (!user.organization.isActive) {
+        throw new Error("L'abonnement de votre organisation est inactif ou annulé.");
+      }
+
       const holding = user.organization.type === "HOLDING" ? user.organization : user.organization.parent;
       if (holding) {
         if (holding.subscriptionStatus === "INACTIVE" || holding.subscriptionStatus === "CANCELLED") {
