@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import PharmacyDialog from "@/app/dashboard/finance/pharmacy-dialog";
 import StockPurchaseDialog from "@/app/dashboard/finance/stock-purchase-dialog";
+import ImportPharmacyCsvDialog from "@/app/dashboard/finance/import-pharmacy-csv-dialog";
 import InventoryPanel from "@/app/dashboard/finance/inventory-panel";
 import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
 import { dispensePendingInvoice, findPendingInvoiceByReference } from "@/actions/finance";
@@ -161,6 +162,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
           {activeTab === "stock" && canWrite && (
             <div className="flex gap-2">
               <StockPurchaseDialog pharmacyItems={pharmacyItems} organizationId={organizationId} />
+              <ImportPharmacyCsvDialog organizationId={organizationId} />
               <PharmacyDialog organizationId={organizationId} />
             </div>
           )}

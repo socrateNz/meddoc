@@ -56,6 +56,17 @@ enum PaymentFrequency {
   YEARLY
 }
 
+// Mode de règlement de la holding — FULL : le montant est réglé en une seule fois. INSTALLMENTS :
+// réglé en plusieurs tranches (paymentAmount représente alors le montant d'UNE tranche, comme
+// paymentAmount représente déjà un montant "par période" avec paymentFrequency). Purement
+// déclaratif/manuel comme le reste du suivi d'abonnement de ce projet (licenseExpiresAt,
+// paymentAmount...) — aucune passerelle de paiement intégrée, le super admin renseigne et met à
+// jour ces champs lui-même.
+enum PaymentPlan {
+  FULL
+  INSTALLMENTS
+}
+
 enum TransactionType {
   INCOME
   EXPENSE
@@ -119,6 +130,14 @@ model Organization {
 
   paymentAmount    Float? // Tarif actuel (FCFA), éditable à tout moment
   paymentFrequency PaymentFrequency?
+
+  // Mode de règlement — cf. enum PaymentPlan. installmentsCount n'a de sens qu'en INSTALLMENTS
+  // (nombre de tranches prévues, ex: 3, 6, 12) ; nextPaymentDate est la date de la prochaine
+  // échéance à régler (tranche suivante, ou date d'échéance du paiement intégral s'il n'a pas
+  // encore été réglé) — affichée sur la facture téléchargeable (holding-invoice-pdf.tsx).
+  paymentPlan      PaymentPlan @default(FULL)
+  installmentsCount Int?
+  nextPaymentDate  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

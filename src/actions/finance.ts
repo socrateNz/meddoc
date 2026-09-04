@@ -10,6 +10,7 @@ import {
   payPendingInvoiceSchema,
   createCaisseSaleSchema,
   dispensePendingInvoiceSchema,
+  importPharmacyItemsSchema,
 } from "@/validators/finance";
 import { consumeStockLots, assertStockWrite } from "@/actions/stock";
 import { assertRegisterOperateRole } from "@/actions/register-permissions";
@@ -182,6 +183,62 @@ export async function createOrUpdatePharmacyItem(data: {
     return { success: true, data: item };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de l'article.") };
+  }
+}
+
+// Import CSV en masse — toujours une CRÉATION (jamais de mise à jour par ce chemin, contrairement
+// à createOrUpdatePharmacyItem) : pas de rapprochement par nom pour éviter d'écraser silencieusement
+// un produit existant à cause d'un nom mal orthographié dans le fichier. Comme à la création
+// manuelle, le stock démarre à 0 pour chaque ligne — il n'évolue qu'via un achat/une vente/un
+// inventaire, jamais directement par cet import.
+export async function importPharmacyItems(data: {
+  items: Array<{
+    name: string;
+    dosage?: string;
+    category?: string;
+    reorderLevel: number;
+    unitPrice: number;
+    batchNumber?: string;
+    expiryDate?: string;
+    supplier?: string;
+    location?: string;
+  }>;
+  organizationId?: string;
+}) {
+  try {
+    importPharmacyItemsSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    await assertStockWrite(activeUser);
+
+    const targetOrgId = data.organizationId || activeUser!.organizationId;
+    const nowISO = new Date();
+
+    const result = await prisma.pharmacyItem.createMany({
+      data: data.items.map((item) => ({
+        name: item.name,
+        dosage: item.dosage || null,
+        category: (item.category as any) || "MEDICATION",
+        stockQuantity: 0,
+        reorderLevel: Number(item.reorderLevel),
+        unitPrice: Number(item.unitPrice),
+        batchNumber: item.batchNumber || null,
+        expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+        supplier: item.supplier || null,
+        location: item.location || null,
+        organizationId: targetOrgId || null,
+        createdAt: nowISO,
+        updatedAt: nowISO,
+      })),
+    });
+
+    await logAuditAction(activeUser!.id, "IMPORT_PHARMACY_ITEMS_CSV", "PharmacyItem", "bulk", { count: result.count });
+    revalidatePath("/dashboard/pharmacie");
+    if (targetOrgId) revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true, data: { count: result.count } };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'import du fichier.") };
   }
 }
 

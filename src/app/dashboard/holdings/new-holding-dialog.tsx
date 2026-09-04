@@ -13,7 +13,7 @@ import * as z from "zod";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
 import { createHolding } from "@/actions/super-admin";
-import { SubscriptionPlan, PaymentFrequency } from "@prisma/client";
+import { SubscriptionPlan, PaymentFrequency, PaymentPlan } from "@prisma/client";
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 
 const PLAN_OPTIONS = [
@@ -26,6 +26,11 @@ const PLAN_OPTIONS = [
 const FREQUENCY_OPTIONS = [
   { value: "MONTHLY", label: "Mensuelle" },
   { value: "YEARLY", label: "Annuelle" },
+];
+
+const PAYMENT_PLAN_OPTIONS = [
+  { value: "FULL", label: "Paiement intégral (en une fois)" },
+  { value: "INSTALLMENTS", label: "Paiement échelonné (en tranches)" },
 ];
 
 // Doit rester synchronisé avec le mot de passe par défaut codé en dur dans
@@ -79,6 +84,9 @@ const formSchema = z.object({
   licenseExpiresAt: z.string().optional(),
   paymentAmount: z.string().optional(),
   paymentFrequency: z.nativeEnum(PaymentFrequency).optional(),
+  paymentPlan: z.nativeEnum(PaymentPlan),
+  installmentsCount: z.string().optional(),
+  nextPaymentDate: z.string().optional(),
 });
 
 export default function NewHoldingDialog() {
@@ -97,12 +105,16 @@ export default function NewHoldingDialog() {
       licenseExpiresAt: "",
       paymentAmount: "",
       paymentFrequency: "MONTHLY",
+      paymentPlan: "FULL",
+      installmentsCount: "",
+      nextPaymentDate: "",
     },
   });
 
   const isUnlimited = watch("isUnlimited");
   const selectedPlan = watch("plan");
   const selectedFrequency = watch("paymentFrequency");
+  const selectedPaymentPlan = watch("paymentPlan");
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
     setLoading(true);
@@ -120,6 +132,8 @@ export default function NewHoldingDialog() {
       licenseExpiresAt,
       paymentAmount,
       paymentFrequency: paymentAmount !== null ? (data.paymentFrequency || "MONTHLY") : null,
+      installmentsCount: data.paymentPlan === "INSTALLMENTS" && data.installmentsCount ? Number(data.installmentsCount) : null,
+      nextPaymentDate: data.nextPaymentDate ? new Date(data.nextPaymentDate) : null,
     });
 
     if (response.error) {
@@ -257,6 +271,38 @@ export default function NewHoldingDialog() {
                       <SelectItem value="YEARLY">Annuelle</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Mode de paiement</Label>
+                  <Select items={PAYMENT_PLAN_OPTIONS} onValueChange={(val: any) => setValue("paymentPlan", val)} value={selectedPaymentPlan}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionnez un mode de paiement" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FULL">Paiement intégral (en une fois)</SelectItem>
+                      <SelectItem value="INSTALLMENTS">Paiement échelonné (en tranches)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedPaymentPlan === "INSTALLMENTS" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="installmentsCount">Nombre de tranches</Label>
+                    <Input
+                      id="installmentsCount"
+                      type="number"
+                      min="1"
+                      {...register("installmentsCount")}
+                      placeholder="ex: 3"
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="nextPaymentDate">Date du prochain paiement</Label>
+                  <Input
+                    id="nextPaymentDate"
+                    type="date"
+                    {...register("nextPaymentDate")}
+                  />
                 </div>
               </div>
             </div>

@@ -224,6 +224,9 @@ interface HoldingInvoicePDFProps {
     paymentAmount?: number | null;
     paymentFrequency?: string | null;
     createdAt?: string | Date | null;
+    paymentPlan?: string | null;
+    installmentsCount?: number | null;
+    nextPaymentDate?: string | Date | null;
   };
   adminName?: string;
   adminEmail?: string;
@@ -245,6 +248,14 @@ export default function HoldingInvoicePDFDocument({ holding, adminName, adminEma
   const licenseLabel = holding.licenseExpiresAt
     ? `Jusqu'au ${new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(holding.licenseExpiresAt))}`
     : "Illimitée";
+
+  const isInstallments = holding.paymentPlan === "INSTALLMENTS";
+  const paymentPlanLabel = isInstallments
+    ? `Paiement échelonné${holding.installmentsCount ? ` (${holding.installmentsCount} tranches)` : ""}`
+    : "Paiement intégral (en une fois)";
+  const nextPaymentLabel = holding.nextPaymentDate
+    ? new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(holding.nextPaymentDate))
+    : null;
 
   return (
     <Document>
@@ -286,7 +297,9 @@ export default function HoldingInvoicePDFDocument({ holding, adminName, adminEma
             <Text style={[styles.colTotal, styles.tableHeaderText]}>Montant FCFA</Text>
           </View>
           <View style={styles.tableRow}>
-            <Text style={styles.colDesc}>Abonnement MedDoc — Forfait {planLabel}</Text>
+            <Text style={styles.colDesc}>
+              Abonnement MedDoc — Forfait {planLabel}{isInstallments ? " (par tranche)" : ""}
+            </Text>
             <Text style={styles.colFreq}>{frequencyLabel}</Text>
             <Text style={styles.colTotal}>{hasAmount ? formatFCFA(holding.paymentAmount!) : "Gratuit / Sur devis"}</Text>
           </View>
@@ -296,14 +309,18 @@ export default function HoldingInvoicePDFDocument({ holding, adminName, adminEma
         <View style={styles.totalSection}>
           <View style={styles.totalBox}>
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>TOTAL {frequencyLabel !== "-" ? `(${frequencyLabel.toUpperCase()})` : ""} :</Text>
+              <Text style={styles.totalLabel}>
+                {isInstallments ? "MONTANT PAR TRANCHE" : "TOTAL"} {frequencyLabel !== "-" ? `(${frequencyLabel.toUpperCase()})` : ""} :
+              </Text>
               <Text style={styles.totalAmount}>{hasAmount ? formatFCFA(holding.paymentAmount!) : "-"}</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.noteBox}>
-          <Text style={styles.noteText}>Validité de la licence : {licenseLabel}</Text>
+          <Text style={styles.noteText}>Mode de paiement : {paymentPlanLabel}</Text>
+          {nextPaymentLabel && <Text style={[styles.noteText, { marginTop: 3, fontWeight: "bold" }]}>Prochain paiement : {nextPaymentLabel}</Text>}
+          <Text style={[styles.noteText, { marginTop: 3 }]}>Validité de la licence : {licenseLabel}</Text>
         </View>
 
         {/* Signatures des deux parties */}

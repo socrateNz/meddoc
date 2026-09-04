@@ -7,7 +7,7 @@ import { logAuditAction } from "@/middlewares/auditLogger";
 import { createHoldingSchema, updateHoldingSubscriptionSchema } from "@/validators/super-admin";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcrypt";
-import { Role, SubscriptionPlan, SubscriptionStatus, PaymentFrequency } from "@prisma/client";
+import { Role, SubscriptionPlan, SubscriptionStatus, PaymentFrequency, PaymentPlan } from "@prisma/client";
 
 export async function getHoldings() {
   try {
@@ -86,6 +86,9 @@ export async function createHolding(data: {
   licenseExpiresAt?: Date | null;
   paymentAmount?: number | null;
   paymentFrequency?: PaymentFrequency | null;
+  paymentPlan?: PaymentPlan;
+  installmentsCount?: number | null;
+  nextPaymentDate?: Date | null;
 }) {
   try {
     createHoldingSchema.parse(data);
@@ -113,6 +116,9 @@ export async function createHolding(data: {
           licenseExpiresAt: data.licenseExpiresAt,
           paymentAmount: data.paymentAmount ?? null,
           paymentFrequency: data.paymentFrequency ?? null,
+          paymentPlan: data.paymentPlan ?? "FULL",
+          installmentsCount: data.paymentPlan === "INSTALLMENTS" ? data.installmentsCount ?? null : null,
+          nextPaymentDate: data.nextPaymentDate ?? null,
         }
       });
 
@@ -152,6 +158,9 @@ export async function updateHoldingSubscription(holdingId: string, data: {
   paymentFrequency?: PaymentFrequency | null;
   maxClinics: number;
   maxUsers: number;
+  paymentPlan: PaymentPlan;
+  installmentsCount?: number | null;
+  nextPaymentDate?: Date | null;
 }) {
   try {
     updateHoldingSubscriptionSchema.parse({ holdingId, ...data });
@@ -171,6 +180,9 @@ export async function updateHoldingSubscription(holdingId: string, data: {
         paymentFrequency: data.paymentFrequency ?? null,
         maxClinics: data.maxClinics,
         maxUsers: data.maxUsers,
+        paymentPlan: data.paymentPlan,
+        installmentsCount: data.paymentPlan === "INSTALLMENTS" ? data.installmentsCount ?? null : null,
+        nextPaymentDate: data.nextPaymentDate ?? null,
       }
     });
 
@@ -255,6 +267,41 @@ export async function deleteHolding(holdingId: string) {
     return { error: null };
   } catch (error: any) {
     return { error: toErrorMessage(error, "Erreur lors de la suppression.") };
+  }
+}
+
+// Réinitialise le mot de passe du premier administrateur de la holding — même mot de passe par
+// défaut que createHolding ("admin123") et même mécanique que resetTeamMemberPassword côté
+// coordinateur : requiresPasswordChange force le changement à la prochaine connexion (déjà géré
+// par login/page.tsx et dashboard/layout.tsx, rien à ajouter côté flux de connexion).
+export async function resetHoldingAdminPassword(holdingId: string) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.role !== "SUPER_ADMIN") throw new Error("Unauthorized");
+
+    const holding = await prisma.organization.findFirst({ where: { id: holdingId, type: "HOLDING" } });
+    if (!holding) throw new Error("Holding introuvable.");
+
+    const admin = await prisma.user.findFirst({
+      where: { organizationId: holdingId, role: "ADMIN" },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!admin) throw new Error("Aucun administrateur trouvé pour cette holding.");
+
+    const defaultPassword = "admin123";
+    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+
+    await prisma.user.update({
+      where: { id: admin.id },
+      data: { passwordHash, requiresPasswordChange: true },
+    });
+
+    await logAuditAction(user.id, "RESET_HOLDING_ADMIN_PASSWORD", "User", admin.id, { holdingId, holdingName: holding.name });
+    revalidatePath("/dashboard/holdings");
+
+    return { error: null, data: { email: admin.email, defaultPassword } };
+  } catch (error: any) {
+    return { error: toErrorMessage(error, "Erreur lors de la réinitialisation du mot de passe."), data: null };
   }
 }
 

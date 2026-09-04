@@ -11,15 +11,15 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Edit, Loader2, Eye, FileDown, Crown, Building2, Users, Activity, UserX, UserCheck, Trash2 } from "lucide-react";
+import { MoreHorizontal, Edit, Loader2, Eye, FileDown, Crown, Building2, Users, Activity, UserX, UserCheck, Trash2, KeyRound, Copy, Check } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { SubscriptionPlan, SubscriptionStatus, PaymentFrequency } from "@prisma/client";
-import { updateHoldingSubscription, deactivateHolding, reactivateHolding, deleteHolding } from "@/actions/super-admin";
+import { SubscriptionPlan, SubscriptionStatus, PaymentFrequency, PaymentPlan } from "@prisma/client";
+import { updateHoldingSubscription, deactivateHolding, reactivateHolding, deleteHolding, resetHoldingAdminPassword } from "@/actions/super-admin";
 import { toast } from "sonner";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -48,6 +48,16 @@ const FREQUENCY_OPTIONS = [
   { value: "YEARLY", label: "Annuelle" },
 ];
 
+const PAYMENT_PLAN_OPTIONS = [
+  { value: "FULL", label: "Paiement intégral (en une fois)" },
+  { value: "INSTALLMENTS", label: "Paiement échelonné (en tranches)" },
+];
+
+const PAYMENT_PLAN_LABELS: Record<string, string> = {
+  FULL: "Paiement intégral",
+  INSTALLMENTS: "Paiement échelonné",
+};
+
 interface HoldingActionsMenuProps {
   holding: {
     id: string;
@@ -62,6 +72,9 @@ interface HoldingActionsMenuProps {
     _count?: { children: number; users: number; patients: number };
     maxClinics?: number;
     maxUsers?: number;
+    paymentPlan?: PaymentPlan;
+    installmentsCount?: number | null;
+    nextPaymentDate?: Date | string | null;
   };
 }
 
@@ -70,10 +83,14 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [statusActionLoading, setStatusActionLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const [resetResult, setResetResult] = useState<{ email: string; defaultPassword: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const adminName = holding.adminUser ? `${holding.adminUser.firstName} ${holding.adminUser.lastName}` : undefined;
   const isInactive = holding.subscriptionStatus === "INACTIVE" || holding.subscriptionStatus === "CANCELLED";
@@ -100,6 +117,28 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
     } else {
       toast.success("Holding supprimée.");
       setShowDeleteDialog(false);
+    }
+  };
+
+  const handleResetAdminPassword = async () => {
+    setResettingPassword(true);
+    const response = await resetHoldingAdminPassword(holding.id);
+    setResettingPassword(false);
+    if (response.error) {
+      toast.error(response.error);
+    } else if (response.data) {
+      setResetResult(response.data);
+    }
+  };
+
+  const handleCopyCredentials = async () => {
+    if (!resetResult) return;
+    try {
+      await navigator.clipboard.writeText(`email: ${resetResult.email}\nmot de passe: ${resetResult.defaultPassword}`);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Impossible de copier automatiquement. Sélectionnez le texte manuellement.");
     }
   };
 
@@ -150,6 +189,13 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
   );
   const [maxClinics, setMaxClinics] = useState<string>(String(holding.maxClinics ?? 1));
   const [maxUsers, setMaxUsers] = useState<string>(String(holding.maxUsers ?? 10));
+  const [paymentPlan, setPaymentPlan] = useState<PaymentPlan>(holding.paymentPlan || "FULL");
+  const [installmentsCount, setInstallmentsCount] = useState<string>(
+    holding.installmentsCount != null ? String(holding.installmentsCount) : ""
+  );
+  const [nextPaymentDate, setNextPaymentDate] = useState<string>(
+    holding.nextPaymentDate ? new Date(holding.nextPaymentDate).toISOString().split('T')[0] : ""
+  );
 
   const handleUpdate = async () => {
     if (!name.trim()) {
@@ -174,6 +220,9 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
       paymentFrequency: amount !== null ? paymentFrequency : null,
       maxClinics: Math.max(1, Number(maxClinics) || 1),
       maxUsers: Math.max(1, Number(maxUsers) || 1),
+      paymentPlan,
+      installmentsCount: paymentPlan === "INSTALLMENTS" && installmentsCount ? Number(installmentsCount) : null,
+      nextPaymentDate: nextPaymentDate ? new Date(nextPaymentDate) : null,
     });
 
     if (response.error) {
@@ -207,6 +256,10 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
             <DropdownMenuItem onClick={handleDownloadReceipt} disabled={downloading} className="cursor-pointer">
               {downloading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileDown className="h-4 w-4 mr-2" />}
               Télécharger le reçu
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowResetPasswordDialog(true)} className="cursor-pointer">
+              <KeyRound className="h-4 w-4 mr-2" />
+              Réinitialiser le mot de passe admin
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setShowDeactivateDialog(true)} className="cursor-pointer">
@@ -275,6 +328,63 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={showResetPasswordDialog}
+        onOpenChange={(v) => { setShowResetPasswordDialog(v); if (!v) { setResetResult(null); setCopied(false); } }}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          {resetResult ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-emerald-600">
+                  <KeyRound className="h-5 w-5" />
+                  Mot de passe réinitialisé
+                </DialogTitle>
+                <DialogDescription>
+                  L&apos;administrateur devra choisir un nouveau mot de passe à sa prochaine connexion. Transmettez-lui ces identifiants.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 px-3 py-2.5 my-2">
+                <div className="min-w-0 space-y-1 font-mono text-sm">
+                  <p className="text-slate-800 dark:text-slate-200 truncate">
+                    <span className="text-slate-400">email: </span>
+                    <span className="font-semibold">{resetResult.email}</span>
+                  </p>
+                  <p className="text-slate-800 dark:text-slate-200 truncate">
+                    <span className="text-slate-400">mot de passe: </span>
+                    <span className="font-semibold">{resetResult.defaultPassword}</span>
+                  </p>
+                </div>
+                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCopyCredentials} title="Copier les identifiants">
+                  {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => setShowResetPasswordDialog(false)}>Fermer</Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Réinitialiser le mot de passe admin ?</DialogTitle>
+                <DialogDescription>
+                  Le mot de passe de l&apos;administrateur de <strong>{holding.name}</strong>
+                  {adminName ? <> (<strong>{adminName}</strong>)</> : ""} sera remplacé par un mot de passe par défaut.
+                  Il devra le changer à sa prochaine connexion.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="mt-4 gap-2 sm:gap-0">
+                <DialogClose render={<Button variant="outline" disabled={resettingPassword} />}>Annuler</DialogClose>
+                <Button onClick={handleResetAdminPassword} disabled={resettingPassword}>
+                  {resettingPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Oui, réinitialiser
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
         <DialogContent>
           <DialogHeader>
@@ -334,6 +444,19 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
                   {holding.paymentAmount != null
                     ? `${new Intl.NumberFormat("fr-FR").format(holding.paymentAmount)} FCFA / ${holding.paymentFrequency === "YEARLY" ? "an" : "mois"}`
                     : "Non défini"}
+                </span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-slate-500">Mode de paiement</span>
+                <span className="font-medium">
+                  {PAYMENT_PLAN_LABELS[holding.paymentPlan || "FULL"]}
+                  {holding.paymentPlan === "INSTALLMENTS" && holding.installmentsCount ? ` (${holding.installmentsCount} tranches)` : ""}
+                </span>
+              </div>
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-slate-500">Prochain paiement</span>
+                <span className="font-medium">
+                  {holding.nextPaymentDate ? new Date(holding.nextPaymentDate).toLocaleDateString("fr-FR") : "-"}
                 </span>
               </div>
               <div className="flex justify-between border-b pb-2">
@@ -481,6 +604,44 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
                   onChange={(e) => setMaxUsers(e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Mode de paiement</Label>
+                <Select items={PAYMENT_PLAN_OPTIONS} value={paymentPlan} onValueChange={(val) => { if (val) setPaymentPlan(val as PaymentPlan); }}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Mode de paiement" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FULL">Paiement intégral (en une fois)</SelectItem>
+                    <SelectItem value="INSTALLMENTS">Paiement échelonné (en tranches)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {paymentPlan === "INSTALLMENTS" && (
+                <div className="space-y-2">
+                  <Label htmlFor={`installmentsCount-${holding.id}`}>Nombre de tranches</Label>
+                  <Input
+                    id={`installmentsCount-${holding.id}`}
+                    type="number"
+                    min="1"
+                    value={installmentsCount}
+                    onChange={(e) => setInstallmentsCount(e.target.value)}
+                    placeholder="ex: 3"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor={`nextPaymentDate-${holding.id}`}>Date du prochain paiement</Label>
+              <Input
+                id={`nextPaymentDate-${holding.id}`}
+                type="date"
+                value={nextPaymentDate}
+                onChange={(e) => setNextPaymentDate(e.target.value)}
+              />
             </div>
           </div>
 
