@@ -13,13 +13,15 @@ import { revalidatePath } from "next/cache";
 import { assertRegisterOperateRole } from "@/actions/register-permissions";
 
 // Consulter les caisses (et leur état) est ouvert à ADMIN (holding, lecture seule) en plus des
-// deux rôles qui opèrent réellement la caisse. Créer/désactiver une caisse physique est une
+// rôles qui opèrent réellement la caisse. Créer/désactiver une caisse physique est une
 // opération structurelle réservée au coordinateur (même périmètre que src/actions/wards.ts).
-// Ouvrir/fermer une session et encaisser reste ouvert au CASHIER dédié et, en secours, au
-// COORDINATOR — jamais au PHARMACIST (séparation caisse/pharmacie voulue par cette fonctionnalité).
+// Ouvrir/fermer une session et encaisser reste ouvert au CASHIER dédié, au COORDINATOR en secours,
+// et pour le moment aussi au PHARMACIST (cf. register-permissions.ts:REGISTER_OPERATE_ROLES —
+// le pharmacien s'y comporte temporairement comme un caissier, séparation caisse/pharmacie
+// assouplie en attendant qu'un caissier dédié soit en place).
 // assertRegisterOperateRole vit dans @/actions/register-permissions (pas "use server") car ce
 // fichier-ci ne peut exporter que des fonctions async — voir ce module pour le détail.
-const REGISTER_READ_ROLES = ["ADMIN", "COORDINATOR", "CASHIER"];
+const REGISTER_READ_ROLES = ["ADMIN", "COORDINATOR", "CASHIER", "PHARMACIST"];
 const REGISTER_STRUCTURE_ROLES = ["COORDINATOR"];
 
 function assertRegisterReadRole(role: string) {
@@ -181,8 +183,8 @@ export async function getSessionSummary(sessionId: string) {
         recordedBy: { select: { firstName: true, lastName: true } },
         patient: { include: { user: { select: { firstName: true, lastName: true } } } },
         // Référence pour l'impression du ticket (cf. invoice-modal.tsx) : doit correspondre à
-        // celle que la pharmacie recherche (findPendingInvoiceByReference), pas à l'id interne
-        // de la transaction.
+        // celle que le pharmacien devra saisir pour finaliser (dispensePendingInvoice), pas à
+        // l'id interne de la transaction.
         pendingInvoices: { select: { id: true }, take: 1 },
       },
       orderBy: { createdAt: "desc" },

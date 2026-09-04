@@ -39,10 +39,10 @@ export default function InvoiceModal({ transaction, organizationName, organizati
   const isIncome = transaction.type === "INCOME";
   const isPharmacy = transaction.category === "PHARMACY_SALE";
   const docTitle = isIncome ? (isPharmacy ? "FACTURE VENTE PHARMACIE" : "REÇU DE CAISSE") : "PIÈCE DE SORTIE";
-  // La référence doit être celle que la pharmacie recherche (PendingInvoice.id via
-  // findPendingInvoiceByReference), pas l'id interne de la transaction — les deux documents
-  // ont des id Mongo distincts. Repli sur l'id de transaction pour les ventes sans médicament
-  // (rien à retrouver côté pharmacie, la référence n'y sert alors qu'à l'affichage du ticket).
+  // La référence doit être celle que le pharmacien devra saisir pour finaliser (PendingInvoice.id,
+  // cf. dispensePendingInvoice), pas l'id interne de la transaction — les deux documents ont des
+  // id Mongo distincts. Repli sur l'id de transaction pour les ventes sans médicament (rien à
+  // dispenser côté pharmacie, la référence n'y sert alors qu'à l'affichage du ticket).
   const referenceId = transaction.pendingInvoiceId || transaction.id || "000000";
   const invoiceNum = `FAC-${String(referenceId).slice(-6).toUpperCase()}`;
 

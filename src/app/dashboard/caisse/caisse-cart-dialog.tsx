@@ -153,8 +153,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
         setOpen(false);
         const txn = (res.data as any)?.transaction || res.data;
         const pendingInvoiceId = (res.data as any)?.pendingInvoice?.id;
-        // La référence imprimée sur le ticket doit être celle que la pharmacie recherchera
-        // (PendingInvoice.id), pas l'id interne de la transaction — cf. findPendingInvoiceByReference.
+        // La référence imprimée sur le ticket doit être celle que le pharmacien devra saisir pour
+        // finaliser (PendingInvoice.id, cf. dispensePendingInvoice), pas l'id interne de la transaction.
         if (pendingInvoiceId) (txn as any).pendingInvoiceId = pendingInvoiceId;
         onSuccess(txn);
         resetForm();

@@ -32,7 +32,9 @@ const restrictedSections: Record<string, string[]> = {
   // Finance & Pharmacie éclatées en 3 sections (séparation caisse/pharmacie) : la caisse
   // encaisse (CASHIER dédié, COORDINATOR en secours), la pharmacie remet les médicaments
   // (PHARMACIST), et Finance reste une vue de synthèse en lecture pour ADMIN/COORDINATOR.
-  caisse: ['ADMIN', 'COORDINATOR', 'CASHIER'],
+  // PHARMACIST a pour le moment aussi accès à l'opération de la caisse (ouvrir/fermer une
+  // session, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
+  caisse: ['ADMIN', 'COORDINATOR', 'CASHIER', 'PHARMACIST'],
   pharmacie: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
   finance: ['ADMIN', 'COORDINATOR'],
   contracts: ['ADMIN', 'COORDINATOR'],

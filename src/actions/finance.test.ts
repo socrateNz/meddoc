@@ -126,7 +126,8 @@ describe("dispensePendingInvoice", () => {
     }));
     const { dispensePendingInvoice } = await import("./finance");
 
-    const result = await dispensePendingInvoice("inv1");
+    // "inv1" tient déjà en 6 caractères : la référence attendue est son propre id en majuscules.
+    const result = await dispensePendingInvoice("inv1", "INV1");
 
     expect(result.success).toBe(true);
     expect(pharmacyItemUpdate).toHaveBeenCalledWith({
@@ -144,7 +145,7 @@ describe("dispensePendingInvoice", () => {
     vi.doMock("@/lib/db", () => ({ prisma: {} }));
 
     const { dispensePendingInvoice } = await import("./finance");
-    const result = await dispensePendingInvoice("inv1");
+    const result = await dispensePendingInvoice("inv1", "INV1");
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/pharmacien/i);
@@ -162,9 +163,37 @@ describe("dispensePendingInvoice", () => {
     }));
 
     const { dispensePendingInvoice } = await import("./finance");
-    const result = await dispensePendingInvoice("inv1");
+    const result = await dispensePendingInvoice("inv1", "INV1");
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/pas encore réglée/);
+  });
+
+  it("refuse de dispenser si la référence saisie ne correspond pas au ticket (sans toucher au stock)", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    const transactionFn = vi.fn();
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv1",
+            status: "PAID",
+            organizationId: "org1",
+            items: [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000 }],
+            prescriptions: [],
+          })),
+        },
+        $transaction: transactionFn,
+      },
+    }));
+
+    const { dispensePendingInvoice } = await import("./finance");
+    const result = await dispensePendingInvoice("inv1", "WRONG1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Référence incorrecte/);
+    expect(transactionFn).not.toHaveBeenCalled();
   });
 });

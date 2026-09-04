@@ -92,10 +92,15 @@ export async function getPharmacyItems(organizationId?: string) {
       filter.organizationId = { "$oid": targetOrgId };
     }
 
+    // batchSize explicite : sans lui, la commande find brute de MongoDB plafonne son premier lot
+    // ("firstBatch") à 101 documents par défaut — au-delà, le reste était silencieusement absent
+    // du catalogue affiché sans la moindre erreur (repéré après un import CSV faisant passer le
+    // stock au-delà de ce seuil). 10000 couvre largement la taille réaliste d'un catalogue.
     const rawRes: any = await prisma.$runCommandRaw({
       find: "PharmacyItem",
       filter: filter,
-      sort: { name: 1 }
+      sort: { name: 1 },
+      batchSize: 10000,
     });
 
     const docs = (rawRes.cursor?.firstBatch || []).map(formatMongoDoc);
@@ -236,62 +241,67 @@ export async function importPharmacyItems(data: {
       organizationId: targetOrgId || null,
     });
 
-    // Un seul $transaction interactif pour tout le lot dépassait son délai (5s par défaut) dès
-    // que le fichier contenait une centaine de lignes, chaque create() attendant son tour en
-    // série. On sépare donc : la grande majorité des lignes (sans prix d'achat, le cas courant)
-    // passe par un createMany() unique — une seule requête, aucun risque de délai quel que soit
-    // le nombre de lignes — et seules les lignes avec prix d'achat (qui ont besoin de l'id créé
-    // pour poser leur lot StockPurchase) passent par une petite transaction dédiée, individuelle
-    // et donc rapide, plutôt qu'une transaction géante portant tout le fichier.
-    const needsLot = (item: (typeof data.items)[number]) =>
-      Math.max(0, Number(item.stockQuantity) || 0) > 0 && item.purchasePrice != null;
-
-    const simpleItems = data.items.filter((item) => !needsLot(item));
-    const itemsWithLot = data.items.filter(needsLot);
-
+    // Chaque ligne est créée indépendamment plutôt que via un createMany() unique pour tout le
+    // lot : sur MongoDB, un insertMany en lot est ORDONNÉ par défaut — si une seule ligne est
+    // rejetée (ex: date invalide échappée à la validation), Mongo arrête le lot à cet endroit et
+    // n'insère jamais la suite, SANS lever d'erreur exploitable. C'est ce qui causait un import
+    // de 159 lignes n'en créant que 101, sans aucun message. Ici, une ligne en échec n'affecte
+    // aucune autre — et l'utilisateur voit exactement laquelle et pourquoi. Envoyées par petits
+    // groupes concurrents (plutôt qu'un $transaction unique, dont le délai de 5s était dépassé
+    // dès une centaine de lignes en série) pour rester rapide sans surcharger la connexion.
+    const CHUNK_SIZE = 20;
+    const failures: { name: string; error: string }[] = [];
     let count = 0;
 
-    if (simpleItems.length > 0) {
-      const result = await prisma.pharmacyItem.createMany({
-        data: simpleItems.map((item) =>
-          toItemData(item, Math.max(0, Number(item.stockQuantity) || 0), item.expiryDate ? new Date(item.expiryDate) : null)
-        ),
+    for (let i = 0; i < data.items.length; i += CHUNK_SIZE) {
+      const chunk = data.items.slice(i, i + CHUNK_SIZE);
+      const settled = await Promise.allSettled(
+        chunk.map(async (item) => {
+          const stockQuantity = Math.max(0, Number(item.stockQuantity) || 0);
+          const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+          if (expiryDate && Number.isNaN(expiryDate.getTime())) {
+            throw new Error(`Date de péremption invalide ("${item.expiryDate}")`);
+          }
+
+          if (stockQuantity > 0 && item.purchasePrice != null) {
+            await prisma.$transaction(async (tx) => {
+              const pharmacyItem = await tx.pharmacyItem.create({ data: toItemData(item, stockQuantity, expiryDate) });
+              await tx.stockPurchase.create({
+                data: {
+                  pharmacyItemId: pharmacyItem.id,
+                  quantity: stockQuantity,
+                  remainingQuantity: stockQuantity,
+                  purchasePrice: Number(item.purchasePrice),
+                  totalCost: stockQuantity * Number(item.purchasePrice),
+                  supplier: item.supplier || null,
+                  batchNumber: item.batchNumber || null,
+                  expiryDate,
+                  purchasedById: activeUser!.id,
+                  organizationId: targetOrgId || null,
+                },
+              });
+            });
+          } else {
+            await prisma.pharmacyItem.create({ data: toItemData(item, stockQuantity, expiryDate) });
+          }
+        })
+      );
+
+      settled.forEach((result, idx) => {
+        if (result.status === "fulfilled") {
+          count++;
+        } else {
+          failures.push({ name: chunk[idx].name, error: toErrorMessage(result.reason, "Erreur inconnue") });
+        }
       });
-      count += result.count;
     }
 
-    for (const item of itemsWithLot) {
-      const stockQuantity = Math.max(0, Number(item.stockQuantity) || 0);
-      const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
-
-      await prisma.$transaction(async (tx) => {
-        const pharmacyItem = await tx.pharmacyItem.create({ data: toItemData(item, stockQuantity, expiryDate) });
-
-        await tx.stockPurchase.create({
-          data: {
-            pharmacyItemId: pharmacyItem.id,
-            quantity: stockQuantity,
-            remainingQuantity: stockQuantity,
-            purchasePrice: Number(item.purchasePrice),
-            totalCost: stockQuantity * Number(item.purchasePrice),
-            supplier: item.supplier || null,
-            batchNumber: item.batchNumber || null,
-            expiryDate,
-            purchasedById: activeUser!.id,
-            organizationId: targetOrgId || null,
-          },
-        });
-      });
-
-      count++;
-    }
-
-    await logAuditAction(activeUser!.id, "IMPORT_PHARMACY_ITEMS_CSV", "PharmacyItem", "bulk", { count });
+    await logAuditAction(activeUser!.id, "IMPORT_PHARMACY_ITEMS_CSV", "PharmacyItem", "bulk", { count, failures: failures.length });
     revalidatePath("/dashboard/pharmacie");
     if (targetOrgId) revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
     revalidatePath("/dashboard", "layout");
 
-    return { success: true, data: { count } };
+    return { success: true, data: { count, failures } };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'import du fichier.") };
   }
@@ -543,9 +553,13 @@ export async function createCaisseSale(data: {
 
 // Remise physique des articles au comptoir pharmacie — PHARMACIST uniquement. Seul endroit du
 // nouveau flux où le stock pharmacie est décrémenté, une fois le ticket PAID présenté.
-export async function dispensePendingInvoice(pendingInvoiceId: string) {
+// referenceCode : le pharmacien voit le ticket (patient, médicaments, montant) sans jamais voir
+// sa référence — elle reste affichée uniquement côté caisse (invoice-modal.tsx). Le patient doit
+// la lui donner de vive voix ; elle est vérifiée ici avant toute remise, pour éviter les litiges
+// « je vous l'ai déjà donné » / « non, pas à moi ».
+export async function dispensePendingInvoice(pendingInvoiceId: string, referenceCode: string) {
   try {
-    dispensePendingInvoiceSchema.parse({ pendingInvoiceId });
+    dispensePendingInvoiceSchema.parse({ pendingInvoiceId, referenceCode });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertPharmacyDispenseRole(activeUser.role);
@@ -561,6 +575,12 @@ export async function dispensePendingInvoice(pendingInvoiceId: string) {
           ? "Cette facture n'est pas encore réglée à la caisse."
           : "Les articles de cette facture ont déjà été remis."
       );
+    }
+
+    const expectedCode = String(pending.id).slice(-6).toUpperCase();
+    const enteredCode = referenceCode.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (enteredCode !== expectedCode) {
+      throw new Error("Référence incorrecte. Demandez au patient le code exact remis à la caisse.");
     }
 
     const items = (pending.items as any[]) || [];
@@ -638,10 +658,14 @@ export async function getFinanceSummary(organizationId?: string) {
     const pFilter: any = {};
     if (targetOrgId) pFilter.organizationId = { "$oid": targetOrgId };
 
+    // batchSize explicite — même correctif que getPharmacyItems ci-dessus : sans lui, MongoDB
+    // plafonne le premier lot à 101 documents et le reste du catalogue disparaît silencieusement
+    // (impacte ici le compte d'alertes de stock faible).
     const itemsRes: any = await prisma.$runCommandRaw({
       find: "PharmacyItem",
       filter: pFilter,
-      sort: { name: 1 }
+      sort: { name: 1 },
+      batchSize: 10000,
     });
     pharmacyItems = (itemsRes.cursor?.firstBatch || []).map(formatMongoDoc);
 
@@ -866,53 +890,6 @@ export async function listPharmacyDispenseQueue(organizationId?: string) {
     return { success: true, data: queue };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du chargement de la file d'attente pharmacie." };
-  }
-}
-
-// Recherche un ticket réglé par sa référence unique (les 6 derniers caractères de son id,
-// affichés au patient sur le ticket de caisse — cf. invoice-modal.tsx) : c'est le seul chemin
-// permettant à un pharmacien de retrouver et finaliser une facture, il doit avoir la référence
-// que le patient a récupérée à la caisse plutôt que de parcourir une liste globale.
-export async function findPendingInvoiceByReference(organizationId: string | undefined, reference: string) {
-  try {
-    const activeUser = await getCurrentUser();
-    if (!activeUser) throw new Error("Non authentifié.");
-    assertPharmacyCatalogReadRole(activeUser.role);
-
-    const cleaned = reference.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    if (cleaned.length < 4) throw new Error("Référence trop courte. Vérifiez le numéro indiqué sur le ticket.");
-
-    const where: any = { status: "PAID" };
-    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
-      where.OR = [
-        { organizationId: activeUser.organizationId },
-        { organization: { parentId: activeUser.organizationId } },
-      ];
-    } else {
-      const targetOrgId = organizationId || activeUser.organizationId;
-      if (targetOrgId) where.organizationId = targetOrgId;
-    }
-
-    const candidates = await prisma.pendingInvoice.findMany({
-      where,
-      include: {
-        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
-      },
-      orderBy: { paidAt: "desc" },
-      take: 500,
-    });
-
-    const match = candidates.find((inv) => cleaned.endsWith(String(inv.id).slice(-6).toUpperCase()));
-    if (!match) throw new Error("Aucun ticket réglé ne correspond à cette référence.");
-
-    const items = (match.items as any[]) || [];
-    if (!items.some((i) => i.type === "PHARMACY")) {
-      throw new Error("Ce ticket ne contient aucun médicament à remettre.");
-    }
-
-    return { success: true, data: match };
-  } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors de la recherche du ticket.") };
   }
 }
 

@@ -176,7 +176,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         name: "Caisse",
         href: `/dashboard/clinics/${activeClinicId}/caisse`,
         icon: Banknote,
-        roles: ['ADMIN', 'COORDINATOR', 'CASHIER'],
+        roles: ['ADMIN', 'COORDINATOR', 'CASHIER', 'PHARMACIST'],
         section: "Finance",
       },
       {

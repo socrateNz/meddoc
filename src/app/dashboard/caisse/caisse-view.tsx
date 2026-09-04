@@ -49,7 +49,9 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
   const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
   const [opening, setOpening] = useState(false);
 
-  const canOperate = currentUserRole === "COORDINATOR" || currentUserRole === "CASHIER";
+  // PHARMACIST inclus temporairement ("pour le moment") : peut se comporter comme un caissier
+  // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
+  const canOperate = currentUserRole === "COORDINATOR" || currentUserRole === "CASHIER" || currentUserRole === "PHARMACIST";
   const canManageRegisters = currentUserRole === "COORDINATOR";
 
   const selectedRegister = registers.find((r) => r.id === selectedRegisterId) || null;

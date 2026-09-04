@@ -143,18 +143,27 @@ function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
-function parseDateFlexible(raw: string): string | undefined {
+// Retourne la date en AAAA-MM-JJ si reconnue, undefined si la cellule est vide (non renseignée),
+// ou null si le texte est présent mais illisible comme date. Le repli précédent ("on renvoie le
+// texte brut tel quel") laissait passer des dates invalides jusqu'à l'insertion en base : sur
+// MongoDB, un createMany() en lot s'arrête silencieusement au premier document rejeté et
+// n'insère jamais les lignes suivantes — un fichier de 159 lignes pouvait ainsi n'en importer
+// que 101 sans le moindre message d'erreur. Une date illisible est maintenant une erreur de
+// ligne visible avant même de tenter l'import, comme un prix invalide.
+function parseDateFlexible(raw: string): string | undefined | null {
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
   // AAAA-MM-JJ (format attendu du modèle)
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  // JJ/MM/AAAA (format courant tableur français)
-  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  // JJ/MM/AAAA ou JJ-MM-AAAA (formats courants tableur français)
+  const match = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (match) {
     const [, d, m, y] = match;
+    const day = Number(d), month = Number(m);
+    if (day < 1 || day > 31 || month < 1 || month > 12) return null;
     return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
-  return trimmed;
+  return null;
 }
 
 function downloadTemplate() {
@@ -187,12 +196,14 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
   const [rows, setRows] = useState<ParsedRow[]>([]);
   const [errors, setErrors] = useState<RowError[]>([]);
   const [importing, setImporting] = useState(false);
+  const [importFailures, setImportFailures] = useState<{ name: string; error: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
     setFileName("");
     setRows([]);
     setErrors([]);
+    setImportFailures([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -290,6 +301,15 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
         continue;
       }
 
+      const expiryDate = parseDateFlexible(get(idx.expiryDate));
+      if (expiryDate === null) {
+        parsedErrors.push({
+          line,
+          message: `Date de péremption illisible pour "${name}" ("${get(idx.expiryDate)}"). Utilisez AAAA-MM-JJ ou JJ/MM/AAAA, ou laissez vide.`,
+        });
+        continue;
+      }
+
       const { category, form } = classifyCategory(get(idx.category));
 
       const dosageValue = get(idx.dosage);
@@ -307,7 +327,7 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
         purchasePrice,
         stockQuantity,
         batchNumber: get(idx.batchNumber) || undefined,
-        expiryDate: parseDateFlexible(get(idx.expiryDate)),
+        expiryDate,
         supplier: get(idx.supplier) || undefined,
         location: get(idx.location) || undefined,
       });
@@ -320,16 +340,27 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
   const handleImport = async () => {
     if (rows.length === 0) return;
     setImporting(true);
+    setImportFailures([]);
     try {
       const res = await importPharmacyItems({
         items: rows.map(({ line, ...item }) => item),
         organizationId,
       });
       if (res.success) {
-        toast.success(`${res.data?.count ?? rows.length} produit(s) importé(s) avec succès.`);
-        setOpen(false);
-        reset();
+        const failures = res.data?.failures || [];
+        const count = res.data?.count ?? 0;
         router.refresh();
+        if (failures.length === 0) {
+          toast.success(`${count} produit(s) importé(s) avec succès.`);
+          setOpen(false);
+          reset();
+        } else {
+          // Chaque ligne est indépendante (cf. importPharmacyItems) : un échec partiel n'annule
+          // pas les autres, mais on le montre clairement plutôt que de prétendre un succès total.
+          toast.error(`${count} produit(s) importé(s), ${failures.length} en échec — voir le détail ci-dessous.`);
+          setImportFailures(failures);
+          setRows([]);
+        }
       } else {
         toast.error(res.error || "Erreur lors de l'import.");
       }
@@ -390,6 +421,20 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
               <ul className="text-xs text-amber-700 dark:text-amber-400 pl-6 list-disc space-y-0.5 max-h-32 overflow-y-auto">
                 {errors.map((e, i) => (
                   <li key={i}>{e.line > 0 ? `Ligne ${e.line} : ` : ""}{e.message}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {importFailures.length > 0 && (
+            <div className="p-3 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-950/20 space-y-1">
+              <p className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400 font-medium">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                {importFailures.length} produit(s) n&apos;ont pas pu être créés :
+              </p>
+              <ul className="text-xs text-red-700 dark:text-red-400 pl-6 list-disc space-y-0.5 max-h-32 overflow-y-auto">
+                {importFailures.map((f, i) => (
+                  <li key={i}><span className="font-semibold">{f.name}</span> — {f.error}</li>
                 ))}
               </ul>
             </div>

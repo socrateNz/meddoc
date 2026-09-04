@@ -70,4 +70,5 @@ export const createCaisseSaleSchema = z.object({
 
 export const dispensePendingInvoiceSchema = z.object({
   pendingInvoiceId: z.string().min(1),
+  referenceCode: z.string().min(1, "Le code de référence est requis."),
 });
