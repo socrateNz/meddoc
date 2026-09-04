@@ -1032,6 +1032,18 @@ model FinancialTransaction {
   amount      Float // Montant en FCFA
   description String // Motif / Libellé de l'opération
 
+  // Panier détaillé (même forme que PendingInvoice.items) d'une vente à plusieurs articles —
+  // persisté pour que le ticket (invoice-modal.tsx/invoice-pdf.tsx) puisse toujours réafficher
+  // les quantités/prix réels de chaque ligne, y compris après rechargement ou réimpression
+  // ultérieure. Avant ce champ, le panier n'existait qu'en mémoire juste après la création de la
+  // transaction (jamais persisté) : rouvrir le ticket plus tard retombait sur un repli fragile,
+  // reconstituant les lignes depuis le texte de `description` par regex — lequel répartissait le
+  // montant total à parts égales entre les lignes (des prix/quantités inventés, pas les vrais) et
+  // pouvait même scinder une ligne en deux si sa description contenait elle-même une virgule (ex:
+  // "400mg, Comprimé"). Optionnel : les transactions antérieures à ce champ gardent cet ancien
+  // repli, seule option pour elles.
+  items Json?
+
   patientId String?  @db.ObjectId
   patient   Patient? @relation(fields: [patientId], references: [id])
 

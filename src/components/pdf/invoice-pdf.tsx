@@ -354,37 +354,16 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
 
   const rawDesc = transaction.description || "";
 
-  // Parse multi-item summary strings if items list is empty or single summary
-  if (itemList.length <= 1 && rawDesc.includes("articles :")) {
-    const afterArticles = rawDesc.split("articles :")[1] || "";
-    const itemsPart = afterArticles.replace(/\)$/, "").trim();
-    if (itemsPart) {
-      const itemTokens = itemsPart.split(/,\s*(?=[A-Za-z0-9])/);
-      const parsedList: any[] = [];
-      for (const token of itemTokens) {
-        let clean = token.replace(/^Vente pharmacie:\s*/i, "").trim();
-        const match = clean.match(/^(\d+)\s*x\s+(.+)$/i);
-        if (match) {
-          const q = parseInt(match[1], 10);
-          const name = match[2].trim();
-          parsedList.push({
-            description: name,
-            quantity: q,
-            unitPrice: Math.round(transaction.amount / (itemTokens.length * q)) || 0,
-            amount: Math.round(transaction.amount / itemTokens.length)
-          });
-        } else {
-          parsedList.push({
-            description: clean,
-            quantity: 1,
-            unitPrice: Math.round(transaction.amount / itemTokens.length),
-            amount: Math.round(transaction.amount / itemTokens.length)
-          });
-        }
-      }
-      if (parsedList.length > 0) itemList = parsedList;
-    }
-  }
+  // Les transactions créées avant l'ajout de FinancialTransaction.items n'ont pas de panier
+  // structuré : on affichait auparavant plusieurs lignes reconstituées en découpant la
+  // description résumée sur ses virgules, avec le montant total réparti à parts égales entre
+  // elles — des quantités/prix par ligne inventés, pas les vrais. Pire : une description de
+  // ligne contenant elle-même une virgule (ex: "400mg, Comprimé") pouvait être scindée en deux
+  // fausses lignes. Impossible de reconstituer fiablement le détail réel après coup (la virgule
+  // qui sépare les articles dans le résumé est indiscernable d'une virgule à l'intérieur d'une
+  // description) — on affiche donc une seule ligne avec le texte complet et le vrai montant
+  // total plutôt que des chiffres inventés qui semblent précis mais ne le sont pas (cf. plus
+  // bas, repli pour itemList.length === 0).
 
   if (itemList.length === 0) {
     let desc = rawDesc || "Prestation / Produit";

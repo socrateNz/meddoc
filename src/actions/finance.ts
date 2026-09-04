@@ -436,13 +436,13 @@ export async function payPendingInvoice(
         category: items.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
         amount: totalAmount,
         description: summaryDescription,
+        items,
         patientId: pending.patientId,
         recordedById: activeUser.id,
         organizationId: pending.organizationId,
         cashSessionId: session.id,
       },
     });
-    (transaction as any).items = items;
 
     const updated = await prisma.pendingInvoice.update({
       where: { id: pendingInvoiceId },
@@ -515,13 +515,13 @@ export async function createCaisseSale(data: {
         category: data.items.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
         amount: totalAmount,
         description: summaryDescription,
+        items: data.items,
         patientId: data.patientId || null,
         recordedById: activeUser.id,
         organizationId: targetOrgId,
         cashSessionId: session.id,
       },
     });
-    (transaction as any).items = data.items;
 
     let pendingInvoice = null;
     if (data.patientId) {
