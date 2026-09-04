@@ -164,7 +164,7 @@ export default function NewHoldingDialog() {
         Nouvelle Holding
       </DialogTrigger>
 
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl! max-h-[90vh] overflow-y-auto">
         {createdHolding ? (
           <>
             <DialogHeader>
@@ -210,7 +210,7 @@ export default function NewHoldingDialog() {
                 <div className="space-y-2">
                   <Label>Forfait *</Label>
                   <Select items={PLAN_OPTIONS} onValueChange={(val: any) => setValue("plan", val)} value={selectedPlan}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Sélectionnez un forfait" />
                     </SelectTrigger>
                     <SelectContent>
@@ -263,7 +263,7 @@ export default function NewHoldingDialog() {
                 <div className="space-y-2">
                   <Label>Fréquence de facturation</Label>
                   <Select items={FREQUENCY_OPTIONS} onValueChange={(val: any) => setValue("paymentFrequency", val)} value={selectedFrequency}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Sélectionnez une fréquence" />
                     </SelectTrigger>
                     <SelectContent>
@@ -275,7 +275,7 @@ export default function NewHoldingDialog() {
                 <div className="space-y-2">
                   <Label>Mode de paiement</Label>
                   <Select items={PAYMENT_PLAN_OPTIONS} onValueChange={(val: any) => setValue("paymentPlan", val)} value={selectedPaymentPlan}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Sélectionnez un mode de paiement" />
                     </SelectTrigger>
                     <SelectContent>

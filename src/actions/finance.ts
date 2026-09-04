@@ -188,9 +188,17 @@ export async function createOrUpdatePharmacyItem(data: {
 
 // Import CSV en masse — toujours une CRÉATION (jamais de mise à jour par ce chemin, contrairement
 // à createOrUpdatePharmacyItem) : pas de rapprochement par nom pour éviter d'écraser silencieusement
-// un produit existant à cause d'un nom mal orthographié dans le fichier. Comme à la création
-// manuelle, le stock démarre à 0 pour chaque ligne — il n'évolue qu'via un achat/une vente/un
-// inventaire, jamais directement par cet import.
+// un produit existant à cause d'un nom mal orthographié dans le fichier.
+// stockQuantity (optionnel, 0 par défaut) est une dérogation volontaire à la règle habituelle
+// (stock à 0 à la création, n'évoluant ensuite que via achat/vente/inventaire) : elle permet
+// d'amorcer le catalogue en une fois lors du tout premier import.
+// purchasePrice (optionnel, vide = non renseigné) : si fourni avec un stockQuantity > 0, un lot
+// StockPurchase est créé pour ce stock initial (traçabilité/valorisation FEFO comme un achat
+// normal), mais SANS FinancialTransaction associée — il ne s'agit pas d'un achat réalisé
+// aujourd'hui, seulement de la constatation d'un stock déjà physiquement présent. Si non
+// renseigné, ce stock initial reste "hérité" sans lot valorisé — cas déjà prévu par
+// consumeStockLots (src/actions/stock.ts) pour ce genre de stock. Les ajouts après cet import
+// initial repassent par le circuit normal (Nouveau produit, stock à 0, puis Nouvel achat).
 export async function importPharmacyItems(data: {
   items: Array<{
     name: string;
@@ -198,6 +206,8 @@ export async function importPharmacyItems(data: {
     category?: string;
     reorderLevel: number;
     unitPrice: number;
+    stockQuantity?: number;
+    purchasePrice?: number;
     batchNumber?: string;
     expiryDate?: string;
     supplier?: string;
@@ -211,32 +221,77 @@ export async function importPharmacyItems(data: {
     await assertStockWrite(activeUser);
 
     const targetOrgId = data.organizationId || activeUser!.organizationId;
-    const nowISO = new Date();
 
-    const result = await prisma.pharmacyItem.createMany({
-      data: data.items.map((item) => ({
-        name: item.name,
-        dosage: item.dosage || null,
-        category: (item.category as any) || "MEDICATION",
-        stockQuantity: 0,
-        reorderLevel: Number(item.reorderLevel),
-        unitPrice: Number(item.unitPrice),
-        batchNumber: item.batchNumber || null,
-        expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
-        supplier: item.supplier || null,
-        location: item.location || null,
-        organizationId: targetOrgId || null,
-        createdAt: nowISO,
-        updatedAt: nowISO,
-      })),
+    const toItemData = (item: (typeof data.items)[number], stockQuantity: number, expiryDate: Date | null) => ({
+      name: item.name,
+      dosage: item.dosage || null,
+      category: (item.category as any) || "MEDICATION",
+      stockQuantity,
+      reorderLevel: Number(item.reorderLevel),
+      unitPrice: Number(item.unitPrice),
+      batchNumber: item.batchNumber || null,
+      expiryDate,
+      supplier: item.supplier || null,
+      location: item.location || null,
+      organizationId: targetOrgId || null,
     });
 
-    await logAuditAction(activeUser!.id, "IMPORT_PHARMACY_ITEMS_CSV", "PharmacyItem", "bulk", { count: result.count });
+    // Un seul $transaction interactif pour tout le lot dépassait son délai (5s par défaut) dès
+    // que le fichier contenait une centaine de lignes, chaque create() attendant son tour en
+    // série. On sépare donc : la grande majorité des lignes (sans prix d'achat, le cas courant)
+    // passe par un createMany() unique — une seule requête, aucun risque de délai quel que soit
+    // le nombre de lignes — et seules les lignes avec prix d'achat (qui ont besoin de l'id créé
+    // pour poser leur lot StockPurchase) passent par une petite transaction dédiée, individuelle
+    // et donc rapide, plutôt qu'une transaction géante portant tout le fichier.
+    const needsLot = (item: (typeof data.items)[number]) =>
+      Math.max(0, Number(item.stockQuantity) || 0) > 0 && item.purchasePrice != null;
+
+    const simpleItems = data.items.filter((item) => !needsLot(item));
+    const itemsWithLot = data.items.filter(needsLot);
+
+    let count = 0;
+
+    if (simpleItems.length > 0) {
+      const result = await prisma.pharmacyItem.createMany({
+        data: simpleItems.map((item) =>
+          toItemData(item, Math.max(0, Number(item.stockQuantity) || 0), item.expiryDate ? new Date(item.expiryDate) : null)
+        ),
+      });
+      count += result.count;
+    }
+
+    for (const item of itemsWithLot) {
+      const stockQuantity = Math.max(0, Number(item.stockQuantity) || 0);
+      const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+
+      await prisma.$transaction(async (tx) => {
+        const pharmacyItem = await tx.pharmacyItem.create({ data: toItemData(item, stockQuantity, expiryDate) });
+
+        await tx.stockPurchase.create({
+          data: {
+            pharmacyItemId: pharmacyItem.id,
+            quantity: stockQuantity,
+            remainingQuantity: stockQuantity,
+            purchasePrice: Number(item.purchasePrice),
+            totalCost: stockQuantity * Number(item.purchasePrice),
+            supplier: item.supplier || null,
+            batchNumber: item.batchNumber || null,
+            expiryDate,
+            purchasedById: activeUser!.id,
+            organizationId: targetOrgId || null,
+          },
+        });
+      });
+
+      count++;
+    }
+
+    await logAuditAction(activeUser!.id, "IMPORT_PHARMACY_ITEMS_CSV", "PharmacyItem", "bulk", { count });
     revalidatePath("/dashboard/pharmacie");
     if (targetOrgId) revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
     revalidatePath("/dashboard", "layout");
 
-    return { success: true, data: { count: result.count } };
+    return { success: true, data: { count } };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'import du fichier.") };
   }

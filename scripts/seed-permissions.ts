@@ -32,9 +32,12 @@ async function main() {
   console.log('Seeding default permissions...');
 
   for (const perm of permissionsList) {
+    // update incluait auparavant uniquement `description` : un déploiement déjà seedé avec
+    // d'anciens `roles` (ex: MANAGE_STOCK sans PHARMACIST) ne se corrigeait donc jamais en
+    // relançant ce script, malgré son commentaire "safe à relancer à tout moment" — corrigé ici.
     await prisma.permission.upsert({
       where: { name: perm.name },
-      update: { description: perm.description },
+      update: { description: perm.description, roles: perm.roles },
       create: {
         name: perm.name,
         description: perm.description,

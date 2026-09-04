@@ -23,6 +23,11 @@ export const pharmacyItemImportRowSchema = z.object({
   category: z.enum(["MEDICATION", "CONSUMABLE", "EQUIPMENT"]).optional(),
   reorderLevel: z.number().min(0),
   unitPrice: z.number().min(0, "Le prix de vente doit être positif"),
+  // Amorce le stock au tout premier import — cf. commentaire sur importPharmacyItems.
+  stockQuantity: z.number().min(0).optional(),
+  // Vide = non renseigné : le stock initial reste "hérité" (sans lot valorisé), comme si ce
+  // champ n'existait pas. Fourni, il crée un lot StockPurchase pour ce stock initial.
+  purchasePrice: z.number().min(0).optional(),
   batchNumber: z.string().optional(),
   expiryDate: z.string().optional(),
   supplier: z.string().optional(),

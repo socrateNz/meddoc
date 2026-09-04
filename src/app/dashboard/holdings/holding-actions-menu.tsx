@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuGroup,
-  DropdownMenuLabel, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { MoreHorizontal, Edit, Loader2, Eye, FileDown, Crown, Building2, Users, Activity, UserX, UserCheck, Trash2, KeyRound, Copy, Check } from "lucide-react";
@@ -390,11 +390,10 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {holding.name}
-              <Badge variant="outline" className={`text-[10px] uppercase font-bold tracking-wider ${
-                holding.plan === "ENTERPRISE" ? "border-purple-500/30 text-purple-600 bg-purple-500/10" :
+              <Badge variant="outline" className={`text-[10px] uppercase font-bold tracking-wider ${holding.plan === "ENTERPRISE" ? "border-purple-500/30 text-purple-600 bg-purple-500/10" :
                 holding.plan === "PREMIUM" ? "border-blue-500/30 text-blue-600 bg-blue-500/10" :
-                "border-slate-500/30 text-slate-600 bg-slate-500/10"
-              }`}>
+                  "border-slate-500/30 text-slate-600 bg-slate-500/10"
+                }`}>
                 {holding.plan === "ENTERPRISE" && <Crown className="h-3 w-3 mr-1 inline" />}
                 {PLAN_LABELS[holding.plan] || holding.plan}
               </Badge>
@@ -481,7 +480,7 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
       </Dialog>
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl! w-full max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Modifier</DialogTitle>
             <DialogDescription>
@@ -489,159 +488,165 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor={`name-${holding.id}`}>Nom de la Holding</Label>
-              <Input
-                id={`name-${holding.id}`}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="ex: Groupe Santé ABC"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Forfait</Label>
-              <Select items={PLAN_OPTIONS} value={plan} onValueChange={(val) => { if (val) setPlan(val as SubscriptionPlan); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionnez un forfait" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="TRIAL">Essai (Trial)</SelectItem>
-                  <SelectItem value="BASIC">Basique</SelectItem>
-                  <SelectItem value="PREMIUM">Premium</SelectItem>
-                  <SelectItem value="ENTERPRISE">Entreprise</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Statut</Label>
-              <Select items={STATUS_OPTIONS} value={status} onValueChange={(val) => { if (val) setStatus(val as SubscriptionStatus); }}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionnez un statut" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="TRIALING">En essai (Trialing)</SelectItem>
-                  <SelectItem value="ACTIVE">Actif</SelectItem>
-                  <SelectItem value="INACTIVE">Inactif</SelectItem>
-                  <SelectItem value="CANCELLED">Annulé</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Expiration de la Licence</Label>
-              <div className="flex items-center gap-4 p-3 border rounded-md">
-                <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id={`isUnlimited-${holding.id}`} 
-                    checked={isUnlimited}
-                    onCheckedChange={(checked) => setIsUnlimited(checked === true)}
+          <div className="space-y-6 py-4">
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-slate-500">Informations de la Holding</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor={`name-${holding.id}`}>Nom de la Holding</Label>
+                  <Input
+                    id={`name-${holding.id}`}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="ex: Groupe Santé ABC"
                   />
-                  <label
-                    htmlFor={`isUnlimited-${holding.id}`}
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                  >
-                    Illimité
-                  </label>
                 </div>
-                {!isUnlimited && (
-                  <div className="flex-1">
+                <div className="space-y-2">
+                  <Label>Forfait</Label>
+                  <Select items={PLAN_OPTIONS} value={plan} onValueChange={(val) => { if (val) setPlan(val as SubscriptionPlan); }}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sélectionnez un forfait" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TRIAL">Essai (Trial)</SelectItem>
+                      <SelectItem value="BASIC">Basique</SelectItem>
+                      <SelectItem value="PREMIUM">Premium</SelectItem>
+                      <SelectItem value="ENTERPRISE">Entreprise</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Statut</Label>
+                  <Select items={STATUS_OPTIONS} value={status} onValueChange={(val) => { if (val) setStatus(val as SubscriptionStatus); }}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Sélectionnez un statut" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TRIALING">En essai (Trialing)</SelectItem>
+                      <SelectItem value="ACTIVE">Actif</SelectItem>
+                      <SelectItem value="INACTIVE">Inactif</SelectItem>
+                      <SelectItem value="CANCELLED">Annulé</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label>Expiration de la Licence</Label>
+                  <div className="flex items-center gap-4 p-3 border rounded-md">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`isUnlimited-${holding.id}`}
+                        checked={isUnlimited}
+                        onCheckedChange={(checked) => setIsUnlimited(checked === true)}
+                      />
+                      <label
+                        htmlFor={`isUnlimited-${holding.id}`}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                      >
+                        Illimité
+                      </label>
+                    </div>
+                    {!isUnlimited && (
+                      <div className="flex-1">
+                        <Input
+                          type="date"
+                          value={licenseExpiresAt}
+                          onChange={(e) => setLicenseExpiresAt(e.target.value)}
+                          min={new Date().toISOString().split('T')[0]}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-slate-500">Facturation</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor={`paymentAmount-${holding.id}`}>Montant du forfait (FCFA)</Label>
+                  <Input
+                    id={`paymentAmount-${holding.id}`}
+                    type="number"
+                    min="0"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    placeholder="ex: 150000"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Fréquence</Label>
+                  <Select items={FREQUENCY_OPTIONS} value={paymentFrequency} onValueChange={(val) => { if (val) setPaymentFrequency(val as PaymentFrequency); }}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Fréquence" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="MONTHLY">Mensuelle</SelectItem>
+                      <SelectItem value="YEARLY">Annuelle</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Mode de paiement</Label>
+                  <Select items={PAYMENT_PLAN_OPTIONS} value={paymentPlan} onValueChange={(val) => { if (val) setPaymentPlan(val as PaymentPlan); }}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Mode de paiement" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="FULL">Paiement intégral (en une fois)</SelectItem>
+                      <SelectItem value="INSTALLMENTS">Paiement échelonné (en tranches)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {paymentPlan === "INSTALLMENTS" && (
+                  <div className="space-y-2">
+                    <Label htmlFor={`installmentsCount-${holding.id}`}>Nombre de tranches</Label>
                     <Input
-                      type="date"
-                      value={licenseExpiresAt}
-                      onChange={(e) => setLicenseExpiresAt(e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
+                      id={`installmentsCount-${holding.id}`}
+                      type="number"
+                      min="1"
+                      value={installmentsCount}
+                      onChange={(e) => setInstallmentsCount(e.target.value)}
+                      placeholder="ex: 3"
                     />
                   </div>
                 )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor={`paymentAmount-${holding.id}`}>Montant du forfait (FCFA)</Label>
-                <Input
-                  id={`paymentAmount-${holding.id}`}
-                  type="number"
-                  min="0"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder="ex: 150000"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Fréquence</Label>
-                <Select items={FREQUENCY_OPTIONS} value={paymentFrequency} onValueChange={(val) => { if (val) setPaymentFrequency(val as PaymentFrequency); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Fréquence" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MONTHLY">Mensuelle</SelectItem>
-                    <SelectItem value="YEARLY">Annuelle</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor={`maxClinics-${holding.id}`}>Nombre maximum de cliniques</Label>
-                <Input
-                  id={`maxClinics-${holding.id}`}
-                  type="number"
-                  min="1"
-                  value={maxClinics}
-                  onChange={(e) => setMaxClinics(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor={`maxUsers-${holding.id}`}>Nombre maximum d&apos;utilisateurs</Label>
-                <Input
-                  id={`maxUsers-${holding.id}`}
-                  type="number"
-                  min="1"
-                  value={maxUsers}
-                  onChange={(e) => setMaxUsers(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Mode de paiement</Label>
-                <Select items={PAYMENT_PLAN_OPTIONS} value={paymentPlan} onValueChange={(val) => { if (val) setPaymentPlan(val as PaymentPlan); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Mode de paiement" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="FULL">Paiement intégral (en une fois)</SelectItem>
-                    <SelectItem value="INSTALLMENTS">Paiement échelonné (en tranches)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {paymentPlan === "INSTALLMENTS" && (
-                <div className="space-y-2">
-                  <Label htmlFor={`installmentsCount-${holding.id}`}>Nombre de tranches</Label>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor={`nextPaymentDate-${holding.id}`}>Date du prochain paiement</Label>
                   <Input
-                    id={`installmentsCount-${holding.id}`}
-                    type="number"
-                    min="1"
-                    value={installmentsCount}
-                    onChange={(e) => setInstallmentsCount(e.target.value)}
-                    placeholder="ex: 3"
+                    id={`nextPaymentDate-${holding.id}`}
+                    type="date"
+                    value={nextPaymentDate}
+                    onChange={(e) => setNextPaymentDate(e.target.value)}
                   />
                 </div>
-              )}
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor={`nextPaymentDate-${holding.id}`}>Date du prochain paiement</Label>
-              <Input
-                id={`nextPaymentDate-${holding.id}`}
-                type="date"
-                value={nextPaymentDate}
-                onChange={(e) => setNextPaymentDate(e.target.value)}
-              />
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-slate-500">Limites</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor={`maxClinics-${holding.id}`}>Nombre maximum de cliniques</Label>
+                  <Input
+                    id={`maxClinics-${holding.id}`}
+                    type="number"
+                    min="1"
+                    value={maxClinics}
+                    onChange={(e) => setMaxClinics(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`maxUsers-${holding.id}`}>Nombre maximum d&apos;utilisateurs</Label>
+                  <Input
+                    id={`maxUsers-${holding.id}`}
+                    type="number"
+                    min="1"
+                    value={maxUsers}
+                    onChange={(e) => setMaxUsers(e.target.value)}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 

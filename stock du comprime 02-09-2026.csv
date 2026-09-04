@@ -1,0 +1,36 @@
+Nom du médicamen;dosage;unite ;categorie ;Prix unitaire;seuil d'alerte ;Numero de lot;Date de peremption (AAAA-MM-JJ);Fournisseur;Emplacement;stock pharmicie 
+Litacold;;;comprime ;300;5;1;;Marcial ;Etage 1;0
+Luzem – Tem Com;40/240 ;mg;comprime ;1000;5;1;;Marcial ;Etage 1;0
+Métronidazol;500;mg;comprime ;200;5;1;01/08/2027;Marcial ;Etage 1;28
+Nystatine;500 000;UI;comprime ;500;5;1;01/08/2028;Marcial ;Etage 1;8
+Ofloxacine;200;mg;comprime ;1500;5;1;;Marcial ;Etage 1;0
+Omizol ou omeprazol;20;mg;comprime ;500;5;1;01/10/2027;Marcial ;Etage 1;13
+Predicure;5;mg;comprime ;100;5;1;;Marcial ;Etage 1;0
+Paracétamo;500;mg;comprime ;100;5;1;01/01/2029;Marcial ;Etage 1;40
+Quinine;300;mg;comprime ;600;5;1;01/01/2028;Marcial ;Etage 1;8
+Rurex ;;;comprime ;500;5;1;;Marcial ;Etage 1;0
+Rapide Relief;;;comprime ;1000;5;1;;Marcial ;Etage 1;0
+ranferon;;;comprime ;100;5;1;;Marcial ;Etage 1;0
+Sefixim;200;mg;comprime ;2000;5;1;01/12/2027;Marcial ;Etage 1;2
+Savocef;;;comprime ;1500;5;1;;Marcial ;Etage 1;0
+Srox Zinc;;;comprime ;2000;5;1;01/06/2028;Marcial ;Etage 1;4
+Tinizol;500;mg;comprime ;200;5;1;01/03/2028;Marcial ;Etage 1;42
+Ulcelix;;;comprime ;3800;5;1;;Marcial ;Etage 1;0
+Vitamine B Complex; ;;comprime ;250;5;1;01/04/2028;Marcial ;Etage 1;47
+Ascoravit C;;;comprime ;500;5;1;;Marcial ;Etage 1;0
+Vitamine C (effervescent);100;g;comprime ;1500;5;1;;Marcial ;Etage 1;0
+Magnésium (effervescent;100;g;comprime ;2000;5;1;;Marcial ;Etage 1;0
+Magnésiu;82;g;comprime ;1500;5;1;;Marcial ;Etage 1;0
+Gluco Extra;750;g;comprime ;1500;5;1;01/07/2028;Marcial ;Etage 1;6
+Duphalac;10;g;comprime ;250;5;1;01/01/2028;Marcial ;Etage 1;1
+Gmol Plus;550;g;comprime ;500;5;1;;Marcial ;Etage 1;0
+Velcin;20;ml;comprime ;500;5;1;;Marcial ;Etage 1;0
+Aquasurf;;;comprime ;500;5;1;;Marcial ;Etage 1;0
+Griseofuvive crèm;1;%;comprime ;1000;5;1;01/07/2027;Marcial ;Etage 1;3
+ketoconazole crèm;2;%;comprime ;1000;5;1;01/04/2028;Marcial ;Etage 1;2
+Diclo globe gel ;;;comprime ;1000;5;1;;Marcial ;Etage 1;0
+Ketaflox gel;2;%;comprime ;1000;5;1;;Marcial ;Etage 1;0
+Compresse;;;consomable;100;5;1;01/07/2023;Marcial ;Etage 1;40
+Oflozem;;;comprime ;3500;5;1;;Marcial ;Etage 1;0
+Zaflox ;500/600;mg;comprime ;1500;5;1;;Marcial ;Etage 1;0
+Calcuim ;500;mg;comprime ;1000;5;1;01/12/2028;Marcial ;Etage 1;8

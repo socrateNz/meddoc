@@ -1,5 +1,5 @@
-Nom du produit,Dosage,Categorie,Prix de vente (FCFA),Seuil d'alerte,Numero de lot,Date de peremption (AAAA-MM-JJ),Fournisseur,Emplacement
-Paracetamol,500mg,Medicament,500,20,LOT-2026-01,2027-06-30,Labo Pharmacie Centrale,Rayon A1
-Amoxicilline,250mg,Medicament,1200,15,LOT-2026-02,2027-03-15,Grossiste Sante Plus,Rayon A2
-Seringues 5ml,Boite de 100,Consommable,3500,5,,,,Rayon C1
-Tensiometre electronique,,Materiel,25000,2,,,,Rayon D1
+Nom du produit;Dosage;Unite;Categorie;Prix d'achat (FCFA);Prix de vente (FCFA);Seuil d'alerte;Stock initial;Numero de lot;Date de peremption (AAAA-MM-JJ);Fournisseur;Emplacement
+Paracetamol;500;mg;Medicament;350;500;20;100;LOT-2026-01;2027-06-30;Labo Pharmacie Centrale;Rayon A1
+Amoxicilline;250;mg;Medicament;900;1200;15;60;LOT-2026-02;2027-03-15;Grossiste Sante Plus;Rayon A2
+Seringues;5;ml;Consommable;;3500;5;40;;;;Rayon C1
+Tensiometre electronique;;;Materiel;;25000;2;3;;;;Rayon D1

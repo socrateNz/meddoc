@@ -11,9 +11,12 @@ import { toast } from "sonner";
 const TEMPLATE_HEADERS = [
   "Nom du produit",
   "Dosage",
+  "Unite",
   "Categorie",
+  "Prix d'achat (FCFA)",
   "Prix de vente (FCFA)",
   "Seuil d'alerte",
+  "Stock initial",
   "Numero de lot",
   "Date de peremption (AAAA-MM-JJ)",
   "Fournisseur",
@@ -21,21 +24,29 @@ const TEMPLATE_HEADERS = [
 ];
 
 const TEMPLATE_ROWS = [
-  ["Paracetamol", "500mg", "Medicament", "500", "20", "LOT-2026-01", "2027-06-30", "Labo Pharmacie Centrale", "Rayon A1"],
-  ["Amoxicilline", "250mg", "Medicament", "1200", "15", "LOT-2026-02", "2027-03-15", "Grossiste Sante Plus", "Rayon A2"],
-  ["Seringues 5ml", "Boite de 100", "Consommable", "3500", "5", "", "", "", "Rayon C1"],
-  ["Tensiometre electronique", "", "Materiel", "25000", "2", "", "", "", "Rayon D1"],
+  ["Paracetamol", "500", "mg", "Medicament", "350", "500", "20", "100", "LOT-2026-01", "2027-06-30", "Labo Pharmacie Centrale", "Rayon A1"],
+  ["Amoxicilline", "250", "mg", "Medicament", "900", "1200", "15", "60", "LOT-2026-02", "2027-03-15", "Grossiste Sante Plus", "Rayon A2"],
+  ["Seringues", "5", "ml", "Consommable", "", "3500", "5", "40", "", "", "", "Rayon C1"],
+  ["Tensiometre electronique", "", "", "Materiel", "", "25000", "2", "3", "", "", "", "Rayon D1"],
 ];
 
-const CATEGORY_MAP: Record<string, "MEDICATION" | "CONSUMABLE" | "EQUIPMENT"> = {
-  medicament: "MEDICATION",
-  medication: "MEDICATION",
-  consommable: "CONSUMABLE",
-  consumable: "CONSUMABLE",
-  materiel: "EQUIPMENT",
-  materielmedical: "EQUIPMENT",
-  equipment: "EQUIPMENT",
-};
+// Classification par sous-chaîne plutôt qu'un dictionnaire à correspondance exacte : tolère les
+// fautes de frappe courantes ("consomable" pour "consommable") et les libellés de forme
+// galénique qu'on nous a vus utiliser en pratique (comprimé, sirop, injectable, colis, gel,
+// crème...) qui n'ont pas vocation à distinguer MEDICATION/CONSUMABLE/EQUIPMENT — tout ce qui
+// n'est reconnu ni comme consommable ni comme matériel retombe sur MEDICATION, la catégorie la
+// plus courante. Dans ce cas, le libellé d'origine (ex: "Comprimé") est renvoyé comme `form` :
+// plutôt que d'être silencieusement perdu, il est ajouté au dosage ("500mg, Comprimé") — c'est
+// une information réelle sur le produit, pas juste une case de classement.
+function classifyCategory(raw: string): { category: "MEDICATION" | "CONSUMABLE" | "EQUIPMENT"; form?: string } {
+  const trimmed = raw.trim();
+  const key = normalizeKey(trimmed);
+  if (!key) return { category: "MEDICATION" };
+  if (key.includes("consom") || key.includes("consum")) return { category: "CONSUMABLE" };
+  if (key.includes("materi") || key.includes("equip")) return { category: "EQUIPMENT" };
+  const form = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return { category: "MEDICATION", form };
+}
 
 interface ParsedRow {
   line: number;
@@ -44,6 +55,8 @@ interface ParsedRow {
   category: "MEDICATION" | "CONSUMABLE" | "EQUIPMENT";
   reorderLevel: number;
   unitPrice: number;
+  purchasePrice?: number;
+  stockQuantity: number;
   batchNumber?: string;
   expiryDate?: string;
   supplier?: string;
@@ -65,8 +78,27 @@ function normalizeKey(header: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
-// Parseur CSV minimal mais correct sur les virgules/guillemets/retours à la ligne dans un champ
-// (format RFC4180) — évite d'ajouter une dépendance pour un besoin aussi ponctuel.
+// Excel en locale française (courant au Cameroun/en Afrique francophone) exporte en CSV
+// délimité par point-virgule — la virgule y sert de séparateur décimal. On détecte donc le
+// délimiteur réellement utilisé plutôt que de supposer une virgule : compte les occurrences de
+// chacun sur les premières lignes (hors texte entre guillemets, où une virgule ne doit pas
+// compter) et retient le plus fréquent, avec la virgule comme repli si aucun des deux n'apparaît.
+function detectDelimiter(text: string): "," | ";" {
+  const sample = text.slice(0, 2000);
+  let commas = 0;
+  let semicolons = 0;
+  let inQuotes = false;
+  for (const char of sample) {
+    if (char === '"') inQuotes = !inQuotes;
+    else if (!inQuotes && char === ",") commas++;
+    else if (!inQuotes && char === ";") semicolons++;
+  }
+  return semicolons > commas ? ";" : ",";
+}
+
+// Parseur CSV minimal mais correct sur les guillemets/retours à la ligne dans un champ (format
+// RFC4180), délimiteur virgule ou point-virgule — évite d'ajouter une dépendance pour un besoin
+// aussi ponctuel.
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -74,6 +106,7 @@ function parseCsv(text: string): string[][] {
   let inQuotes = false;
   // Ignore le BOM UTF-8 qu'Excel ajoute couramment en tête de fichier.
   const clean = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const delimiter = detectDelimiter(clean);
 
   for (let i = 0; i < clean.length; i++) {
     const char = clean[i];
@@ -90,7 +123,7 @@ function parseCsv(text: string): string[][] {
       }
     } else if (char === '"') {
       inQuotes = true;
-    } else if (char === ",") {
+    } else if (char === delimiter) {
       row.push(field);
       field = "";
     } else if (char === "\n" || char === "\r") {
@@ -125,8 +158,11 @@ function parseDateFlexible(raw: string): string | undefined {
 }
 
 function downloadTemplate() {
+  // Point-virgule : correspond à ce qu'Excel produit par défaut en locale française (le
+  // séparateur le plus couramment rencontré en pratique) — le parseur détecte de toute façon
+  // automatiquement le délimiteur réel du fichier importé, virgule ou point-virgule.
   const lines = [TEMPLATE_HEADERS, ...TEMPLATE_ROWS].map((row) =>
-    row.map((cell) => (cell.includes(",") || cell.includes('"') ? `"${cell.replace(/"/g, '""')}"` : cell)).join(",")
+    row.map((cell) => (cell.includes(";") || cell.includes('"') ? `"${cell.replace(/"/g, '""')}"` : cell)).join(";")
   );
   // BOM UTF-8 en tête : Excel affiche correctement les accents à l'ouverture sans lui.
   const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
@@ -174,13 +210,21 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
 
     const headers = table[0].map(normalizeKey);
     const colIndex = (...candidates: string[]) => headers.findIndex((h) => candidates.some((c) => h.includes(c)));
+    // "Prix" seul est ambigu entre les deux colonnes de prix : on distingue par "achat"/"vente",
+    // en excluant explicitement l'autre pour qu'une colonne "Prix d'achat" ne matche jamais comme
+    // prix de vente (et inversement) même si l'utilisateur ne garde que le mot "Prix".
+    const colIndexExcluding = (include: string[], exclude: string[]) =>
+      headers.findIndex((h) => include.some((c) => h.includes(c)) && !exclude.some((e) => h.includes(e)));
 
     const idx = {
       name: colIndex("nom"),
       dosage: colIndex("dosage"),
+      unit: colIndex("unite"),
       category: colIndex("categ"),
-      unitPrice: colIndex("prix"),
+      purchasePrice: colIndex("achat"),
+      unitPrice: colIndexExcluding(["vente", "prix"], ["achat"]),
       reorderLevel: colIndex("seuil"),
+      stockQuantity: colIndex("stockinitial", "stock"),
       batchNumber: colIndex("lot"),
       expiryDate: colIndex("peremption", "expir"),
       supplier: colIndex("fournisseur"),
@@ -216,6 +260,18 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
         continue;
       }
 
+      // Vide = non renseigné (pas d'erreur, purchasePrice reste undefined) ; rempli mais
+      // illisible = erreur, pour ne pas importer silencieusement un prix d'achat faux.
+      const purchasePriceRaw = get(idx.purchasePrice).replace(/\s/g, "").replace(",", ".");
+      let purchasePrice: number | undefined;
+      if (purchasePriceRaw) {
+        purchasePrice = Number(purchasePriceRaw);
+        if (!Number.isFinite(purchasePrice) || purchasePrice < 0) {
+          parsedErrors.push({ line, message: `Prix d'achat invalide pour "${name}".` });
+          continue;
+        }
+      }
+
       const reorderRaw = get(idx.reorderLevel).replace(/\s/g, "");
       const reorderLevel = reorderRaw ? Number(reorderRaw) : 10;
       if (!Number.isFinite(reorderLevel) || reorderLevel < 0) {
@@ -223,16 +279,33 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
         continue;
       }
 
-      const categoryRaw = normalizeKey(get(idx.category));
-      const category = CATEGORY_MAP[categoryRaw] || "MEDICATION";
+      // Stock initial — exception volontaire à la règle habituelle (stock à 0 à la création,
+      // évoluant ensuite uniquement via achat/vente/inventaire) : sert uniquement à amorcer le
+      // catalogue la toute première fois. Les articles créés après cet import initial repassent
+      // par le circuit normal (Nouveau produit + Nouvel achat).
+      const stockRaw = get(idx.stockQuantity).replace(/\s/g, "");
+      const stockQuantity = stockRaw ? Number(stockRaw) : 0;
+      if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
+        parsedErrors.push({ line, message: `Stock initial invalide pour "${name}".` });
+        continue;
+      }
+
+      const { category, form } = classifyCategory(get(idx.category));
+
+      const dosageValue = get(idx.dosage);
+      const unitValue = get(idx.unit);
+      const dosageAndUnit = dosageValue && unitValue ? `${dosageValue}${unitValue}` : dosageValue || unitValue || "";
+      const dosage = [dosageAndUnit, form].filter(Boolean).join(", ") || undefined;
 
       parsedRows.push({
         line,
         name,
-        dosage: get(idx.dosage) || undefined,
+        dosage,
         category,
         reorderLevel,
         unitPrice,
+        purchasePrice,
+        stockQuantity,
         batchNumber: get(idx.batchNumber) || undefined,
         expiryDate: parseDateFlexible(get(idx.expiryDate)),
         supplier: get(idx.supplier) || undefined,
@@ -278,8 +351,9 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
             Importer des produits depuis un fichier CSV
           </DialogTitle>
           <DialogDescription>
-            Chaque ligne du fichier crée un nouveau produit dans le catalogue. Le stock démarre à 0 comme pour un ajout manuel —
-            utilisez ensuite « Nouvel achat » pour réceptionner une quantité.
+            Chaque ligne du fichier crée un nouveau produit dans le catalogue, avec la quantité indiquée dans « Stock initial » (0 si vide).
+            Cette colonne ne sert qu&apos;à amorcer le stock la toute première fois — pour tout ajout ultérieur, utilisez
+            « Nouveau produit » (stock à 0) puis « Nouvel achat » pour réceptionner une quantité.
           </DialogDescription>
         </DialogHeader>
 
