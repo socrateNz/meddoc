@@ -14,6 +14,7 @@ interface EditInvoiceClientDialogProps {
   currentName?: string | null;
   currentPhone?: string | null;
   trigger?: React.ReactElement;
+  onSuccess?: () => void;
 }
 
 export function EditInvoiceClientDialog({
@@ -21,6 +22,7 @@ export function EditInvoiceClientDialog({
   currentName = "",
   currentPhone = "",
   trigger,
+  onSuccess,
 }: EditInvoiceClientDialogProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(currentName || "");
@@ -43,6 +45,7 @@ export function EditInvoiceClientDialog({
       if (res.success) {
         toast.success("Informations client mises à jour.");
         setOpen(false);
+        onSuccess?.();
       } else {
         setError(res.error || "Erreur lors de la mise à jour.");
       }

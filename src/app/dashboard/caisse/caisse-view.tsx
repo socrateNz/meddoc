@@ -4,10 +4,30 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Wallet, TrendingUp, TrendingDown, Receipt, Printer, Loader2, CircleDot, Circle, Landmark, AlertCircle, ArrowRight } from "lucide-react";
+import {
+  Wallet,
+  TrendingUp,
+  TrendingDown,
+  Receipt,
+  Printer,
+  Loader2,
+  CircleDot,
+  Circle,
+  Landmark,
+  AlertCircle,
+  ArrowRight,
+  Search,
+  History,
+  CheckCircle2,
+  Clock,
+  UserCog,
+  Filter,
+} from "lucide-react";
+import PaymentStatusBadge from "@/components/payment-status-badge";
 import { listRegistersWithStatus, openRegisterSession, getSessionSummary, closeRegisterSession } from "@/actions/registers";
-import { listPendingInvoices } from "@/actions/finance";
+import { listPendingInvoices, listCaisseHistoryInvoices } from "@/actions/finance";
 import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog } from "./register-session-dialogs";
 import CaisseCartDialog from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
@@ -33,6 +53,7 @@ interface RegisterRow {
 
 interface CaisseViewProps {
   initialRegisters: RegisterRow[];
+  initialHistory?: any[];
   organizationId: string;
   organizationName?: string;
   organizationLogoUrl?: string | null;
@@ -42,7 +63,17 @@ interface CaisseViewProps {
   pharmacyItems: any[];
 }
 
-export default function CaisseView({ initialRegisters, organizationId, organizationName, organizationLogoUrl, currentUserId, currentUserRole, patients, pharmacyItems }: CaisseViewProps) {
+export default function CaisseView({
+  initialRegisters,
+  initialHistory = [],
+  organizationId,
+  organizationName,
+  organizationLogoUrl,
+  currentUserId,
+  currentUserRole,
+  patients,
+  pharmacyItems,
+}: CaisseViewProps) {
   const [registers, setRegisters] = useState<RegisterRow[]>(initialRegisters);
   const [selectedRegisterId, setSelectedRegisterId] = useState<string>(() => {
     const mine = initialRegisters.find((r) => r.openSession);
@@ -55,6 +86,12 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
   const [activeTab, setActiveTab] = useState("caisse");
   const [unpaidInvoices, setUnpaidInvoices] = useState<any[]>([]);
   const [loadingUnpaid, setLoadingUnpaid] = useState(false);
+
+  // Historique des tickets de caisse
+  const [historyInvoices, setHistoryInvoices] = useState<any[]>(initialHistory);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<"ALL" | "PAID" | "PARTIAL" | "PENDING">("ALL");
 
   // PHARMACIST inclus temporairement ("pour le moment") : peut se comporter comme un caissier
   // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
@@ -84,6 +121,14 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
     if (res.success) setUnpaidInvoices(res.data as any[]);
   }, [organizationId]);
 
+  // Org-wide (TOUS STATUTS) — alimente l'onglet "Historique des tickets"
+  const refreshHistoryInvoices = useCallback(async () => {
+    setLoadingHistory(true);
+    const res = await listCaisseHistoryInvoices(organizationId);
+    setLoadingHistory(false);
+    if (res.success) setHistoryInvoices(res.data as any[]);
+  }, [organizationId]);
+
   useEffect(() => {
     if (selectedRegister?.openSession) {
       refreshSummary(selectedRegister.openSession.id);
@@ -95,7 +140,8 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
 
   useEffect(() => {
     refreshUnpaidInvoices();
-  }, [refreshUnpaidInvoices]);
+    refreshHistoryInvoices();
+  }, [refreshUnpaidInvoices, refreshHistoryInvoices]);
 
   const handleOpen = async (openingFloat: number) => {
     if (!selectedRegister) return { success: false, error: "Aucune caisse sélectionnée." };
@@ -116,11 +162,53 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
     return res;
   };
 
-  const handleMutationSuccess = (transaction: any) => {
+  const handleMutationSuccess = (transaction?: any) => {
     if (transaction) setSelectedTransaction(transaction);
     if (selectedRegister?.openSession) refreshSummary(selectedRegister.openSession.id);
     refreshUnpaidInvoices();
+    refreshHistoryInvoices();
   };
+
+  const handlePrintInvoice = (inv: any) => {
+    const items = Array.isArray(inv.items) ? inv.items : [];
+    const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
+    const desc = items.map((it: any) => `${it.description || "Article"} x${it.quantity || 1}`).join(", ") || "Ticket de caisse";
+    setSelectedTransaction({
+      id: inv.id,
+      pendingInvoiceId: inv.id,
+      type: "INCOME",
+      category: items.some((i: any) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_PAYMENT",
+      amount: total,
+      amountPaid: inv.amountPaid ?? (inv.status === "PAID" ? total : 0),
+      description: desc,
+      items: items,
+      patient: inv.patient,
+      customPatientName: inv.customPatientName,
+      customPatientPhone: inv.customPatientPhone,
+      createdAt: inv.createdAt,
+      status: inv.status,
+    });
+  };
+
+  const filteredHistoryInvoices = historyInvoices.filter((inv) => {
+    if (historyStatusFilter === "PAID" && inv.status !== "PAID") return false;
+    if (historyStatusFilter === "PARTIAL" && inv.status !== "PARTIAL") return false;
+    if (historyStatusFilter === "PENDING" && inv.status !== "PENDING") return false;
+
+    const q = historySearch.trim().toLowerCase();
+    if (!q) return true;
+
+    const ticketNum = String(inv.id).slice(-6).toLowerCase();
+    const name = inv.patient?.user
+      ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}`.toLowerCase()
+      : (inv.customPatientName || "").toLowerCase();
+    const phone = (inv.patient?.user?.phone || inv.customPatientPhone || "").toLowerCase();
+    const itemDescs = Array.isArray(inv.items)
+      ? inv.items.map((it: any) => (it.description || "").toLowerCase()).join(" ")
+      : "";
+
+    return ticketNum.includes(q) || name.includes(q) || phone.includes(q) || itemDescs.includes(q);
+  });
 
   return (
     <div className="space-y-6">
@@ -133,6 +221,10 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
           <TabsTrigger value="impayes" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
             <AlertCircle className="h-4 w-4 text-amber-500" />
             Tickets impayés ({unpaidInvoices.length})
+          </TabsTrigger>
+          <TabsTrigger value="historique" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            <History className="h-4 w-4 text-emerald-500" />
+            Historique des tickets ({historyInvoices.length})
           </TabsTrigger>
         </TabsList>
 
@@ -336,11 +428,13 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
                         <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
                           {inv.status === "PARTIAL" ? "Partiel" : "Non payé"}
                         </Badge>
-                        <EditInvoiceClientDialog
-                          pendingInvoiceId={inv.id}
-                          currentName={inv.customPatientName}
-                          currentPhone={inv.customPatientPhone}
-                        />
+                        {!inv.patient && !inv.customPatientName?.trim() && !inv.customPatientPhone?.trim() && (
+                          <EditInvoiceClientDialog
+                            pendingInvoiceId={inv.id}
+                            currentName={inv.customPatientName}
+                            currentPhone={inv.customPatientPhone}
+                          />
+                        )}
                       </div>
                       <p className="text-[11px] text-slate-500">
                         {formatDateTime(inv.createdAt)} • Total {formatFCFA(invoiceTotalAmount)}
@@ -359,6 +453,188 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
                       )
                     )}
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="historique" className="space-y-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="relative max-w-sm flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <Input
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Rechercher par patient, téléphone, ticket #..."
+                className="h-9 pl-9 text-sm rounded-xl"
+              />
+            </div>
+
+            <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl shrink-0 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter("ALL")}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
+                  historyStatusFilter === "ALL"
+                    ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                }`}
+              >
+                Tous ({historyInvoices.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter("PAID")}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
+                  historyStatusFilter === "PAID"
+                    ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                }`}
+              >
+                Payés
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter("PARTIAL")}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
+                  historyStatusFilter === "PARTIAL"
+                    ? "bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                }`}
+              >
+                Partiels
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter("PENDING")}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
+                  historyStatusFilter === "PENDING"
+                    ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                }`}
+              >
+                Impayés
+              </button>
+            </div>
+          </div>
+
+          {loadingHistory && historyInvoices.length === 0 ? (
+            <div className="py-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+          ) : filteredHistoryInvoices.length === 0 ? (
+            <Card className="rounded-2xl border-dashed">
+              <CardContent className="py-10 text-center text-sm text-slate-500">
+                {historyInvoices.length === 0
+                  ? "Aucun ticket enregistré pour le moment."
+                  : "Aucun ticket ne correspond à vos critères de recherche."}
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {filteredHistoryInvoices.map((inv: any) => {
+                const items = Array.isArray(inv.items) ? inv.items : [];
+                const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
+                const name = inv.patient?.user
+                  ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}`
+                  : (inv.customPatientName || "Client comptant");
+                const phone = inv.patient?.user?.phone || inv.customPatientPhone;
+                const ticketNum = String(inv.id).slice(-6).toUpperCase();
+                const isPharmacy = items.some((it: any) => it.type === "PHARMACY");
+                const isDispensed = !!inv.dispensedAt;
+
+                return (
+                  <Card key={inv.id} className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-bold text-slate-800 dark:text-slate-200">{name}</p>
+                            {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
+                            <Badge variant="outline" className="text-[10px] font-mono bg-slate-500/10 text-slate-500 border-slate-500/20">
+                              #{ticketNum}
+                            </Badge>
+                            <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
+                            {isPharmacy && (
+                              isDispensed ? (
+                                <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1">
+                                  <CheckCircle2 className="h-2.5 w-2.5" /> Remis
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 border-blue-500/20 gap-1">
+                                  <Clock className="h-2.5 w-2.5" /> Attente remise
+                                </Badge>
+                              )
+                            )}
+                            {!inv.patient && !inv.customPatientName?.trim() && !inv.customPatientPhone?.trim() && (
+                              <EditInvoiceClientDialog
+                                pendingInvoiceId={inv.id}
+                                currentName={inv.customPatientName}
+                                currentPhone={inv.customPatientPhone}
+                                onSuccess={refreshHistoryInvoices}
+                              />
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Créé le {formatDateTime(inv.createdAt)} • Total {formatFCFA(total)}
+                            {inv.status === "PARTIAL" && ` • Réglé ${formatFCFA(inv.amountPaid)} • Reste ${formatFCFA(total - inv.amountPaid)}`}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePrintInvoice(inv)}
+                            className="gap-1.5 text-xs rounded-xl border-slate-200 dark:border-slate-800"
+                          >
+                            <Printer className="h-3.5 w-3.5 text-blue-600" />
+                            Imprimer
+                          </Button>
+                          {canOperate && selectedRegister?.openSession && inv.status !== "PAID" && (
+                            inv.status === "PARTIAL" ? (
+                              <RecordPaymentDialog
+                                cashSessionId={selectedRegister.openSession.id}
+                                pendingInvoice={{
+                                  id: inv.id,
+                                  invoiceTotalAmount: total,
+                                  amountPaid: inv.amountPaid,
+                                  patient: inv.patient,
+                                  customPatientName: inv.customPatientName,
+                                  customPatientPhone: inv.customPatientPhone,
+                                }}
+                                onSuccess={handleMutationSuccess}
+                              />
+                            ) : (
+                              <CaisseCartDialog
+                                mode="pay"
+                                cashSessionId={selectedRegister.openSession.id}
+                                pharmacyItems={pharmacyItems}
+                                pendingInvoice={inv}
+                                onSuccess={handleMutationSuccess}
+                              />
+                            )
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Detail des articles du ticket */}
+                      <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 divide-y divide-slate-100 dark:divide-slate-800/60 overflow-hidden">
+                        {items.length === 0 ? (
+                          <p className="p-2.5 text-xs text-slate-400">Aucun article listé.</p>
+                        ) : (
+                          items.map((it: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs bg-slate-50/60 dark:bg-slate-800/30">
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{it.description}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="font-semibold text-slate-500">x{it.quantity || 1}</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-300">{formatFCFA(it.amount || 0)}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>

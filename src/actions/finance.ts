@@ -1141,7 +1141,7 @@ export async function listPendingInvoices(organizationId?: string) {
     const invoices = await prisma.pendingInvoice.findMany({
       where,
       include: {
-        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        patient: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } },
         medicalRecord: { select: { title: true, createdAt: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -1150,5 +1150,39 @@ export async function listPendingInvoices(organizationId?: string) {
     return { success: true, data: await attachAmountPaid(invoices) };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du chargement des factures en attente." };
+  }
+}
+
+// Historique complet des tickets de caisse de la clinique (tous statuts : PENDING, PARTIAL, PAID, CANCELLED)
+export async function listCaisseHistoryInvoices(organizationId?: string, take: number = 200) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertRegisterReadRole(activeUser.role);
+
+    const where: any = {};
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      where.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else {
+      const targetOrgId = organizationId || activeUser.organizationId;
+      if (targetOrgId) where.organizationId = targetOrgId;
+    }
+
+    const invoices = await prisma.pendingInvoice.findMany({
+      where,
+      include: {
+        patient: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } },
+        medicalRecord: { select: { title: true, createdAt: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take,
+    });
+
+    return { success: true, data: await attachAmountPaid(invoices) };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Erreur lors du chargement de l'historique des tickets." };
   }
 }

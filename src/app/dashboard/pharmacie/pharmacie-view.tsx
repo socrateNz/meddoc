@@ -213,11 +213,13 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                             <p className="font-bold text-slate-800 dark:text-slate-200">{name}</p>
                             {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
                             <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
-                            <EditInvoiceClientDialog
-                              pendingInvoiceId={inv.id}
-                              currentName={inv.customPatientName}
-                              currentPhone={inv.customPatientPhone}
-                            />
+                            {!inv.patient && !inv.customPatientName?.trim() && !inv.customPatientPhone?.trim() && (
+                              <EditInvoiceClientDialog
+                                pendingInvoiceId={inv.id}
+                                currentName={inv.customPatientName}
+                                currentPhone={inv.customPatientPhone}
+                              />
+                            )}
                           </div>
                           <p className="text-[11px] text-slate-500 mt-0.5">
                             Créé le {formatDateTime(inv.createdAt)} • {formatFCFA(total)}
@@ -299,11 +301,13 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                           {inv.status !== "PAID" && (
                             <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
                           )}
-                          <EditInvoiceClientDialog
-                            pendingInvoiceId={inv.id}
-                            currentName={inv.customPatientName}
-                            currentPhone={inv.customPatientPhone}
-                          />
+                          {!inv.patient && !inv.customPatientName?.trim() && !inv.customPatientPhone?.trim() && (
+                            <EditInvoiceClientDialog
+                              pendingInvoiceId={inv.id}
+                              currentName={inv.customPatientName}
+                              currentPhone={inv.customPatientPhone}
+                            />
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                           {pharmacyLines.map((it: any) => it.description).join(", ") || "Aucun médicament listé"}
