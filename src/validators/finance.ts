@@ -69,11 +69,19 @@ export const createCaisseSaleSchema = z.object({
   cashSessionId: z.string().min(1, "Aucune session de caisse ouverte."),
   items: z.array(invoiceItemSchema).min(1, "Le panier de facturation est vide"),
   patientId: z.string().optional(),
+  customPatientName: z.string().optional(),
+  customPatientPhone: z.string().optional(),
   organizationId: z.string().optional(),
   // Montant réellement remis par le client maintenant — omis ou égal au total du panier =
   // comportement actuel inchangé (paiement intégral immédiat). Inférieur au total = vente à
   // crédit / paiement partiel : le solde restera dû sur la PendingInvoice créée.
   amountReceived: z.number().min(0).optional(),
+});
+
+export const updateInvoicePatientInfoSchema = z.object({
+  pendingInvoiceId: z.string().min(1),
+  customPatientName: z.string().optional(),
+  customPatientPhone: z.string().optional(),
 });
 
 export const dispensePendingInvoiceSchema = z.object({

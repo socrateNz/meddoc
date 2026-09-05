@@ -1052,6 +1052,8 @@ model FinancialTransaction {
 
   patientId String?  @db.ObjectId
   patient   Patient? @relation(fields: [patientId], references: [id])
+  customPatientName String? // Nom du client/patient saisi manuellement à la caisse si non inscrit
+  customPatientPhone String? // Numéro de téléphone du client/patient saisi manuellement
 
   pharmacyItemId String?       @db.ObjectId
   pharmacyItem   PharmacyItem? @relation(fields: [pharmacyItemId], references: [id])
@@ -1102,6 +1104,8 @@ model PendingInvoice {
   // consultation) continuent de toujours renseigner patientId.
   patientId String?  @db.ObjectId
   patient   Patient? @relation(fields: [patientId], references: [id])
+  customPatientName String? // Nom du client/patient saisi manuellement à la caisse si non inscrit
+  customPatientPhone String? // Numéro de téléphone du client/patient saisi manuellement
 
   medicalRecordId String?        @db.ObjectId
   medicalRecord   MedicalRecord? @relation(fields: [medicalRecordId], references: [id])

@@ -24,6 +24,7 @@ import {
   History,
   KeyRound,
 } from "lucide-react";
+import { EditInvoiceClientDialog } from "../caisse/edit-invoice-client-dialog";
 import PharmacyDialog from "@/app/dashboard/finance/pharmacy-dialog";
 import StockPurchaseDialog from "@/app/dashboard/finance/stock-purchase-dialog";
 import ImportPharmacyCsvDialog from "@/app/dashboard/finance/import-pharmacy-csv-dialog";
@@ -200,7 +201,8 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                 const items = Array.isArray(inv.items) ? inv.items : [];
                 const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
                 const pharmacyLines = items.filter((it: any) => it.type === "PHARMACY");
-                const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : "Client comptant";
+                const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
+                const phone = inv.patient?.user?.phone || inv.customPatientPhone;
 
                 return (
                   <Card key={inv.id} className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
@@ -209,7 +211,13 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-bold text-slate-800 dark:text-slate-200">{name}</p>
+                            {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
                             <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
+                            <EditInvoiceClientDialog
+                              pendingInvoiceId={inv.id}
+                              currentName={inv.customPatientName}
+                              currentPhone={inv.customPatientPhone}
+                            />
                           </div>
                           <p className="text-[11px] text-slate-500 mt-0.5">
                             Créé le {formatDateTime(inv.createdAt)} • {formatFCFA(total)}
@@ -270,7 +278,8 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                 const items = Array.isArray(inv.items) ? inv.items : [];
                 const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
                 const pharmacyLines = items.filter((it: any) => it.type === "PHARMACY");
-                const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : "Client comptant";
+                const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
+                const phone = inv.patient?.user?.phone || inv.customPatientPhone;
                 const ticketNum = String(inv.id).slice(-6).toUpperCase();
 
                 return (
@@ -279,6 +288,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-bold text-sm text-slate-800 dark:text-slate-200">{name}</p>
+                          {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
                           <Badge variant="outline" className="text-[10px] font-mono bg-slate-500/10 text-slate-500 border-slate-500/20">
                             #{ticketNum}
                           </Badge>
@@ -289,6 +299,11 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                           {inv.status !== "PAID" && (
                             <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
                           )}
+                          <EditInvoiceClientDialog
+                            pendingInvoiceId={inv.id}
+                            currentName={inv.customPatientName}
+                            currentPhone={inv.customPatientPhone}
+                          />
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                           {pharmacyLines.map((it: any) => it.description).join(", ") || "Aucun médicament listé"}
@@ -474,7 +489,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
             const pharmacyLines = items.filter((it: any) => it.type === "PHARMACY");
             const name = finalizingInvoice.patient?.user
               ? `${finalizingInvoice.patient.user.lastName} ${finalizingInvoice.patient.user.firstName}`
-              : "Client comptant";
+              : (finalizingInvoice.customPatientName || "Client comptant");
 
             return (
               <>

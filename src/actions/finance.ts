@@ -9,6 +9,7 @@ import {
   recordExpenseSchema,
   payPendingInvoiceSchema,
   createCaisseSaleSchema,
+  updateInvoicePatientInfoSchema,
   dispensePendingInvoiceSchema,
   importPharmacyItemsSchema,
 } from "@/validators/finance";
@@ -525,6 +526,8 @@ export async function createCaisseSale(data: {
     amount: number;
   }>;
   patientId?: string;
+  customPatientName?: string;
+  customPatientPhone?: string;
   organizationId?: string;
   amountReceived?: number;
 }) {
@@ -546,6 +549,9 @@ export async function createCaisseSale(data: {
       ? data.items[0].description
       : `Vente comptant (${data.items.length} articles : ${data.items.map((i) => i.description).join(", ")})`;
 
+    const customName = data.customPatientName?.trim() || null;
+    const customPhone = data.customPatientPhone?.trim() || null;
+
     // Toujours créée désormais, quel que soit le contenu du panier ou la présence d'un patient :
     // toute vente non intégralement réglée doit être traçable et réapparaître dans "Tickets
     // impayés" / la file pharmacie (dispensePendingInvoice est le seul endroit où le stock
@@ -554,6 +560,8 @@ export async function createCaisseSale(data: {
       data: {
         status: received >= totalAmount ? "PAID" : received > 0 ? "PARTIAL" : "PENDING",
         patientId: data.patientId || null,
+        customPatientName: customName,
+        customPatientPhone: customPhone,
         organizationId: targetOrgId,
         items: data.items,
         createdById: activeUser.id,
@@ -575,6 +583,8 @@ export async function createCaisseSale(data: {
         description: summaryDescription,
         items: data.items,
         patientId: data.patientId || null,
+        customPatientName: customName,
+        customPatientPhone: customPhone,
         recordedById: activeUser.id,
         organizationId: targetOrgId,
         cashSessionId: session.id,
@@ -600,6 +610,56 @@ export async function createCaisseSale(data: {
     };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la validation de la vente.") };
+  }
+}
+
+// Modifier / ajouter a posteriori le nom et le numéro de téléphone du client sur une vente déjà enregistrée
+export async function updateInvoicePatientInfo(data: {
+  pendingInvoiceId: string;
+  customPatientName?: string;
+  customPatientPhone?: string;
+}) {
+  try {
+    updateInvoicePatientInfoSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertRegisterOperateRole(activeUser.role);
+
+    const pendingInvoice = await prisma.pendingInvoice.findUnique({
+      where: { id: data.pendingInvoiceId },
+    });
+    if (!pendingInvoice) throw new Error("Facture introuvable.");
+
+    const customName = data.customPatientName?.trim() || null;
+    const customPhone = data.customPatientPhone?.trim() || null;
+
+    const updatedInvoice = await prisma.pendingInvoice.update({
+      where: { id: data.pendingInvoiceId },
+      data: {
+        customPatientName: customName,
+        customPatientPhone: customPhone,
+      },
+    });
+
+    await prisma.financialTransaction.updateMany({
+      where: { pendingInvoiceId: data.pendingInvoiceId },
+      data: {
+        customPatientName: customName,
+        customPatientPhone: customPhone,
+      },
+    });
+
+    const targetOrgId = pendingInvoice.organizationId;
+    if (targetOrgId) {
+      revalidatePath(`/dashboard/clinics/${targetOrgId}/caisse`);
+      revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
+    }
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true, data: updatedInvoice };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la mise à jour des informations client.") };
   }
 }
 

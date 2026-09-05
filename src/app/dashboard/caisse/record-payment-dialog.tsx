@@ -20,6 +20,8 @@ interface RecordPaymentDialogProps {
     invoiceTotalAmount: number;
     amountPaid: number;
     patient?: { user?: { firstName: string; lastName: string } } | null;
+    customPatientName?: string | null;
+    customPatientPhone?: string | null;
   };
   onSuccess: (transaction: any) => void;
 }
@@ -35,7 +37,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
 
   const patientName = pendingInvoice.patient?.user
     ? `${pendingInvoice.patient.user.lastName} ${pendingInvoice.patient.user.firstName}`
-    : "Client comptant";
+    : ((pendingInvoice as any).customPatientName || "Client comptant");
 
   const amount = Math.min(remainingDue, Math.max(0, Number(amountInput) || 0));
 

@@ -55,6 +55,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       : []
   );
   const [cartPatientId, setCartPatientId] = useState("");
+  const [customPatientNameInput, setCustomPatientNameInput] = useState("");
+  const [customPatientPhoneInput, setCustomPatientPhoneInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -80,6 +82,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
     if (mode === "sale") {
       setCartItems([]);
       setCartPatientId("");
+      setCustomPatientNameInput("");
+      setCustomPatientPhoneInput("");
     }
   };
 
@@ -167,7 +171,15 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
       const res = mode === "pay" && pendingInvoice
         ? await payPendingInvoice(pendingInvoice.id, cashSessionId, amountReceived, items)
-        : await createCaisseSale({ cashSessionId, items, patientId: cartPatientId || undefined, organizationId, amountReceived });
+        : await createCaisseSale({
+            cashSessionId,
+            items,
+            patientId: cartPatientId || undefined,
+            customPatientName: customPatientNameInput.trim() || undefined,
+            customPatientPhone: customPatientPhoneInput.trim() || undefined,
+            organizationId,
+            amountReceived,
+          });
 
       if (res.success) {
         setOpen(false);
@@ -194,7 +206,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
   const patientName = pendingInvoice?.patient?.user
     ? `${pendingInvoice.patient.user.lastName} ${pendingInvoice.patient.user.firstName}`
-    : "Client comptant";
+    : ((pendingInvoice as any)?.customPatientName || "Client comptant");
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
@@ -336,16 +348,45 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
             {mode === "sale" && (
-              <div className="flex-1 max-w-md space-y-1">
-                <Label htmlFor="cartPatientId" className="text-xs">Patient (Optionnel)</Label>
-                <SearchableSelect
-                  id="cartPatientId"
-                  value={cartPatientId}
-                  onValueChange={setCartPatientId}
-                  placeholder="-- Aucun (Client comptant) --"
-                  emptyText="Aucun patient trouvé."
-                  options={patients.map((p) => ({ value: p.id, label: `${p.user.lastName} ${p.user.firstName}` }))}
-                />
+              <div className="flex-1 max-w-md space-y-2">
+                <div className="space-y-1">
+                  <Label htmlFor="cartPatientId" className="text-xs">Patient inscrit (Optionnel)</Label>
+                  <SearchableSelect
+                    id="cartPatientId"
+                    value={cartPatientId}
+                    onValueChange={(val) => {
+                      setCartPatientId(val);
+                      if (val) setCustomPatientNameInput("");
+                    }}
+                    placeholder="-- Aucun (Client comptant) --"
+                    emptyText="Aucun patient trouvé."
+                    options={patients.map((p) => ({ value: p.id, label: `${p.user.lastName} ${p.user.firstName}` }))}
+                  />
+                </div>
+                {!cartPatientId && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="customPatientNameInput" className="text-xs">Nom du client (Manuel)</Label>
+                      <Input
+                        id="customPatientNameInput"
+                        value={customPatientNameInput}
+                        onChange={(e) => setCustomPatientNameInput(e.target.value)}
+                        placeholder="ex: M. Yao Alain"
+                        className="h-8 text-xs rounded-xl"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="customPatientPhoneInput" className="text-xs">Téléphone (Optionnel)</Label>
+                      <Input
+                        id="customPatientPhoneInput"
+                        value={customPatientPhoneInput}
+                        onChange={(e) => setCustomPatientPhoneInput(e.target.value)}
+                        placeholder="ex: 07 00 00 00 00"
+                        className="h-8 text-xs rounded-xl"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div className="text-right ml-auto space-y-2">

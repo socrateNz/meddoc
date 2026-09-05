@@ -12,6 +12,7 @@ import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog } from "./r
 import CaisseCartDialog from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
 import RecordPaymentDialog from "./record-payment-dialog";
+import { EditInvoiceClientDialog } from "./edit-invoice-client-dialog";
 import InvoiceModal from "@/app/dashboard/finance/invoice-modal";
 
 function formatFCFA(val: number) {
@@ -250,7 +251,7 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
                       </div>
                       {summary.pendingInvoices.slice(0, 3).map((inv: any) => {
                         const total = (inv.items || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-                        const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : "Client comptant";
+                        const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
                         return (
                           <div key={inv.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/50 dark:border-amber-900/30">
                             <div className="min-w-0">
@@ -323,16 +324,23 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
               )}
               {unpaidInvoices.map((inv: any) => {
                 const invoiceTotalAmount = (inv.items || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-                const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : "Client comptant";
+                const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
+                const phone = inv.patient?.user?.phone || inv.customPatientPhone;
                 const openSessionId = selectedRegister?.openSession?.id;
                 return (
                   <div key={inv.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/50 dark:border-amber-900/30">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{name}</p>
+                        {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
                         <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
                           {inv.status === "PARTIAL" ? "Partiel" : "Non payé"}
                         </Badge>
+                        <EditInvoiceClientDialog
+                          pendingInvoiceId={inv.id}
+                          currentName={inv.customPatientName}
+                          currentPhone={inv.customPatientPhone}
+                        />
                       </div>
                       <p className="text-[11px] text-slate-500">
                         {formatDateTime(inv.createdAt)} • Total {formatFCFA(invoiceTotalAmount)}
@@ -343,7 +351,7 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
                       inv.status === "PARTIAL" ? (
                         <RecordPaymentDialog
                           cashSessionId={openSessionId}
-                          pendingInvoice={{ id: inv.id, invoiceTotalAmount, amountPaid: inv.amountPaid, patient: inv.patient }}
+                          pendingInvoice={{ id: inv.id, invoiceTotalAmount, amountPaid: inv.amountPaid, patient: inv.patient, customPatientName: inv.customPatientName, customPatientPhone: inv.customPatientPhone }}
                           onSuccess={handleMutationSuccess}
                         />
                       ) : (

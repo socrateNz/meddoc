@@ -505,9 +505,9 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
             <Text>HEURE: {formattedTime}</Text>
           </View>
 
-          {transaction.patient?.user && (
+          {(transaction.patient?.user || (transaction as any).customPatientName || (transaction as any).customPatientPhone) && (
             <View style={thermalStyles.metaLine}>
-              <Text>CLIENT: {transaction.patient.user.lastName} {transaction.patient.user.firstName}</Text>
+              <Text>CLIENT: {transaction.patient?.user ? `${transaction.patient.user.lastName} ${transaction.patient.user.firstName}` : ((transaction as any).customPatientName || "Client comptant")}{(transaction as any).customPatientPhone ? ` (${(transaction as any).customPatientPhone})` : ""}</Text>
             </View>
           )}
 
@@ -608,7 +608,12 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
                 <Text style={a4Styles.infoText}>Email: {transaction.patient.user.email}</Text>
               </>
             ) : (
-              <Text style={a4Styles.infoText}>Client comptant / Anonyme</Text>
+              <>
+                <Text style={a4Styles.infoText}>{(transaction as any).customPatientName ? `Nom: ${(transaction as any).customPatientName}` : "Client comptant / Anonyme"}</Text>
+                {(transaction as any).customPatientPhone && (
+                  <Text style={a4Styles.infoText}>Tél: {(transaction as any).customPatientPhone}</Text>
+                )}
+              </>
             )}
           </View>
 

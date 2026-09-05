@@ -327,7 +327,10 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                       <p className="text-slate-500">{transaction.patient.user.email}</p>
                     </div>
                   ) : (
-                    <p className="font-medium text-slate-700">Client comptant / Vente directe</p>
+                    <div>
+                      <p className="font-medium text-slate-700">{transaction.customPatientName || "Client comptant / Vente directe"}</p>
+                      {transaction.customPatientPhone && <p className="text-slate-500 font-mono">Tél: {transaction.customPatientPhone}</p>}
+                    </div>
                   )}
                 </div>
 
