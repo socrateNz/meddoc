@@ -115,6 +115,10 @@ export default function InvoiceModal({ transaction, organizationName, organizati
   }
 
   const hasPharmacyItem = itemList.some((item: any) => item.type === "PHARMACY");
+  // Posé par createCaisseSale/payPendingInvoice quand ce règlement ne solde pas intégralement la
+  // facture (paiement échelonné / vente à crédit) — absent (undefined) pour les transactions
+  // antérieures à cette fonctionnalité, qui gardent l'affichage à une seule ligne "TOTAL NET".
+  const hasRemainingDue = Number(transaction.remainingDue) > 0;
 
   const handlePrint = () => {
     window.print();
@@ -239,15 +243,38 @@ export default function InvoiceModal({ transaction, organizationName, organizati
 
               {/* Totals */}
               <div className="space-y-1 my-2">
-                <div className="flex justify-between items-center text-sm font-extrabold pt-1">
-                  <span>TOTAL NET :</span>
-                  <span className="text-base text-black">{formatFCFA(transaction.amount)}</span>
-                </div>
+                {hasRemainingDue ? (
+                  <>
+                    <div className="flex justify-between text-[11px] text-slate-700 font-semibold">
+                      <span>TOTAL FACTURE :</span>
+                      <span>{formatFCFA(transaction.invoiceTotalAmount)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm font-extrabold pt-1">
+                      <span>RÉGLÉ CE JOUR :</span>
+                      <span className="text-base text-black">{formatFCFA(transaction.amount)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-amber-700 font-extrabold">
+                      <span>RESTE À PAYER :</span>
+                      <span>{formatFCFA(transaction.remainingDue)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex justify-between items-center text-sm font-extrabold pt-1">
+                    <span>TOTAL NET :</span>
+                    <span className="text-base text-black">{formatFCFA(transaction.amount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-[10px] text-slate-700 font-semibold">
                   <span>MODE PAIEMENT:</span>
                   <span>ESPECES / CAISSE</span>
                 </div>
               </div>
+
+              {hasRemainingDue && (
+                <div className="text-center text-[11px] font-extrabold text-amber-800 my-2 uppercase tracking-wider border border-dashed border-amber-600 rounded py-1">
+                  Paiement partiel — solde à régler
+                </div>
+              )}
 
               {/* Dashed Separator */}
               <div className="border-b border-dashed border-slate-800 my-3" />
@@ -332,11 +359,36 @@ export default function InvoiceModal({ transaction, organizationName, organizati
               </div>
 
               <div className="flex justify-end">
-                <div className="w-full sm:w-1/2 p-3.5 rounded-xl border border-blue-500/30 bg-blue-50 text-blue-950 flex justify-between items-center">
-                  <span className="font-bold text-sm uppercase">TOTAL NET :</span>
-                  <span className="text-xl font-extrabold text-blue-700">{formatFCFA(transaction.amount)}</span>
+                <div className="w-full sm:w-1/2 space-y-2">
+                  {hasRemainingDue ? (
+                    <>
+                      <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex justify-between items-center text-xs">
+                        <span className="font-bold uppercase text-slate-500">Total facture</span>
+                        <span className="font-bold text-slate-800">{formatFCFA(transaction.invoiceTotalAmount)}</span>
+                      </div>
+                      <div className="p-3.5 rounded-xl border border-blue-500/30 bg-blue-50 text-blue-950 flex justify-between items-center">
+                        <span className="font-bold text-sm uppercase">Réglé ce jour :</span>
+                        <span className="text-xl font-extrabold text-blue-700">{formatFCFA(transaction.amount)}</span>
+                      </div>
+                      <div className="p-3 rounded-xl border border-amber-400/50 bg-amber-50 text-amber-900 flex justify-between items-center">
+                        <span className="font-bold text-xs uppercase">Reste à payer</span>
+                        <span className="font-extrabold">{formatFCFA(transaction.remainingDue)}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="p-3.5 rounded-xl border border-blue-500/30 bg-blue-50 text-blue-950 flex justify-between items-center">
+                      <span className="font-bold text-sm uppercase">TOTAL NET :</span>
+                      <span className="text-xl font-extrabold text-blue-700">{formatFCFA(transaction.amount)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {hasRemainingDue && (
+                <div className="text-center text-xs font-extrabold text-amber-800 uppercase tracking-wider border border-dashed border-amber-500 rounded-xl py-2">
+                  Paiement partiel — vente à crédit
+                </div>
+              )}
             </div>
           )}
         </div>

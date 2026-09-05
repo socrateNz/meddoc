@@ -10,23 +10,18 @@ import {
   closeRegisterSessionSchema,
 } from "@/validators/registers";
 import { revalidatePath } from "next/cache";
-import { assertRegisterOperateRole } from "@/actions/register-permissions";
+import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 
-// Consulter les caisses (et leur état) est ouvert à ADMIN (holding, lecture seule) en plus des
-// rôles qui opèrent réellement la caisse. Créer/désactiver une caisse physique est une
-// opération structurelle réservée au coordinateur (même périmètre que src/actions/wards.ts).
-// Ouvrir/fermer une session et encaisser reste ouvert au CASHIER dédié, au COORDINATOR en secours,
-// et pour le moment aussi au PHARMACIST (cf. register-permissions.ts:REGISTER_OPERATE_ROLES —
-// le pharmacien s'y comporte temporairement comme un caissier, séparation caisse/pharmacie
-// assouplie en attendant qu'un caissier dédié soit en place).
-// assertRegisterOperateRole vit dans @/actions/register-permissions (pas "use server") car ce
-// fichier-ci ne peut exporter que des fonctions async — voir ce module pour le détail.
-const REGISTER_READ_ROLES = ["ADMIN", "COORDINATOR", "CASHIER", "PHARMACIST"];
+// Créer/désactiver une caisse physique est une opération structurelle réservée au coordinateur
+// (même périmètre que src/actions/wards.ts). Ouvrir/fermer une session et encaisser reste
+// ouvert au CASHIER dédié, au COORDINATOR en secours, et pour le moment aussi au PHARMACIST
+// (cf. register-permissions.ts:REGISTER_OPERATE_ROLES — le pharmacien s'y comporte
+// temporairement comme un caissier, séparation caisse/pharmacie assouplie en attendant qu'un
+// caissier dédié soit en place).
+// assertRegisterOperateRole/assertRegisterReadRole vivent dans @/actions/register-permissions
+// (pas "use server") car ce fichier-ci ne peut exporter que des fonctions async — voir ce
+// module pour le détail ; aussi partagés avec finance.ts (ex: liste des tickets impayés).
 const REGISTER_STRUCTURE_ROLES = ["COORDINATOR"];
-
-function assertRegisterReadRole(role: string) {
-  if (!REGISTER_READ_ROLES.includes(role)) throw new Error("Non autorisé.");
-}
 
 function assertRegisterStructureRole(role: string) {
   if (!REGISTER_STRUCTURE_ROLES.includes(role)) throw new Error("Non autorisé. Réservé aux coordinateurs.");
@@ -133,19 +128,33 @@ export async function openRegisterSession(data: { registerId: string; openingFlo
     if (!register || !register.isActive) throw new Error("Caisse introuvable ou désactivée.");
     await assertClinicScope(register.organizationId, activeUser);
 
-    const existingOpen = await prisma.cashSession.findFirst({ where: { registerId: data.registerId, status: "OPEN" } });
-    if (existingOpen) {
-      throw new Error("Cette caisse a déjà une session ouverte.");
+    // Réclamation atomique de la caisse : si deux personnes cliquent "Ouvrir" au même instant,
+    // un seul de ces deux updateMany (conditionné sur hasOpenSession=false) peut réussir — l'autre
+    // voit count=0 et échoue proprement, sans jamais créer deux CashSession OPEN sur la même
+    // caisse. Un simple findFirst-puis-create (l'ancien code) ne protège pas contre cette course.
+    const claim = await prisma.cashRegister.updateMany({
+      where: { id: data.registerId, hasOpenSession: false },
+      data: { hasOpenSession: true },
+    });
+    if (claim.count === 0) {
+      throw new Error("Cette caisse vient d'être ouverte par quelqu'un d'autre.");
     }
 
-    const session = await prisma.cashSession.create({
-      data: {
-        registerId: data.registerId,
-        organizationId: register.organizationId,
-        openedById: activeUser.id,
-        openingFloat: Number(data.openingFloat),
-      },
-    });
+    let session;
+    try {
+      session = await prisma.cashSession.create({
+        data: {
+          registerId: data.registerId,
+          organizationId: register.organizationId,
+          openedById: activeUser.id,
+          openingFloat: Number(data.openingFloat),
+        },
+      });
+    } catch (err) {
+      // Libère le verrou si la création échoue, pour ne pas bloquer la caisse indéfiniment.
+      await prisma.cashRegister.update({ where: { id: data.registerId }, data: { hasOpenSession: false } });
+      throw err;
+    }
 
     await logAuditAction(activeUser.id, "OPEN_CASH_SESSION", "CashSession", session.id, {
       registerId: data.registerId,
@@ -177,19 +186,17 @@ export async function getSessionSummary(sessionId: string) {
     if (!session) throw new Error("Session de caisse introuvable.");
     await assertClinicScope(session.organizationId, activeUser);
 
-    const rawTransactions = await prisma.financialTransaction.findMany({
+    // pendingInvoiceId est désormais une colonne directe sur FinancialTransaction (elle porte le
+    // règlement d'une facture, potentiellement l'une de plusieurs tranches) — plus besoin de
+    // remonter par la reverse-relation comme avant le paiement échelonné.
+    const transactions = await prisma.financialTransaction.findMany({
       where: { cashSessionId: sessionId },
       include: {
         recordedBy: { select: { firstName: true, lastName: true } },
         patient: { include: { user: { select: { firstName: true, lastName: true } } } },
-        // Référence pour l'impression du ticket (cf. invoice-modal.tsx) : doit correspondre à
-        // celle que le pharmacien devra saisir pour finaliser (dispensePendingInvoice), pas à
-        // l'id interne de la transaction.
-        pendingInvoices: { select: { id: true }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
     });
-    const transactions = rawTransactions.map((t) => ({ ...t, pendingInvoiceId: t.pendingInvoices[0]?.id }));
 
     let totalIncome = 0;
     let totalExpenses = 0;
@@ -200,8 +207,10 @@ export async function getSessionSummary(sessionId: string) {
     const expectedAmount = session.openingFloat + totalIncome - totalExpenses;
     const variance = session.countedAmount != null ? session.countedAmount - expectedAmount : null;
 
+    // PENDING (rien reçu) et PARTIAL (acompte reçu) comptent toutes deux comme "en attente de
+    // règlement" depuis le paiement échelonné.
     const pendingInvoices = await prisma.pendingInvoice.findMany({
-      where: { organizationId: session.organizationId, status: "PENDING" },
+      where: { organizationId: session.organizationId, status: { in: ["PENDING", "PARTIAL"] } },
       include: { patient: { include: { user: { select: { firstName: true, lastName: true } } } } },
       orderBy: { createdAt: "desc" },
     });
@@ -313,6 +322,10 @@ export async function closeRegisterSession(data: { sessionId: string; countedAmo
         notes: data.notes || null,
       },
     });
+
+    // Libère le verrou posé par openRegisterSession — sans ça, la caisse resterait bloquée en
+    // "hasOpenSession: true" indéfiniment et personne ne pourrait plus jamais la rouvrir.
+    await prisma.cashRegister.update({ where: { id: session.registerId }, data: { hasOpenSession: false } });
 
     await logAuditAction(activeUser.id, "CLOSE_CASH_SESSION", "CashSession", data.sessionId, {
       countedAmount: data.countedAmount,

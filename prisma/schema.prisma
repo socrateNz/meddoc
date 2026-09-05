@@ -986,6 +986,12 @@ model CashRegister {
   organizationId String        @db.ObjectId
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   isActive       Boolean       @default(true)
+  // Verrou atomique anti-course : posé (true) par openRegisterSession via un updateMany
+  // conditionné sur false, remis à false par closeRegisterSession. Si deux personnes cliquent
+  // "Ouvrir la caisse" au même instant, un seul updateMany peut réussir — l'autre voit count=0
+  // et échoue proprement, sans jamais créer deux CashSession OPEN sur la même caisse (même motif
+  // que Bed.status dans wards.ts:assignPatientToBed).
+  hasOpenSession Boolean       @default(false)
   sessions       CashSession[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -1063,7 +1069,12 @@ model FinancialTransaction {
   cashSessionId String?      @db.ObjectId
   cashSession   CashSession? @relation(fields: [cashSessionId], references: [id])
 
-  pendingInvoices PendingInvoice[]
+  // Rattachement au ticket réglé — many-to-one : une facture payée en plusieurs fois (paiement
+  // échelonné) a autant de FinancialTransaction que de règlements, chacun avec son propre
+  // cashSessionId (la session réellement ouverte au moment de CE règlement précis). Remplace
+  // l'ancien lien 1:1 procédural (PendingInvoice.financialTransactionId).
+  pendingInvoiceId String?         @db.ObjectId
+  pendingInvoice   PendingInvoice? @relation(fields: [pendingInvoiceId], references: [id])
 
   createdAt DateTime @default(now())
 
@@ -1071,21 +1082,26 @@ model FinancialTransaction {
   @@index([patientId])
   @@index([pharmacyItemId])
   @@index([cashSessionId])
+  @@index([pendingInvoiceId])
 }
 
-// Facture émise à la caisse : PENDING (en attente de règlement — générée automatiquement à la
-// clôture d'une consultation par un CAREGIVER, une demande labo, ou un envoi d'ordonnance à la
-// pharmacie) -> PAID (réglée par un CASHIER/COORDINATOR via payPendingInvoice/createCaisseSale,
-// FinancialTransaction émise, ticket imprimable — le stock n'est PAS encore touché) ->
-// DISPENSED (un PHARMACIST a remis les articles au comptoir pharmacie via
-// dispensePendingInvoice, stock décrémenté à ce moment précis). Une facture sans ligne
-// PHARMACY reste terminale à PAID — rien à dispenser.
+// Facture émise à la caisse : PENDING (rien reçu) -> PARTIAL (acompte reçu, cf. payments) ->
+// PAID (solde à zéro) — générée automatiquement à la clôture d'une consultation par un
+// CAREGIVER, une demande labo, un envoi d'ordonnance à la pharmacie, ou directement à la
+// caisse (createCaisseSale). La remise des articles au comptoir pharmacie est désormais
+// indépendante de ce statut de paiement (cf. dispensedAt) : un PHARMACIST peut remettre les
+// médicaments avant règlement complet (vente à crédit / paiement échelonné).
 model PendingInvoice {
   id     String @id @default(auto()) @map("_id") @db.ObjectId
-  status String @default("PENDING") // PENDING, PAID, DISPENSED
+  status String @default("PENDING") // PENDING, PARTIAL, PAID
 
-  patientId String  @db.ObjectId
-  patient   Patient @relation(fields: [patientId], references: [id])
+  // Optionnel : une vente comptant à la caisse ("Client comptant", sans patient sélectionné)
+  // doit quand même passer par un PendingInvoice dès qu'elle contient un article PHARMACY —
+  // sinon rien n'apparaît dans la file d'attente pharmacie et le stock n'est jamais décrémenté
+  // (cf. createCaisseSale). Les créations liées à un patient réel (ordonnance, labo,
+  // consultation) continuent de toujours renseigner patientId.
+  patientId String?  @db.ObjectId
+  patient   Patient? @relation(fields: [patientId], references: [id])
 
   medicalRecordId String?        @db.ObjectId
   medicalRecord   MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
@@ -1098,22 +1114,23 @@ model PendingInvoice {
   createdById String @db.ObjectId
   createdBy   User   @relation("PendingInvoiceCreatedBy", fields: [createdById], references: [id])
 
-  // Rattachement à la session de caisse qui a encaissé le règlement (posé par payPendingInvoice/
-  // createCaisseSale, jamais avant).
+  // Dernière session ayant enregistré un paiement sur cette facture — informatif seulement.
+  // Chaque paiement individuel porte son propre FinancialTransaction.cashSessionId (posé à la
+  // session réellement ouverte au moment de CE règlement) ; c'est lui, jamais celui-ci, qui sert
+  // de source de vérité pour la réconciliation par session (getSessionSummary,
+  // closeRegisterSession) — une facture réglée en plusieurs fois sur plusieurs sessions n'a ici
+  // que la dernière.
   cashSessionId String?      @db.ObjectId
   cashSession   CashSession? @relation(fields: [cashSessionId], references: [id])
 
-  // Pas de @unique ici : plusieurs PendingInvoice existants n'ont pas encore de transaction liée
-  // (status PENDING), et un index unique non-sparse sur MongoDB entrerait en conflit avec ces
-  // nombreuses valeurs null — même raison que Patient.bedId ci-dessus. L'unicité « une transaction
-  // = au plus une facture » est garantie procéduralement (elle n'est posée qu'une fois, à la
-  // création de la FinancialTransaction dans payPendingInvoice/createCaisseSale).
-  financialTransactionId String?               @db.ObjectId
-  financialTransaction   FinancialTransaction? @relation(fields: [financialTransactionId], references: [id])
+  // Tous les règlements successifs (échelonnés ou non) de cette facture — remplace l'ancien
+  // financialTransactionId 1:1. Montant réellement encaissé à date = somme de payments.amount ;
+  // reste à payer = somme(items.amount) − cette somme.
+  payments FinancialTransaction[]
 
   createdAt   DateTime  @default(now())
-  paidAt      DateTime?
-  dispensedAt DateTime?
+  paidAt      DateTime? // posé uniquement au moment où le solde atteint zéro (status -> PAID)
+  dispensedAt DateTime? // seul marqueur de remise pharmacie désormais (avant : status="DISPENSED")
   finalizedAt DateTime? // Historique (pré-caisse) — non écrit par le nouveau flux, cf. paidAt
 
   prescriptions Prescription[]

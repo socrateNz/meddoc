@@ -4,11 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Wallet, TrendingUp, TrendingDown, Receipt, Printer, Loader2, CircleDot, Circle, Landmark } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Wallet, TrendingUp, TrendingDown, Receipt, Printer, Loader2, CircleDot, Circle, Landmark, AlertCircle, ArrowRight } from "lucide-react";
 import { listRegistersWithStatus, openRegisterSession, getSessionSummary, closeRegisterSession } from "@/actions/registers";
+import { listPendingInvoices } from "@/actions/finance";
 import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog } from "./register-session-dialogs";
 import CaisseCartDialog from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
+import RecordPaymentDialog from "./record-payment-dialog";
 import InvoiceModal from "@/app/dashboard/finance/invoice-modal";
 
 function formatFCFA(val: number) {
@@ -48,6 +51,9 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
   const [opening, setOpening] = useState(false);
+  const [activeTab, setActiveTab] = useState("caisse");
+  const [unpaidInvoices, setUnpaidInvoices] = useState<any[]>([]);
+  const [loadingUnpaid, setLoadingUnpaid] = useState(false);
 
   // PHARMACIST inclus temporairement ("pour le moment") : peut se comporter comme un caissier
   // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
@@ -68,6 +74,15 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
     if (res.success) setSummary(res.data);
   }, []);
 
+  // Org-wide (PENDING + PARTIAL) — alimente l'onglet "Tickets impayés", indépendant de la caisse
+  // sélectionnée : un ticket peut avoir été ouvert sur une autre caisse ou une autre session.
+  const refreshUnpaidInvoices = useCallback(async () => {
+    setLoadingUnpaid(true);
+    const res = await listPendingInvoices(organizationId);
+    setLoadingUnpaid(false);
+    if (res.success) setUnpaidInvoices(res.data as any[]);
+  }, [organizationId]);
+
   useEffect(() => {
     if (selectedRegister?.openSession) {
       refreshSummary(selectedRegister.openSession.id);
@@ -76,6 +91,10 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRegisterId, selectedRegister?.openSession?.id]);
+
+  useEffect(() => {
+    refreshUnpaidInvoices();
+  }, [refreshUnpaidInvoices]);
 
   const handleOpen = async (openingFloat: number) => {
     if (!selectedRegister) return { success: false, error: "Aucune caisse sélectionnée." };
@@ -99,10 +118,24 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
   const handleMutationSuccess = (transaction: any) => {
     if (transaction) setSelectedTransaction(transaction);
     if (selectedRegister?.openSession) refreshSummary(selectedRegister.openSession.id);
+    refreshUnpaidInvoices();
   };
 
   return (
     <div className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
+        <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl">
+          <TabsTrigger value="caisse" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            <Landmark className="h-4 w-4 text-blue-500" />
+            Caisse
+          </TabsTrigger>
+          <TabsTrigger value="impayes" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            <AlertCircle className="h-4 w-4 text-amber-500" />
+            Tickets impayés ({unpaidInvoices.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="caisse" className="space-y-6">
       {/* Grille des caisses */}
       <div className="flex items-center justify-between animate-fade-up">
         <h2 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
@@ -206,11 +239,16 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
 
                   {summary.pendingInvoices.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                        <Receipt className="h-3.5 w-3.5" />
-                        Tickets en attente de règlement ({summary.pendingInvoices.length})
-                      </p>
-                      {summary.pendingInvoices.map((inv: any) => {
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                          <Receipt className="h-3.5 w-3.5" />
+                          Tickets impayés ({summary.pendingInvoices.length})
+                        </p>
+                        <button type="button" onClick={() => setActiveTab("impayes")} className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline">
+                          Voir tout <ArrowRight className="h-3 w-3" />
+                        </button>
+                      </div>
+                      {summary.pendingInvoices.slice(0, 3).map((inv: any) => {
                         const total = (inv.items || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
                         const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : "Client comptant";
                         return (
@@ -219,9 +257,9 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
                               <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{name}</p>
                               <p className="text-[11px] text-slate-500">{formatDateTime(inv.createdAt)} • {formatFCFA(total)}</p>
                             </div>
-                            {canOperate && (
-                              <CaisseCartDialog mode="pay" cashSessionId={selectedRegister.openSession!.id} pharmacyItems={pharmacyItems} pendingInvoice={inv} onSuccess={handleMutationSuccess} />
-                            )}
+                            <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
+                              {inv.status === "PARTIAL" ? "Partiel" : "Non payé"}
+                            </Badge>
                           </div>
                         );
                       })}
@@ -264,6 +302,61 @@ export default function CaisseView({ initialRegisters, organizationId, organizat
           )}
         </Card>
       )}
+        </TabsContent>
+
+        <TabsContent value="impayes" className="space-y-3">
+          {loadingUnpaid && unpaidInvoices.length === 0 ? (
+            <div className="py-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+          ) : unpaidInvoices.length === 0 ? (
+            <Card className="rounded-2xl border-dashed">
+              <CardContent className="py-10 text-center text-sm text-slate-500">
+                Aucun ticket impayé. Tous les tickets de la clinique sont réglés.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {!selectedRegister?.openSession && (
+                <div className="p-3 text-xs font-medium rounded-xl border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-900/30 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  Ouvrez une caisse (onglet « Caisse ») pour pouvoir encaisser un règlement.
+                </div>
+              )}
+              {unpaidInvoices.map((inv: any) => {
+                const invoiceTotalAmount = (inv.items || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
+                const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : "Client comptant";
+                const openSessionId = selectedRegister?.openSession?.id;
+                return (
+                  <div key={inv.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/50 dark:border-amber-900/30">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{name}</p>
+                        <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
+                          {inv.status === "PARTIAL" ? "Partiel" : "Non payé"}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        {formatDateTime(inv.createdAt)} • Total {formatFCFA(invoiceTotalAmount)}
+                        {inv.status === "PARTIAL" && ` • Réglé ${formatFCFA(inv.amountPaid)} • Reste ${formatFCFA(invoiceTotalAmount - inv.amountPaid)}`}
+                      </p>
+                    </div>
+                    {canOperate && openSessionId && (
+                      inv.status === "PARTIAL" ? (
+                        <RecordPaymentDialog
+                          cashSessionId={openSessionId}
+                          pendingInvoice={{ id: inv.id, invoiceTotalAmount, amountPaid: inv.amountPaid, patient: inv.patient }}
+                          onSuccess={handleMutationSuccess}
+                        />
+                      ) : (
+                        <CaisseCartDialog mode="pay" cashSessionId={openSessionId} pharmacyItems={pharmacyItems} pendingInvoice={inv} onSuccess={handleMutationSuccess} />
+                      )
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       <InvoiceModal
         transaction={selectedTransaction}

@@ -13,7 +13,7 @@ import {
   importPharmacyItemsSchema,
 } from "@/validators/finance";
 import { consumeStockLots, assertStockWrite } from "@/actions/stock";
-import { assertRegisterOperateRole } from "@/actions/register-permissions";
+import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { revalidatePath } from "next/cache";
 
 // ADMIN (holding) garde une vue lecture seule de la finance (KPI, journal, valorisation) ;
@@ -22,7 +22,6 @@ import { revalidatePath } from "next/cache";
 // propre rôle de lecture élargi (CASHIER en a besoin pour construire un panier de vente).
 const FINANCE_READ_ROLES = ["ADMIN", "COORDINATOR"];
 const PHARMACY_CATALOG_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST", "CASHIER"];
-const CAISSE_READ_ROLES = ["ADMIN", "COORDINATOR", "CASHIER"];
 // Remise des médicaments au comptoir : PHARMACIST uniquement, volontairement plus strict que
 // STOCK_WRITE_ROLES (COORDINATOR+PHARMACIST) qui régit le reste du stock — séparation caisse/
 // pharmacie voulue par cette fonctionnalité, seule dérogation à la convention habituelle de ce
@@ -388,14 +387,17 @@ async function decrementStockForItems(
   return lowStockAlerts;
 }
 
-// Règle le panier d'une facture en attente (créée à la clôture d'une consultation, une demande
-// labo, ou un envoi d'ordonnance à la pharmacie) : encaisse l'argent, émet la FinancialTransaction
-// et le ticket. Le stock N'est PAS touché ici — cf. dispensePendingInvoice, seul endroit où une
-// vente pharmacie décrémente le stock, une fois les articles physiquement remis au patient.
+// Enregistre un règlement (total ou partiel) sur une facture en attente (créée à la clôture
+// d'une consultation, une demande labo, un envoi d'ordonnance à la pharmacie, ou directement à
+// la caisse) : encaisse l'argent, émet une FinancialTransaction pour CE règlement précis (pas
+// forcément le total de la facture — paiement échelonné) et le ticket correspondant. Le stock
+// N'est PAS touché ici, quel que soit l'état de règlement — cf. dispensePendingInvoice, seul
+// endroit où une vente pharmacie décrémente le stock, indépendant du paiement.
 export async function payPendingInvoice(
   pendingInvoiceId: string,
   cashSessionId: string,
-  items: Array<{
+  amount: number,
+  items?: Array<{
     type: "PHARMACY" | "SERVICE";
     pharmacyItemId?: string;
     description: string;
@@ -411,74 +413,107 @@ export async function payPendingInvoice(
 
     // L'existence/l'état de la facture et de la session sont vérifiés avant la forme du panier :
     // une facture déjà réglée ou une caisse fermée doit renvoyer son message dédié même si le
-    // panier transmis est vide, plutôt que l'erreur générique "panier vide" du schéma Zod.
+    // montant transmis est invalide, plutôt que l'erreur générique du schéma Zod.
     const [pending, session] = await Promise.all([
       prisma.pendingInvoice.findUnique({ where: { id: pendingInvoiceId } }),
       prisma.cashSession.findUnique({ where: { id: cashSessionId } }),
     ]);
-    if (!pending || pending.status !== "PENDING") {
-      throw new Error("Cette facture en attente n'existe plus ou a déjà été réglée.");
+    if (!pending || pending.status === "PAID") {
+      throw new Error("Cette facture en attente n'existe plus ou a déjà été intégralement réglée.");
     }
     if (!session || session.status !== "OPEN") {
       throw new Error("Aucune session de caisse ouverte. Ouvrez la caisse avant d'encaisser.");
     }
 
-    payPendingInvoiceSchema.parse({ pendingInvoiceId, cashSessionId, items });
+    payPendingInvoiceSchema.parse({ pendingInvoiceId, cashSessionId, amount, items });
 
-    const totalAmount = items.reduce((sum, item) => sum + Number(item.amount), 0);
-    const summaryDescription = items.length === 1
-      ? items[0].description
-      : `Facture regroupée (${items.length} articles : ${items.map((i) => i.description).join(", ")})`;
+    // Le panier n'est modifiable (remplace pending.items) que sur le tout premier règlement,
+    // tant que rien n'a encore été perçu — dès qu'un acompte existe (PARTIAL), il est verrouillé
+    // pour ne pas fausser rétroactivement ce qui a déjà été encaissé dessus.
+    const currentItems: any[] = pending.status === "PENDING" && items ? items : ((pending.items as any[]) || []);
+    if (!currentItems.length) throw new Error("Le panier de facturation est vide.");
+
+    const totalAmount = currentItems.reduce((sum, item) => sum + Number(item.amount), 0);
+    const alreadyPaidAgg = await prisma.financialTransaction.aggregate({
+      where: { pendingInvoiceId },
+      _sum: { amount: true },
+    });
+    const alreadyPaid = alreadyPaidAgg._sum.amount || 0;
+    const remaining = totalAmount - alreadyPaid;
+    const EPS = 0.5; // tolérance flottante (FCFA sans décimales)
+    if (amount > remaining + EPS) {
+      throw new Error(`Le montant dépasse le reste à payer (${Math.round(remaining)} FCFA).`);
+    }
+
+    const summaryDescription = currentItems.length === 1
+      ? currentItems[0].description
+      : `Facture regroupée (${currentItems.length} articles : ${currentItems.map((i) => i.description).join(", ")})`;
 
     const transaction = await prisma.financialTransaction.create({
       data: {
         type: "INCOME",
-        category: items.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
-        amount: totalAmount,
+        category: currentItems.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
+        amount,
         description: summaryDescription,
-        items,
+        items: currentItems,
         patientId: pending.patientId,
         recordedById: activeUser.id,
         organizationId: pending.organizationId,
         cashSessionId: session.id,
+        pendingInvoiceId,
       },
     });
 
+    const newAlreadyPaid = alreadyPaid + amount;
+    const nowFullyPaid = newAlreadyPaid >= totalAmount - EPS;
     const updated = await prisma.pendingInvoice.update({
       where: { id: pendingInvoiceId },
       data: {
-        status: "PAID",
-        items,
-        financialTransactionId: transaction.id,
+        status: nowFullyPaid ? "PAID" : "PARTIAL",
+        items: currentItems,
         cashSessionId: session.id,
-        paidAt: new Date(),
+        ...(nowFullyPaid ? { paidAt: new Date() } : {}),
       },
     });
 
     // Débloque toute demande d'analyse labo liée à cette facture qui attendait le règlement
-    // (cf. src/actions/lab.ts:createLabOrder — paymentStatus). No-op si la facture ne concerne
-    // pas un examen labo.
-    await prisma.labOrder.updateMany({
-      where: { pendingInvoiceId, paymentStatus: "PENDING" },
-      data: { paymentStatus: "PAID" },
-    });
+    // (cf. src/actions/lab.ts:createLabOrder — paymentStatus) — seulement une fois le solde
+    // intégralement réglé, jamais sur un simple acompte. No-op si la facture ne concerne pas un
+    // examen labo.
+    if (nowFullyPaid) {
+      await prisma.labOrder.updateMany({
+        where: { pendingInvoiceId, paymentStatus: "PENDING" },
+        data: { paymentStatus: "PAID" },
+      });
+    }
 
-    await logAuditAction(activeUser.id, "PAY_PENDING_INVOICE", "PendingInvoice", pendingInvoiceId, { transactionId: transaction.id });
+    await logAuditAction(activeUser.id, "PAY_PENDING_INVOICE", "PendingInvoice", pendingInvoiceId, { transactionId: transaction.id, amount });
     revalidatePath(`/dashboard/clinics/${pending.organizationId}/caisse`);
     revalidatePath(`/dashboard/clinics/${pending.organizationId}/pharmacie`);
     revalidatePath("/dashboard/lab");
     revalidatePath("/dashboard/finance");
     revalidatePath("/dashboard", "layout");
 
-    return { success: true, data: { transaction, pendingInvoice: updated } };
+    return {
+      success: true,
+      data: {
+        transaction,
+        pendingInvoice: updated,
+        invoiceTotalAmount: totalAmount,
+        amountPaid: newAlreadyPaid,
+        remainingDue: Math.max(0, totalAmount - newAlreadyPaid),
+      },
+    };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'encaissement de la facture.") };
   }
 }
 
-// Vente comptant directement au guichet de la caisse (pas d'ordonnance/demande préalable) :
-// le paiement a lieu à la construction du panier, donc la PendingInvoice créée ici est déjà
-// PAID. Comme pour payPendingInvoice, le stock n'est décrémenté qu'à la remise en pharmacie.
+// Vente comptant directement au guichet de la caisse (pas d'ordonnance/demande préalable). Le
+// montant réellement reçu (amountReceived) peut être inférieur au total du panier — vente à
+// crédit ou paiement partiel, y compris pour un client comptant anonyme. Comme pour
+// payPendingInvoice, le stock n'est décrémenté qu'à la remise en pharmacie, indépendamment de
+// l'état de règlement.
 export async function createCaisseSale(data: {
   cashSessionId: string;
   items: Array<{
@@ -491,6 +526,7 @@ export async function createCaisseSale(data: {
   }>;
   patientId?: string;
   organizationId?: string;
+  amountReceived?: number;
 }) {
   try {
     createCaisseSaleSchema.parse(data);
@@ -505,39 +541,46 @@ export async function createCaisseSale(data: {
 
     const targetOrgId = data.organizationId || session.organizationId;
     const totalAmount = data.items.reduce((sum, item) => sum + Number(item.amount), 0);
+    const received = Math.min(totalAmount, Math.max(0, data.amountReceived ?? totalAmount));
     const summaryDescription = data.items.length === 1
       ? data.items[0].description
       : `Vente comptant (${data.items.length} articles : ${data.items.map((i) => i.description).join(", ")})`;
 
+    // Toujours créée désormais, quel que soit le contenu du panier ou la présence d'un patient :
+    // toute vente non intégralement réglée doit être traçable et réapparaître dans "Tickets
+    // impayés" / la file pharmacie (dispensePendingInvoice est le seul endroit où le stock
+    // bouge). Créée avant la transaction pour lui renseigner pendingInvoiceId directement.
+    const pendingInvoice = await prisma.pendingInvoice.create({
+      data: {
+        status: received >= totalAmount ? "PAID" : received > 0 ? "PARTIAL" : "PENDING",
+        patientId: data.patientId || null,
+        organizationId: targetOrgId,
+        items: data.items,
+        createdById: activeUser.id,
+        // Null tant qu'aucun paiement n'a réellement eu lieu (vente 100% à crédit) — ce champ ne
+        // reflète que la dernière session ayant perçu un règlement, cf. commentaire du schéma.
+        cashSessionId: received > 0 ? session.id : null,
+        ...(received >= totalAmount ? { paidAt: new Date() } : {}),
+      },
+    });
+
+    // Créée même à 0 FCFA (vente 100% à crédit) : c'est elle qui porte le ticket imprimable et
+    // la référence pharmacie — sans transaction, InvoiceModal/invoice-pdf.tsx n'ont rien à
+    // afficher pour ce cas, justement celui visé par le paiement échelonné.
     const transaction = await prisma.financialTransaction.create({
       data: {
         type: "INCOME",
         category: data.items.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
-        amount: totalAmount,
+        amount: received,
         description: summaryDescription,
         items: data.items,
         patientId: data.patientId || null,
         recordedById: activeUser.id,
         organizationId: targetOrgId,
         cashSessionId: session.id,
+        pendingInvoiceId: pendingInvoice.id,
       },
     });
-
-    let pendingInvoice = null;
-    if (data.patientId) {
-      pendingInvoice = await prisma.pendingInvoice.create({
-        data: {
-          status: "PAID",
-          patientId: data.patientId,
-          organizationId: targetOrgId,
-          items: data.items,
-          createdById: activeUser.id,
-          cashSessionId: session.id,
-          financialTransactionId: transaction.id,
-          paidAt: new Date(),
-        },
-      });
-    }
 
     await logAuditAction(activeUser.id, "CREATE_CAISSE_SALE", "FinancialTransaction", transaction.id);
     revalidatePath(`/dashboard/clinics/${targetOrgId}/caisse`);
@@ -545,14 +588,25 @@ export async function createCaisseSale(data: {
     revalidatePath("/dashboard/finance");
     revalidatePath("/dashboard", "layout");
 
-    return { success: true, data: { transaction, pendingInvoice } };
+    return {
+      success: true,
+      data: {
+        transaction,
+        pendingInvoice,
+        invoiceTotalAmount: totalAmount,
+        amountPaid: received,
+        remainingDue: Math.max(0, totalAmount - received),
+      },
+    };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la validation de la vente.") };
   }
 }
 
 // Remise physique des articles au comptoir pharmacie — PHARMACIST uniquement. Seul endroit du
-// nouveau flux où le stock pharmacie est décrémenté, une fois le ticket PAID présenté.
+// nouveau flux où le stock pharmacie est décrémenté. Indépendant de l'état de règlement de la
+// facture (PENDING/PARTIAL/PAID) : un patient peut repartir avec ses médicaments avant d'avoir
+// tout payé (vente à crédit / paiement échelonné) — seul dispensedAt marque désormais la remise.
 // referenceCode : le pharmacien voit le ticket (patient, médicaments, montant) sans jamais voir
 // sa référence — elle reste affichée uniquement côté caisse (invoice-modal.tsx). Le patient doit
 // la lui donner de vive voix ; elle est vérifiée ici avant toute remise, pour éviter les litiges
@@ -569,12 +623,8 @@ export async function dispensePendingInvoice(pendingInvoiceId: string, reference
       include: { prescriptions: true },
     });
     if (!pending) throw new Error("Facture introuvable.");
-    if (pending.status !== "PAID") {
-      throw new Error(
-        pending.status === "PENDING"
-          ? "Cette facture n'est pas encore réglée à la caisse."
-          : "Les articles de cette facture ont déjà été remis."
-      );
+    if (pending.dispensedAt) {
+      throw new Error("Les articles de cette facture ont déjà été remis.");
     }
 
     const expectedCode = String(pending.id).slice(-6).toUpperCase();
@@ -594,7 +644,7 @@ export async function dispensePendingInvoice(pendingInvoiceId: string, reference
 
       await tx.pendingInvoice.update({
         where: { id: pendingInvoiceId },
-        data: { status: "DISPENSED", dispensedAt: new Date() },
+        data: { dispensedAt: new Date() },
       });
 
       for (const prescription of pending.prescriptions) {
@@ -706,7 +756,28 @@ export async function getFinanceSummary(organizationId?: string) {
       }
     }
 
-    const cashBalance = totalIncome - totalExpenses;
+    // Le solde de caisse doit inclure le fond de départ des sessions actuellement OUVERTES : sans
+    // lui, une caisse tout juste ouverte avec 10 000 FCFA de fond mais aucune vente affichait un
+    // solde de 0 FCFA, alors qu'il y a bien 10 000 FCFA dans le tiroir. Les sessions déjà
+    // FERMÉES ne comptent pas ici : leur fond a été compté et réconcilié à la clôture, il ne fait
+    // plus partie de l'argent "actuellement en caisse" (seul le delta encaissé/dépensé qu'elles
+    // ont généré reste dans totalIncome/totalExpenses, qui restent cumulés depuis toujours).
+    const sessionWhere: any = { status: "OPEN" };
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      sessionWhere.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else if (targetOrgId) {
+      sessionWhere.organizationId = targetOrgId;
+    }
+    const openSessions = await prisma.cashSession.findMany({
+      where: sessionWhere,
+      select: { openingFloat: true },
+    });
+    const openFloatTotal = openSessions.reduce((sum, s) => sum + (s.openingFloat || 0), 0);
+
+    const cashBalance = openFloatTotal + totalIncome - totalExpenses;
     const lowStockCount = pharmacyItems.filter((item: any) => Number(item.stockQuantity || 0) <= Number(item.reorderLevel || 10)).length;
 
     return {
@@ -823,6 +894,9 @@ export async function listFinancialTransactions(filters: {
           recordedBy: { select: { firstName: true, lastName: true } },
           patient: { include: { user: { select: { firstName: true, lastName: true } } } },
           pharmacyItem: { select: { name: true, dosage: true } },
+          // Pour le badge "Partiel/Non payé" du journal : une transaction dont la facture liée
+          // n'est pas encore PAID correspond à un règlement partiel/échelonné.
+          pendingInvoice: { select: { status: true, createdAt: true } },
         },
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
@@ -856,25 +930,52 @@ export async function listFinancialTransactions(filters: {
   }
 }
 
-// File d'attente du comptoir pharmacie : factures réglées à la caisse (PAID) contenant au moins
-// un médicament, pas encore remises. Filtrage en mémoire après lecture (un champ Json ne se
-// filtre pas nativement côté Mongo/Prisma sur son contenu) — le volume de factures PAID en
-// attente de remise reste faible (pas d'historique à parcourir, seulement le flux courant).
+// Complète chaque facture avec le montant déjà réglé à date (somme des FinancialTransaction
+// qui la référencent) — nécessaire depuis le paiement échelonné pour afficher un badge
+// "Payé/Partiel — reste X FCFA/Non payé" là où le statut seul ne suffit plus.
+async function attachAmountPaid<T extends { id: string }>(invoices: T[]): Promise<Array<T & { amountPaid: number }>> {
+  if (invoices.length === 0) return [];
+  const payments = await prisma.financialTransaction.findMany({
+    where: { pendingInvoiceId: { in: invoices.map((inv) => inv.id) } },
+    select: { pendingInvoiceId: true, amount: true },
+  });
+  const paidMap = new Map<string, number>();
+  for (const p of payments) {
+    if (!p.pendingInvoiceId) continue;
+    paidMap.set(p.pendingInvoiceId, (paidMap.get(p.pendingInvoiceId) || 0) + p.amount);
+  }
+  return invoices.map((inv) => ({ ...inv, amountPaid: paidMap.get(inv.id) || 0 }));
+}
+
+// File d'attente du comptoir pharmacie : factures contenant au moins un médicament, pas encore
+// remises (dispensedAt null) — quel que soit leur état de règlement (PENDING/PARTIAL/PAID),
+// puisqu'un patient peut désormais repartir avec ses médicaments avant d'avoir tout payé.
+// Filtrage en mémoire après lecture (un champ Json ne se filtre pas nativement côté Mongo/
+// Prisma sur son contenu) — le volume de factures en attente de remise reste faible.
 export async function listPharmacyDispenseQueue(organizationId?: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertPharmacyCatalogReadRole(activeUser.role);
 
-    const where: any = { status: "PAID" };
+    // Un champ optionnel jamais explicitement écrit à sa création (le cas de dispensedAt pour
+    // toute facture créée avant cette remise) reste ABSENT du document Mongo plutôt que null —
+    // et { dispensedAt: null } seul ne matche QUE les documents où le champ vaut littéralement
+    // null, pas ceux où il est simplement absent (confirmé : { $ne: ["$dispensedAt","$$REMOVE"] }
+    // dans la requête générée). isSet: false couvre ce cas, la comparaison à null couvre les
+    // documents futurs où il serait explicitement mis à null.
+    const notDispensed = { OR: [{ dispensedAt: null }, { dispensedAt: { isSet: false } }] };
+    const where: any = { AND: [notDispensed] };
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {
-      where.OR = [
-        { organizationId: activeUser.organizationId },
-        { organization: { parentId: activeUser.organizationId } },
-      ];
+      where.AND.push({
+        OR: [
+          { organizationId: activeUser.organizationId },
+          { organization: { parentId: activeUser.organizationId } },
+        ],
+      });
     } else {
       const targetOrgId = organizationId || activeUser.organizationId;
-      if (targetOrgId) where.organizationId = targetOrgId;
+      if (targetOrgId) where.AND.push({ organizationId: targetOrgId });
     }
 
     const invoices = await prisma.pendingInvoice.findMany({
@@ -882,10 +983,14 @@ export async function listPharmacyDispenseQueue(organizationId?: string) {
       include: {
         patient: { include: { user: { select: { firstName: true, lastName: true } } } },
       },
-      orderBy: { paidAt: "desc" },
+      // paidAt peut désormais être null (facture non/partiellement réglée) — createdAt reste
+      // toujours renseigné, ordre "plus ancien ticket en attente d'abord" plus fiable.
+      orderBy: { createdAt: "desc" },
     });
 
-    const queue = invoices.filter((inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY"));
+    const queue = await attachAmountPaid(
+      invoices.filter((inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY"))
+    );
 
     return { success: true, data: queue };
   } catch (error: any) {
@@ -893,15 +998,16 @@ export async function listPharmacyDispenseQueue(organizationId?: string) {
   }
 }
 
-// Historique des remises effectuées (tickets DISPENSED) — traçabilité pour le comptoir
-// pharmacie, distinct de la file d'attente (PAID, pas encore remis).
+// Historique des remises effectuées (dispensedAt renseigné) — traçabilité pour le comptoir
+// pharmacie, distinct de la file d'attente (pas encore remis). L'état de règlement (badge
+// Payé/Partiel/Non payé) reste affiché même après remise pour signaler un solde toujours dû.
 export async function listPharmacyDispenseHistory(organizationId?: string, options?: { search?: string; take?: number }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertPharmacyCatalogReadRole(activeUser.role);
 
-    const where: any = { status: "DISPENSED" };
+    const where: any = { dispensedAt: { not: null } };
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {
       where.OR = [
         { organizationId: activeUser.organizationId },
@@ -921,7 +1027,9 @@ export async function listPharmacyDispenseHistory(organizationId?: string, optio
       take: options?.take || 200,
     });
 
-    let history = invoices.filter((inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY"));
+    let history = await attachAmountPaid(
+      invoices.filter((inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY"))
+    );
 
     const search = options?.search?.trim().toLowerCase();
     if (search) {
@@ -938,15 +1046,18 @@ export async function listPharmacyDispenseHistory(organizationId?: string, optio
   }
 }
 
-// Créées automatiquement à la clôture d'une consultation, d'une demande labo ou d'un envoi
-// d'ordonnance — en attente de règlement à la caisse (cf. src/app/dashboard/clinics/[id]/caisse).
+// Créées automatiquement à la clôture d'une consultation, d'une demande labo, un envoi
+// d'ordonnance, ou directement à la caisse — pas encore intégralement réglées (PENDING ou
+// PARTIAL) — cf. onglet "Tickets impayés" de src/app/dashboard/caisse. Rôle de lecture aligné
+// sur REGISTER_READ_ROLES (pas seulement CAISSE_READ_ROLES) : un PHARMACIST qui opère déjà la
+// caisse comme un caissier temporaire doit pouvoir voir cet onglet sur la même page.
 export async function listPendingInvoices(organizationId?: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    if (!CAISSE_READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
+    assertRegisterReadRole(activeUser.role);
 
-    const where: any = { status: "PENDING" };
+    const where: any = { status: { in: ["PENDING", "PARTIAL"] } };
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {
       where.OR = [
         { organizationId: activeUser.organizationId },
@@ -966,7 +1077,7 @@ export async function listPendingInvoices(organizationId?: string) {
       orderBy: { createdAt: "desc" },
     });
 
-    return { success: true, data: invoices };
+    return { success: true, data: await attachAmountPaid(invoices) };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du chargement des factures en attente." };
   }

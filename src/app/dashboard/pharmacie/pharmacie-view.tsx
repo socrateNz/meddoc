@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import PaymentStatusBadge from "@/components/payment-status-badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -206,9 +207,12 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                     <CardContent className="p-4 space-y-3">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-800 dark:text-slate-200">{name}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-bold text-slate-800 dark:text-slate-200">{name}</p>
+                            <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
+                          </div>
                           <p className="text-[11px] text-slate-500 mt-0.5">
-                            Réglé le {inv.paidAt ? formatDateTime(inv.paidAt) : "-"} • {formatFCFA(total)}
+                            Créé le {formatDateTime(inv.createdAt)} • {formatFCFA(total)}
                           </p>
                         </div>
                         {canDispense && (
@@ -282,6 +286,9 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                             <CheckCircle2 className="h-2.5 w-2.5" />
                             Remis
                           </Badge>
+                          {inv.status !== "PAID" && (
+                            <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5 truncate">
                           {pharmacyLines.map((it: any) => it.description).join(", ") || "Aucun médicament listé"}

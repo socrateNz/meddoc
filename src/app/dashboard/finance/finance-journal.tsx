@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Search, Printer, Loader2, RotateCcw, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Scale } from "lucide-react";
 import { listFinancialTransactions } from "@/actions/finance";
+import PaymentStatusBadge from "@/components/payment-status-badge";
 
 const CATEGORY_LABELS: Record<string, string> = {
   PHARMACY_SALE: "Vente Pharmacie",
@@ -263,8 +264,13 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
                         {CATEGORY_LABELS[t.category] || (isIncome ? "Encaissement" : "Dépense")}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5 max-w-[280px] truncate" title={t.description}>
-                      {t.description}
+                    <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5 max-w-[280px]">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="truncate" title={t.description}>{t.description}</span>
+                        {t.pendingInvoice && t.pendingInvoice.status !== "PAID" && (
+                          <PaymentStatusBadge status={t.pendingInvoice.status} />
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
                       {t.patient?.user ? `${t.patient.user.lastName} ${t.patient.user.firstName}` : "-"}

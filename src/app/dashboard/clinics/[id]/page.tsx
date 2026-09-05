@@ -41,7 +41,7 @@ async function fetchFinanceSummary(clinicId: string) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  const [todayTransactions, allTransactions, pharmacyItems] = await Promise.all([
+  const [todayTransactions, allTransactions, pharmacyItems, openSessions] = await Promise.all([
     prisma.financialTransaction.findMany({
       where: { organizationId: clinicId, type: "INCOME", createdAt: { gte: startOfToday } },
       select: { amount: true },
@@ -54,10 +54,18 @@ async function fetchFinanceSummary(clinicId: string) {
       where: { organizationId: clinicId },
       select: { stockQuantity: true, reorderLevel: true },
     }),
+    prisma.cashSession.findMany({
+      where: { organizationId: clinicId, status: "OPEN" },
+      select: { openingFloat: true },
+    }),
   ]);
 
   const todayIncome = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
-  const cashBalance = allTransactions.reduce((sum, t) => sum + (t.type === "INCOME" ? t.amount : -t.amount), 0);
+  // Le fond de départ des sessions actuellement OUVERTES doit être ajouté au solde : sinon une
+  // caisse tout juste ouverte avec un fond de 10 000 FCFA mais aucune vente affiche 0 FCFA. Les
+  // sessions déjà FERMÉES ne comptent pas ici (cf. même logique dans finance.ts:getFinanceSummary).
+  const openFloatTotal = openSessions.reduce((sum, s) => sum + (s.openingFloat || 0), 0);
+  const cashBalance = openFloatTotal + allTransactions.reduce((sum, t) => sum + (t.type === "INCOME" ? t.amount : -t.amount), 0);
   const lowStockCount = pharmacyItems.filter((item) => item.stockQuantity <= item.reorderLevel).length;
 
   return { todayIncome, cashBalance, lowStockCount };
@@ -70,12 +78,16 @@ async function fetchPharmacyOverview(clinicId: string) {
   startOfToday.setHours(0, 0, 0, 0);
 
   const [pendingInvoices, dispensedTodayCount, pharmacyItems] = await Promise.all([
+    // Pas encore remises, quel que soit l'état de règlement (PENDING/PARTIAL/PAID) — un patient
+    // peut désormais repartir avec ses médicaments avant d'avoir tout payé. isSet: false requis
+    // en plus de null : un champ jamais écrit à la création reste absent du document Mongo (pas
+    // littéralement null), et { dispensedAt: null } seul ne matche pas les documents absents.
     prisma.pendingInvoice.findMany({
-      where: { organizationId: clinicId, status: "PAID" },
+      where: { organizationId: clinicId, OR: [{ dispensedAt: null }, { dispensedAt: { isSet: false } as any }] },
       select: { items: true },
     }),
     prisma.pendingInvoice.count({
-      where: { organizationId: clinicId, status: "DISPENSED", dispensedAt: { gte: startOfToday } },
+      where: { organizationId: clinicId, dispensedAt: { gte: startOfToday } },
     }),
     prisma.pharmacyItem.findMany({
       where: { organizationId: clinicId },
@@ -331,7 +343,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
             </div>
             <h3 className="text-lg font-semibold">File d&apos;attente</h3>
             <p className="text-2xl font-bold mt-2">{queueCount}</p>
-            <p className="text-sm text-slate-500 mt-2">Tickets réglés en attente de remise</p>
+            <p className="text-sm text-slate-500 mt-2">Tickets en attente de remise</p>
             <Link href={`/dashboard/clinics/${clinic.id}/pharmacie`} className="w-full mt-6">
               <Button className="w-full" variant="outline">File de remise</Button>
             </Link>

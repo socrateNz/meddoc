@@ -55,10 +55,14 @@ export const recordExpenseSchema = z.object({
   organizationId: z.string().optional(),
 });
 
+// items n'est fourni que pour le tout premier règlement d'une facture encore PENDING (le
+// caissier peut alors corriger le panier auto-généré avant d'encaisser) — verrouillé dès
+// qu'un premier paiement existe (PARTIAL), cf. payPendingInvoice.
 export const payPendingInvoiceSchema = z.object({
   pendingInvoiceId: z.string().min(1),
   cashSessionId: z.string().min(1, "Aucune session de caisse ouverte."),
-  items: z.array(invoiceItemSchema).min(1, "Le panier de facturation est vide"),
+  amount: z.number().positive("Le montant réglé doit être supérieur à zéro"),
+  items: z.array(invoiceItemSchema).min(1, "Le panier de facturation est vide").optional(),
 });
 
 export const createCaisseSaleSchema = z.object({
@@ -66,6 +70,10 @@ export const createCaisseSaleSchema = z.object({
   items: z.array(invoiceItemSchema).min(1, "Le panier de facturation est vide"),
   patientId: z.string().optional(),
   organizationId: z.string().optional(),
+  // Montant réellement remis par le client maintenant — omis ou égal au total du panier =
+  // comportement actuel inchangé (paiement intégral immédiat). Inférieur au total = vente à
+  // crédit / paiement partiel : le solde restera dû sur la PendingInvoice créée.
+  amountReceived: z.number().min(0).optional(),
 });
 
 export const dispensePendingInvoiceSchema = z.object({

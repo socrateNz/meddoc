@@ -159,6 +159,59 @@ const a4Styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#1e40af",
   },
+  subTotalBox: {
+    width: "45%",
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    backgroundColor: "#f8fafc",
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 6,
+  },
+  subTotalLabel: {
+    fontSize: 8,
+    fontWeight: "bold",
+    color: "#475569",
+    textTransform: "uppercase",
+  },
+  subTotalValue: {
+    fontSize: 9,
+    fontWeight: "bold",
+    color: "#1e293b",
+  },
+  amountDueBox: {
+    width: "45%",
+    borderWidth: 1,
+    borderColor: "#f59e0b",
+    backgroundColor: "#fffbeb",
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 6,
+  },
+  amountDueLabel: {
+    fontSize: 8,
+    fontWeight: "bold",
+    color: "#92400e",
+    textTransform: "uppercase",
+  },
+  amountDueValue: {
+    fontSize: 10,
+    fontWeight: "bold",
+    color: "#92400e",
+  },
+  creditBanner: {
+    textAlign: "center",
+    fontSize: 9,
+    fontWeight: "bold",
+    color: "#92400e",
+    textTransform: "uppercase",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#f59e0b",
+    borderRadius: 6,
+    padding: 6,
+    marginBottom: 20,
+  },
   footer: {
     marginTop: 40,
     flexDirection: "row",
@@ -292,6 +345,33 @@ const thermalStyles = StyleSheet.create({
     fontSize: 10,
     fontFamily: "Courier-Bold",
   },
+  subTotalRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    fontFamily: "Courier",
+    fontSize: 7,
+    marginTop: 1,
+  },
+  remainingRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    fontFamily: "Courier-Bold",
+    fontSize: 8,
+    marginTop: 1,
+    color: "#92400e",
+  },
+  creditBanner: {
+    textAlign: "center",
+    fontSize: 7.5,
+    fontFamily: "Courier-Bold",
+    marginTop: 4,
+    marginBottom: 2,
+    color: "#92400e",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#92400e",
+    paddingVertical: 2,
+  },
   barcodeBox: {
     alignItems: "center",
     marginTop: 8,
@@ -394,10 +474,13 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
   }
 
   const hasPharmacyItem = itemList.some((item: any) => item.type === "PHARMACY");
+  // Cf. invoice-modal.tsx : absent (undefined) pour les transactions antérieures au paiement
+  // échelonné, qui gardent l'affichage à une seule ligne "TOTAL NET".
+  const hasRemainingDue = Number(transaction.remainingDue) > 0;
 
   // Thermal 80mm format (default)
   if (format === "thermal") {
-    const pageHeight = Math.max(320, 220 + itemList.length * 18);
+    const pageHeight = Math.max(320, 220 + itemList.length * 18 + (hasRemainingDue ? 40 : 0));
 
     return (
       <Document>
@@ -450,14 +533,35 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
 
           {/* Total */}
           <View style={thermalStyles.totalSection}>
-            <View style={thermalStyles.totalRow}>
-              <Text>TOTAL NET :</Text>
-              <Text style={thermalStyles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
-            </View>
+            {hasRemainingDue ? (
+              <>
+                <View style={thermalStyles.subTotalRow}>
+                  <Text>TOTAL FACTURE :</Text>
+                  <Text>{formatFCFA(transaction.invoiceTotalAmount)}</Text>
+                </View>
+                <View style={thermalStyles.totalRow}>
+                  <Text>REGLE CE JOUR :</Text>
+                  <Text style={thermalStyles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
+                </View>
+                <View style={thermalStyles.remainingRow}>
+                  <Text>RESTE A PAYER :</Text>
+                  <Text>{formatFCFA(transaction.remainingDue)}</Text>
+                </View>
+              </>
+            ) : (
+              <View style={thermalStyles.totalRow}>
+                <Text>TOTAL NET :</Text>
+                <Text style={thermalStyles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
+              </View>
+            )}
             <View style={thermalStyles.metaLine}>
               <Text>PAYEMENT: ESPECES / CAISSE</Text>
             </View>
           </View>
+
+          {hasRemainingDue && (
+            <Text style={thermalStyles.creditBanner}>PAIEMENT PARTIEL - SOLDE A REGLER</Text>
+          )}
 
           <View style={thermalStyles.divider} />
 
@@ -535,14 +639,41 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
         </View>
 
         {/* Total Net */}
-        <View style={a4Styles.totalSection}>
-          <View style={a4Styles.totalBox}>
-            <View style={a4Styles.totalRow}>
-              <Text style={a4Styles.totalLabel}>TOTAL NET À PAYER :</Text>
-              <Text style={a4Styles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
+        <View style={{ alignItems: "flex-end", marginBottom: hasRemainingDue ? 10 : 30 }}>
+          {hasRemainingDue ? (
+            <>
+              <View style={a4Styles.subTotalBox}>
+                <View style={a4Styles.totalRow}>
+                  <Text style={a4Styles.subTotalLabel}>Total facture</Text>
+                  <Text style={a4Styles.subTotalValue}>{formatFCFA(transaction.invoiceTotalAmount)}</Text>
+                </View>
+              </View>
+              <View style={a4Styles.totalBox}>
+                <View style={a4Styles.totalRow}>
+                  <Text style={a4Styles.totalLabel}>Réglé ce jour :</Text>
+                  <Text style={a4Styles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
+                </View>
+              </View>
+              <View style={a4Styles.amountDueBox}>
+                <View style={a4Styles.totalRow}>
+                  <Text style={a4Styles.amountDueLabel}>Reste à payer</Text>
+                  <Text style={a4Styles.amountDueValue}>{formatFCFA(transaction.remainingDue)}</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <View style={a4Styles.totalBox}>
+              <View style={a4Styles.totalRow}>
+                <Text style={a4Styles.totalLabel}>TOTAL NET À PAYER :</Text>
+                <Text style={a4Styles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
+              </View>
             </View>
-          </View>
+          )}
         </View>
+
+        {hasRemainingDue && (
+          <Text style={a4Styles.creditBanner}>Paiement partiel — vente à crédit</Text>
+        )}
 
         {/* Signatures */}
         <View style={a4Styles.footer}>
