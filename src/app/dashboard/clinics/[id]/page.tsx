@@ -41,14 +41,10 @@ async function fetchFinanceSummary(clinicId: string) {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
-  const [todayTransactions, allTransactions, pharmacyItems, openSessions] = await Promise.all([
+  const [todayTransactions, pharmacyItems, openSessions] = await Promise.all([
     prisma.financialTransaction.findMany({
       where: { organizationId: clinicId, type: "INCOME", createdAt: { gte: startOfToday } },
       select: { amount: true },
-    }),
-    prisma.financialTransaction.findMany({
-      where: { organizationId: clinicId },
-      select: { amount: true, type: true },
     }),
     prisma.pharmacyItem.findMany({
       where: { organizationId: clinicId },
@@ -56,16 +52,25 @@ async function fetchFinanceSummary(clinicId: string) {
     }),
     prisma.cashSession.findMany({
       where: { organizationId: clinicId, status: "OPEN" },
-      select: { openingFloat: true },
+      include: { transactions: { select: { type: true, amount: true } } },
     }),
   ]);
 
   const todayIncome = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
-  // Le fond de départ des sessions actuellement OUVERTES doit être ajouté au solde : sinon une
-  // caisse tout juste ouverte avec un fond de 10 000 FCFA mais aucune vente affiche 0 FCFA. Les
-  // sessions déjà FERMÉES ne comptent pas ici (cf. même logique dans finance.ts:getFinanceSummary).
-  const openFloatTotal = openSessions.reduce((sum, s) => sum + (s.openingFloat || 0), 0);
-  const cashBalance = openFloatTotal + allTransactions.reduce((sum, t) => sum + (t.type === "INCOME" ? t.amount : -t.amount), 0);
+  // Solde = somme, pour chaque session actuellement OUVERTE, de son propre fond de départ + ses
+  // propres encaissements/dépenses (cf. finance.ts:getFinanceSummary pour l'explication complète
+  // du pourquoi — sommer le fond des sessions ouvertes avec les transactions de TOUTES les
+  // sessions, ouvertes et fermées, comptait deux fois l'argent d'une caisse recyclée d'un
+  // caissier à l'autre sans passage au coffre entre les deux).
+  const cashBalance = openSessions.reduce((sum, s) => {
+    let sessionIncome = 0;
+    let sessionExpenses = 0;
+    for (const t of s.transactions) {
+      if (t.type === "INCOME") sessionIncome += t.amount;
+      else if (t.type === "EXPENSE") sessionExpenses += t.amount;
+    }
+    return sum + (s.openingFloat || 0) + sessionIncome - sessionExpenses;
+  }, 0);
   const lowStockCount = pharmacyItems.filter((item) => item.stockQuantity <= item.reorderLevel).length;
 
   return { todayIncome, cashBalance, lowStockCount };

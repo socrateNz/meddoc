@@ -756,12 +756,16 @@ export async function getFinanceSummary(organizationId?: string) {
       }
     }
 
-    // Le solde de caisse doit inclure le fond de départ des sessions actuellement OUVERTES : sans
-    // lui, une caisse tout juste ouverte avec 10 000 FCFA de fond mais aucune vente affichait un
-    // solde de 0 FCFA, alors qu'il y a bien 10 000 FCFA dans le tiroir. Les sessions déjà
-    // FERMÉES ne comptent pas ici : leur fond a été compté et réconcilié à la clôture, il ne fait
-    // plus partie de l'argent "actuellement en caisse" (seul le delta encaissé/dépensé qu'elles
-    // ont généré reste dans totalIncome/totalExpenses, qui restent cumulés depuis toujours).
+    // Le solde de caisse = somme, pour chaque session actuellement OUVERTE, de son propre fond de
+    // départ + ses propres encaissements/dépenses (même calcul que expectedAmount dans
+    // registers.ts:getSessionSummary/listCashSessions). Une session FERMÉE ne contribue plus rien
+    // ici, quel que soit le sort réel de son argent : soit il a été déposé ailleurs (à raison
+    // exclu), soit il est resté dans le tiroir et sera redéclaré comme fond d'ouverture de la
+    // session suivante — auquel cas il redevient comptabilisé, une seule fois, à cette occasion.
+    // Sommer plutôt le fond de TOUTES les sessions ouvertes avec les encaissements de TOUT LE
+    // TEMPS (ancienne méthode) comptait deux fois l'argent d'une caisse recyclée d'un caissier à
+    // l'autre sans passage au coffre entre les deux : le fond redéclaré par le second caissier
+    // s'ajoutait à un total qui incluait déjà les ventes du premier ayant produit cet argent.
     const sessionWhere: any = { status: "OPEN" };
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {
       sessionWhere.OR = [
@@ -773,11 +777,17 @@ export async function getFinanceSummary(organizationId?: string) {
     }
     const openSessions = await prisma.cashSession.findMany({
       where: sessionWhere,
-      select: { openingFloat: true },
+      include: { transactions: { select: { type: true, amount: true } } },
     });
-    const openFloatTotal = openSessions.reduce((sum, s) => sum + (s.openingFloat || 0), 0);
-
-    const cashBalance = openFloatTotal + totalIncome - totalExpenses;
+    const cashBalance = openSessions.reduce((sum, s) => {
+      let sessionIncome = 0;
+      let sessionExpenses = 0;
+      for (const t of s.transactions) {
+        if (t.type === "INCOME") sessionIncome += t.amount;
+        else if (t.type === "EXPENSE") sessionExpenses += t.amount;
+      }
+      return sum + (s.openingFloat || 0) + sessionIncome - sessionExpenses;
+    }, 0);
     const lowStockCount = pharmacyItems.filter((item: any) => Number(item.stockQuantity || 0) <= Number(item.reorderLevel || 10)).length;
 
     return {
