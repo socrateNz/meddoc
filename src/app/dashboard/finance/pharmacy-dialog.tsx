@@ -29,8 +29,8 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
     name: item?.name || "",
     dosage: item?.dosage || "",
     category: item?.category || "MEDICATION",
-    reorderLevel: item?.reorderLevel ?? 10,
-    unitPrice: item?.unitPrice ?? 500,
+    reorderLevel: item?.reorderLevel !== undefined ? String(item.reorderLevel) : "10",
+    unitPrice: item?.unitPrice !== undefined ? String(item.unitPrice) : "500",
     batchNumber: item?.batchNumber || "",
     expiryDate: item?.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : "",
     supplier: item?.supplier || "",
@@ -48,8 +48,8 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
         name: formData.name,
         dosage: formData.dosage,
         category: formData.category,
-        reorderLevel: Number(formData.reorderLevel),
-        unitPrice: Number(formData.unitPrice),
+        reorderLevel: Math.max(1, Number(formData.reorderLevel) || 1),
+        unitPrice: Math.max(0, Number(formData.unitPrice) || 0),
         batchNumber: formData.batchNumber || undefined,
         expiryDate: formData.expiryDate || undefined,
         supplier: formData.supplier || undefined,
@@ -64,8 +64,8 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
             name: "",
             dosage: "",
             category: "MEDICATION",
-            reorderLevel: 10,
-            unitPrice: 500,
+            reorderLevel: "10",
+            unitPrice: "500",
             batchNumber: "",
             expiryDate: "",
             supplier: "",
@@ -162,7 +162,12 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
                 required
                 placeholder="500"
                 value={formData.unitPrice}
-                onChange={(e) => setFormData({ ...formData, unitPrice: Number(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value })}
+                onBlur={() => {
+                  if (formData.unitPrice === "" || Number(formData.unitPrice) < 0) {
+                    setFormData((prev) => ({ ...prev, unitPrice: "0" }));
+                  }
+                }}
                 className="rounded-xl"
               />
             </div>
@@ -176,7 +181,12 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
                 required
                 placeholder="10"
                 value={formData.reorderLevel}
-                onChange={(e) => setFormData({ ...formData, reorderLevel: Number(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value })}
+                onBlur={() => {
+                  if (formData.reorderLevel === "" || Number(formData.reorderLevel) < 1) {
+                    setFormData((prev) => ({ ...prev, reorderLevel: "1" }));
+                  }
+                }}
                 className="rounded-xl"
               />
             </div>

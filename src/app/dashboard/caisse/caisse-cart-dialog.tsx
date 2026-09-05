@@ -66,7 +66,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
   const [addItemMode, setAddItemMode] = useState<"PHARMACY" | "SERVICE">(mode === "pay" ? "SERVICE" : "PHARMACY");
   const [addPharmacyItemId, setAddPharmacyItemId] = useState("");
-  const [addPharmacyQty, setAddPharmacyQty] = useState(1);
+  const [addPharmacyQty, setAddPharmacyQty] = useState<number | string>(1);
   const [addServiceDesc, setAddServiceDesc] = useState("");
   const [addServiceAmount, setAddServiceAmount] = useState("");
 
@@ -91,7 +91,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       if (!addPharmacyItemId) return;
       const item = pharmacyItems.find((i) => i.id === addPharmacyItemId);
       if (!item) return;
-      const qty = Number(addPharmacyQty);
+      const qty = Number(addPharmacyQty) || 1;
       if (qty <= 0) return;
       if (item.stockQuantity < qty) {
         setMsg({ type: "error", text: `Stock insuffisant pour ${item.name}. Disponible: ${item.stockQuantity}` });
@@ -263,7 +263,20 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                   </div>
                   <div className="sm:col-span-2 space-y-1">
                     <Label htmlFor="addPharmacyQty" className="text-xs">Qté *</Label>
-                    <Input id="addPharmacyQty" type="number" min="1" required value={addPharmacyQty} onChange={(e) => setAddPharmacyQty(Math.max(1, Number(e.target.value)))} className="h-9 text-xs rounded-xl" />
+                    <Input
+                      id="addPharmacyQty"
+                      type="number"
+                      min="1"
+                      required
+                      value={addPharmacyQty}
+                      onChange={(e) => setAddPharmacyQty(e.target.value)}
+                      onBlur={() => {
+                        if (addPharmacyQty === "" || Number(addPharmacyQty) < 1) {
+                          setAddPharmacyQty(1);
+                        }
+                      }}
+                      className="h-9 text-xs rounded-xl"
+                    />
                   </div>
                   <div className="sm:col-span-3">
                     <Button type="submit" disabled={!addPharmacyItemId} className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs">+ Ajouter au Panier</Button>

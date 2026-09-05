@@ -634,6 +634,9 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
                     min="1"
                     value={maxClinics}
                     onChange={(e) => setMaxClinics(e.target.value)}
+                    onBlur={() => {
+                      if (!maxClinics || Number(maxClinics) < 1) setMaxClinics("1");
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
@@ -644,6 +647,9 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
                     min="1"
                     value={maxUsers}
                     onChange={(e) => setMaxUsers(e.target.value)}
+                    onBlur={() => {
+                      if (!maxUsers || Number(maxUsers) < 1) setMaxUsers("1");
+                    }}
                   />
                 </div>
               </div>
