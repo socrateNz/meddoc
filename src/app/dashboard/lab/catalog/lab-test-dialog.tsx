@@ -5,8 +5,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Edit, Loader2, FlaskConical, X, Wallet, Zap } from "lucide-react";
+import SearchableSelect from "@/components/ui/searchable-select";
+import { Plus, Edit, Loader2, FlaskConical, X } from "lucide-react";
 import { createOrUpdateLabTest } from "@/actions/lab";
 import { toast } from "sonner";
 
@@ -25,8 +25,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(labTest?.name || "");
   const [department, setDepartment] = useState(labTest?.department || "");
-  const [pharmacyItemId, setPharmacyItemId] = useState(labTest?.pharmacyItemId || "");
-  const [requiresPaymentFirst, setRequiresPaymentFirst] = useState(labTest?.requiresPaymentFirst ?? true);
+  const [basePrice, setBasePrice] = useState(labTest?.basePrice?.toString() || "0");
   const [durationMinutes, setDurationMinutes] = useState(labTest?.durationMinutes?.toString() || "");
   const [criticalLow, setCriticalLow] = useState(labTest?.criticalLow?.toString() || "");
   const [criticalHigh, setCriticalHigh] = useState(labTest?.criticalHigh?.toString() || "");
@@ -36,8 +35,13 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
   const [newItemId, setNewItemId] = useState("");
   const [newItemQty, setNewItemQty] = useState("1");
 
-  const pharmacyItemOptions = pharmacyItems.map((p) => ({ value: p.id, label: `${p.name}${p.unitPrice != null ? ` — ${formatFCFA(p.unitPrice)}` : ""}` }));
-  const selectedProduct = pharmacyItems.find((p) => p.id === pharmacyItemId);
+  const pharmacyItemOptions = pharmacyItems.map((p) => ({ value: p.id, label: p.name, description: p.unitPrice != null ? formatFCFA(p.unitPrice) : undefined }));
+
+  const consumablesTotal = consumables.reduce((sum, c) => {
+    const product = pharmacyItems.find((p) => p.id === c.pharmacyItemId);
+    return sum + (product?.unitPrice || 0) * c.quantity;
+  }, 0);
+  const totalPrice = (Number(basePrice) || 0) + consumablesTotal;
 
   const handleAddConsumable = () => {
     if (!newItemId) return;
@@ -63,10 +67,6 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
       toast.error("Le nom de l'examen est requis.");
       return;
     }
-    if (!pharmacyItemId) {
-      toast.error("Sélectionnez le produit pharmacie qui représente cet examen.");
-      return;
-    }
 
     setLoading(true);
     try {
@@ -74,8 +74,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
         id: labTest?.id,
         name: name.trim(),
         department: department.trim() || undefined,
-        pharmacyItemId,
-        requiresPaymentFirst,
+        basePrice: Number(basePrice) || 0,
         durationMinutes: durationMinutes ? Number(durationMinutes) : undefined,
         criticalLow: criticalLow ? Number(criticalLow) : undefined,
         criticalHigh: criticalHigh ? Number(criticalHigh) : undefined,
@@ -111,7 +110,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
             {labTest ? "Modifier l'examen" : "Nouvel examen"}
           </DialogTitle>
           <DialogDescription>
-            Reliez cet examen à un produit pharmacie : son prix de vente sert de tarif, et il est décompté du stock à chaque prélèvement.
+            Prix de base + produits pharmacie consommés (0 ou plusieurs) : leur somme est le tarif facturé au patient.
           </DialogDescription>
         </DialogHeader>
 
@@ -133,47 +132,8 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
           </div>
 
           <div className="space-y-1.5">
-            <Label>Produit pharmacie *</Label>
-            <Select items={pharmacyItemOptions} value={pharmacyItemId} onValueChange={(v: any) => setPharmacyItemId(v || "")}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Choisir le produit lié à cet examen..." />
-              </SelectTrigger>
-              <SelectContent>
-                {pharmacyItemOptions.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedProduct && (
-              <p className="text-[11px] text-muted-foreground">
-                Prix facturé : <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(selectedProduct.unitPrice)}</span> (basé sur le produit lié) — Stock actuel : {selectedProduct.stockQuantity}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Circuit</Label>
-            <div className="flex items-center gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setRequiresPaymentFirst(true)}
-                className={`flex-1 px-3 py-2 rounded-xl font-semibold border flex items-center justify-center gap-1.5 ${requiresPaymentFirst ? "bg-amber-600 text-white border-amber-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
-              >
-                <Wallet className="h-3.5 w-3.5" /> Caisse d&apos;abord
-              </button>
-              <button
-                type="button"
-                onClick={() => setRequiresPaymentFirst(false)}
-                className={`flex-1 px-3 py-2 rounded-xl font-semibold border flex items-center justify-center gap-1.5 ${!requiresPaymentFirst ? "bg-emerald-600 text-white border-emerald-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
-              >
-                <Zap className="h-3.5 w-3.5" /> Labo direct
-              </button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              {requiresPaymentFirst
-                ? "La demande attend le règlement en caisse avant de pouvoir être prélevée."
-                : "La demande part directement au prélèvement, même non réglée (examens urgents/critiques)."}
-            </p>
+            <Label>Prix de base (FCFA)</Label>
+            <Input type="number" min="0" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} placeholder="0" className="rounded-xl" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -188,7 +148,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
           </div>
 
           <div className="space-y-1.5">
-            <Label>Consommables annexes (tubes, gants... décomptés au prélèvement)</Label>
+            <Label>Produits pharmacie consommés (décomptés à la remise au patient)</Label>
             {consumables.length > 0 && (
               <div className="space-y-1.5">
                 {consumables.map((c) => (
@@ -205,21 +165,24 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
               </div>
             )}
             <div className="flex items-center gap-2">
-              <Select items={pharmacyItemOptions} value={newItemId} onValueChange={(v: any) => setNewItemId(v || "")}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue placeholder="Choisir un article..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {pharmacyItemOptions.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                className="flex-1"
+                options={pharmacyItemOptions}
+                value={newItemId}
+                onValueChange={setNewItemId}
+                placeholder="Rechercher un produit..."
+                emptyText="Aucun produit trouvé."
+              />
               <Input type="number" min="1" value={newItemQty} onChange={(e) => setNewItemQty(e.target.value)} className="w-16 rounded-xl" />
               <Button type="button" variant="outline" size="icon" className="rounded-xl shrink-0" onClick={handleAddConsumable}>
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between">
+            <span className="text-xs font-bold uppercase text-slate-500">Total facturé</span>
+            <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{formatFCFA(totalPrice)}</span>
           </div>
 
           <DialogFooter>

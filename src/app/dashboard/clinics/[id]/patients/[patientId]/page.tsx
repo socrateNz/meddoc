@@ -30,6 +30,7 @@ import MaternityPanel from "@/app/dashboard/patients/[id]/maternity-panel";
 import ScheduleAppointmentDialog from "@/app/dashboard/patients/[id]/schedule-appointment-dialog";
 import { Baby } from "lucide-react";
 import CacheWriter from "@/components/cache-writer";
+import PaymentStatusBadge from "@/components/payment-status-badge";
 
 interface PageProps {
   params: Promise<{ id: string; patientId: string }>;
@@ -543,9 +544,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
                           {order.tests.map((t: string) => (
                             <Badge key={t} variant="outline" className="text-[11px]">{t}</Badge>
                           ))}
-                          {order.paymentStatus === "PENDING" && (
-                            <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">En attente de paiement</Badge>
-                          )}
+                          {order.pendingInvoice && <PaymentStatusBadge status={order.pendingInvoice.status} />}
                           {hasCritical && (
                             <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20 gap-1 animate-pulse">
                               <AlertTriangle className="h-3 w-3" /> Critique

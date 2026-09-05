@@ -14,7 +14,6 @@ beforeEach(() => {
 describe("payPendingInvoice", () => {
   it("encaisse intégralement une facture en un seul règlement", async () => {
     const pendingInvoiceUpdate = vi.fn(async () => ({}));
-    const labOrderUpdateMany = vi.fn(async () => ({ count: 1 }));
     const pharmacyItemUpdate = vi.fn(async () => ({}));
 
     vi.doMock("@/lib/db", () => ({
@@ -37,7 +36,6 @@ describe("payPendingInvoice", () => {
           aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
         },
         pharmacyItem: { update: pharmacyItemUpdate },
-        labOrder: { updateMany: labOrderUpdateMany },
       },
     }));
     const { payPendingInvoice } = await import("./finance");
@@ -51,17 +49,12 @@ describe("payPendingInvoice", () => {
     expect(pendingInvoiceUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "inv1" }, data: expect.objectContaining({ status: "PAID", cashSessionId: "sess1" }) })
     );
-    expect(labOrderUpdateMany).toHaveBeenCalledWith({
-      where: { pendingInvoiceId: "inv1", paymentStatus: "PENDING" },
-      data: { paymentStatus: "PAID" },
-    });
     expect(pharmacyItemUpdate).not.toHaveBeenCalled();
   });
 
   it("accepte un paiement partiel, passe la facture à PARTIAL et ne débloque pas le labo", async () => {
     const pendingInvoiceUpdate = vi.fn(async () => ({}));
     const financialTransactionCreate = vi.fn(async ({ data }: any) => ({ id: "tx1", ...data }));
-    const labOrderUpdateMany = vi.fn(async () => ({ count: 0 }));
 
     vi.doMock("@/lib/db", () => ({
       prisma: {
@@ -82,7 +75,6 @@ describe("payPendingInvoice", () => {
           create: financialTransactionCreate,
           aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
         },
-        labOrder: { updateMany: labOrderUpdateMany },
       },
     }));
     const { payPendingInvoice } = await import("./finance");
@@ -97,7 +89,6 @@ describe("payPendingInvoice", () => {
     expect(pendingInvoiceUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: "PARTIAL" }) })
     );
-    expect(labOrderUpdateMany).not.toHaveBeenCalled();
   });
 
   it("chaque règlement porte le cashSessionId de la session réellement ouverte au moment du paiement", async () => {
@@ -122,7 +113,6 @@ describe("payPendingInvoice", () => {
           create: financialTransactionCreate,
           aggregate: vi.fn(async () => ({ _sum: { amount: alreadyPaid } })),
         },
-        labOrder: { updateMany: vi.fn(async () => ({ count: 0 })) },
       },
     }));
     const { payPendingInvoice } = await import("./finance");
@@ -370,6 +360,88 @@ describe("dispensePendingInvoice", () => {
 
     expect(result.success).toBe(true);
     expect(pendingInvoiceUpdate).toHaveBeenCalled();
+  });
+
+  it("décrémente les produits consommés d'un examen labo lié, même avec une seule ligne SERVICE dans le panier", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    const pharmacyItemUpdates: any[] = [];
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async ({ where }: any) => ({ id: where.id, name: `Produit ${where.id}`, stockQuantity: 10, reorderLevel: 5 })),
+        update: vi.fn(async (args: any) => { pharmacyItemUpdates.push(args); return {}; }),
+      },
+      stockPurchase: { findMany: vi.fn(async () => []) },
+      pendingInvoice: { update: vi.fn(async () => ({})) },
+      prescription: { update: vi.fn(async () => ({})) },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv1",
+            status: "PARTIAL",
+            organizationId: "org1",
+            items: [{ type: "SERVICE", description: "Analyse : Exam A", quantity: 1, unitPrice: 1800, amount: 1800 }],
+            prescriptions: [],
+            labOrders: [
+              {
+                id: "order1",
+                testDetails: [
+                  {
+                    testName: "Exam A",
+                    basePrice: 500,
+                    consumables: [
+                      { pharmacyItemId: "x", name: "Produit X", quantity: 2, unitPrice: 500 },
+                      { pharmacyItemId: "y", name: "Produit Y", quantity: 1, unitPrice: 300 },
+                    ],
+                    totalPrice: 1800,
+                  },
+                ],
+              },
+            ],
+          })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    const result = await dispensePendingInvoice("inv1", "INV1");
+
+    expect(result.success).toBe(true);
+    expect(pharmacyItemUpdates).toContainEqual({ where: { id: "x" }, data: { stockQuantity: { decrement: 2 } } });
+    expect(pharmacyItemUpdates).toContainEqual({ where: { id: "y" }, data: { stockQuantity: { decrement: 1 } } });
+  });
+
+  it("refuse si l'examen labo lié ne consomme aucun produit (rien à remettre)", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    const transactionFn = vi.fn();
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv1",
+            status: "PAID",
+            organizationId: "org1",
+            items: [{ type: "SERVICE", description: "Analyse : Exam B", quantity: 1, unitPrice: 500, amount: 500 }],
+            prescriptions: [],
+            labOrders: [{ id: "order1", testDetails: [{ testName: "Exam B", basePrice: 500, consumables: [], totalPrice: 500 }] }],
+          })),
+        },
+        $transaction: transactionFn,
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    const result = await dispensePendingInvoice("inv1", "INV1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/aucun médicament à remettre/);
+    expect(transactionFn).not.toHaveBeenCalled();
   });
 
   it("refuse un COORDINATOR — la remise en pharmacie est réservée aux pharmacien(ne)s", async () => {

@@ -11,12 +11,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ArrowLeft, FlaskConical, ShieldAlert, Droplet, User, FileText, Stethoscope,
-  Loader2, CheckCircle2, Lock, PackageCheck, Truck, Sparkles, TrendingUp, AlertTriangle, Wallet,
+  Loader2, CheckCircle2, Lock, PackageCheck, Truck, Sparkles, TrendingUp, AlertTriangle, Receipt,
 } from "lucide-react";
 import { collectSample, receiveAtLab, validateLabResult, markDelivered, analyzeLabResults } from "@/actions/lab";
 import RecordLabResultDialog from "@/app/dashboard/lab/record-lab-result-dialog";
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
+import PaymentStatusBadge from "@/components/payment-status-badge";
 import { toast } from "sonner";
+
+function formatFCFA(val: number) {
+  return Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
+}
 
 function calculateAge(birthDate: Date) {
   const today = new Date();
@@ -168,16 +173,7 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
           </h1>
           <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
             Statut actuel : <Badge variant="outline">{STATUS_LABELS[order.status] || order.status}</Badge>
-            {order.paymentStatus === "PENDING" && (
-              <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 border-amber-500/20">
-                <Wallet className="h-3 w-3" /> Paiement en attente
-              </Badge>
-            )}
-            {order.paymentStatus === "PAID" && (
-              <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
-                <Wallet className="h-3 w-3" /> Réglé
-              </Badge>
-            )}
+            {order.pendingInvoice && <PaymentStatusBadge status={order.pendingInvoice.status} />}
           </p>
         </div>
       </div>
@@ -233,18 +229,43 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
         </CardContent>
       </Card>
 
+      {/* Facturation */}
+      {Array.isArray(order.testDetails) && order.testDetails.length > 0 && (
+        <Card className="rounded-2xl">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2"><Receipt className="h-4 w-4" /> Facturation</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {order.testDetails.map((td: any, idx: number) => (
+              <div key={idx} className="border rounded-xl p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold">{td.testName}</p>
+                  <p className="font-bold">{formatFCFA(td.totalPrice)}</p>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Prix de base : {formatFCFA(td.basePrice)}</p>
+                {Array.isArray(td.consumables) && td.consumables.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {td.consumables.map((c: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{c.name} x{c.quantity}</span>
+                        <span>{formatFCFA((c.unitPrice || 0) * c.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Prélèvement */}
       <Card className="rounded-2xl">
         <CardHeader className="pb-2">
           <CardTitle className="text-base flex items-center gap-2"><PackageCheck className="h-4 w-4" /> Prélèvement</CardTitle>
         </CardHeader>
         <CardContent>
-          {order.status === "PRESCRIBED" && order.paymentStatus === "PENDING" ? (
-            <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20 p-3.5 text-sm text-amber-800 dark:text-amber-300">
-              <Wallet className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>Cette demande est en attente de règlement en caisse. Le prélèvement sera possible dès la facture finalisée (Finance &gt; Factures en attente).</span>
-            </div>
-          ) : order.status === "PRESCRIBED" ? (
+          {order.status === "PRESCRIBED" ? (
             canWrite ? (
               <form onSubmit={handleCollectSample} className="grid gap-3 sm:grid-cols-4 items-end">
                 <div className="space-y-1.5 sm:col-span-2">

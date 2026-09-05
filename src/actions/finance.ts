@@ -477,16 +477,10 @@ export async function payPendingInvoice(
       },
     });
 
-    // Débloque toute demande d'analyse labo liée à cette facture qui attendait le règlement
-    // (cf. src/actions/lab.ts:createLabOrder — paymentStatus) — seulement une fois le solde
-    // intégralement réglé, jamais sur un simple acompte. No-op si la facture ne concerne pas un
-    // examen labo.
-    if (nowFullyPaid) {
-      await prisma.labOrder.updateMany({
-        where: { pendingInvoiceId, paymentStatus: "PENDING" },
-        data: { paymentStatus: "PAID" },
-      });
-    }
+    // Une demande d'analyse labo liée n'a plus de statut de règlement propre à synchroniser :
+    // PendingInvoice.status (PENDING/PARTIAL/PAID) est déjà la seule source de vérité affichée
+    // (cf. LabOrder.pendingInvoice dans ORDER_INCLUDE) — vente à crédit possible comme en
+    // pharmacie, aucun déblocage à faire ici.
 
     await logAuditAction(activeUser.id, "PAY_PENDING_INVOICE", "PendingInvoice", pendingInvoiceId, { transactionId: transaction.id, amount });
     revalidatePath(`/dashboard/clinics/${pending.organizationId}/caisse`);
@@ -680,7 +674,7 @@ export async function dispensePendingInvoice(pendingInvoiceId: string, reference
 
     const pending = await prisma.pendingInvoice.findUnique({
       where: { id: pendingInvoiceId },
-      include: { prescriptions: true },
+      include: { prescriptions: true, labOrders: { select: { id: true, testDetails: true } } },
     });
     if (!pending) throw new Error("Facture introuvable.");
     if (pending.dispensedAt) {
@@ -693,15 +687,29 @@ export async function dispensePendingInvoice(pendingInvoiceId: string, reference
       throw new Error("Référence incorrecte. Demandez au patient le code exact remis à la caisse.");
     }
 
-    const items = (pending.items as any[]) || [];
-    if (!items.some((i) => i.type === "PHARMACY")) {
+    // Produits à décompter : ceux du panier (vente pharmacie directe) ∪ ceux consommés par les
+    // examens labo liés (cf. lab.ts:createLabOrder — testDetails fige la recette au moment de
+    // la commande) — le patient récupère les deux au même comptoir, avec le même geste.
+    const cartPharmacyItems = ((pending.items as any[]) || []).filter((i) => i.type === "PHARMACY");
+    const labConsumableItems = (pending.labOrders || []).flatMap((lo) =>
+      ((lo.testDetails as any[]) || []).flatMap((td) =>
+        (td.consumables || []).map((c: any) => ({
+          type: "PHARMACY" as const,
+          pharmacyItemId: c.pharmacyItemId,
+          description: c.name,
+          quantity: Number(c.quantity) || 0,
+        }))
+      )
+    );
+    const itemsToDecrement = [...cartPharmacyItems, ...labConsumableItems];
+    if (itemsToDecrement.length === 0) {
       throw new Error("Cette facture ne contient aucun médicament à remettre.");
     }
 
     let lowStockAlerts: any[] = [];
     await prisma.$transaction(
       async (tx) => {
-        lowStockAlerts = await decrementStockForItems(tx, items, pending.organizationId);
+        lowStockAlerts = await decrementStockForItems(tx, itemsToDecrement, pending.organizationId);
 
         await tx.pendingInvoice.update({
           where: { id: pendingInvoiceId },
@@ -1020,6 +1028,37 @@ async function attachAmountPaid<T extends { id: string }>(invoices: T[]): Promis
   return invoices.map((inv) => ({ ...inv, amountPaid: paidMap.get(inv.id) || 0 }));
 }
 
+// Ligne homogène "à remettre" pour une facture, quelle que soit son origine — vente pharmacie
+// directe (items PHARMACY) ou examen labo (LabOrder.testDetails[].consumables, cf. lab.ts —
+// le patient récupère les produits consommés par son examen au comptoir pharmacie exactement
+// comme un médicament). Centralise ici la seule branche origine-dépendante de tout le flux de
+// remise, pour que pharmacie-view.tsx n'affiche qu'une seule forme de données.
+function computeDispenseLines(inv: { items: any; labOrders?: { testDetails: any }[] }) {
+  const lines = new Map<string, { description: string; quantity: number }>();
+  const add = (key: string, description: string, quantity: number) => {
+    const existing = lines.get(key);
+    if (existing) existing.quantity += quantity;
+    else lines.set(key, { description, quantity });
+  };
+  for (const it of (inv.items as any[]) || []) {
+    if (it.type === "PHARMACY") add(it.pharmacyItemId || it.description, it.description, Number(it.quantity) || 0);
+  }
+  for (const lo of inv.labOrders || []) {
+    for (const td of (lo.testDetails as any[]) || []) {
+      for (const c of td.consumables || []) add(c.pharmacyItemId, c.name, Number(c.quantity) || 0);
+    }
+  }
+  return [...lines.values()];
+}
+
+function hasDispensableContent(inv: { items: any; labOrders?: { testDetails: any }[] }) {
+  const hasPharmacyItems = Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY");
+  const hasLabConsumables = (inv.labOrders || []).some((lo) =>
+    ((lo.testDetails as any[]) || []).some((td: any) => (td.consumables || []).length > 0)
+  );
+  return hasPharmacyItems || hasLabConsumables;
+}
+
 // File d'attente du comptoir pharmacie : factures contenant au moins un médicament, pas encore
 // remises (dispensedAt null) — quel que soit leur état de règlement (PENDING/PARTIAL/PAID),
 // puisqu'un patient peut désormais repartir avec ses médicaments avant d'avoir tout payé.
@@ -1055,17 +1094,17 @@ export async function listPharmacyDispenseQueue(organizationId?: string) {
       where,
       include: {
         patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        labOrders: { select: { testDetails: true } },
       },
       // paidAt peut désormais être null (facture non/partiellement réglée) — createdAt reste
       // toujours renseigné, ordre "plus ancien ticket en attente d'abord" plus fiable.
       orderBy: { createdAt: "desc" },
     });
 
-    const queue = await attachAmountPaid(
-      invoices.filter((inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY"))
-    );
+    const queue = await attachAmountPaid(invoices.filter(hasDispensableContent));
+    const queueWithLines = queue.map((inv) => ({ ...inv, dispenseLines: computeDispenseLines(inv) }));
 
-    return { success: true, data: queue };
+    return { success: true, data: queueWithLines };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du chargement de la file d'attente pharmacie." };
   }
@@ -1095,14 +1134,16 @@ export async function listPharmacyDispenseHistory(organizationId?: string, optio
       where,
       include: {
         patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        labOrders: { select: { testDetails: true } },
       },
       orderBy: { dispensedAt: "desc" },
       take: options?.take || 200,
     });
 
-    let history = await attachAmountPaid(
-      invoices.filter((inv) => Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY"))
-    );
+    let history = (await attachAmountPaid(invoices.filter(hasDispensableContent))).map((inv) => ({
+      ...inv,
+      dispenseLines: computeDispenseLines(inv),
+    }));
 
     const search = options?.search?.trim().toLowerCase();
     if (search) {

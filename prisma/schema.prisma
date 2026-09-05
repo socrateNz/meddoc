@@ -441,12 +441,19 @@ model LabOrder {
   status   String   @default("PRESCRIBED")
   priority String   @default("ROUTINE") // ROUTINE, URGENT
 
-  // Statut de règlement, orthogonal au statut de workflow labo ci-dessus : NOT_REQUIRED
-  // (aucun examen de la demande n'exige la caisse d'abord), PENDING (bloque collectSample),
-  // PAID (facture liée finalisée — cf. finalizePendingInvoice dans src/actions/finance.ts).
-  paymentStatus    String          @default("NOT_REQUIRED")
+  // Le règlement n'est plus un gate séparé ici : PendingInvoice.status (PENDING/PARTIAL/PAID)
+  // est la seule source de vérité, exactement comme pour une vente pharmacie — un examen peut
+  // être prélevé et ses produits remis avant règlement complet (vente à crédit).
   pendingInvoiceId String?         @db.ObjectId
   pendingInvoice   PendingInvoice? @relation("LabOrderInvoice", fields: [pendingInvoiceId], references: [id])
+
+  // Instantané du tarif/de la recette de chaque test catalogué de cette demande, au moment de
+  // sa création : [{ testName, labTestId, basePrice, consumables: [{pharmacyItemId, name,
+  // quantity, unitPrice}], totalPrice }]. Source de vérité pour le détail visible du pharmacien
+  // à la remise (cf. finance.ts:dispensePendingInvoice/listPharmacyDispenseQueue) ET le
+  // décompte de stock — jamais recalculé depuis le catalogue courant, pour rester correct même
+  // si l'examen est modifié après coup (même logique que PendingInvoice.items déjà en place).
+  testDetails Json?
 
   orderedById String @db.ObjectId
   orderedBy   User   @relation("LabOrderOrderedBy", fields: [orderedById], references: [id])
@@ -508,16 +515,16 @@ model LabTest {
   durationMinutes Int?
   criticalLow     Float? // Seuil bas critique (examens à résultat numérique uniquement)
   criticalHigh    Float? // Seuil haut critique
-  consumables     Json? // Recette de consommables annexes : [{ pharmacyItemId, name, quantity }]
 
-  // Le prix n'est plus saisi manuellement : il vient de pharmacyItem.unitPrice. Le produit
-  // représente l'examen lui-même (kit, réactif, bandelette...) et est décompté du stock à
-  // chaque prélèvement, comme les consommables mais séparément.
-  pharmacyItemId       String?       @db.ObjectId
-  pharmacyItem         PharmacyItem? @relation("LabTestProduct", fields: [pharmacyItemId], references: [id])
-  // true (défaut) = la demande attend le règlement en caisse avant de partir au labo ;
-  // false = part directement au labo (examens urgents/critiques).
-  requiresPaymentFirst Boolean       @default(true)
+  // Tarif propre de l'examen, indépendant de tout produit consommé.
+  basePrice Float @default(0)
+  // Recette de produits consommés à chaque réalisation de l'examen : [{ pharmacyItemId, name,
+  // quantity }]. Remplace l'ancien pharmacyItemId obligatoire (fusionné ici — cf. script de
+  // migration scripts/migrate-lab-test-consumables.mjs) ET les anciens "consommables annexes" :
+  // un seul mécanisme désormais, 0 ou plusieurs produits. Le prix n'est jamais mis en cache
+  // ici : résolu dynamiquement à chaque commande (createLabOrder) et figé sur
+  // LabOrder.testDetails, comme PendingInvoice.items fige déjà le panier d'une vente.
+  consumables Json?
 
   organizationId String?       @db.ObjectId
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -866,7 +873,6 @@ model PharmacyItem {
   inventoryLines     InventoryCountLine[]
   prescriptionItems  PrescriptionItem[]
   purchaseOrderLines PurchaseOrderLine[]
-  labTests           LabTest[]              @relation("LabTestProduct")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

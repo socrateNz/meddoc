@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FlaskConical, Loader2, PlusCircle, X, Search, Wallet, Zap, CheckSquare, Square } from "lucide-react";
+import SearchableSelect from "@/components/ui/searchable-select";
+import { FlaskConical, Loader2, PlusCircle, X, Search, CheckSquare, Square } from "lucide-react";
 import { createLabOrder, listLabTests } from "@/actions/lab";
 import { toast } from "sonner";
 
@@ -55,11 +56,9 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
   }, [catalog, searchQuery]);
 
   const selectedTests = useMemo(() => catalog.filter((t) => tests.includes(t.name)), [catalog, tests]);
-  const totalPrice = selectedTests.reduce((sum, t) => sum + (t.pharmacyItem?.unitPrice || 0), 0);
-  const willRequirePayment = selectedTests.some((t) => t.requiresPaymentFirst !== false);
+  const totalPrice = selectedTests.reduce((sum, t) => sum + (t.totalPrice || 0), 0);
 
   const toggleTest = (test: any) => {
-    if (!test.pharmacyItemId) return; // Non configuré — non sélectionnable
     setTests((prev) => (prev.includes(test.name) ? prev.filter((n) => n !== test.name) : [...prev, test.name]));
   };
 
@@ -119,17 +118,13 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
           {!defaultPatientId && (
             <div className="space-y-1.5">
               <Label>Patient *</Label>
-              <select
-                required
+              <SearchableSelect
                 value={patientId}
-                onChange={(e) => setPatientId(e.target.value)}
-                className="w-full h-9 px-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
-              >
-                <option value="">-- Choisir un patient --</option>
-                {patients.map((p) => (
-                  <option key={p.id} value={p.id}>{p.user.lastName} {p.user.firstName}</option>
-                ))}
-              </select>
+                onValueChange={setPatientId}
+                placeholder="-- Rechercher un patient --"
+                emptyText="Aucun patient trouvé."
+                options={patients.map((p) => ({ value: p.id, label: `${p.user.lastName} ${p.user.firstName}` }))}
+              />
             </div>
           )}
 
@@ -157,34 +152,21 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
               ) : (
                 filteredCatalog.map((t) => {
                   const checked = tests.includes(t.name);
-                  const unconfigured = !t.pharmacyItemId;
                   return (
                     <button
                       type="button"
                       key={t.id}
-                      disabled={unconfigured}
                       onClick={() => toggleTest(t)}
-                      className={`w-full text-left px-3 py-2.5 flex items-center gap-2.5 transition-colors ${
-                        unconfigured ? "opacity-50 cursor-not-allowed" : "hover:bg-accent cursor-pointer"
-                      } ${checked ? "bg-blue-50 dark:bg-blue-950/20" : ""}`}
+                      className={`w-full text-left px-3 py-2.5 flex items-center gap-2.5 transition-colors hover:bg-accent cursor-pointer ${checked ? "bg-blue-50 dark:bg-blue-950/20" : ""}`}
                     >
                       {checked ? <CheckSquare className="h-4 w-4 text-blue-600 shrink-0" /> : <Square className="h-4 w-4 text-muted-foreground shrink-0" />}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-sm font-medium">{t.name}</span>
                           {t.department && <Badge variant="outline" className="text-[10px]">{t.department}</Badge>}
-                          {unconfigured ? (
-                            <Badge variant="outline" className="text-[10px] bg-slate-500/10 text-slate-500 border-slate-500/20">Produit non configuré</Badge>
-                          ) : t.requiresPaymentFirst !== false ? (
-                            <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1"><Wallet className="h-2.5 w-2.5" />Caisse d&apos;abord</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1"><Zap className="h-2.5 w-2.5" />Labo direct</Badge>
-                          )}
                         </div>
                       </div>
-                      {t.pharmacyItem?.unitPrice != null && (
-                        <span className="text-xs font-semibold text-muted-foreground shrink-0">{formatFCFA(t.pharmacyItem.unitPrice)}</span>
-                      )}
+                      <span className="text-xs font-semibold text-muted-foreground shrink-0">{formatFCFA(t.totalPrice || 0)}</span>
                     </button>
                   );
                 })
@@ -205,7 +187,6 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Total estimé : <span className="font-bold text-slate-700 dark:text-slate-300">{formatFCFA(totalPrice)}</span>
-                  {willRequirePayment && " — passera par la caisse avant le laboratoire."}
                 </p>
               </div>
             )}

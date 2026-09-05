@@ -11,7 +11,6 @@ import {
   recordLabResultSchema,
   createOrUpdateLabTestSchema,
 } from "@/validators/lab";
-import { consumeStockLots } from "@/actions/stock";
 import { revalidatePath } from "next/cache";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -53,6 +52,9 @@ const ORDER_INCLUDE = {
   patient: { include: { user: { select: { firstName: true, lastName: true } } } },
   orderedBy: { select: { firstName: true, lastName: true } },
   sampleCollectedBy: { select: { firstName: true, lastName: true } },
+  // Statut de règlement réel (PENDING/PARTIAL/PAID) — seule source de vérité désormais pour
+  // l'affichage (badge PaymentStatusBadge), plus de champ dédié sur LabOrder lui-même.
+  pendingInvoice: { select: { status: true } },
   results: {
     include: {
       recordedBy: { select: { firstName: true, lastName: true } },
@@ -65,49 +67,31 @@ async function findMatchingLabTest(testName: string, organizationId: string | nu
   if (!organizationId) return null;
   return prisma.labTest.findFirst({
     where: { organizationId, isActive: true, name: { equals: testName, mode: "insensitive" } },
-    include: { pharmacyItem: true },
   });
 }
 
-// Décompte automatiquement, pour chaque examen prélevé : (1) le produit pharmacie qui
-// représente l'examen lui-même (kit, réactif...), 1 unité par occurrence, et (2) sa recette de
-// consommables annexes (tubes, aiguilles, gants...). Ne bloque jamais le prélèvement si le
-// stock est insuffisant — consomme au mieux, comme consumeStockLots le fait déjà pour les ventes.
-async function consumeLabTestConsumables(tx: any, testNames: string[], organizationId: string | null) {
-  const lowStockAlerts: { pharmacyItemId: string; itemName: string; stockQuantity: number; reorderLevel: number; organizationId: string | null }[] = [];
-  if (!organizationId) return lowStockAlerts;
-
-  const decrementOne = async (pharmacyItemId: string, quantity: number) => {
-    const item = await tx.pharmacyItem.findUnique({ where: { id: pharmacyItemId } });
-    if (!item) return;
-    const qty = Math.min(quantity, item.stockQuantity);
-    if (qty <= 0) return;
-    await tx.pharmacyItem.update({ where: { id: pharmacyItemId }, data: { stockQuantity: { decrement: qty } } });
-    await consumeStockLots(tx, pharmacyItemId, qty);
-
-    // Alerte de rupture uniquement au franchissement du seuil.
-    const newQty = item.stockQuantity - qty;
-    if (item.stockQuantity > item.reorderLevel && newQty <= item.reorderLevel) {
-      lowStockAlerts.push({ pharmacyItemId: item.id, itemName: item.name, stockQuantity: newQty, reorderLevel: item.reorderLevel, organizationId });
-    }
-  };
-
-  for (const testName of testNames) {
-    const catalogTest = await tx.labTest.findFirst({
-      where: { organizationId, isActive: true, name: { equals: testName, mode: "insensitive" } },
-    });
-    if (!catalogTest) continue;
-
-    if (catalogTest.pharmacyItemId) {
-      await decrementOne(catalogTest.pharmacyItemId, 1);
-    }
-
-    const consumables = (catalogTest.consumables as { pharmacyItemId: string; name: string; quantity: number }[] | null) || [];
-    for (const c of consumables) {
-      await decrementOne(c.pharmacyItemId, Number(c.quantity) || 0);
+// Résout, pour un lot de LabTest, le prix courant de chaque produit consommé (jamais mis en
+// cache sur LabTest — cf. LabOrder.testDetails, qui fige ce prix au moment de CETTE commande
+// précise). Un seul aller-retour pharmacyItem.findMany, quel que soit le nombre de
+// tests/consommables du lot.
+async function priceLabTests<T extends { id: string; name: string; basePrice: number; consumables: any }>(labTests: T[]) {
+  const allIds = new Set<string>();
+  for (const t of labTests) {
+    for (const c of (t.consumables as { pharmacyItemId: string; name: string; quantity: number }[] | null) || []) {
+      allIds.add(c.pharmacyItemId);
     }
   }
-  return lowStockAlerts;
+  const products = allIds.size ? await prisma.pharmacyItem.findMany({ where: { id: { in: [...allIds] } } }) : [];
+  const priceMap = new Map(products.map((p) => [p.id, p.unitPrice]));
+
+  return labTests.map((t) => {
+    const consumables = ((t.consumables as { pharmacyItemId: string; name: string; quantity: number }[] | null) || []).map((c) => ({
+      ...c,
+      unitPrice: priceMap.get(c.pharmacyItemId) ?? 0,
+    }));
+    const totalPrice = Number(t.basePrice || 0) + consumables.reduce((sum, c) => sum + c.unitPrice * Number(c.quantity || 0), 0);
+    return { ...t, consumables, totalPrice };
+  });
 }
 
 // Fait avancer automatiquement le statut d'une demande selon l'état de ses résultats
@@ -156,27 +140,35 @@ export async function createLabOrder(data: {
     });
     const organizationId = patient?.organizationId || null;
 
-    // Résout le catalogue pour chaque examen avant création : le prix (dérivé du produit
-    // pharmacie lié) et l'exigence de règlement préalable en dépendent tous les deux.
+    // Résout le catalogue pour chaque examen avant création : le prix (base + produits
+    // consommés) et la facturation en dépendent.
     const catalogTests = await Promise.all(data.tests.map((t) => findMatchingLabTest(t, organizationId)));
+    const priced = await priceLabTests(catalogTests.filter((t): t is NonNullable<typeof t> => !!t));
+    const pricedByName = new Map(priced.map((t) => [t.name.toLowerCase(), t]));
 
-    // La caisse est prioritaire : dès qu'un seul examen de la demande exige le règlement
-    // préalable (ou n'est pas reconnu au catalogue — cas défensif), toute la demande attend.
-    const paymentStatus = catalogTests.some((ct) => ct?.requiresPaymentFirst !== false) ? "PENDING" : "NOT_REQUIRED";
-
-    // Facturation automatique : chaque examen catalogué relié à un produit pharmacie génère
-    // une ligne dans une facture en attente (même mécanisme que la clôture de consultation).
+    // Facturation automatique et instantané du tarif/de la recette : chaque examen catalogué
+    // reconnu (même à 0 FCFA — être au catalogue reste le seul critère, comportement inchangé)
+    // génère une ligne dans une facture en attente ET un instantané figé dans testDetails,
+    // immunisé contre une modification ultérieure du catalogue (cf. dispensePendingInvoice).
     const items: any[] = [];
-    catalogTests.forEach((catalogTest) => {
-      if (catalogTest?.pharmacyItem) {
-        items.push({
-          type: "SERVICE",
-          description: `Analyse : ${catalogTest.name}`,
-          quantity: 1,
-          unitPrice: catalogTest.pharmacyItem.unitPrice,
-          amount: catalogTest.pharmacyItem.unitPrice,
-        });
-      }
+    const testDetails: any[] = [];
+    data.tests.forEach((testName) => {
+      const p = pricedByName.get(testName.toLowerCase());
+      if (!p) return;
+      testDetails.push({
+        testName,
+        labTestId: p.id,
+        basePrice: p.basePrice,
+        consumables: p.consumables,
+        totalPrice: p.totalPrice,
+      });
+      items.push({
+        type: "SERVICE",
+        description: `Analyse : ${p.name}`,
+        quantity: 1,
+        unitPrice: p.totalPrice,
+        amount: p.totalPrice,
+      });
     });
 
     const labOrder = await prisma.labOrder.create({
@@ -189,7 +181,7 @@ export async function createLabOrder(data: {
         notes: data.notes || null,
         priority: data.priority || "ROUTINE",
         status: "PRESCRIBED",
-        paymentStatus: items.length > 0 ? paymentStatus : "NOT_REQUIRED",
+        testDetails: testDetails.length > 0 ? testDetails : undefined,
         orderedById: activeUser.id,
       },
     });
@@ -303,35 +295,27 @@ export async function collectSample(data: {
     const order = await prisma.labOrder.findUnique({ where: { id: data.labOrderId } });
     if (!order) throw new Error("Demande d'analyse introuvable.");
     if (order.status !== "PRESCRIBED") throw new Error("Le prélèvement a déjà été enregistré pour cette demande.");
-    if (order.paymentStatus === "PENDING") {
-      throw new Error("Cette demande est en attente de règlement en caisse avant de pouvoir être prélevée.");
-    }
 
     const hasAccess = await verifyPatientAccess(order.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
 
-    const { result: updated, lowStockAlerts } = await prisma.$transaction(async (tx) => {
-      const result = await tx.labOrder.update({
-        where: { id: data.labOrderId },
-        data: {
-          status: "SAMPLE_COLLECTED",
-          sampleType: data.sampleType,
-          sampleQuantity: data.sampleQuantity || null,
-          sampleCondition: data.sampleCondition || null,
-          sampleCollectedAt: new Date(),
-          sampleCollectedById: activeUser.id,
-        },
-      });
-      const lowStockAlerts = await consumeLabTestConsumables(tx, order.tests, order.organizationId);
-      return { result, lowStockAlerts };
+    // Le prélèvement n'est plus gaté par le règlement (vente à crédit possible, comme en
+    // pharmacie) et ne décompte plus le stock lui-même — cf. dispensePendingInvoice dans
+    // finance.ts, qui décompte les produits consommés (LabOrder.testDetails) au moment où le
+    // patient les récupère au comptoir pharmacie, exactement comme pour un médicament.
+    const updated = await prisma.labOrder.update({
+      where: { id: data.labOrderId },
+      data: {
+        status: "SAMPLE_COLLECTED",
+        sampleType: data.sampleType,
+        sampleQuantity: data.sampleQuantity || null,
+        sampleCondition: data.sampleCondition || null,
+        sampleCollectedAt: new Date(),
+        sampleCollectedById: activeUser.id,
+      },
     });
 
     await logAuditAction(activeUser.id, "COLLECT_LAB_SAMPLE", "LabOrder", data.labOrderId, { sampleType: data.sampleType });
-
-    if (lowStockAlerts.length > 0) {
-      const { appEvents } = await import("@/lib/events");
-      for (const alert of lowStockAlerts) appEvents.emit("stock.low", alert);
-    }
 
     revalidatePath("/dashboard/lab");
 
@@ -507,9 +491,6 @@ export async function updateLabOrderStatus(labOrderId: string, status: "PRESCRIB
 
     const existing = await prisma.labOrder.findUnique({ where: { id: labOrderId } });
     if (!existing) throw new Error("Demande d'analyse introuvable.");
-    if (existing.paymentStatus === "PENDING" && status !== "CANCELLED") {
-      throw new Error("Cette demande est en attente de règlement en caisse avant de pouvoir avancer.");
-    }
 
     const hasAccess = await verifyPatientAccess(existing.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -540,10 +521,9 @@ export async function listLabTests(organizationId?: string) {
 
     const labTests = await prisma.labTest.findMany({
       where,
-      include: { pharmacyItem: { select: { id: true, name: true, unitPrice: true, stockQuantity: true } } },
       orderBy: { name: "asc" },
     });
-    return { success: true, data: labTests };
+    return { success: true, data: await priceLabTests(labTests) };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du chargement du catalogue." };
   }
@@ -553,8 +533,7 @@ export async function createOrUpdateLabTest(data: {
   id?: string;
   name: string;
   department?: string;
-  pharmacyItemId: string;
-  requiresPaymentFirst?: boolean;
+  basePrice?: number;
   durationMinutes?: number;
   criticalLow?: number;
   criticalHigh?: number;
@@ -577,8 +556,7 @@ export async function createOrUpdateLabTest(data: {
         data: {
           name: data.name,
           department: data.department || null,
-          pharmacyItemId: data.pharmacyItemId,
-          requiresPaymentFirst: data.requiresPaymentFirst ?? true,
+          basePrice: data.basePrice ?? 0,
           durationMinutes: data.durationMinutes ?? null,
           criticalLow: data.criticalLow ?? null,
           criticalHigh: data.criticalHigh ?? null,
@@ -591,8 +569,7 @@ export async function createOrUpdateLabTest(data: {
         data: {
           name: data.name,
           department: data.department || null,
-          pharmacyItemId: data.pharmacyItemId,
-          requiresPaymentFirst: data.requiresPaymentFirst ?? true,
+          basePrice: data.basePrice ?? 0,
           durationMinutes: data.durationMinutes ?? null,
           criticalLow: data.criticalLow ?? null,
           criticalHigh: data.criticalHigh ?? null,

@@ -5,8 +5,9 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FlaskConical, Clock, CheckCircle2, AlertTriangle, ChevronRight, Settings, Zap, Wallet } from "lucide-react";
+import { FlaskConical, Clock, CheckCircle2, AlertTriangle, ChevronRight, Settings, Zap } from "lucide-react";
 import NewLabOrderDialog from "./new-lab-order-dialog";
+import PaymentStatusBadge from "@/components/payment-status-badge";
 
 function formatDateTime(date: string | Date) {
   return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(date));
@@ -166,11 +167,7 @@ export default function LabView({ labOrders, patients, currentUserRole }: LabVie
                             <Zap className="h-3 w-3" /> Urgent
                           </Badge>
                         )}
-                        {order.paymentStatus === "PENDING" && (
-                          <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px] gap-1">
-                            <Wallet className="h-3 w-3" /> En attente de paiement
-                          </Badge>
-                        )}
+                        {order.pendingInvoice && <PaymentStatusBadge status={order.pendingInvoice.status} className="text-[10px]" />}
                         {hasCritical && (
                           <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20 text-[10px] gap-1 animate-pulse">
                             <AlertTriangle className="h-3 w-3" /> Critique

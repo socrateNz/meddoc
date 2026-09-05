@@ -35,12 +35,14 @@ export const createOrUpdateLabTestSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1, "Nom de l'examen requis"),
   department: z.string().optional(),
-  pharmacyItemId: z.string().min(1, "Produit pharmacie requis"),
-  requiresPaymentFirst: z.boolean().optional(),
+  // Tarif propre de l'examen, indépendant des produits consommés (cf. consumables).
+  basePrice: z.number().min(0).optional(),
   durationMinutes: z.number().min(0).optional(),
   criticalLow: z.number().optional(),
   criticalHigh: z.number().optional(),
   isActive: z.boolean().optional(),
+  // Produits pharmacie consommés à chaque réalisation (0 ou plusieurs) — remplace l'ancien
+  // pharmacyItemId obligatoire, désormais fusionné dans cette même liste.
   consumables: z
     .array(
       z.object({

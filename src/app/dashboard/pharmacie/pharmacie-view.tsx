@@ -200,7 +200,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
               {queue.map((inv: any) => {
                 const items = Array.isArray(inv.items) ? inv.items : [];
                 const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-                const pharmacyLines = items.filter((it: any) => it.type === "PHARMACY");
+                const dispenseLines = Array.isArray(inv.dispenseLines) ? inv.dispenseLines : [];
                 const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
                 const phone = inv.patient?.user?.phone || inv.customPatientPhone;
 
@@ -237,13 +237,13 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                       </div>
 
                       <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 divide-y divide-slate-100 dark:divide-slate-800/60 overflow-hidden">
-                        {pharmacyLines.length === 0 ? (
+                        {dispenseLines.length === 0 ? (
                           <p className="p-3 text-xs text-slate-400">Aucun médicament listé.</p>
                         ) : (
-                          pharmacyLines.map((it: any, idx: number) => (
+                          dispenseLines.map((line: any, idx: number) => (
                             <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800/30">
-                              <span className="font-medium text-slate-700 dark:text-slate-300">{it.description}</span>
-                              <span className="font-bold text-slate-500">x{it.quantity}</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{line.description}</span>
+                              <span className="font-bold text-slate-500">x{line.quantity}</span>
                             </div>
                           ))
                         )}
@@ -279,7 +279,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
               {filteredHistory.map((inv: any) => {
                 const items = Array.isArray(inv.items) ? inv.items : [];
                 const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-                const pharmacyLines = items.filter((it: any) => it.type === "PHARMACY");
+                const dispenseLines = Array.isArray(inv.dispenseLines) ? inv.dispenseLines : [];
                 const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
                 const phone = inv.patient?.user?.phone || inv.customPatientPhone;
                 const ticketNum = String(inv.id).slice(-6).toUpperCase();
@@ -310,7 +310,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                           )}
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                          {pharmacyLines.map((it: any) => it.description).join(", ") || "Aucun médicament listé"}
+                          {dispenseLines.map((line: any) => line.description).join(", ") || "Aucun médicament listé"}
                         </p>
                       </div>
                       <div className="text-right shrink-0">
@@ -490,7 +490,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
           {finalizingInvoice && (() => {
             const items = Array.isArray(finalizingInvoice.items) ? finalizingInvoice.items : [];
             const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-            const pharmacyLines = items.filter((it: any) => it.type === "PHARMACY");
+            const dispenseLines = Array.isArray(finalizingInvoice.dispenseLines) ? finalizingInvoice.dispenseLines : [];
             const name = finalizingInvoice.patient?.user
               ? `${finalizingInvoice.patient.user.lastName} ${finalizingInvoice.patient.user.firstName}`
               : (finalizingInvoice.customPatientName || "Client comptant");
@@ -508,13 +508,13 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                 </DialogHeader>
 
                 <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 divide-y divide-slate-100 dark:divide-slate-800/60 overflow-hidden">
-                  {pharmacyLines.length === 0 ? (
+                  {dispenseLines.length === 0 ? (
                     <p className="p-3 text-xs text-slate-400">Aucun médicament listé.</p>
                   ) : (
-                    pharmacyLines.map((it: any, idx: number) => (
+                    dispenseLines.map((line: any, idx: number) => (
                       <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800/30">
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{it.description}</span>
-                        <span className="font-bold text-slate-500">x{it.quantity}</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{line.description}</span>
+                        <span className="font-bold text-slate-500">x{line.quantity}</span>
                       </div>
                     ))
                   )}
