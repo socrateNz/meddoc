@@ -699,21 +699,24 @@ export async function dispensePendingInvoice(pendingInvoiceId: string, reference
     }
 
     let lowStockAlerts: any[] = [];
-    await prisma.$transaction(async (tx) => {
-      lowStockAlerts = await decrementStockForItems(tx, items, pending.organizationId);
+    await prisma.$transaction(
+      async (tx) => {
+        lowStockAlerts = await decrementStockForItems(tx, items, pending.organizationId);
 
-      await tx.pendingInvoice.update({
-        where: { id: pendingInvoiceId },
-        data: { dispensedAt: new Date() },
-      });
-
-      for (const prescription of pending.prescriptions) {
-        await tx.prescription.update({
-          where: { id: prescription.id },
-          data: { status: "DISPENSED", dispensedById: activeUser.id, dispensedAt: new Date() },
+        await tx.pendingInvoice.update({
+          where: { id: pendingInvoiceId },
+          data: { dispensedAt: new Date() },
         });
-      }
-    });
+
+        for (const prescription of pending.prescriptions) {
+          await tx.prescription.update({
+            where: { id: prescription.id },
+            data: { status: "DISPENSED", dispensedById: activeUser.id, dispensedAt: new Date() },
+          });
+        }
+      },
+      { timeout: 20000, maxWait: 10000 }
+    );
 
     if (lowStockAlerts.length > 0) {
       const { appEvents } = await import("@/lib/events");
