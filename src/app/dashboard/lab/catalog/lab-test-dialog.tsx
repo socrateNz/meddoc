@@ -26,6 +26,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
   const [name, setName] = useState(labTest?.name || "");
   const [department, setDepartment] = useState(labTest?.department || "");
   const [basePrice, setBasePrice] = useState(labTest?.basePrice?.toString() || "0");
+  const [baseCost, setBaseCost] = useState(labTest?.baseCost?.toString() || "0");
   const [durationMinutes, setDurationMinutes] = useState(labTest?.durationMinutes?.toString() || "");
   const [criticalLow, setCriticalLow] = useState(labTest?.criticalLow?.toString() || "");
   const [criticalHigh, setCriticalHigh] = useState(labTest?.criticalHigh?.toString() || "");
@@ -42,6 +43,11 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
     return sum + (product?.unitPrice || 0) * c.quantity;
   }, 0);
   const totalPrice = (Number(basePrice) || 0) + consumablesTotal;
+  // Marge sur le seul tarif de base : le coût des consommables (prix d'achat réel, FEFO) n'est
+  // pas connu ici — seul le prix de VENTE des produits (pharmacyItems[].unitPrice) l'est. La
+  // marge exacte, consommables inclus, est calculée côté serveur (Finance > répartition du
+  // bénéfice).
+  const baseMargin = (Number(basePrice) || 0) - (Number(baseCost) || 0);
 
   const handleAddConsumable = () => {
     if (!newItemId) return;
@@ -75,6 +81,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
         name: name.trim(),
         department: department.trim() || undefined,
         basePrice: Number(basePrice) || 0,
+        baseCost: Number(baseCost) || 0,
         durationMinutes: durationMinutes ? Number(durationMinutes) : undefined,
         criticalLow: criticalLow ? Number(criticalLow) : undefined,
         criticalHigh: criticalHigh ? Number(criticalHigh) : undefined,
@@ -131,9 +138,16 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label>Prix de base (FCFA)</Label>
-            <Input type="number" min="0" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} placeholder="0" className="rounded-xl" />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Prix de base facturé (FCFA)</Label>
+              <Input type="number" min="0" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} placeholder="0" className="rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Coût de base (FCFA)</Label>
+              <Input type="number" min="0" value={baseCost} onChange={(e) => setBaseCost(e.target.value)} placeholder="0" className="rounded-xl" />
+              <p className="text-[10px] text-muted-foreground">Réactifs/matériel non suivis en stock — sert au calcul de la marge.</p>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -180,9 +194,15 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
             </div>
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between">
-            <span className="text-xs font-bold uppercase text-slate-500">Total facturé</span>
-            <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{formatFCFA(totalPrice)}</span>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase text-slate-500">Total facturé</span>
+              <span className="text-sm font-extrabold text-slate-800 dark:text-slate-200">{formatFCFA(totalPrice)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase text-slate-500">Marge sur le tarif de base</span>
+              <span className={`text-sm font-extrabold ${baseMargin < 0 ? "text-red-600" : "text-emerald-600"}`}>{formatFCFA(baseMargin)}</span>
+            </div>
           </div>
 
           <DialogFooter>

@@ -74,6 +74,28 @@ async function getItemUnitCost(pharmacyItemId: string, client: any = prisma): Pr
   return totalCost / totalQty;
 }
 
+// Même calcul que getItemUnitCost (coût moyen pondéré des lots restants), mais pour plusieurs
+// produits en un seul aller-retour — utilisée par getFinanceSummary pour valoriser les
+// consommables labo d'un lot de LabOrder sans une requête par produit distinct.
+export async function getItemUnitCostMap(pharmacyItemIds: string[], client: any = prisma): Promise<Map<string, number>> {
+  if (pharmacyItemIds.length === 0) return new Map();
+  const lots = await client.stockPurchase.findMany({
+    where: { pharmacyItemId: { in: pharmacyItemIds }, remainingQuantity: { gt: 0 } },
+  });
+  const totals = new Map<string, { qty: number; cost: number }>();
+  for (const lot of lots) {
+    const acc = totals.get(lot.pharmacyItemId) || { qty: 0, cost: 0 };
+    acc.qty += lot.remainingQuantity;
+    acc.cost += lot.remainingQuantity * lot.purchasePrice;
+    totals.set(lot.pharmacyItemId, acc);
+  }
+  const result = new Map<string, number>();
+  for (const [id, { qty, cost }] of totals) {
+    if (qty > 0) result.set(id, cost / qty);
+  }
+  return result;
+}
+
 // Applique une réception de stock sur un article déjà existant : crée le lot StockPurchase,
 // incrémente PharmacyItem.stockQuantity, crée la FinancialTransaction correspondante. Réutilisée
 // par recordStockPurchase (saisie manuelle) et receivePurchaseOrders.receivePurchaseOrderLines
@@ -91,6 +113,7 @@ export async function applyStockReceipt(
     invoiceRef?: string | null;
     purchasedById: string;
     organizationId?: string | null;
+    cashSessionId?: string | null;
   }
 ) {
   const totalCost = data.quantity * data.purchasePrice;
@@ -126,6 +149,7 @@ export async function applyStockReceipt(
       quantity: data.quantity,
       recordedById: data.purchasedById,
       organizationId: data.organizationId || null,
+      ...(data.cashSessionId ? { cashSessionId: data.cashSessionId } : {}),
     },
   });
 
@@ -149,6 +173,7 @@ export async function recordStockPurchase(data: {
   expiryDate?: string;
   invoiceRef?: string;
   organizationId?: string;
+  cashSessionId?: string;
 }) {
   try {
     recordStockPurchaseSchema.parse(data);
@@ -159,6 +184,16 @@ export async function recordStockPurchase(data: {
     const quantity = Number(data.quantity);
     const purchasePrice = Number(data.purchasePrice);
     const expiry = data.expiryDate ? new Date(data.expiryDate) : null;
+
+    if (data.cashSessionId) {
+      const session = await prisma.cashSession.findUnique({ where: { id: data.cashSessionId } });
+      if (!session || session.status !== "OPEN") {
+        throw new Error("Aucune session de caisse ouverte. Sélectionnez une caisse ouverte pour décaisser cet achat.");
+      }
+      if (session.organizationId !== targetOrgId) {
+        throw new Error("Cette caisse n'appartient pas à l'établissement de cet achat.");
+      }
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       let itemId = data.pharmacyItemId;
@@ -196,6 +231,7 @@ export async function recordStockPurchase(data: {
         invoiceRef: data.invoiceRef,
         purchasedById: activeUser!.id,
         organizationId: targetOrgId,
+        cashSessionId: data.cashSessionId,
       });
 
       return { purchase, transaction, pharmacyItemId: itemId };

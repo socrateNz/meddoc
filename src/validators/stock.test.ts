@@ -46,6 +46,23 @@ describe("recordStockPurchaseSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts an optional cashSessionId to deduct the purchase from an open register", () => {
+    const result = recordStockPurchaseSchema.safeParse({
+      ...base,
+      pharmacyItemId: "abc123",
+      cashSessionId: "sess1",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("still accepts a purchase with no cashSessionId (unaffected by default)", () => {
+    const result = recordStockPurchaseSchema.safeParse({
+      ...base,
+      pharmacyItemId: "abc123",
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("saveInventoryCountsSchema", () => {

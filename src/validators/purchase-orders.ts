@@ -31,4 +31,5 @@ export const receiptLineInputSchema = z.object({
 export const receivePurchaseOrderLinesSchema = z.object({
   purchaseOrderId: z.string().min(1),
   receipts: z.array(receiptLineInputSchema).min(1, "Aucune ligne à réceptionner"),
+  cashSessionId: z.string().optional(),
 });

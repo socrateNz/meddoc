@@ -53,9 +53,10 @@ interface PharmacieViewProps {
   dispenseHistory: any[];
   organizationId?: string;
   currentUserRole?: string;
+  openRegisters?: any[];
 }
 
-export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHistory, organizationId, currentUserRole }: PharmacieViewProps) {
+export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHistory, organizationId, currentUserRole, openRegisters = [] }: PharmacieViewProps) {
   const [activeTab, setActiveTab] = useState("queue");
   const [queue, setQueue] = useState<any[]>(dispenseQueue);
   const [history, setHistory] = useState<any[]>(dispenseHistory);
@@ -163,7 +164,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
 
           {activeTab === "stock" && canWrite && (
             <div className="flex gap-2">
-              <StockPurchaseDialog pharmacyItems={pharmacyItems} organizationId={organizationId} />
+              <StockPurchaseDialog pharmacyItems={pharmacyItems} organizationId={organizationId} openRegisters={openRegisters} />
               <ImportPharmacyCsvDialog organizationId={organizationId} />
               <PharmacyDialog organizationId={organizationId} />
             </div>
@@ -479,7 +480,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
         </TabsContent>
 
         <TabsContent value="fournisseurs" className="pt-6">
-          <SuppliersPanel organizationId={organizationId} pharmacyItems={pharmacyItems} canWrite={canWrite} />
+          <SuppliersPanel organizationId={organizationId} pharmacyItems={pharmacyItems} canWrite={canWrite} openRegisters={openRegisters} />
         </TabsContent>
       </Tabs>
 

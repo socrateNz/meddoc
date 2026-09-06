@@ -9,12 +9,19 @@ import { PackageCheck, Loader2 } from "lucide-react";
 import { receivePurchaseOrderLines } from "@/actions/purchase-orders";
 import { toast } from "sonner";
 
+interface OpenRegisterOption {
+  id: string;
+  name: string;
+  openSession?: { id: string } | null;
+}
+
 interface ReceivePurchaseOrderDialogProps {
   order: any;
   onSuccess: (order: any) => void;
+  openRegisters?: OpenRegisterOption[];
 }
 
-export default function ReceivePurchaseOrderDialog({ order, onSuccess }: ReceivePurchaseOrderDialogProps) {
+export default function ReceivePurchaseOrderDialog({ order, onSuccess, openRegisters = [] }: ReceivePurchaseOrderDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const remainingLines = order.lines.filter((l: any) => l.quantityReceived < l.quantityOrdered);
@@ -23,6 +30,8 @@ export default function ReceivePurchaseOrderDialog({ order, onSuccess }: Receive
   );
   const [batchNumbers, setBatchNumbers] = useState<Record<string, string>>({});
   const [expiryDates, setExpiryDates] = useState<Record<string, string>>({});
+  const [deductFromCash, setDeductFromCash] = useState(false);
+  const [cashSessionId, setCashSessionId] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,9 +49,14 @@ export default function ReceivePurchaseOrderDialog({ order, onSuccess }: Receive
       return;
     }
 
+    if (deductFromCash && !cashSessionId) {
+      toast.error("Sélectionnez une caisse ouverte, ou basculez sur \"Non\" pour réceptionner sans impact sur la caisse.");
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await receivePurchaseOrderLines(order.id, receipts);
+      const res = await receivePurchaseOrderLines(order.id, receipts, deductFromCash ? cashSessionId : undefined);
       if (res.success) {
         toast.success("Réception enregistrée — stock mis à jour.");
         setOpen(false);
@@ -102,6 +116,48 @@ export default function ReceivePurchaseOrderDialog({ order, onSuccess }: Receive
               </div>
             );
           })}
+
+          <div className="space-y-2 rounded-xl border p-3">
+            <Label className="text-xs">Prélever cette réception sur une caisse ouverte ?</Label>
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => { setDeductFromCash(false); setCashSessionId(""); }}
+                className={`px-3 py-1.5 rounded-lg font-semibold border ${!deductFromCash ? "bg-emerald-600 text-white border-emerald-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
+              >
+                Non
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeductFromCash(true)}
+                className={`px-3 py-1.5 rounded-lg font-semibold border ${deductFromCash ? "bg-emerald-600 text-white border-emerald-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
+              >
+                Oui
+              </button>
+            </div>
+
+            {deductFromCash && (
+              openRegisters.length === 0 ? (
+                <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                  Aucune caisse n'est actuellement ouverte. Ouvrez une session de caisse pour pouvoir décaisser cette réception.
+                </p>
+              ) : (
+                <select
+                  required
+                  value={cashSessionId}
+                  onChange={(e) => setCashSessionId(e.target.value)}
+                  className="w-full h-9 px-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                >
+                  <option value="">-- Sélectionner une caisse ouverte --</option>
+                  {openRegisters.map((r) => (
+                    <option key={r.id} value={r.openSession?.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              )
+            )}
+          </div>
 
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Annuler</Button>

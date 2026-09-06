@@ -13,7 +13,7 @@ import {
   dispensePendingInvoiceSchema,
   importPharmacyItemsSchema,
 } from "@/validators/finance";
-import { consumeStockLots, assertStockWrite } from "@/actions/stock";
+import { consumeStockLots, assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { revalidatePath } from "next/cache";
 
@@ -346,7 +346,7 @@ export async function recordExpense(data: { cashSessionId: string; description: 
 
 async function decrementStockForItems(
   tx: any,
-  items: Array<{ type: "PHARMACY" | "SERVICE"; pharmacyItemId?: string; description: string; quantity: number }>,
+  items: Array<{ type: "PHARMACY" | "SERVICE" | "LAB"; pharmacyItemId?: string; description: string; quantity: number }>,
   organizationId: string | null
 ) {
   const stockSnapshots = new Map<string, { name: string; stockQuantity: number; reorderLevel: number }>();
@@ -399,7 +399,7 @@ export async function payPendingInvoice(
   cashSessionId: string,
   amount: number,
   items?: Array<{
-    type: "PHARMACY" | "SERVICE";
+    type: "PHARMACY" | "SERVICE" | "LAB";
     pharmacyItemId?: string;
     description: string;
     quantity: number;
@@ -453,7 +453,11 @@ export async function payPendingInvoice(
     const transaction = await prisma.financialTransaction.create({
       data: {
         type: "INCOME",
-        category: currentItems.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
+        category: currentItems.some((i) => i.type === "PHARMACY")
+          ? "PHARMACY_SALE"
+          : currentItems.some((i) => i.type === "LAB")
+          ? "LAB_EXAM_FEE"
+          : "SERVICE_FEE",
         amount,
         description: summaryDescription,
         items: currentItems,
@@ -512,7 +516,7 @@ export async function payPendingInvoice(
 export async function createCaisseSale(data: {
   cashSessionId: string;
   items: Array<{
-    type: "PHARMACY" | "SERVICE";
+    type: "PHARMACY" | "SERVICE" | "LAB";
     pharmacyItemId?: string;
     description: string;
     quantity: number;
@@ -572,7 +576,11 @@ export async function createCaisseSale(data: {
     const transaction = await prisma.financialTransaction.create({
       data: {
         type: "INCOME",
-        category: data.items.some((i) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_FEE",
+        category: data.items.some((i) => i.type === "PHARMACY")
+          ? "PHARMACY_SALE"
+          : data.items.some((i) => i.type === "LAB")
+          ? "LAB_EXAM_FEE"
+          : "SERVICE_FEE",
         amount: received,
         description: summaryDescription,
         items: data.items,
@@ -846,10 +854,90 @@ export async function getFinanceSummary(organizationId?: string) {
     } else if (targetOrgId) {
       sessionWhere.organizationId = targetOrgId;
     }
-    const openSessions = await prisma.cashSession.findMany({
-      where: sessionWhere,
-      include: { transactions: { select: { type: true, amount: true } } },
-    });
+    // Répartition du CA par catégorie — calculée par agrégation sur l'ENSEMBLE des transactions
+    // INCOME (via groupBy), jamais depuis `transactions` ci-dessus : ce tableau est plafonné à
+    // 500 lignes pour l'aperçu du tableau de bord, une clinique dépassant ce volume aurait sinon
+    // une répartition tronquée et fausse.
+    const categoryWhere: any = { type: "INCOME" };
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      categoryWhere.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else if (targetOrgId) {
+      categoryWhere.organizationId = targetOrgId;
+    }
+
+    // Périmètre org/holding identique à categoryWhere/sessionWhere, réutilisé pour chiffrer le
+    // coût des examens labo (LabOrder n'a pas de champ montant agrégeable : le coût de chaque
+    // commande se calcule en JS depuis son testDetails figé, cf. plus bas).
+    const labOrderWhere: any = {};
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      labOrderWhere.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else if (targetOrgId) {
+      labOrderWhere.organizationId = targetOrgId;
+    }
+
+    const [openSessions, categoryAllTime, categoryToday, pharmacyPurchaseAllTime, pharmacyPurchaseToday, labOrdersForCost] = await Promise.all([
+      prisma.cashSession.findMany({
+        where: sessionWhere,
+        include: { transactions: { select: { type: true, amount: true } } },
+      }),
+      prisma.financialTransaction.groupBy({
+        by: ["category"],
+        where: categoryWhere,
+        _sum: { amount: true },
+      }),
+      prisma.financialTransaction.groupBy({
+        by: ["category"],
+        where: { ...categoryWhere, createdAt: { gte: startOfToday } },
+        _sum: { amount: true },
+      }),
+      // Marge simple (approximative) côté Médicament : achats de stock sur la période plutôt que
+      // le coût exact des seules unités vendues — cf. décision produit, cohérent avec le fait que
+      // l'app ne relie aujourd'hui aucun lot d'achat précis à une vente donnée.
+      prisma.financialTransaction.aggregate({
+        where: { ...categoryWhere, type: "EXPENSE", category: "PHARMACY_PURCHASE" },
+        _sum: { amount: true },
+      }),
+      prisma.financialTransaction.aggregate({
+        where: { ...categoryWhere, type: "EXPENSE", category: "PHARMACY_PURCHASE", createdAt: { gte: startOfToday } },
+        _sum: { amount: true },
+      }),
+      prisma.labOrder.findMany({ where: labOrderWhere, select: { testDetails: true, createdAt: true } }),
+    ]);
+
+    // Marge simple côté Examens : coût propre de chaque test (LabTest.baseCost, figé sur
+    // testDetails à la commande) + coût actuel moyen (FEFO) des consommables réellement listés
+    // dans la recette de chaque examen commandé sur la période — pas de catégorie de dépense
+    // "achat labo" dédiée (les consommables partagent le même stock/circuit d'achat que la
+    // pharmacie), donc reconstitué ici depuis testDetails plutôt que depuis FinancialTransaction.
+    const consumablePharmacyItemIds = new Set<string>();
+    for (const order of labOrdersForCost) {
+      for (const td of (order.testDetails as any[]) || []) {
+        for (const c of td.consumables || []) {
+          if (c.pharmacyItemId) consumablePharmacyItemIds.add(c.pharmacyItemId);
+        }
+      }
+    }
+    const consumableUnitCosts = await getItemUnitCostMap([...consumablePharmacyItemIds]);
+
+    let labCostAllTime = 0;
+    let labCostToday = 0;
+    for (const order of labOrdersForCost) {
+      let orderCost = 0;
+      for (const td of (order.testDetails as any[]) || []) {
+        orderCost += Number(td.baseCost || 0);
+        for (const c of td.consumables || []) {
+          orderCost += (consumableUnitCosts.get(c.pharmacyItemId) || 0) * Number(c.quantity || 0);
+        }
+      }
+      labCostAllTime += orderCost;
+      if (order.createdAt && new Date(order.createdAt) >= startOfToday) labCostToday += orderCost;
+    }
     const cashBalance = openSessions.reduce((sum, s) => {
       let sessionIncome = 0;
       let sessionExpenses = 0;
@@ -861,6 +949,39 @@ export async function getFinanceSummary(organizationId?: string) {
     }, 0);
     const lowStockCount = pharmacyItems.filter((item: any) => Number(item.stockQuantity || 0) <= Number(item.reorderLevel || 10)).length;
 
+    const todayByCategory = new Map(categoryToday.map((c) => [c.category, c._sum.amount || 0]));
+    const revenueByCategory = categoryAllTime
+      .map((c) => ({
+        category: c.category as string,
+        totalIncome: c._sum.amount || 0,
+        todayIncome: todayByCategory.get(c.category) || 0,
+      }))
+      .sort((a, b) => b.totalIncome - a.totalIncome);
+
+    // Bénéfice (marge simple) par catégorie facturable : Médicament = ventes pharmacie - achats
+    // de stock de la période ; Examens = ventes labo - coût des tests réalisés (cf. calcul
+    // ci-dessus) ; toute autre catégorie (Services...) n'a pas de coût matière connu, sa marge
+    // vaut donc 100% de son revenu. Volontairement une marge globale par période, pas le
+    // bénéfice exact de chaque vente individuelle (cf. échange avec l'utilisateur).
+    const categoryCost: Record<string, { allTime: number; today: number }> = {
+      PHARMACY_SALE: { allTime: pharmacyPurchaseAllTime._sum.amount || 0, today: pharmacyPurchaseToday._sum.amount || 0 },
+      LAB_EXAM_FEE: { allTime: labCostAllTime, today: labCostToday },
+    };
+    const profitByCategory = revenueByCategory
+      .map((c) => {
+        const cost = categoryCost[c.category] || { allTime: 0, today: 0 };
+        return {
+          category: c.category,
+          revenue: c.totalIncome,
+          cost: cost.allTime,
+          profit: c.totalIncome - cost.allTime,
+          todayRevenue: c.todayIncome,
+          todayCost: cost.today,
+          todayProfit: c.todayIncome - cost.today,
+        };
+      })
+      .sort((a, b) => b.profit - a.profit);
+
     return {
       success: true,
       data: {
@@ -871,7 +992,9 @@ export async function getFinanceSummary(organizationId?: string) {
         todayExpenses,
         lowStockCount,
         transactions,
-        pharmacyItems
+        pharmacyItems,
+        revenueByCategory,
+        profitByCategory
       }
     };
   } catch (error: any) {

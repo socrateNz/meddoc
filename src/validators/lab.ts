@@ -37,6 +37,9 @@ export const createOrUpdateLabTestSchema = z.object({
   department: z.string().optional(),
   // Tarif propre de l'examen, indépendant des produits consommés (cf. consumables).
   basePrice: z.number().min(0).optional(),
+  // Coût propre de l'examen (réactifs non suivis en stock, temps technique...) — sert au calcul
+  // de la marge, jamais facturé au patient.
+  baseCost: z.number().min(0).optional(),
   durationMinutes: z.number().min(0).optional(),
   criticalLow: z.number().optional(),
   criticalHigh: z.number().optional(),

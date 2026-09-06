@@ -12,7 +12,7 @@ describe("createLabOrder", () => {
   // catalog: { [testName]: { basePrice, consumables } | null (non catalogué) }
   // products: { [pharmacyItemId]: unitPrice } — pour la résolution de prix des consommables
   function mockDb(
-    catalog: Record<string, { basePrice: number; consumables?: { pharmacyItemId: string; name: string; quantity: number }[] } | null>,
+    catalog: Record<string, { basePrice: number; baseCost?: number; consumables?: { pharmacyItemId: string; name: string; quantity: number }[] } | null>,
     products: Record<string, number> = {}
   ) {
     const labOrderCreate = vi.fn(async ({ data }: any) => ({ id: "order1", ...data }));
@@ -29,7 +29,7 @@ describe("createLabOrder", () => {
           findFirst: vi.fn(async ({ where }: any) => {
             const entry = catalog[where.name.equals];
             if (!entry) return null;
-            return { id: `lt-${where.name.equals}`, name: where.name.equals, basePrice: entry.basePrice, consumables: entry.consumables || [] };
+            return { id: `lt-${where.name.equals}`, name: where.name.equals, basePrice: entry.basePrice, baseCost: entry.baseCost ?? 0, consumables: entry.consumables || [] };
           }),
         },
         pharmacyItem: { findMany: pharmacyItemFindMany },
@@ -93,7 +93,27 @@ describe("createLabOrder", () => {
     expect(pendingInvoiceCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          items: [expect.objectContaining({ type: "SERVICE", description: "Analyse : A", unitPrice: 1800, amount: 1800 })],
+          items: [expect.objectContaining({ type: "LAB", description: "Analyse : A", unitPrice: 1800, amount: 1800 })],
+        }),
+      })
+    );
+  });
+
+  it("fige le coût de base du catalogue (LabTest.baseCost) sur testDetails, pour le calcul de marge côté Finance", async () => {
+    const { labOrderCreate } = mockDb({ NFS: { basePrice: 1000, baseCost: 250 } });
+    vi.doMock("@/lib/auth", () => ({
+      getCurrentUser: vi.fn(async () => activeUser),
+      verifyPatientAccess: vi.fn(async () => true),
+    }));
+    const { createLabOrder } = await import("./lab");
+
+    const result = await createLabOrder({ patientId: "p1", tests: ["NFS"] });
+
+    expect(result.success).toBe(true);
+    expect(labOrderCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          testDetails: [expect.objectContaining({ testName: "NFS", basePrice: 1000, baseCost: 250 })],
         }),
       })
     );

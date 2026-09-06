@@ -10,9 +10,13 @@ import { Search, Printer, Loader2, RotateCcw, ChevronLeft, ChevronRight, Trendin
 import { listFinancialTransactions } from "@/actions/finance";
 import PaymentStatusBadge from "@/components/payment-status-badge";
 
-const CATEGORY_LABELS: Record<string, string> = {
+// Exporté pour être réutilisé par finance-view.tsx (carte de répartition des revenus) — un seul
+// exemplaire de ces libellés, à ne pas confondre avec la CATEGORY_LABELS locale de
+// finance-view.tsx, sans rapport, qui couvre PharmacyCategory (valorisation de stock).
+export const TRANSACTION_CATEGORY_LABELS: Record<string, string> = {
   PHARMACY_SALE: "Vente Pharmacie",
   SERVICE_FEE: "Frais de service",
+  LAB_EXAM_FEE: "Analyses de laboratoire",
   OPERATIONAL_EXPENSE: "Dépense opérationnelle",
   PHARMACY_PURCHASE: "Achat Pharmacie",
   STOCK_ADJUSTMENT: "Ajustement de stock",
@@ -159,7 +163,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
             className="w-full h-9 px-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
           >
             <option value="ALL">Toutes catégories</option>
-            {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+            {Object.entries(TRANSACTION_CATEGORY_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
@@ -261,7 +265,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
                         variant="outline"
                         className={`text-[11px] font-semibold ${isIncome ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}
                       >
-                        {CATEGORY_LABELS[t.category] || (isIncome ? "Encaissement" : "Dépense")}
+                        {TRANSACTION_CATEGORY_LABELS[t.category] || (isIncome ? "Encaissement" : "Dépense")}
                       </Badge>
                     </TableCell>
                     <TableCell className="font-semibold text-slate-800 dark:text-slate-200 py-3.5 max-w-[280px]">

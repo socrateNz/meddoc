@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
 import { getPharmacyItems, listPharmacyDispenseQueue, listPharmacyDispenseHistory } from "@/actions/finance";
+import { listRegistersWithStatus } from "@/actions/registers";
 import PharmacieView from "@/app/dashboard/pharmacie/pharmacie-view";
 import { redirect } from "next/navigation";
 
@@ -17,15 +18,17 @@ export default async function ClinicPharmaciePage({ params }: ClinicPharmaciePag
   const activeUser = await getCurrentUser();
   if (!activeUser) redirect("/login");
 
-  const [pharmacyItemsRes, dispenseQueueRes, dispenseHistoryRes] = await Promise.all([
+  const [pharmacyItemsRes, dispenseQueueRes, dispenseHistoryRes, registersRes] = await Promise.all([
     getPharmacyItems(clinicId),
     listPharmacyDispenseQueue(clinicId),
     listPharmacyDispenseHistory(clinicId),
+    listRegistersWithStatus(clinicId),
   ]);
 
   const pharmacyItems = pharmacyItemsRes.success ? pharmacyItemsRes.data || [] : [];
   const dispenseQueue = dispenseQueueRes.success ? dispenseQueueRes.data || [] : [];
   const dispenseHistory = dispenseHistoryRes.success ? dispenseHistoryRes.data || [] : [];
+  const openRegisters = (registersRes.success ? registersRes.data || [] : []).filter((r) => r.isActive && r.openSession);
 
   return (
     <div className="space-y-6">
@@ -42,6 +45,7 @@ export default async function ClinicPharmaciePage({ params }: ClinicPharmaciePag
         dispenseHistory={dispenseHistory}
         organizationId={clinicId}
         currentUserRole={activeUser.role}
+        openRegisters={openRegisters as any}
       />
     </div>
   );

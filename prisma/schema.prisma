@@ -75,6 +75,7 @@ enum TransactionType {
 enum TransactionCategory {
   PHARMACY_SALE
   SERVICE_FEE
+  LAB_EXAM_FEE
   OPERATIONAL_EXPENSE
   PHARMACY_PURCHASE
   STOCK_ADJUSTMENT
@@ -516,8 +517,13 @@ model LabTest {
   criticalLow     Float? // Seuil bas critique (examens à résultat numérique uniquement)
   criticalHigh    Float? // Seuil haut critique
 
-  // Tarif propre de l'examen, indépendant de tout produit consommé.
+  // Tarif propre de l'examen, indépendant de tout produit consommé (prix de VENTE facturé au
+  // patient).
   basePrice Float @default(0)
+  // Coût propre de l'examen (réactifs/consommables non suivis en stock pharmacie, temps
+  // technique, etc.) — distinct de basePrice qui est le prix de VENTE. Sert uniquement au calcul
+  // de la marge (Finance > répartition du bénéfice), jamais facturé tel quel au patient.
+  baseCost Float @default(0)
   // Recette de produits consommés à chaque réalisation de l'examen : [{ pharmacyItemId, name,
   // quantity }]. Remplace l'ancien pharmacyItemId obligatoire (fusionné ici — cf. script de
   // migration scripts/migrate-lab-test-consumables.mjs) ET les anciens "consommables annexes" :

@@ -18,10 +18,164 @@ import {
   History,
   CircleDot,
   Circle,
+  Coins,
+  Pill,
+  FlaskConical,
+  Stethoscope,
 } from "lucide-react";
 import InvoiceModal from "./invoice-modal";
 import ZReportDownloadButton from "./z-report-download-button";
-import FinanceJournal from "./finance-journal";
+import FinanceJournal, { TRANSACTION_CATEGORY_LABELS } from "./finance-journal";
+
+// Icône + couleur par catégorie facturable — utilisées pour les cartes "Répartition des
+// revenus"/"Répartition du bénéfice" (une carte par catégorie, même gabarit que les KPI du
+// haut). Les classes Tailwind sont écrites en toutes lettres (jamais interpolées) pour rester
+// détectables par le scan statique du build.
+const CATEGORY_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  PHARMACY_SALE: Pill,
+  LAB_EXAM_FEE: FlaskConical,
+  SERVICE_FEE: Stethoscope,
+};
+const CATEGORY_COLOR: Record<string, string> = {
+  PHARMACY_SALE: "indigo",
+  LAB_EXAM_FEE: "violet",
+  SERVICE_FEE: "sky",
+};
+
+const COLOR_THEME: Record<
+  string,
+  { cardClass: string; iconOverlayClass: string; labelClass: string; titleClass: string; subtitleClass: string }
+> = {
+  indigo: {
+    cardClass: "rounded-2xl border-indigo-500/30 bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-transparent dark:from-indigo-950/40 shadow-xs relative overflow-hidden",
+    iconOverlayClass: "absolute top-0 right-0 p-4 text-indigo-500/20 pointer-events-none",
+    labelClass: "text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400 flex items-center gap-1.5",
+    titleClass: "text-2xl sm:text-3xl font-extrabold text-indigo-900 dark:text-indigo-100 mt-1",
+    subtitleClass: "pt-0 text-xs text-indigo-700/80 dark:text-indigo-400/80 font-medium",
+  },
+  violet: {
+    cardClass: "rounded-2xl border-violet-500/30 bg-gradient-to-br from-violet-500/10 via-violet-500/5 to-transparent dark:from-violet-950/40 shadow-xs relative overflow-hidden",
+    iconOverlayClass: "absolute top-0 right-0 p-4 text-violet-500/20 pointer-events-none",
+    labelClass: "text-xs font-bold uppercase tracking-wider text-violet-700 dark:text-violet-400 flex items-center gap-1.5",
+    titleClass: "text-2xl sm:text-3xl font-extrabold text-violet-900 dark:text-violet-100 mt-1",
+    subtitleClass: "pt-0 text-xs text-violet-700/80 dark:text-violet-400/80 font-medium",
+  },
+  sky: {
+    cardClass: "rounded-2xl border-sky-500/30 bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent dark:from-sky-950/40 shadow-xs relative overflow-hidden",
+    iconOverlayClass: "absolute top-0 right-0 p-4 text-sky-500/20 pointer-events-none",
+    labelClass: "text-xs font-bold uppercase tracking-wider text-sky-700 dark:text-sky-400 flex items-center gap-1.5",
+    titleClass: "text-2xl sm:text-3xl font-extrabold text-sky-900 dark:text-sky-100 mt-1",
+    subtitleClass: "pt-0 text-xs text-sky-700/80 dark:text-sky-400/80 font-medium",
+  },
+  emerald: {
+    cardClass: "rounded-2xl border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent dark:from-emerald-950/40 shadow-xs relative overflow-hidden",
+    iconOverlayClass: "absolute top-0 right-0 p-4 text-emerald-500/20 pointer-events-none",
+    labelClass: "text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5",
+    titleClass: "text-2xl sm:text-3xl font-extrabold text-emerald-900 dark:text-emerald-100 mt-1",
+    subtitleClass: "pt-0 text-xs text-emerald-700/80 dark:text-emerald-400/80 font-medium",
+  },
+  rose: {
+    cardClass: "rounded-2xl border-rose-500/30 bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-transparent dark:from-rose-950/40 shadow-xs relative overflow-hidden",
+    iconOverlayClass: "absolute top-0 right-0 p-4 text-rose-500/20 pointer-events-none",
+    labelClass: "text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400 flex items-center gap-1.5",
+    titleClass: "text-2xl sm:text-3xl font-extrabold text-rose-900 dark:text-rose-100 mt-1",
+    subtitleClass: "pt-0 text-xs text-rose-700/80 dark:text-rose-400/80 font-medium",
+  },
+  slate: {
+    cardClass: "rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs relative overflow-hidden",
+    iconOverlayClass: "absolute top-0 right-0 p-4 text-slate-400/10 pointer-events-none",
+    labelClass: "text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5",
+    titleClass: "text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white mt-1",
+    subtitleClass: "pt-0 text-xs text-slate-500 font-medium",
+  },
+};
+
+function CategoryStatCard({
+  icon: Icon,
+  color,
+  label,
+  amount,
+  subtitle,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  label: React.ReactNode;
+  amount: string;
+  subtitle: React.ReactNode;
+}) {
+  const theme = COLOR_THEME[color] || COLOR_THEME.slate;
+  return (
+    <Card className={theme.cardClass}>
+      <div className={theme.iconOverlayClass}>
+        <Icon className="h-20 w-20 -mr-4 -mt-4" />
+      </div>
+      <CardHeader className="pb-2">
+        <CardDescription className={theme.labelClass}>
+          <Icon className="h-4 w-4" />
+          {label}
+        </CardDescription>
+        <CardTitle className={theme.titleClass}>{amount}</CardTitle>
+      </CardHeader>
+      <CardContent className={theme.subtitleClass}>{subtitle}</CardContent>
+    </Card>
+  );
+}
+
+// Carte "bénéfice" — contrairement à CategoryStatCard (un seul chiffre en avant), montre le
+// détail du calcul avant le résultat : prix de vente total, puis prix d'achat total, puis le
+// bénéfice (revenu - coût) en évidence, pour que la marge ne soit jamais un chiffre "sorti de
+// nulle part".
+function ProfitBreakdownCard({
+  icon: Icon,
+  color,
+  label,
+  revenue,
+  cost,
+  profit,
+  footer,
+  formatFCFA,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  label: React.ReactNode;
+  revenue: number;
+  cost: number;
+  profit: number;
+  footer: React.ReactNode;
+  formatFCFA: (val: number) => string;
+}) {
+  const theme = COLOR_THEME[color] || COLOR_THEME.slate;
+  return (
+    <Card className={theme.cardClass}>
+      <div className={theme.iconOverlayClass}>
+        <Icon className="h-20 w-20 -mr-4 -mt-4" />
+      </div>
+      <CardHeader className="pb-2">
+        <CardDescription className={theme.labelClass}>
+          <Icon className="h-4 w-4" />
+          {label}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0 space-y-1.5">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-500 dark:text-slate-400 font-medium">Prix de vente total</span>
+          <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(revenue)}</span>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-500 dark:text-slate-400 font-medium">Prix d&apos;achat total</span>
+          <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(cost)}</span>
+        </div>
+        <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Bénéfice</span>
+          <span className={`text-xl font-extrabold ${color === "rose" ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+            {formatFCFA(profit)}
+          </span>
+        </div>
+        <div className="text-[11px] text-slate-400">{footer}</div>
+      </CardContent>
+    </Card>
+  );
+}
 
 interface CashSessionRow {
   id: string;
@@ -51,6 +205,8 @@ interface FinanceViewProps {
     lowStockCount: number;
     transactions: any[];
     pharmacyItems: any[];
+    revenueByCategory?: { category: string; totalIncome: number; todayIncome: number }[];
+    profitByCategory?: { category: string; revenue: number; cost: number; profit: number; todayRevenue: number; todayCost: number; todayProfit: number }[];
   };
   organizationId?: string;
   organizationName?: string;
@@ -191,6 +347,82 @@ export default function FinanceView({ summary, organizationId, organizationName,
           </CardContent>
         </Card>
       </div>
+
+      {/* Répartition des revenus par catégorie — une carte par catégorie facturable (même gabarit
+          que les KPI du haut), calculée côté serveur sur l'ensemble des transactions (pas
+          seulement l'aperçu récent), pour rester exacte quel que soit le volume de la clinique. */}
+      {summary.revenueByCategory && summary.revenueByCategory.length > 0 && (
+        <div className="space-y-2 animate-fade-up">
+          <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300">
+            <PieChart className="h-4 w-4 text-indigo-500" />
+            Répartition des revenus
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {summary.revenueByCategory.map((c) => {
+              const pct = summary.totalIncome > 0 ? Math.round((c.totalIncome / summary.totalIncome) * 100) : 0;
+              return (
+                <CategoryStatCard
+                  key={c.category}
+                  icon={CATEGORY_ICON[c.category] || PieChart}
+                  color={CATEGORY_COLOR[c.category] || "slate"}
+                  label={TRANSACTION_CATEGORY_LABELS[c.category] || c.category}
+                  amount={formatFCFA(c.totalIncome)}
+                  subtitle={
+                    <>
+                      {pct}% du chiffre d&apos;affaires
+                      {c.todayIncome > 0 && <> · +{formatFCFA(c.todayIncome)} aujourd&apos;hui</>}
+                    </>
+                  }
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Bénéfice par catégorie — marge simple (revenu - achats/coûts de la même période, pas le
+          coût exact de chaque vente individuelle, cf. décision produit). Couleur par signe
+          (emerald = bénéfice, rose = perte) plutôt que par catégorie, pour repérer la
+          rentabilité d'un coup d'œil ; l'icône reste propre à chaque catégorie. */}
+      {summary.profitByCategory && summary.profitByCategory.length > 0 && (() => {
+        const totalProfit = summary.profitByCategory.reduce((sum, c) => sum + c.profit, 0);
+        return (
+          <div className="space-y-2 animate-fade-up">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300">
+              <Coins className="h-4 w-4 text-emerald-500" />
+              Répartition du bénéfice
+              <span className="text-xs font-normal text-slate-400">— total : {formatFCFA(totalProfit)}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {summary.profitByCategory.map((c) => {
+                const share = totalProfit !== 0 ? Math.round((c.profit / totalProfit) * 100) : 0;
+                const marginRate = c.revenue > 0 ? Math.round((c.profit / c.revenue) * 100) : 0;
+                const isNegative = c.profit < 0;
+                return (
+                  <ProfitBreakdownCard
+                    key={c.category}
+                    icon={CATEGORY_ICON[c.category] || PieChart}
+                    color={isNegative ? "rose" : "emerald"}
+                    label={TRANSACTION_CATEGORY_LABELS[c.category] || c.category}
+                    revenue={c.revenue}
+                    cost={c.cost}
+                    profit={c.profit}
+                    formatFCFA={formatFCFA}
+                    footer={
+                      <>
+                        Marge {marginRate}% · {share}% du bénéfice total
+                        {c.todayProfit !== 0 && (
+                          <> · {c.todayProfit > 0 ? "+" : ""}{formatFCFA(c.todayProfit)} auj.</>
+                        )}
+                      </>
+                    }
+                  />
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Overview: recent activity + stock alerts */}
       <div className="grid gap-6 lg:grid-cols-2 animate-fade-up">

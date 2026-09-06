@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // src/actions/stock.ts importe @/lib/db au niveau module (transitivement via
 // @/lib/auth, @/lib/permissions et @/middlewares/auditLogger). On le mocke
@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from "vitest";
 // consumeStockLots n'utilise de toute façon que le paramètre `tx` injecté.
 vi.mock("@/lib/db", () => ({ prisma: {} }));
 
-const { consumeStockLots } = await import("./stock");
+const { consumeStockLots, applyStockReceipt } = await import("./stock");
 
 interface FakeLot {
   id: string;
@@ -81,5 +81,166 @@ describe("consumeStockLots", () => {
     expect(result).toEqual({ consumedCost: 0, unmatchedQuantity: 0 });
     expect(lots[0].remainingQuantity).toBe(10);
     expect(tx.stockPurchase.update).not.toHaveBeenCalled();
+  });
+});
+
+// applyStockReceipt ne lit que le paramètre `tx` injecté (jamais le `prisma` de module),
+// donc réutilise directement l'import statique du haut de fichier — pas besoin de
+// vi.resetModules()/vi.doMock ici.
+describe("applyStockReceipt — décaissement conditionnel", () => {
+  function createFakeReceiptTx() {
+    return {
+      stockPurchase: { create: vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data })) },
+      pharmacyItem: { update: vi.fn(async () => ({})) },
+      financialTransaction: { create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })) },
+    };
+  }
+
+  it("ne pose pas cashSessionId sur la FinancialTransaction quand aucune session n'est fournie (comportement actuel inchangé)", async () => {
+    const tx = createFakeReceiptTx();
+
+    await applyStockReceipt(tx, {
+      pharmacyItemId: "item1",
+      itemName: "Paracétamol",
+      quantity: 10,
+      purchasePrice: 300,
+      purchasedById: "user1",
+      organizationId: "org1",
+    });
+
+    const [[{ data }]] = tx.financialTransaction.create.mock.calls;
+    expect("cashSessionId" in data).toBe(false);
+  });
+
+  it("pose cashSessionId sur la FinancialTransaction quand une session est fournie", async () => {
+    const tx = createFakeReceiptTx();
+
+    await applyStockReceipt(tx, {
+      pharmacyItemId: "item1",
+      itemName: "Paracétamol",
+      quantity: 10,
+      purchasePrice: 300,
+      purchasedById: "user1",
+      organizationId: "org1",
+      cashSessionId: "sess1",
+    });
+
+    const [[{ data }]] = tx.financialTransaction.create.mock.calls;
+    expect(data.cashSessionId).toBe("sess1");
+  });
+});
+
+describe("recordStockPurchase — deductFromCash", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    // assertStockWrite appelle requirePermission (@/lib/permissions), qui lit
+    // prisma.permission en base — non pertinent pour ces tests, on le neutralise.
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+  });
+
+  it("refuse une session de caisse fermée", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "CLOSED", organizationId: "org1" })) },
+      },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({
+      pharmacyItemId: "item1",
+      quantity: 10,
+      purchasePrice: 300,
+      cashSessionId: "sess1",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Aucune session de caisse ouverte/);
+  });
+
+  it("refuse une session de caisse appartenant à un autre établissement", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org-autre-clinique" })) },
+      },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({
+      pharmacyItemId: "item1",
+      quantity: 10,
+      purchasePrice: 300,
+      organizationId: "org1",
+      cashSessionId: "sess1",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/n'appartient pas à l'établissement/);
+  });
+
+  it("décaisse correctement une session ouverte du même établissement", async () => {
+    const financialTransactionCreate = vi.fn(async ({ data }: any) => ({ id: "tx1", ...data }));
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol" })),
+        update: vi.fn(async () => ({})),
+      },
+      stockPurchase: { create: vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data })) },
+      financialTransaction: { create: financialTransactionCreate },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org1" })) },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({
+      pharmacyItemId: "item1",
+      quantity: 10,
+      purchasePrice: 300,
+      cashSessionId: "sess1",
+    });
+
+    expect(result.success).toBe(true);
+    expect(financialTransactionCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ cashSessionId: "sess1" }) })
+    );
+  });
+
+  it("n'impacte aucune caisse quand cashSessionId est omis (comportement actuel inchangé)", async () => {
+    const financialTransactionCreate = vi.fn(async ({ data }: any) => ({ id: "tx1", ...data }));
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol" })),
+        update: vi.fn(async () => ({})),
+      },
+      stockPurchase: { create: vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data })) },
+      financialTransaction: { create: financialTransactionCreate },
+    };
+    const cashSessionFindUnique = vi.fn();
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: { findUnique: cashSessionFindUnique },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({
+      pharmacyItemId: "item1",
+      quantity: 10,
+      purchasePrice: 300,
+    });
+
+    expect(result.success).toBe(true);
+    expect(cashSessionFindUnique).not.toHaveBeenCalled();
+    const [[{ data }]] = financialTransactionCreate.mock.calls;
+    expect("cashSessionId" in data).toBe(false);
   });
 });

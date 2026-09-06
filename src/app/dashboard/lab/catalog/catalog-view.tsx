@@ -56,6 +56,11 @@ export default function CatalogView({ labTests: initial, pharmacyItems }: { labT
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
                     {test.department && <Badge variant="outline" className="text-[10px]">{test.department}</Badge>}
                     <Badge variant="secondary" className="text-[10px]">{formatFCFA(test.totalPrice ?? test.basePrice ?? 0)}</Badge>
+                    {Number(test.baseCost) > 0 && (
+                      <Badge variant="outline" className="text-[10px] bg-slate-500/10 text-slate-600 border-slate-500/20">
+                        Coût base : {formatFCFA(test.baseCost)}
+                      </Badge>
+                    )}
                     {test.durationMinutes != null && <Badge variant="outline" className="text-[10px]">{test.durationMinutes} min</Badge>}
                     {(test.criticalLow != null || test.criticalHigh != null) && (
                       <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20">

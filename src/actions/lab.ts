@@ -74,7 +74,7 @@ async function findMatchingLabTest(testName: string, organizationId: string | nu
 // cache sur LabTest — cf. LabOrder.testDetails, qui fige ce prix au moment de CETTE commande
 // précise). Un seul aller-retour pharmacyItem.findMany, quel que soit le nombre de
 // tests/consommables du lot.
-async function priceLabTests<T extends { id: string; name: string; basePrice: number; consumables: any }>(labTests: T[]) {
+async function priceLabTests<T extends { id: string; name: string; basePrice: number; baseCost?: number; consumables: any }>(labTests: T[]) {
   const allIds = new Set<string>();
   for (const t of labTests) {
     for (const c of (t.consumables as { pharmacyItemId: string; name: string; quantity: number }[] | null) || []) {
@@ -159,11 +159,12 @@ export async function createLabOrder(data: {
         testName,
         labTestId: p.id,
         basePrice: p.basePrice,
+        baseCost: p.baseCost ?? 0,
         consumables: p.consumables,
         totalPrice: p.totalPrice,
       });
       items.push({
-        type: "SERVICE",
+        type: "LAB",
         description: `Analyse : ${p.name}`,
         quantity: 1,
         unitPrice: p.totalPrice,
@@ -534,6 +535,7 @@ export async function createOrUpdateLabTest(data: {
   name: string;
   department?: string;
   basePrice?: number;
+  baseCost?: number;
   durationMinutes?: number;
   criticalLow?: number;
   criticalHigh?: number;
@@ -557,6 +559,7 @@ export async function createOrUpdateLabTest(data: {
           name: data.name,
           department: data.department || null,
           basePrice: data.basePrice ?? 0,
+          baseCost: data.baseCost ?? 0,
           durationMinutes: data.durationMinutes ?? null,
           criticalLow: data.criticalLow ?? null,
           criticalHigh: data.criticalHigh ?? null,
@@ -570,6 +573,7 @@ export async function createOrUpdateLabTest(data: {
           name: data.name,
           department: data.department || null,
           basePrice: data.basePrice ?? 0,
+          baseCost: data.baseCost ?? 0,
           durationMinutes: data.durationMinutes ?? null,
           criticalLow: data.criticalLow ?? null,
           criticalHigh: data.criticalHigh ?? null,

@@ -20,6 +20,7 @@ export const recordStockPurchaseSchema = z
     expiryDate: z.string().optional(),
     invoiceRef: z.string().optional(),
     organizationId: z.string().optional(),
+    cashSessionId: z.string().optional(),
   })
   .refine((data) => !!data.pharmacyItemId || !!data.newItem, {
     message: "Sélectionnez un produit existant ou renseignez un nouveau produit",

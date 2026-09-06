@@ -82,10 +82,11 @@ export async function updatePurchaseOrderStatus(id: string, status: "SENT" | "CA
 // une fois par ligne reçue. Les réceptions partielles sont possibles sur plusieurs appels.
 export async function receivePurchaseOrderLines(
   purchaseOrderId: string,
-  receipts: { lineId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string; purchasePrice?: number }[]
+  receipts: { lineId: string; quantityReceived: number; batchNumber?: string; expiryDate?: string; purchasePrice?: number }[],
+  cashSessionId?: string
 ) {
   try {
-    receivePurchaseOrderLinesSchema.parse({ purchaseOrderId, receipts });
+    receivePurchaseOrderLinesSchema.parse({ purchaseOrderId, receipts, cashSessionId });
     const activeUser = await getCurrentUser();
     await assertStockWrite(activeUser);
 
@@ -96,6 +97,16 @@ export async function receivePurchaseOrderLines(
     if (!order) throw new Error("Commande introuvable.");
     if (!["SENT", "PARTIALLY_RECEIVED"].includes(order.status)) {
       throw new Error("Cette commande n'est pas au stade de la réception (doit être envoyée au préalable).");
+    }
+
+    if (cashSessionId) {
+      const session = await prisma.cashSession.findUnique({ where: { id: cashSessionId } });
+      if (!session || session.status !== "OPEN") {
+        throw new Error("Aucune session de caisse ouverte. Sélectionnez une caisse ouverte pour décaisser cette réception.");
+      }
+      if (session.organizationId !== order.organizationId) {
+        throw new Error("Cette caisse n'appartient pas à l'établissement de cette commande.");
+      }
     }
 
     await prisma.$transaction(async (tx) => {
@@ -139,6 +150,7 @@ export async function receivePurchaseOrderLines(
           expiryDate: receipt.expiryDate ? new Date(receipt.expiryDate) : null,
           purchasedById: activeUser!.id,
           organizationId: order.organizationId,
+          cashSessionId,
         });
 
         await tx.purchaseOrderLine.update({

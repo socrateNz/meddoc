@@ -31,6 +31,8 @@ export default async function FinancePage() {
     lowStockCount: 0,
     transactions: [],
     pharmacyItems: [],
+    revenueByCategory: [],
+    profitByCategory: [],
   };
 
   const orgName = (activeUser.organization as any)?.name || "ÉTABLISSEMENT MÉDICAL";

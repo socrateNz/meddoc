@@ -14,9 +14,16 @@ interface PharmacyItemOption {
   dosage?: string | null;
 }
 
+interface OpenRegisterOption {
+  id: string;
+  name: string;
+  openSession?: { id: string } | null;
+}
+
 interface StockPurchaseDialogProps {
   pharmacyItems: PharmacyItemOption[];
   organizationId?: string;
+  openRegisters?: OpenRegisterOption[];
 }
 
 const emptyForm = {
@@ -30,9 +37,11 @@ const emptyForm = {
   batchNumber: "",
   expiryDate: "",
   invoiceRef: "",
+  deductFromCash: false,
+  cashSessionId: "",
 };
 
-export default function StockPurchaseDialog({ pharmacyItems, organizationId }: StockPurchaseDialogProps) {
+export default function StockPurchaseDialog({ pharmacyItems, organizationId, openRegisters = [] }: StockPurchaseDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -40,6 +49,12 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId }: S
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (formData.deductFromCash && !formData.cashSessionId) {
+      setError("Sélectionnez une caisse ouverte, ou basculez sur \"Non\" pour enregistrer cet achat sans impact sur la caisse.");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -59,6 +74,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId }: S
         expiryDate: formData.expiryDate || undefined,
         invoiceRef: formData.invoiceRef || undefined,
         organizationId,
+        cashSessionId: formData.deductFromCash ? formData.cashSessionId || undefined : undefined,
       });
 
       if (res.success) {
@@ -237,13 +253,57 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId }: S
             </div>
           </div>
 
+          <div className="space-y-2 rounded-xl border border-slate-200 dark:border-slate-800 p-3">
+            <Label className="text-xs">Prélever cet achat sur une caisse ouverte ?</Label>
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, deductFromCash: false, cashSessionId: "" })}
+                className={`px-3 py-1.5 rounded-lg font-semibold border ${!formData.deductFromCash ? "bg-indigo-600 text-white border-indigo-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
+              >
+                Non
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, deductFromCash: true })}
+                className={`px-3 py-1.5 rounded-lg font-semibold border ${formData.deductFromCash ? "bg-indigo-600 text-white border-indigo-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
+              >
+                Oui
+              </button>
+            </div>
+
+            {formData.deductFromCash && (
+              openRegisters.length === 0 ? (
+                <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                  Aucune caisse n'est actuellement ouverte. Ouvrez une session de caisse pour pouvoir décaisser cet achat.
+                </p>
+              ) : (
+                <select
+                  required
+                  value={formData.cashSessionId}
+                  onChange={(e) => setFormData({ ...formData, cashSessionId: e.target.value })}
+                  className="w-full h-9 px-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                >
+                  <option value="">-- Sélectionner une caisse ouverte --</option>
+                  {openRegisters.map((r) => (
+                    <option key={r.id} value={r.openSession?.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              )
+            )}
+          </div>
+
           {formData.quantity && formData.purchasePrice && (
             <p className="text-xs text-muted-foreground">
               Coût total de cet achat :{" "}
               <span className="font-bold text-slate-700 dark:text-slate-300">
                 {(Number(formData.quantity) * Number(formData.purchasePrice)).toLocaleString("fr-FR")} FCFA
               </span>{" "}
-              — enregistré automatiquement comme dépense.
+              {formData.deductFromCash
+                ? "— décaissé immédiatement de la caisse sélectionnée."
+                : "— enregistré comme dépense, sans impact sur la caisse."}
             </p>
           )}
 

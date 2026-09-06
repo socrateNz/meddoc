@@ -44,6 +44,8 @@ export default async function ClinicFinancePage({ params }: ClinicFinancePagePro
     lowStockCount: 0,
     transactions: [],
     pharmacyItems: [],
+    revenueByCategory: [],
+    profitByCategory: [],
   };
 
   const orgName = clinicOrg?.name || (activeUser.organization as any)?.name || "ÉTABLISSEMENT MÉDICAL";

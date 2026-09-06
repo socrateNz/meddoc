@@ -40,7 +40,7 @@ export const importPharmacyItemsSchema = z.object({
 });
 
 const invoiceItemSchema = z.object({
-  type: z.enum(["PHARMACY", "SERVICE"]),
+  type: z.enum(["PHARMACY", "SERVICE", "LAB"]),
   pharmacyItemId: z.string().optional(),
   description: z.string().min(1),
   quantity: z.number().min(0),

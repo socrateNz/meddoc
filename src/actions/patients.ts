@@ -259,6 +259,7 @@ export async function createIncident(data: {
         incidentId: incident.id,
         patientId: incident.patientId,
         title: incident.title,
+        organizationId: patient?.organizationId || null,
       });
     } catch (e) {
       console.error("Failed to emit incident.created event:", e);

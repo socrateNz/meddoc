@@ -25,7 +25,7 @@ function formatFCFA(val: number) {
   return Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
 }
 
-export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite }: { organizationId?: string; pharmacyItems: any[]; canWrite: boolean }) {
+export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite, openRegisters = [] }: { organizationId?: string; pharmacyItems: any[]; canWrite: boolean; openRegisters?: any[] }) {
   const queryClient = useQueryClient();
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
 
@@ -189,6 +189,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
                         {(order.status === "SENT" || order.status === "PARTIALLY_RECEIVED") && (
                           <ReceivePurchaseOrderDialog
                             order={order}
+                            openRegisters={openRegisters}
                             onSuccess={(o) =>
                               queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => prev.map((x) => (x.id === o.id ? o : x)))
                             }

@@ -6,13 +6,18 @@ class AppEventEmitter extends EventEmitter { }
 
 export const appEvents = new AppEventEmitter();
 
-// Event: Incident Created
-appEvents.on("incident.created", async (data: { incidentId: string; patientId: string; title: string }) => {
+// Event: Incident Created — alerte les coordinateurs de la clinique du patient concerné
+// uniquement (jamais tous les coordinateurs de la plateforme, cf. correctif isolation
+// multi-tenant — même mécanique que lab.result.critical/stock.low ci-dessous).
+appEvents.on("incident.created", async (data: { incidentId: string; patientId: string; title: string; organizationId: string | null }) => {
   try {
-    // 1. Find all coordinators to notify them
+    if (!data.organizationId) return;
+
     const coordinators = await prisma.user.findMany({
-      where: { role: Role.COORDINATOR, isActive: true },
+      where: { role: Role.COORDINATOR, isActive: true, organizationId: data.organizationId },
+      select: { id: true },
     });
+    if (coordinators.length === 0) return;
 
     const patient = await prisma.patient.findUnique({
       where: { id: data.patientId },
@@ -21,7 +26,6 @@ appEvents.on("incident.created", async (data: { incidentId: string; patientId: s
 
     const patientName = patient ? `${patient.user.lastName} ${patient.user.firstName}` : "un patient";
 
-    // 2. Create database notifications
     const notificationsData = coordinators.map((coord) => ({
       userId: coord.id,
       title: `Alerte Incident : ${data.title}`,

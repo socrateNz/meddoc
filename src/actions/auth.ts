@@ -35,18 +35,33 @@ export async function requestPasswordReset(email: string) {
       // Pas de fournisseur d'e-mail configuré : le lien est transmis en interne
       // (notification au personnel habilité) plutôt qu'envoyé directement au demandeur,
       // afin de ne pas exposer un lien de connexion à quiconque connaît un email valide.
-      const staff = await prisma.user.findMany({
-        where: { role: { in: [Role.ADMIN, Role.COORDINATOR] }, isActive: true },
-      });
+      // Portée strictement limitée à l'établissement du demandeur — un COORDINATOR/ADMIN d'une
+      // clinique ou holding sans rapport ne doit jamais voir le nom/email/lien d'un autre
+      // établissement (correctif isolation multi-tenant, cf. incident.created dans events.ts).
+      let recipientOrgIds: string[] = [];
+      if (user.organizationId) {
+        const org = await prisma.organization.findUnique({ where: { id: user.organizationId }, select: { parentId: true } });
+        recipientOrgIds = [user.organizationId, org?.parentId].filter((id): id is string => !!id);
+      }
 
-      await prisma.notification.createMany({
-        data: staff.map((s) => ({
-          userId: s.id,
-          title: "Demande de réinitialisation de mot de passe",
-          message: `${user.firstName} ${user.lastName} (${user.email}) a demandé la réinitialisation de son mot de passe. Lien à transmettre en interne (valable 1h) : /reset-password/${rawToken}`,
-          type: "INFO",
-        })),
-      });
+      const staff = recipientOrgIds.length > 0
+        ? await prisma.user.findMany({
+            where: { role: { in: [Role.ADMIN, Role.COORDINATOR] }, isActive: true, organizationId: { in: recipientOrgIds } },
+          })
+        // Utilisateur sans organisation (ex: SUPER_ADMIN) : seuls les comptes de plateforme
+        // peuvent légitimement traiter sa demande.
+        : await prisma.user.findMany({ where: { role: Role.SUPER_ADMIN, isActive: true } });
+
+      if (staff.length > 0) {
+        await prisma.notification.createMany({
+          data: staff.map((s) => ({
+            userId: s.id,
+            title: "Demande de réinitialisation de mot de passe",
+            message: `${user.firstName} ${user.lastName} (${user.email}) a demandé la réinitialisation de son mot de passe. Lien à transmettre en interne (valable 1h) : /reset-password/${rawToken}`,
+            type: "INFO",
+          })),
+        });
+      }
     }
 
     return GENERIC_SUCCESS;
