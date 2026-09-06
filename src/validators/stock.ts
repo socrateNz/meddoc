@@ -14,7 +14,10 @@ export const recordStockPurchaseSchema = z
       })
       .optional(),
     quantity: z.number().positive("La quantité doit être supérieure à zéro"),
-    purchasePrice: z.number().positive("Le prix d'achat doit être supérieur à zéro"),
+    // Optionnel : pour un produit déjà au catalogue, non renseigné reprend le dernier prix
+    // d'achat connu (cf. recordStockPurchase) — requis en revanche pour un nouveau produit,
+    // faute d'historique à réutiliser (cf. refine ci-dessous).
+    purchasePrice: z.number().positive("Le prix d'achat doit être supérieur à zéro").optional(),
     supplier: z.string().optional(),
     batchNumber: z.string().optional(),
     expiryDate: z.string().optional(),
@@ -25,6 +28,10 @@ export const recordStockPurchaseSchema = z
   .refine((data) => !!data.pharmacyItemId || !!data.newItem, {
     message: "Sélectionnez un produit existant ou renseignez un nouveau produit",
     path: ["pharmacyItemId"],
+  })
+  .refine((data) => !data.newItem || data.purchasePrice !== undefined, {
+    message: "Le prix d'achat est requis pour un nouveau produit (aucun historique à réutiliser).",
+    path: ["purchasePrice"],
   });
 
 export const inventoryCountLineInputSchema = z.object({

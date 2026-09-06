@@ -244,3 +244,95 @@ describe("recordStockPurchase — deductFromCash", () => {
     expect("cashSessionId" in data).toBe(false);
   });
 });
+
+describe("recordStockPurchase — prix d'achat optionnel pour un produit existant", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+  });
+
+  it("reprend le dernier prix d'achat connu quand purchasePrice est omis pour un produit existant", async () => {
+    const financialTransactionCreate = vi.fn(async ({ data }: any) => ({ id: "tx1", ...data }));
+    const stockPurchaseCreate = vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data }));
+    const stockPurchaseFindFirst = vi.fn(async () => ({ id: "old-lot", purchasePrice: 275 }));
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol" })),
+        update: vi.fn(async () => ({})),
+      },
+      stockPurchase: { create: stockPurchaseCreate, findFirst: stockPurchaseFindFirst },
+      financialTransaction: { create: financialTransactionCreate },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: { $transaction: vi.fn(async (fn: any) => fn(tx)) },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({
+      pharmacyItemId: "item1",
+      quantity: 10,
+      // purchasePrice volontairement omis
+    });
+
+    expect(result.success).toBe(true);
+    expect(stockPurchaseFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { pharmacyItemId: "item1" }, orderBy: { createdAt: "desc" } })
+    );
+    expect(stockPurchaseCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ purchasePrice: 275, totalCost: 2750 }) })
+    );
+  });
+
+  it("refuse un produit existant sans prix saisi ET sans aucun historique d'achat", async () => {
+    const tx = {
+      pharmacyItem: { findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol" })) },
+      stockPurchase: { findFirst: vi.fn(async () => null) },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: { $transaction: vi.fn(async (fn: any) => fn(tx)) },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({
+      pharmacyItemId: "item1",
+      quantity: 10,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Aucun historique d'achat/);
+  });
+
+  it("utilise le prix saisi plutôt que l'historique quand purchasePrice est explicitement fourni", async () => {
+    const stockPurchaseCreate = vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data }));
+    const stockPurchaseFindFirst = vi.fn(async () => ({ id: "old-lot", purchasePrice: 275 }));
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol" })),
+        update: vi.fn(async () => ({})),
+      },
+      stockPurchase: { create: stockPurchaseCreate, findFirst: stockPurchaseFindFirst },
+      financialTransaction: { create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })) },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: { $transaction: vi.fn(async (fn: any) => fn(tx)) },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({
+      pharmacyItemId: "item1",
+      quantity: 10,
+      purchasePrice: 350,
+    });
+
+    expect(result.success).toBe(true);
+    expect(stockPurchaseFindFirst).not.toHaveBeenCalled();
+    expect(stockPurchaseCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ purchasePrice: 350 }) })
+    );
+  });
+});

@@ -678,4 +678,50 @@ describe("getFinanceSummary — revenueByCategory", () => {
       { category: "LAB_EXAM_FEE", revenue: 2500, cost: 900, profit: 1600, todayRevenue: 2000, todayCost: 800, todayProfit: 1200 },
     ]);
   });
+
+  it("cashBalance reprend le dernier montant compté d'une caisse sans session ouverte, au lieu de tomber à 0 entre deux sessions", async () => {
+    const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          findMany: vi.fn(async () => []),
+          groupBy: vi.fn(async () => []),
+          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
+        },
+        pharmacyItem: {},
+        user: { findMany: vi.fn(async () => []) },
+        labOrder: { findMany: vi.fn(async () => []) },
+        cashSession: {
+          findMany: vi.fn(async ({ where }: any) => {
+            if (where.status === "OPEN") {
+              // Caisse A : session ouverte, fond 1000 + 500 encaissés - 200 dépensés = 1300.
+              return [
+                {
+                  registerId: "regA",
+                  openingFloat: 1000,
+                  transactions: [{ type: "INCOME", amount: 500 }, { type: "EXPENSE", amount: 200 }],
+                },
+              ];
+            }
+            // Caisse B : aucune session ouverte, dernière clôture comptée à 14 350.
+            // Caisse A a aussi une ancienne session clôturée (comptée 9999) : ne doit PAS être
+            // recomptée puisque sa session ouverte fait déjà foi (pas de double comptage).
+            return [
+              { registerId: "regB", countedAmount: 14350 },
+              { registerId: "regA", countedAmount: 9999 },
+            ];
+          }),
+        },
+        $runCommandRaw: vi.fn(async () => ({ cursor: { firstBatch: [] } })),
+      },
+    }));
+    const { getFinanceSummary } = await import("./finance");
+
+    const result = await getFinanceSummary("org1");
+
+    expect(result.success).toBe(true);
+    expect(result.data?.cashBalance).toBe(1300 + 14350);
+  });
 });

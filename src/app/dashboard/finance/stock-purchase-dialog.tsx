@@ -68,7 +68,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
             }
           : undefined,
         quantity: Number(formData.quantity),
-        purchasePrice: Number(formData.purchasePrice),
+        purchasePrice: formData.purchasePrice ? Number(formData.purchasePrice) : undefined,
         supplier: formData.supplier || undefined,
         batchNumber: formData.batchNumber || undefined,
         expiryDate: formData.expiryDate || undefined,
@@ -103,7 +103,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
             Enregistrer un achat de pharmacie
           </DialogTitle>
           <DialogDescription>
-            Réceptionnez une quantité avec son prix d'achat réel. Le stock et la dépense sont mis à jour automatiquement.
+            Réceptionnez une quantité avec son prix d'achat réel (ou laissez vide pour un produit existant afin de reprendre le dernier prix connu). Le stock et la dépense sont mis à jour automatiquement.
           </DialogDescription>
         </DialogHeader>
 
@@ -193,13 +193,13 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="purchasePrice">Prix d'achat unitaire (FCFA) *</Label>
+              <Label htmlFor="purchasePrice">Prix d'achat unitaire (FCFA){formData.isNewProduct ? " *" : ""}</Label>
               <Input
                 id="purchasePrice"
                 type="number"
                 min="0"
-                required
-                placeholder="300"
+                required={formData.isNewProduct}
+                placeholder={formData.isNewProduct ? "300" : "Laisser vide pour reprendre le dernier prix connu"}
                 value={formData.purchasePrice}
                 onChange={(e) => setFormData({ ...formData, purchasePrice: e.target.value })}
                 className="rounded-xl"
@@ -304,6 +304,11 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
               {formData.deductFromCash
                 ? "— décaissé immédiatement de la caisse sélectionnée."
                 : "— enregistré comme dépense, sans impact sur la caisse."}
+            </p>
+          )}
+          {!formData.isNewProduct && formData.pharmacyItemId && !formData.purchasePrice && (
+            <p className="text-xs text-muted-foreground">
+              Prix d'achat non renseigné : le dernier prix d'achat enregistré pour ce produit sera automatiquement repris.
             </p>
           )}
 

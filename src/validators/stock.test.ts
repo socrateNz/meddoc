@@ -63,6 +63,24 @@ describe("recordStockPurchaseSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("accepts an existing product purchase with no purchasePrice (server reuses the last known price)", () => {
+    const { purchasePrice, ...withoutPrice } = base;
+    const result = recordStockPurchaseSchema.safeParse({
+      ...withoutPrice,
+      pharmacyItemId: "abc123",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a new product with no purchasePrice (no history to reuse)", () => {
+    const { purchasePrice, ...withoutPrice } = base;
+    const result = recordStockPurchaseSchema.safeParse({
+      ...withoutPrice,
+      newItem: { name: "Paracétamol 500mg", unitPrice: 500 },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("saveInventoryCountsSchema", () => {

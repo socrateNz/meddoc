@@ -854,6 +854,19 @@ export async function getFinanceSummary(organizationId?: string) {
     } else if (targetOrgId) {
       sessionWhere.organizationId = targetOrgId;
     }
+    // Même périmètre, pour retrouver le dernier montant compté des caisses actuellement SANS
+    // session ouverte (cf. calcul de cashBalance plus bas — évite qu'une caisse tombe à 0 F entre
+    // la clôture d'une session et l'ouverture de la suivante, alors que l'argent compté est
+    // toujours physiquement dans le tiroir).
+    const closedSessionWhere: any = { status: "CLOSED" };
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      closedSessionWhere.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else if (targetOrgId) {
+      closedSessionWhere.organizationId = targetOrgId;
+    }
     // Répartition du CA par catégorie — calculée par agrégation sur l'ENSEMBLE des transactions
     // INCOME (via groupBy), jamais depuis `transactions` ci-dessus : ce tableau est plafonné à
     // 500 lignes pour l'aperçu du tableau de bord, une clinique dépassant ce volume aurait sinon
@@ -881,10 +894,15 @@ export async function getFinanceSummary(organizationId?: string) {
       labOrderWhere.organizationId = targetOrgId;
     }
 
-    const [openSessions, categoryAllTime, categoryToday, pharmacyPurchaseAllTime, pharmacyPurchaseToday, labOrdersForCost] = await Promise.all([
+    const [openSessions, lastClosedSessions, categoryAllTime, categoryToday, pharmacyPurchaseAllTime, pharmacyPurchaseToday, labOrdersForCost] = await Promise.all([
       prisma.cashSession.findMany({
         where: sessionWhere,
         include: { transactions: { select: { type: true, amount: true } } },
+      }),
+      prisma.cashSession.findMany({
+        where: closedSessionWhere,
+        orderBy: { closedAt: "desc" },
+        select: { registerId: true, countedAmount: true },
       }),
       prisma.financialTransaction.groupBy({
         by: ["category"],
@@ -938,7 +956,20 @@ export async function getFinanceSummary(organizationId?: string) {
       labCostAllTime += orderCost;
       if (order.createdAt && new Date(order.createdAt) >= startOfToday) labCostToday += orderCost;
     }
-    const cashBalance = openSessions.reduce((sum, s) => {
+    // Caisses avec une session ouverte : solde théorique vivant (fond + encaissements - dépenses
+    // de CETTE session). Caisses sans session ouverte en ce moment (entre une clôture et la
+    // réouverture suivante) : on retient le dernier montant compté à la clôture précédente plutôt
+    // que 0 — cet argent est encore physiquement dans le tiroir, seulement pas encore redéclaré
+    // comme fond d'ouverture d'une nouvelle session. Chaque caisse ne contribue jamais deux fois :
+    // soit via sa session ouverte, soit via son dernier comptage, jamais les deux.
+    const openRegisterIds = new Set(openSessions.map((s) => s.registerId));
+    const lastClosedBalanceByRegister = new Map<string, number>();
+    for (const s of lastClosedSessions) {
+      if (openRegisterIds.has(s.registerId) || lastClosedBalanceByRegister.has(s.registerId)) continue;
+      lastClosedBalanceByRegister.set(s.registerId, s.countedAmount ?? 0);
+    }
+
+    const openBalance = openSessions.reduce((sum, s) => {
       let sessionIncome = 0;
       let sessionExpenses = 0;
       for (const t of s.transactions) {
@@ -947,6 +978,8 @@ export async function getFinanceSummary(organizationId?: string) {
       }
       return sum + (s.openingFloat || 0) + sessionIncome - sessionExpenses;
     }, 0);
+    const closedCarryoverBalance = [...lastClosedBalanceByRegister.values()].reduce((sum, v) => sum + v, 0);
+    const cashBalance = openBalance + closedCarryoverBalance;
     const lowStockCount = pharmacyItems.filter((item: any) => Number(item.stockQuantity || 0) <= Number(item.reorderLevel || 10)).length;
 
     const todayByCategory = new Map(categoryToday.map((c) => [c.category, c._sum.amount || 0]));

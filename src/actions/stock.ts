@@ -167,7 +167,7 @@ export async function recordStockPurchase(data: {
     location?: string;
   };
   quantity: number;
-  purchasePrice: number;
+  purchasePrice?: number;
   supplier?: string;
   batchNumber?: string;
   expiryDate?: string;
@@ -182,7 +182,6 @@ export async function recordStockPurchase(data: {
 
     const targetOrgId = data.organizationId || activeUser!.organizationId;
     const quantity = Number(data.quantity);
-    const purchasePrice = Number(data.purchasePrice);
     const expiry = data.expiryDate ? new Date(data.expiryDate) : null;
 
     if (data.cashSessionId) {
@@ -220,6 +219,24 @@ export async function recordStockPurchase(data: {
         itemName = existing.name;
       }
 
+      // Prix d'achat optionnel pour un produit déjà au catalogue : à défaut de saisie, reprend
+      // le dernier prix d'achat enregistré pour ce produit — évite d'obliger le personnel à
+      // ressaisir un prix inchangé à chaque réassort. Requis en revanche pour un nouveau produit
+      // (aucun historique à réutiliser), déjà garanti par recordStockPurchaseSchema.
+      let purchasePrice: number;
+      if (data.purchasePrice !== undefined) {
+        purchasePrice = Number(data.purchasePrice);
+      } else {
+        const lastPurchase = await tx.stockPurchase.findFirst({
+          where: { pharmacyItemId: itemId! },
+          orderBy: { createdAt: "desc" },
+        });
+        if (!lastPurchase) {
+          throw new Error("Aucun historique d'achat pour ce produit : le prix d'achat est requis pour ce premier enregistrement.");
+        }
+        purchasePrice = lastPurchase.purchasePrice;
+      }
+
       const { purchase, transaction } = await applyStockReceipt(tx, {
         pharmacyItemId: itemId!,
         itemName,
@@ -239,8 +256,8 @@ export async function recordStockPurchase(data: {
 
     await logAuditAction(activeUser!.id, "RECORD_STOCK_PURCHASE", "PharmacyItem", result.pharmacyItemId, {
       quantity,
-      purchasePrice,
-      totalCost: quantity * purchasePrice,
+      purchasePrice: result.purchase.purchasePrice,
+      totalCost: quantity * result.purchase.purchasePrice,
     });
 
     revalidatePath("/dashboard/finance");
