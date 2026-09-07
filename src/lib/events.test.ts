@@ -23,6 +23,7 @@ describe("incident.created — isolation multi-tenant", () => {
           findUnique: vi.fn(async () => ({ id: "p1", user: { firstName: "Marie", lastName: "Kouassi" } })),
         },
         notification: { createMany: notificationCreateMany },
+        pushSubscription: { findMany: vi.fn(async () => []) },
       },
     }));
 
@@ -50,6 +51,7 @@ describe("incident.created — isolation multi-tenant", () => {
         user: { findMany: userFindMany },
         patient: { findUnique: vi.fn(async () => null) },
         notification: { createMany: notificationCreateMany },
+        pushSubscription: { findMany: vi.fn(async () => []) },
       },
     }));
 

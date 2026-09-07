@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import {
   User,
   Bell,
+  BellRing,
   Shield,
   Palette,
   Save,
@@ -26,6 +27,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { updateProfile, changePassword, updateNotificationPreferences } from "@/actions/users";
+import { getPushStatus, subscribeAndPersist, unsubscribeAndForget, type PushStatus } from "@/lib/push-client";
 import { toast } from "sonner";
 
 interface SettingsUser {
@@ -187,14 +189,23 @@ const NOTIF_TYPES = [
   { id: "APPOINTMENT", label: "Rendez-vous", description: "Rappels et affectations de rendez-vous", icon: Calendar, color: "text-blue-500" },
 ];
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
         checked ? "bg-primary" : "bg-muted"
       }`}
     >
@@ -266,6 +277,8 @@ function NotificationsTab({ user }: { user: SettingsUser }) {
         </CardContent>
       </Card>
 
+      <PushNotificationsCard />
+
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving} className="gap-2 min-w-[180px]">
           {saving ? (
@@ -276,6 +289,89 @@ function NotificationsTab({ user }: { user: SettingsUser }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+// Statut de l'abonnement Web Push de CET appareil (pas une préférence serveur comme les types
+// d'événements ci-dessus) — détecté côté client uniquement, cf. src/lib/push-client.ts. Le compte
+// à rebours "checked" évite un flash "non supporté" avant que la détection navigateur ait tourné.
+function PushNotificationsCard() {
+  const [status, setStatus] = useState<PushStatus>("default");
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const current = getPushStatus();
+      setStatus(current);
+      if (current === "granted" && "serviceWorker" in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          const subscription = await registration.pushManager.getSubscription();
+          setSubscribed(!!subscription);
+        } catch {
+          // Détection best-effort : en cas d'échec, on part du principe "non abonné".
+        }
+      }
+      setChecked(true);
+    })();
+  }, []);
+
+  if (!checked || status === "unsupported") return null;
+
+  const handleToggle = async (next: boolean) => {
+    setLoading(true);
+    try {
+      if (!next) {
+        const ok = await unsubscribeAndForget();
+        if (ok) setSubscribed(false);
+        return;
+      }
+      let currentStatus: PushStatus = status;
+      if (currentStatus === "default") {
+        currentStatus = (await Notification.requestPermission()) as PushStatus;
+        setStatus(currentStatus);
+      }
+      if (currentStatus !== "granted") return;
+      const ok = await subscribeAndPersist();
+      setSubscribed(ok);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card className="border border-border/40 shadow-sm overflow-hidden">
+      <CardHeader className="border-b bg-muted/10">
+        <CardTitle>Notifications push (navigateur)</CardTitle>
+        <CardDescription>
+          Recevez ces mêmes alertes sous forme de notification système, même onglet MedDoc fermé.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-5">
+        {status === "denied" ? (
+          <p className="text-xs text-muted-foreground">
+            Bloquées par votre navigateur pour MedDoc. Autorisez les notifications pour ce site
+            depuis les réglages du navigateur (icône à côté de la barre d&apos;adresse) pour les
+            réactiver.
+          </p>
+        ) : (
+          <div className="flex items-center justify-between py-1">
+            <div className="flex items-center gap-3">
+              <BellRing className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-sm font-semibold">Activer sur cet appareil</p>
+                <p className="text-xs text-muted-foreground">
+                  {subscribed ? "Activées sur cet appareil." : "Désactivées sur cet appareil."}
+                </p>
+              </div>
+            </div>
+            <Toggle checked={subscribed} onChange={handleToggle} disabled={loading} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

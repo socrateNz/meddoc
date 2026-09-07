@@ -1,10 +1,20 @@
 import { EventEmitter } from "events";
 import { prisma } from "./db";
 import { Role } from "@prisma/client";
+import { sendPushToUsers } from "./push";
 
 class AppEventEmitter extends EventEmitter { }
 
 export const appEvents = new AppEventEmitter();
+
+// Point d'écriture unique pour toute Notification créée par un listener ci-dessous : persiste en
+// base (comportement inchangé) puis tente un envoi Web Push best-effort pour les mêmes
+// destinataires (cf. src/lib/push.ts — respecte mutedNotificationTypes, ne relance jamais).
+async function notifyUsers(entries: { userId: string; title: string; message: string; type: string }[]) {
+  if (entries.length === 0) return;
+  await prisma.notification.createMany({ data: entries });
+  await sendPushToUsers(entries);
+}
 
 // Event: Incident Created — alerte les coordinateurs de la clinique du patient concerné
 // uniquement (jamais tous les coordinateurs de la plateforme, cf. correctif isolation
@@ -33,9 +43,7 @@ appEvents.on("incident.created", async (data: { incidentId: string; patientId: s
       type: "INCIDENT",
     }));
 
-    await prisma.notification.createMany({
-      data: notificationsData,
-    });
+    await notifyUsers(notificationsData);
 
   } catch (error) {
     console.error("Error handling incident.created event:", error);
@@ -61,14 +69,14 @@ appEvents.on("appointment.scheduled", async (data: { appointmentId: string; pati
     const patientName = patient ? `${patient.user.lastName} ${patient.user.firstName}` : "un patient";
 
     // Create database notification for the caregiver
-    await prisma.notification.create({
-      data: {
+    await notifyUsers([
+      {
         userId: caregiver.userId,
         title: `Nouveau Rendez-vous : ${data.title}`,
         message: `Vous avez été assigné(e) à une visite pour le patient ${patientName}.`,
         type: "APPOINTMENT",
       },
-    });
+    ]);
   } catch (error) {
     console.error("Error handling appointment.scheduled event:", error);
   }
@@ -100,14 +108,14 @@ appEvents.on("lab.result.critical", async (data: {
       coordinators.forEach((c) => recipientIds.add(c.id));
     }
 
-    await prisma.notification.createMany({
-      data: Array.from(recipientIds).map((userId) => ({
+    await notifyUsers(
+      Array.from(recipientIds).map((userId) => ({
         userId,
         title: `Résultat critique : ${data.testName}`,
         message: `Valeur critique détectée (${data.value}) pour ${patientName}. Vérification urgente requise.`,
         type: "LAB_CRITICAL",
-      })),
-    });
+      }))
+    );
   } catch (error) {
     console.error("Error handling lab.result.critical event:", error);
   }
@@ -139,14 +147,14 @@ appEvents.on("prescription.interaction.high", async (data: {
       coordinators.forEach((c) => recipientIds.add(c.id));
     }
 
-    await prisma.notification.createMany({
-      data: Array.from(recipientIds).map((userId) => ({
+    await notifyUsers(
+      Array.from(recipientIds).map((userId) => ({
         userId,
         title: `Interaction médicamenteuse à risque élevé`,
         message: `${summary} (patient : ${patientName}). Vérification IA consultative — à valider cliniquement.`,
         type: "DRUG_INTERACTION",
-      })),
-    });
+      }))
+    );
   } catch (error) {
     console.error("Error handling prescription.interaction.high event:", error);
   }
@@ -172,14 +180,14 @@ appEvents.on("stock.low", async (data: {
     });
     if (recipients.length === 0) return;
 
-    await prisma.notification.createMany({
-      data: recipients.map((r) => ({
+    await notifyUsers(
+      recipients.map((r) => ({
         userId: r.id,
         title: `Rupture de stock : ${data.itemName}`,
         message: `Stock restant : ${data.stockQuantity} (seuil de réapprovisionnement : ${data.reorderLevel}). Pensez à commander.`,
         type: "STOCK_LOW",
-      })),
-    });
+      }))
+    );
   } catch (error) {
     console.error("Error handling stock.low event:", error);
   }
@@ -203,14 +211,14 @@ appEvents.on("stock.expiring", async (data: {
     if (recipients.length === 0) return;
 
     const expiryStr = new Date(data.expiryDate).toLocaleDateString("fr-FR");
-    await prisma.notification.createMany({
-      data: recipients.map((r) => ({
+    await notifyUsers(
+      recipients.map((r) => ({
         userId: r.id,
         title: `Expiration proche : ${data.itemName}`,
         message: `Un lot expire le ${expiryStr}. Vérifiez le stock et priorisez son écoulement (FEFO).`,
         type: "STOCK_EXPIRY",
-      })),
-    });
+      }))
+    );
   } catch (error) {
     console.error("Error handling stock.expiring event:", error);
   }

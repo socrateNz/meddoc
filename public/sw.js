@@ -63,3 +63,35 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });
+
+// Web Push : aucune notification actuelle ne porte de lien de destination propre (cf.
+// src/lib/push.ts), le clic ouvre donc toujours la page notifications.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    // Payload non-JSON : notification générique plutôt qu'un échec silencieux.
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'MedDoc', {
+      body: data.body || '',
+      icon: '/icon.svg',
+      badge: '/icon.svg',
+      data: { url: '/dashboard/notifications' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/dashboard/notifications';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(url) && 'focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow(url);
+    })
+  );
+});

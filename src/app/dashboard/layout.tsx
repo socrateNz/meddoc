@@ -7,6 +7,7 @@ import SidebarSkeleton from "./sidebar-skeleton";
 export const dynamic = "force-dynamic";
 
 import { OfflineBanner } from "@/components/ui/offline-banner";
+import PushNotificationsInit from "@/components/push-notifications-init";
 
 export default async function DashboardLayout({
   children,
@@ -33,6 +34,7 @@ export default async function DashboardLayout({
 
       {/* Main Content */}
       <main className="flex flex-1 flex-col h-full min-h-0 overflow-hidden relative z-10">
+        <PushNotificationsInit />
         <OfflineBanner />
         <div className="flex-1 p-6 lg:p-8 flex flex-col overflow-y-auto min-h-0">
           {children}
