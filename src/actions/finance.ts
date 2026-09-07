@@ -894,6 +894,24 @@ export async function getFinanceSummary(organizationId?: string) {
       labOrderWhere.organizationId = targetOrgId;
     }
 
+    // Même périmètre, pour le coût "Médicament" de la marge simple (cf. Promise.all plus bas) :
+    // basé sur les lots StockPurchase eux-mêmes plutôt que sur les seules FinancialTransaction
+    // PHARMACY_PURCHASE, pour inclure aussi les produits amorcés via import CSV avec un prix
+    // d'achat (importPharmacyItems crée un lot valorisé mais volontairement aucune dépense, cf.
+    // ce fichier) — sinon un catalogue démarré par import CSV affichait toujours une marge à 100%
+    // sur le médicament, quel que soit le prix d'achat réellement saisi. Exclut les lots créés
+    // par un ajustement de surplus d'inventaire (batchNumber "AJUSTEMENT-INVENTAIRE") : un
+    // surplus retrouvé ne coûte rien de nouveau, ce n'est pas un achat.
+    const stockPurchaseWhere: any = { batchNumber: { not: "AJUSTEMENT-INVENTAIRE" } };
+    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+      stockPurchaseWhere.OR = [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ];
+    } else if (targetOrgId) {
+      stockPurchaseWhere.organizationId = targetOrgId;
+    }
+
     const [openSessions, lastClosedSessions, categoryAllTime, categoryToday, pharmacyPurchaseAllTime, pharmacyPurchaseToday, labOrdersForCost] = await Promise.all([
       prisma.cashSession.findMany({
         where: sessionWhere,
@@ -917,13 +935,13 @@ export async function getFinanceSummary(organizationId?: string) {
       // Marge simple (approximative) côté Médicament : achats de stock sur la période plutôt que
       // le coût exact des seules unités vendues — cf. décision produit, cohérent avec le fait que
       // l'app ne relie aujourd'hui aucun lot d'achat précis à une vente donnée.
-      prisma.financialTransaction.aggregate({
-        where: { ...categoryWhere, type: "EXPENSE", category: "PHARMACY_PURCHASE" },
-        _sum: { amount: true },
+      prisma.stockPurchase.aggregate({
+        where: stockPurchaseWhere,
+        _sum: { totalCost: true },
       }),
-      prisma.financialTransaction.aggregate({
-        where: { ...categoryWhere, type: "EXPENSE", category: "PHARMACY_PURCHASE", createdAt: { gte: startOfToday } },
-        _sum: { amount: true },
+      prisma.stockPurchase.aggregate({
+        where: { ...stockPurchaseWhere, createdAt: { gte: startOfToday } },
+        _sum: { totalCost: true },
       }),
       prisma.labOrder.findMany({ where: labOrderWhere, select: { testDetails: true, createdAt: true } }),
     ]);
@@ -997,7 +1015,7 @@ export async function getFinanceSummary(organizationId?: string) {
     // vaut donc 100% de son revenu. Volontairement une marge globale par période, pas le
     // bénéfice exact de chaque vente individuelle (cf. échange avec l'utilisateur).
     const categoryCost: Record<string, { allTime: number; today: number }> = {
-      PHARMACY_SALE: { allTime: pharmacyPurchaseAllTime._sum.amount || 0, today: pharmacyPurchaseToday._sum.amount || 0 },
+      PHARMACY_SALE: { allTime: pharmacyPurchaseAllTime._sum.totalCost || 0, today: pharmacyPurchaseToday._sum.totalCost || 0 },
       LAB_EXAM_FEE: { allTime: labCostAllTime, today: labCostToday },
     };
     const profitByCategory = revenueByCategory

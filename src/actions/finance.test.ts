@@ -595,13 +595,17 @@ describe("getFinanceSummary — revenueByCategory", () => {
               { category: "SERVICE_FEE", _sum: { amount: 13000 } },
             ];
           }),
-          // Coût "Médicament" de la marge simple : achats de stock (PHARMACY_PURCHASE) de la
-          // même période — tout-temps puis aujourd'hui, même discrimination par where.createdAt.
-          aggregate: vi.fn(async ({ where }: any) => ({ _sum: { amount: where.createdAt ? 2000 : 100000 } })),
         },
         pharmacyItem: {},
         user: { findMany: vi.fn(async () => []) },
         cashSession: { findMany: vi.fn(async () => []) },
+        // Coût "Médicament" de la marge simple : lots StockPurchase de la période (inclut les
+        // produits amorcés par import CSV avec un prix d'achat, cf. la description de
+        // stockPurchaseWhere dans finance.ts) — tout-temps puis aujourd'hui, même discrimination
+        // par where.createdAt.
+        stockPurchase: {
+          aggregate: vi.fn(async ({ where }: any) => ({ _sum: { totalCost: where.createdAt ? 2000 : 100000 } })),
+        },
         labOrder: { findMany: vi.fn(async () => []) },
         $runCommandRaw: vi.fn(async () => ({ cursor: { firstBatch: [] } })),
       },
@@ -656,14 +660,18 @@ describe("getFinanceSummary — revenueByCategory", () => {
           groupBy: vi.fn(async ({ where }: any) =>
             where.createdAt ? [{ category: "LAB_EXAM_FEE", _sum: { amount: 2000 } }] : [{ category: "LAB_EXAM_FEE", _sum: { amount: 2500 } }]
           ),
-          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
         },
         pharmacyItem: {},
         user: { findMany: vi.fn(async () => []) },
         cashSession: { findMany: vi.fn(async () => []) },
         labOrder: { findMany: vi.fn(async () => labOrders) },
-        // Coût moyen pondéré du produit X : un seul lot restant, 300 FCFA/unité.
-        stockPurchase: { findMany: vi.fn(async () => [{ pharmacyItemId: "x", remainingQuantity: 10, purchasePrice: 300 }]) },
+        stockPurchase: {
+          // Coût moyen pondéré du produit X : un seul lot restant, 300 FCFA/unité.
+          findMany: vi.fn(async () => [{ pharmacyItemId: "x", remainingQuantity: 10, purchasePrice: 300 }]),
+          // Aucune vente pharmacie dans ce test (seul LAB_EXAM_FEE est mocké côté revenu) : coût
+          // Médicament neutre.
+          aggregate: vi.fn(async () => ({ _sum: { totalCost: 0 } })),
+        },
         $runCommandRaw: vi.fn(async () => ({ cursor: { firstBatch: [] } })),
       },
     }));
@@ -688,11 +696,11 @@ describe("getFinanceSummary — revenueByCategory", () => {
         financialTransaction: {
           findMany: vi.fn(async () => []),
           groupBy: vi.fn(async () => []),
-          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
         },
         pharmacyItem: {},
         user: { findMany: vi.fn(async () => []) },
         labOrder: { findMany: vi.fn(async () => []) },
+        stockPurchase: { aggregate: vi.fn(async () => ({ _sum: { totalCost: 0 } })) },
         cashSession: {
           findMany: vi.fn(async ({ where }: any) => {
             if (where.status === "OPEN") {
@@ -723,5 +731,57 @@ describe("getFinanceSummary — revenueByCategory", () => {
 
     expect(result.success).toBe(true);
     expect(result.data?.cashBalance).toBe(1300 + 14350);
+  });
+
+  it("le coût Médicament inclut les lots StockPurchase amorcés par import CSV (aucune FinancialTransaction associée), en excluant les ajustements d'inventaire", async () => {
+    const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+
+    const stockPurchaseAggregateCalls: any[] = [];
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          findMany: vi.fn(async () => []),
+          // Aucune dépense PHARMACY_PURCHASE mockée : le seul achat de la période vient de
+          // l'import CSV, qui ne crée jamais de FinancialTransaction (cf. importPharmacyItems).
+          groupBy: vi.fn(async ({ where }: any) =>
+            where.createdAt ? [] : [{ category: "PHARMACY_SALE", _sum: { amount: 50000 } }]
+          ),
+        },
+        pharmacyItem: {},
+        user: { findMany: vi.fn(async () => []) },
+        cashSession: { findMany: vi.fn(async () => []) },
+        labOrder: { findMany: vi.fn(async () => []) },
+        stockPurchase: {
+          // Simule le lot créé par importPharmacyItems (prix d'achat renseigné à l'import).
+          aggregate: vi.fn(async ({ where }: any) => {
+            stockPurchaseAggregateCalls.push(where);
+            return { _sum: { totalCost: where.createdAt ? 0 : 30000 } };
+          }),
+        },
+        $runCommandRaw: vi.fn(async () => ({ cursor: { firstBatch: [] } })),
+      },
+    }));
+    const { getFinanceSummary } = await import("./finance");
+
+    const result = await getFinanceSummary("org1");
+
+    expect(result.success).toBe(true);
+    // Exclut explicitement les lots créés par un ajustement de surplus d'inventaire (pas un
+    // achat) de chaque appel — tout-temps et aujourd'hui.
+    expect(stockPurchaseAggregateCalls).toHaveLength(2);
+    for (const where of stockPurchaseAggregateCalls) {
+      expect(where.batchNumber).toEqual({ not: "AJUSTEMENT-INVENTAIRE" });
+    }
+    const pharmacyEntry = result.data?.profitByCategory?.find((c: any) => c.category === "PHARMACY_SALE");
+    expect(pharmacyEntry).toEqual({
+      category: "PHARMACY_SALE",
+      revenue: 50000,
+      cost: 30000,
+      profit: 20000,
+      todayRevenue: 0,
+      todayCost: 0,
+      todayProfit: 0,
+    });
   });
 });

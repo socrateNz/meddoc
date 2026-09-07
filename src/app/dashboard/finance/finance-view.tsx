@@ -395,9 +395,18 @@ export default function FinanceView({ summary, organizationId, organizationName,
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {summary.profitByCategory.map((c) => {
-                const share = totalProfit !== 0 ? Math.round((c.profit / totalProfit) * 100) : 0;
                 const marginRate = c.revenue > 0 ? Math.round((c.profit / c.revenue) * 100) : 0;
                 const isNegative = c.profit < 0;
+                // Une "part du bénéfice total" n'a de sens que si le total ET cette catégorie
+                // sont tous deux positifs — sinon le ratio devient un nombre incompréhensible
+                // (ex : une catégorie en perte rapportée à un total lui-même négatif affiche un
+                // pourcentage POSITIF d'une perte). On l'omet plutôt que d'afficher ça.
+                const share = totalProfit > 0 && c.profit >= 0 ? Math.round((c.profit / totalProfit) * 100) : null;
+                // Pour le médicament, un "bénéfice" négatif signifie le plus souvent que du stock
+                // a été acheté mais pas encore vendu (marge simple = achats de la période, pas le
+                // coût des seules ventes) — pas une perte réelle. On le précise, avec la valeur
+                // du stock actuellement en rayon quand elle est disponible.
+                const isLikelyUnsoldStock = isNegative && c.category === "PHARMACY_SALE";
                 return (
                   <ProfitBreakdownCard
                     key={c.category}
@@ -410,7 +419,15 @@ export default function FinanceView({ summary, organizationId, organizationName,
                     formatFCFA={formatFCFA}
                     footer={
                       <>
-                        Marge {marginRate}% · {share}% du bénéfice total
+                        {isLikelyUnsoldStock ? (
+                          <>
+                            Achats supérieurs aux ventes de la période : probablement du stock pas
+                            encore vendu, pas une perte réelle
+                            {valuation && <> (stock actuel en valeur : {formatFCFA(valuation.totalCostValue)})</>}.
+                          </>
+                        ) : (
+                          <>Marge {marginRate}%{share !== null && <> · {share}% du bénéfice total</>}</>
+                        )}
                         {c.todayProfit !== 0 && (
                           <> · {c.todayProfit > 0 ? "+" : ""}{formatFCFA(c.todayProfit)} auj.</>
                         )}
