@@ -88,7 +88,11 @@ async function fetchPharmacyOverview(clinicId: string) {
     // en plus de null : un champ jamais écrit à la création reste absent du document Mongo (pas
     // littéralement null), et { dispensedAt: null } seul ne matche pas les documents absents.
     prisma.pendingInvoice.findMany({
-      where: { organizationId: clinicId, OR: [{ dispensedAt: null }, { dispensedAt: { isSet: false } as any }] },
+      where: {
+        organizationId: clinicId,
+        status: { not: "CANCELLED" },
+        OR: [{ dispensedAt: null }, { dispensedAt: { isSet: false } as any }],
+      },
       select: { items: true },
     }),
     prisma.pendingInvoice.count({

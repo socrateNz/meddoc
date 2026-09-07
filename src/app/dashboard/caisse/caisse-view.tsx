@@ -32,6 +32,7 @@ import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog } from "./r
 import CaisseCartDialog from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
 import RecordPaymentDialog from "./record-payment-dialog";
+import CloseInvoiceDialog from "./close-invoice-dialog";
 import { EditInvoiceClientDialog } from "./edit-invoice-client-dialog";
 import InvoiceModal from "@/app/dashboard/finance/invoice-modal";
 
@@ -91,7 +92,7 @@ export default function CaisseView({
   const [historyInvoices, setHistoryInvoices] = useState<any[]>(initialHistory);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
-  const [historyStatusFilter, setHistoryStatusFilter] = useState<"ALL" | "PAID" | "PARTIAL" | "PENDING">("ALL");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<"ALL" | "PAID" | "PARTIAL" | "PENDING" | "CANCELLED">("ALL");
 
   // PHARMACIST inclus temporairement ("pour le moment") : peut se comporter comme un caissier
   // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
@@ -194,6 +195,7 @@ export default function CaisseView({
     if (historyStatusFilter === "PAID" && inv.status !== "PAID") return false;
     if (historyStatusFilter === "PARTIAL" && inv.status !== "PARTIAL") return false;
     if (historyStatusFilter === "PENDING" && inv.status !== "PENDING") return false;
+    if (historyStatusFilter === "CANCELLED" && inv.status !== "CANCELLED") return false;
 
     const q = historySearch.trim().toLowerCase();
     if (!q) return true;
@@ -441,17 +443,37 @@ export default function CaisseView({
                         {inv.status === "PARTIAL" && ` • Réglé ${formatFCFA(inv.amountPaid)} • Reste ${formatFCFA(invoiceTotalAmount - inv.amountPaid)}`}
                       </p>
                     </div>
-                    {canOperate && openSessionId && (
-                      inv.status === "PARTIAL" ? (
-                        <RecordPaymentDialog
-                          cashSessionId={openSessionId}
-                          pendingInvoice={{ id: inv.id, invoiceTotalAmount, amountPaid: inv.amountPaid, patient: inv.patient, customPatientName: inv.customPatientName, customPatientPhone: inv.customPatientPhone }}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {canOperate && openSessionId && (
+                        inv.status === "PARTIAL" ? (
+                          <RecordPaymentDialog
+                            cashSessionId={openSessionId}
+                            pendingInvoice={{ id: inv.id, invoiceTotalAmount, amountPaid: inv.amountPaid, patient: inv.patient, customPatientName: inv.customPatientName, customPatientPhone: inv.customPatientPhone }}
+                            onSuccess={handleMutationSuccess}
+                          />
+                        ) : (
+                          <CaisseCartDialog mode="pay" cashSessionId={openSessionId} pharmacyItems={pharmacyItems} pendingInvoice={inv} onSuccess={handleMutationSuccess} />
+                        )
+                      )}
+                      {/* Ne nécessite pas de caisse ouverte : aucun mouvement d'argent, simple
+                          clôture de statut — cf. closeUnpaidInvoice. */}
+                      {canOperate && (
+                        <CloseInvoiceDialog
+                          pendingInvoice={{
+                            id: inv.id,
+                            invoiceTotalAmount,
+                            amountPaid: inv.amountPaid,
+                            patient: inv.patient,
+                            customPatientName: inv.customPatientName,
+                            customPatientPhone: inv.customPatientPhone,
+                            cartLines: inv.cartLines,
+                            labLines: inv.labLines,
+                            labConsumablesDispensedAt: inv.labConsumablesDispensedAt,
+                          }}
                           onSuccess={handleMutationSuccess}
                         />
-                      ) : (
-                        <CaisseCartDialog mode="pay" cashSessionId={openSessionId} pharmacyItems={pharmacyItems} pendingInvoice={inv} onSuccess={handleMutationSuccess} />
-                      )
-                    )}
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -516,6 +538,17 @@ export default function CaisseView({
               >
                 Impayés
               </button>
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter("CANCELLED")}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
+                  historyStatusFilter === "CANCELLED"
+                    ? "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-xs"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
+                }`}
+              >
+                Clôturés
+              </button>
             </div>
           </div>
 
@@ -559,11 +592,11 @@ export default function CaisseView({
                                 <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1">
                                   <CheckCircle2 className="h-2.5 w-2.5" /> Remis
                                 </Badge>
-                              ) : (
+                              ) : inv.status !== "CANCELLED" ? (
                                 <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 border-blue-500/20 gap-1">
                                   <Clock className="h-2.5 w-2.5" /> Attente remise
                                 </Badge>
-                              )
+                              ) : null
                             )}
                             {!inv.patient && !inv.customPatientName?.trim() && !inv.customPatientPhone?.trim() && (
                               <EditInvoiceClientDialog
@@ -590,7 +623,7 @@ export default function CaisseView({
                             <Printer className="h-3.5 w-3.5 text-blue-600" />
                             Imprimer
                           </Button>
-                          {canOperate && selectedRegister?.openSession && inv.status !== "PAID" && (
+                          {canOperate && selectedRegister?.openSession && !["PAID", "CANCELLED"].includes(inv.status) && (
                             inv.status === "PARTIAL" ? (
                               <RecordPaymentDialog
                                 cashSessionId={selectedRegister.openSession.id}

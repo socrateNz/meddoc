@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import PaymentStatusBadge from "@/components/payment-status-badge";
@@ -57,9 +58,13 @@ interface PharmacieViewProps {
 }
 
 export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHistory, organizationId, currentUserRole, openRegisters = [] }: PharmacieViewProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState("queue");
-  const [queue, setQueue] = useState<any[]>(dispenseQueue);
-  const [history, setHistory] = useState<any[]>(dispenseHistory);
+  // Plus de miroir local optimiste (queue/history) : la remise partielle change trop la forme
+  // des données pour la reconstruire fidèlement côté client — on affiche directement les props
+  // (rafraîchies via router.refresh() après chaque remise/clôture, cf. handleFinalize).
+  const queue = dispenseQueue;
+  const history = dispenseHistory;
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "MEDICATION" | "CONSUMABLE" | "EQUIPMENT">("ALL");
   const [stockSearch, setStockSearch] = useState("");
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -72,6 +77,10 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
   const [finalizeReference, setFinalizeReference] = useState("");
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  // Quantité à remettre LORS DE CETTE VISITE par ligne du panier (clé = index dans items[]),
+  // pré-remplie à la quantité restante — donner l'intégralité reste le geste par défaut à un
+  // clic, le partiel est une correction explicite du pharmacien.
+  const [lineQuantities, setLineQuantities] = useState<Record<number, string>>({});
 
   const [historySearch, setHistorySearch] = useState("");
 
@@ -96,26 +105,39 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
     setFinalizingInvoice(inv);
     setFinalizeReference("");
     setFinalizeError(null);
+    const initial: Record<number, string> = {};
+    for (const line of inv.cartLines || []) {
+      if (line.remainingQuantity > 0) initial[line.index] = String(line.remainingQuantity);
+    }
+    setLineQuantities(initial);
   };
 
   const closeFinalizeDialog = () => {
     setFinalizingInvoice(null);
     setFinalizeReference("");
     setFinalizeError(null);
+    setLineQuantities({});
   };
 
   const handleFinalize = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!finalizingInvoice || !finalizeReference.trim()) return;
+    const lines = Object.entries(lineQuantities)
+      .map(([index, qty]) => ({ index: Number(index), quantity: Number(qty) || 0 }))
+      .filter((l) => l.quantity > 0);
     setFinalizing(true);
     setFinalizeError(null);
     try {
-      const res = await dispensePendingInvoice(finalizingInvoice.id, finalizeReference.trim());
+      const res = await dispensePendingInvoice(finalizingInvoice.id, finalizeReference.trim(), lines);
       if (res.success) {
-        setQueue((prev) => prev.filter((inv) => inv.id !== finalizingInvoice.id));
-        setHistory((prev) => [{ ...finalizingInvoice, dispensedAt: new Date().toISOString() }, ...prev]);
-        setMsg({ type: "success", text: "Médicaments remis au patient avec succès." });
+        setMsg({
+          type: "success",
+          text: res.data?.fullyDispensedNow
+            ? "Médicaments remis au patient avec succès."
+            : "Remise partielle enregistrée — le reste attend toujours en file.",
+        });
         closeFinalizeDialog();
+        router.refresh();
       } else {
         setFinalizeError(res.error || "Erreur lors de la remise des médicaments.");
       }
@@ -201,7 +223,8 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
               {queue.map((inv: any) => {
                 const items = Array.isArray(inv.items) ? inv.items : [];
                 const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-                const dispenseLines = Array.isArray(inv.dispenseLines) ? inv.dispenseLines : [];
+                const cartLines = Array.isArray(inv.cartLines) ? inv.cartLines : [];
+                const labLines = Array.isArray(inv.labLines) ? inv.labLines : [];
                 const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
                 const phone = inv.patient?.user?.phone || inv.customPatientPhone;
 
@@ -238,15 +261,25 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                       </div>
 
                       <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 divide-y divide-slate-100 dark:divide-slate-800/60 overflow-hidden">
-                        {dispenseLines.length === 0 ? (
+                        {cartLines.length === 0 && labLines.length === 0 ? (
                           <p className="p-3 text-xs text-slate-400">Aucun médicament listé.</p>
                         ) : (
-                          dispenseLines.map((line: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800/30">
-                              <span className="font-medium text-slate-700 dark:text-slate-300">{line.description}</span>
-                              <span className="font-bold text-slate-500">x{line.quantity}</span>
-                            </div>
-                          ))
+                          <>
+                            {cartLines.map((line: any) => (
+                              <div key={line.index} className="flex items-center justify-between gap-3 px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800/30">
+                                <span className="font-medium text-slate-700 dark:text-slate-300">{line.description}</span>
+                                <span className="font-bold text-slate-500">
+                                  {line.dispensedQuantity > 0 ? `${line.dispensedQuantity}/${line.quantity} remis` : `x${line.quantity}`}
+                                </span>
+                              </div>
+                            ))}
+                            {labLines.map((l: any, idx: number) => (
+                              <div key={`lab-${idx}`} className="flex items-center justify-between gap-3 px-3 py-2 text-xs bg-slate-50/40 dark:bg-slate-800/20 text-slate-400">
+                                <span>{l.description} (labo)</span>
+                                <span>x{l.quantity}</span>
+                              </div>
+                            ))}
+                          </>
                         )}
                       </div>
                     </CardContent>
@@ -280,7 +313,8 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
               {filteredHistory.map((inv: any) => {
                 const items = Array.isArray(inv.items) ? inv.items : [];
                 const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-                const dispenseLines = Array.isArray(inv.dispenseLines) ? inv.dispenseLines : [];
+                const cartLines = Array.isArray(inv.cartLines) ? inv.cartLines : [];
+                const labLines = Array.isArray(inv.labLines) ? inv.labLines : [];
                 const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
                 const phone = inv.patient?.user?.phone || inv.customPatientPhone;
                 const ticketNum = String(inv.id).slice(-6).toUpperCase();
@@ -295,10 +329,16 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                           <Badge variant="outline" className="text-[10px] font-mono bg-slate-500/10 text-slate-500 border-slate-500/20">
                             #{ticketNum}
                           </Badge>
-                          <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1">
-                            <CheckCircle2 className="h-2.5 w-2.5" />
-                            Remis
-                          </Badge>
+                          {inv.dispensedAt ? (
+                            <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1">
+                              <CheckCircle2 className="h-2.5 w-2.5" />
+                              Remis
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 gap-1">
+                              Clôturé — partiel
+                            </Badge>
+                          )}
                           {inv.status !== "PAID" && (
                             <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
                           )}
@@ -311,7 +351,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                           )}
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                          {dispenseLines.map((line: any) => line.description).join(", ") || "Aucun médicament listé"}
+                          {[...cartLines, ...labLines].map((line: any) => line.description).join(", ") || "Aucun médicament listé"}
                         </p>
                       </div>
                       <div className="text-right shrink-0">
@@ -491,10 +531,22 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
           {finalizingInvoice && (() => {
             const items = Array.isArray(finalizingInvoice.items) ? finalizingInvoice.items : [];
             const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-            const dispenseLines = Array.isArray(finalizingInvoice.dispenseLines) ? finalizingInvoice.dispenseLines : [];
+            const cartLines = Array.isArray(finalizingInvoice.cartLines) ? finalizingInvoice.cartLines : [];
+            const labLines = Array.isArray(finalizingInvoice.labLines) ? finalizingInvoice.labLines : [];
             const name = finalizingInvoice.patient?.user
               ? `${finalizingInvoice.patient.user.lastName} ${finalizingInvoice.patient.user.firstName}`
               : (finalizingInvoice.customPatientName || "Client comptant");
+            // Valeur remise LORS DE CETTE VISITE seulement (pas cumulée) — simple repère visuel
+            // pour le pharmacien, jamais une limite imposée : la valeur remise correspond
+            // généralement à ce qui a été payé, mais ce n'est qu'un guide.
+            const valeurRemiseCetteVisite = cartLines.reduce((sum: number, line: any) => {
+              const qty = Number(lineQuantities[line.index] || 0);
+              const unitPrice = Number(items[line.index]?.unitPrice || 0);
+              return sum + qty * unitPrice;
+            }, 0);
+            const hasPendingLabConsumables = labLines.length > 0 && !finalizingInvoice.labConsumablesDispensedAt;
+            const hasAnyQuantityEntered = cartLines.some((line: any) => Number(lineQuantities[line.index] || 0) > 0);
+            const hasSomethingToGive = hasAnyQuantityEntered || hasPendingLabConsumables;
 
             return (
               <>
@@ -509,17 +561,51 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                 </DialogHeader>
 
                 <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 divide-y divide-slate-100 dark:divide-slate-800/60 overflow-hidden">
-                  {dispenseLines.length === 0 ? (
-                    <p className="p-3 text-xs text-slate-400">Aucun médicament listé.</p>
+                  {cartLines.length === 0 ? (
+                    <p className="p-3 text-xs text-slate-400">Aucun médicament dans le panier.</p>
                   ) : (
-                    dispenseLines.map((line: any, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between gap-3 px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800/30">
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{line.description}</span>
-                        <span className="font-bold text-slate-500">x{line.quantity}</span>
+                    cartLines.map((line: any) => (
+                      <div key={line.index} className="flex items-center justify-between gap-3 px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800/30">
+                        <div className="min-w-0">
+                          <span className="font-medium text-slate-700 dark:text-slate-300 block truncate">{line.description}</span>
+                          <span className="text-[10px] text-slate-400">
+                            Commandé {line.quantity}{line.dispensedQuantity > 0 && ` · déjà remis ${line.dispensedQuantity}`}
+                          </span>
+                        </div>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={line.remainingQuantity}
+                          value={lineQuantities[line.index] ?? ""}
+                          onChange={(e) => setLineQuantities((prev) => ({ ...prev, [line.index]: e.target.value }))}
+                          disabled={line.remainingQuantity <= 0}
+                          className="w-20 h-8 text-xs rounded-lg shrink-0"
+                        />
                       </div>
                     ))
                   )}
                 </div>
+
+                {labLines.length > 0 && (
+                  <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-800/20 p-3 space-y-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Consommables labo — {finalizingInvoice.labConsumablesDispensedAt ? "déjà remis" : "remis automatiquement avec cette remise"}
+                    </p>
+                    {labLines.map((l: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between text-xs text-slate-500">
+                        <span>{l.description}</span>
+                        <span>x{l.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {cartLines.length > 0 && (
+                  <p className="text-[11px] text-slate-400">
+                    Valeur remise lors de cette visite : <span className="font-semibold text-slate-600 dark:text-slate-300">{formatFCFA(valeurRemiseCetteVisite)}</span>
+                    {" · "}Montant payé au total : {formatFCFA(finalizingInvoice.amountPaid || 0)}
+                  </p>
+                )}
 
                 <form onSubmit={handleFinalize} className="space-y-3 pt-1">
                   <div className="space-y-1.5">
@@ -547,9 +633,9 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                     <Button type="button" variant="outline" onClick={closeFinalizeDialog} disabled={finalizing}>
                       Annuler
                     </Button>
-                    <Button type="submit" disabled={finalizing || !finalizeReference.trim()} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                    <Button type="submit" disabled={finalizing || !finalizeReference.trim() || !hasSomethingToGive} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
                       {finalizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
-                      Remettre les médicaments
+                      Remettre
                     </Button>
                   </DialogFooter>
                 </form>

@@ -6,7 +6,7 @@ function formatFCFA(val: number) {
 }
 
 interface PaymentStatusBadgeProps {
-  status: string; // PENDING | PARTIAL | PAID
+  status: string; // PENDING | PARTIAL | PAID | CANCELLED
   // Si omis (ex: journal Finance, où le calculer coûterait une requête par ligne), la mention
   // "reste à payer" est simplement omise du badge PARTIAL.
   amountPaid?: number;
@@ -19,6 +19,17 @@ interface PaymentStatusBadgeProps {
 // l'onglet "Tickets impayés" de la caisse, partout où PendingInvoice.status seul ne suffit plus
 // à savoir si une vente a été soldée le jour même.
 export default function PaymentStatusBadge({ status, amountPaid, totalAmount, className = "" }: PaymentStatusBadgeProps) {
+  // Ticket à crédit/acompte dont on a renoncé à recouvrer le solde (cf. closeUnpaidInvoice) — ce
+  // n'est PAS un remboursement (l'argent déjà encaissé reste acquis), le libellé ne doit donc
+  // jamais dire "Annulé". Vérifié EN PREMIER : sans cette branche, ce statut retomberait sur le
+  // "Payé" par défaut ci-dessous, ce qui serait faux.
+  if (status === "CANCELLED") {
+    return (
+      <Badge variant="outline" className={`text-[10px] shrink-0 bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 ${className}`}>
+        Clôturé — non réglé intégralement
+      </Badge>
+    );
+  }
   if (status === "PARTIAL") {
     const knowsRemaining = amountPaid != null && totalAmount != null;
     const remaining = knowsRemaining ? Math.max(0, totalAmount! - amountPaid!) : null;

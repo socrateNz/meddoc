@@ -262,6 +262,98 @@ describe("payPendingInvoice", () => {
       expect.objectContaining({ data: expect.objectContaining({ category: "PHARMACY_SALE" }) })
     );
   });
+
+  it("reporte dispensedQuantity vers le nouveau panier lors du premier règlement (correctif reconcileItemsWithPriorDispense)", async () => {
+    const pendingInvoiceUpdate = vi.fn(async () => ({}));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv1",
+            status: "PENDING",
+            organizationId: "org1",
+            // 3 boîtes déjà remises en pharmacie avant ce tout premier règlement.
+            items: [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 3 }],
+          })),
+          update: pendingInvoiceUpdate,
+        },
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org1" })) },
+        financialTransaction: {
+          create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })),
+          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
+        },
+      },
+    }));
+    const { payPendingInvoice } = await import("./finance");
+
+    // Le caissier ressaisit le même panier (même quantité totale, sans dispensedQuantity — ce
+    // champ n'est jamais fourni par l'UI de caisse).
+    const result = await payPendingInvoice("inv1", "sess1", 2500, [
+      { type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500 },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(pendingInvoiceUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ items: [expect.objectContaining({ dispensedQuantity: 3 })] }) })
+    );
+  });
+
+  it("refuse un nouveau panier dont la quantité redescend sous ce qui a déjà été remis", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv1",
+            status: "PENDING",
+            organizationId: "org1",
+            items: [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 3 }],
+          })),
+          update: vi.fn(async () => ({})),
+        },
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org1" })) },
+        financialTransaction: { aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })) },
+      },
+    }));
+    const { payPendingInvoice } = await import("./finance");
+
+    // Le caissier réduit la quantité à 2, alors que 3 ont déjà été physiquement remises.
+    const result = await payPendingInvoice("inv1", "sess1", 1000, [
+      { type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000 },
+    ]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/ne peut pas descendre en dessous/);
+  });
+
+  it("refuse de retirer du panier une ligne déjà remise en pharmacie", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv1",
+            status: "PENDING",
+            organizationId: "org1",
+            items: [
+              { type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 3 },
+              { type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 1000, amount: 1000 },
+            ],
+          })),
+          update: vi.fn(async () => ({})),
+        },
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org1" })) },
+        financialTransaction: { aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })) },
+      },
+    }));
+    const { payPendingInvoice } = await import("./finance");
+
+    // Le caissier ressaisit un panier qui a "oublié" la ligne Paracétamol déjà partiellement remise.
+    const result = await payPendingInvoice("inv1", "sess1", 1000, [
+      { type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 1000, amount: 1000 },
+    ]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/il ne peut pas être retiré/);
+  });
 });
 
 describe("createCaisseSale", () => {
@@ -341,21 +433,26 @@ describe("createCaisseSale", () => {
 });
 
 describe("dispensePendingInvoice", () => {
-  it("décrémente le stock et pose dispensedAt pour un PHARMACIST", async () => {
+  it("décrémente le stock, incrémente dispensedQuantity et pose dispensedAt pour un PHARMACIST", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
     vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
 
     const pharmacyItemUpdate = vi.fn(async () => ({}));
     const pendingInvoiceUpdate = vi.fn(async () => ({}));
-    const stockPurchaseFindMany = vi.fn(async () => []);
+    const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000 }];
 
     const tx = {
       pharmacyItem: {
         findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })),
         update: pharmacyItemUpdate,
       },
-      stockPurchase: { findMany: stockPurchaseFindMany },
-      pendingInvoice: { update: pendingInvoiceUpdate },
+      stockPurchase: { findMany: vi.fn(async () => []) },
+      pendingInvoice: {
+        // Relecture fraîche à l'intérieur de la transaction — cf. commentaire de
+        // dispensePendingInvoice sur la protection contre les remises concurrentes.
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PAID" })),
+        update: pendingInvoiceUpdate,
+      },
       prescription: { update: vi.fn(async () => ({})) },
     };
 
@@ -366,8 +463,9 @@ describe("dispensePendingInvoice", () => {
             id: "inv1",
             status: "PAID",
             organizationId: "org1",
-            items: [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000 }],
+            items,
             prescriptions: [],
+            labOrders: [],
           })),
         },
         $transaction: vi.fn(async (fn: any) => fn(tx)),
@@ -376,30 +474,43 @@ describe("dispensePendingInvoice", () => {
     const { dispensePendingInvoice } = await import("./finance");
 
     // "inv1" tient déjà en 6 caractères : la référence attendue est son propre id en majuscules.
-    const result = await dispensePendingInvoice("inv1", "INV1");
+    const result = await dispensePendingInvoice("inv1", "INV1", [{ index: 0, quantity: 2 }]);
 
     expect(result.success).toBe(true);
+    expect(result.data?.fullyDispensedNow).toBe(true);
     expect(pharmacyItemUpdate).toHaveBeenCalledWith({
       where: { id: "item1" },
       data: { stockQuantity: { decrement: 2 } },
     });
     expect(pendingInvoiceUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "inv1" }, data: { dispensedAt: expect.any(Date) } })
+      expect.objectContaining({
+        where: { id: "inv1" },
+        data: expect.objectContaining({
+          items: [expect.objectContaining({ pharmacyItemId: "item1", dispensedQuantity: 2 })],
+          dispensedAt: expect.any(Date),
+        }),
+      })
     );
   });
 
-  it("remet les médicaments même si la facture n'est pas payée (vente à crédit / paiement échelonné)", async () => {
+  it("remet une partie seulement d'une ligne : dispensedAt n'est PAS posé, le reste reste disponible", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
     vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
 
+    const pharmacyItemUpdate = vi.fn(async () => ({}));
     const pendingInvoiceUpdate = vi.fn(async () => ({}));
+    const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500 }];
+
     const tx = {
       pharmacyItem: {
         findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })),
-        update: vi.fn(async () => ({})),
+        update: pharmacyItemUpdate,
       },
       stockPurchase: { findMany: vi.fn(async () => []) },
-      pendingInvoice: { update: pendingInvoiceUpdate },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),
+        update: pendingInvoiceUpdate,
+      },
       prescription: { update: vi.fn(async () => ({})) },
     };
 
@@ -410,8 +521,9 @@ describe("dispensePendingInvoice", () => {
             id: "inv1",
             status: "PENDING", // rien reçu — vente à crédit
             organizationId: "org1",
-            items: [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000 }],
+            items,
             prescriptions: [],
+            labOrders: [],
           })),
         },
         $transaction: vi.fn(async (fn: any) => fn(tx)),
@@ -419,10 +531,133 @@ describe("dispensePendingInvoice", () => {
     }));
     const { dispensePendingInvoice } = await import("./finance");
 
-    const result = await dispensePendingInvoice("inv1", "INV1");
+    // 3 boîtes sur 5 données lors de cette visite.
+    const result = await dispensePendingInvoice("inv1", "INV1", [{ index: 0, quantity: 3 }]);
 
     expect(result.success).toBe(true);
-    expect(pendingInvoiceUpdate).toHaveBeenCalled();
+    expect(result.data?.fullyDispensedNow).toBe(false);
+    expect(pharmacyItemUpdate).toHaveBeenCalledWith({ where: { id: "item1" }, data: { stockQuantity: { decrement: 3 } } });
+    expect(pendingInvoiceUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: [expect.objectContaining({ dispensedQuantity: 3 })],
+        }),
+      })
+    );
+    // dispensedAt absent de l'appel (pas juste undefined) : pas encore intégralement remis.
+    const [[{ data }]] = pendingInvoiceUpdate.mock.calls as any[];
+    expect("dispensedAt" in data).toBe(false);
+  });
+
+  it("progression sur deux visites : la deuxième complète la ligne et pose dispensedAt", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    // État partagé simulant la persistance entre les deux appels successifs.
+    const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 3 }];
+    const pendingInvoiceUpdate = vi.fn(async ({ data }: any) => { if (data.items) items[0] = data.items[0]; return {}; });
+
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })),
+        update: vi.fn(async () => ({})),
+      },
+      stockPurchase: { findMany: vi.fn(async () => []) },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),
+        update: pendingInvoiceUpdate,
+      },
+      prescription: { update: vi.fn(async () => ({})) },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1", items, prescriptions: [], labOrders: [] })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    // Reste 2 (5 commandées, 3 déjà remises lors d'une visite précédente).
+    const result = await dispensePendingInvoice("inv1", "INV1", [{ index: 0, quantity: 2 }]);
+
+    expect(result.success).toBe(true);
+    expect(result.data?.fullyDispensedNow).toBe(true);
+    expect(pendingInvoiceUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ items: [expect.objectContaining({ dispensedQuantity: 5 })], dispensedAt: expect.any(Date) }) })
+    );
+  });
+
+  it("rejette une quantité demandée supérieure au reste disponible sur une ligne, sans toucher au stock", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    const pharmacyItemUpdate = vi.fn(async () => ({}));
+    const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000, dispensedQuantity: 1 }];
+
+    const tx = {
+      pharmacyItem: { findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })), update: pharmacyItemUpdate },
+      stockPurchase: { findMany: vi.fn(async () => []) },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),
+        update: vi.fn(async () => ({})),
+      },
+      prescription: { update: vi.fn(async () => ({})) },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1", items, prescriptions: [], labOrders: [] })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    // Reste seulement 1 (2 commandées, 1 déjà remise) — on en demande 2.
+    const result = await dispensePendingInvoice("inv1", "INV1", [{ index: 0, quantity: 2 }]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/supérieure au reste disponible/);
+    expect(pharmacyItemUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejette un index de ligne invalide ou non PHARMACY", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    const items = [
+      { type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000 },
+      { type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 1000, amount: 1000 },
+    ];
+    const tx = {
+      pharmacyItem: { findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })), update: vi.fn(async () => ({})) },
+      stockPurchase: { findMany: vi.fn(async () => []) },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),
+        update: vi.fn(async () => ({})),
+      },
+      prescription: { update: vi.fn(async () => ({})) },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1", items, prescriptions: [], labOrders: [] })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    // index 1 pointe vers la ligne SERVICE, pas une ligne PHARMACY.
+    const result = await dispensePendingInvoice("inv1", "INV1", [{ index: 1, quantity: 1 }]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Ligne invalide/);
   });
 
   it("décrémente les produits consommés d'un examen labo lié, même avec une seule ligne SERVICE dans le panier", async () => {
@@ -430,13 +665,33 @@ describe("dispensePendingInvoice", () => {
     vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
 
     const pharmacyItemUpdates: any[] = [];
+    const items = [{ type: "SERVICE", description: "Analyse : Exam A", quantity: 1, unitPrice: 1800, amount: 1800 }];
+    const labOrders = [
+      {
+        id: "order1",
+        testDetails: [
+          {
+            testName: "Exam A",
+            basePrice: 500,
+            consumables: [
+              { pharmacyItemId: "x", name: "Produit X", quantity: 2, unitPrice: 500 },
+              { pharmacyItemId: "y", name: "Produit Y", quantity: 1, unitPrice: 300 },
+            ],
+            totalPrice: 1800,
+          },
+        ],
+      },
+    ];
     const tx = {
       pharmacyItem: {
         findUnique: vi.fn(async ({ where }: any) => ({ id: where.id, name: `Produit ${where.id}`, stockQuantity: 10, reorderLevel: 5 })),
         update: vi.fn(async (args: any) => { pharmacyItemUpdates.push(args); return {}; }),
       },
       stockPurchase: { findMany: vi.fn(async () => []) },
-      pendingInvoice: { update: vi.fn(async () => ({})) },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PARTIAL" })),
+        update: vi.fn(async () => ({})),
+      },
       prescription: { update: vi.fn(async () => ({})) },
     };
 
@@ -447,24 +702,9 @@ describe("dispensePendingInvoice", () => {
             id: "inv1",
             status: "PARTIAL",
             organizationId: "org1",
-            items: [{ type: "SERVICE", description: "Analyse : Exam A", quantity: 1, unitPrice: 1800, amount: 1800 }],
+            items,
             prescriptions: [],
-            labOrders: [
-              {
-                id: "order1",
-                testDetails: [
-                  {
-                    testName: "Exam A",
-                    basePrice: 500,
-                    consumables: [
-                      { pharmacyItemId: "x", name: "Produit X", quantity: 2, unitPrice: 500 },
-                      { pharmacyItemId: "y", name: "Produit Y", quantity: 1, unitPrice: 300 },
-                    ],
-                    totalPrice: 1800,
-                  },
-                ],
-              },
-            ],
+            labOrders,
           })),
         },
         $transaction: vi.fn(async (fn: any) => fn(tx)),
@@ -472,11 +712,85 @@ describe("dispensePendingInvoice", () => {
     }));
     const { dispensePendingInvoice } = await import("./finance");
 
-    const result = await dispensePendingInvoice("inv1", "INV1");
+    // Aucune ligne PHARMACY dans ce panier (SERVICE seul) : lines vide, seuls les consommables
+    // labo sont décomptés.
+    const result = await dispensePendingInvoice("inv1", "INV1", []);
 
     expect(result.success).toBe(true);
     expect(pharmacyItemUpdates).toContainEqual({ where: { id: "x" }, data: { stockQuantity: { decrement: 2 } } });
     expect(pharmacyItemUpdates).toContainEqual({ where: { id: "y" }, data: { stockQuantity: { decrement: 1 } } });
+  });
+
+  it("ne redécompte pas les consommables labo une deuxième fois sur un appel ultérieur", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    const pharmacyItemUpdates: any[] = [];
+    const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000, dispensedQuantity: 0 }];
+    const labOrders = [
+      { id: "order1", testDetails: [{ testName: "Exam A", basePrice: 500, consumables: [{ pharmacyItemId: "x", name: "Produit X", quantity: 2, unitPrice: 500 }], totalPrice: 1500 }] },
+    ];
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async ({ where }: any) => ({ id: where.id, name: `Produit ${where.id}`, stockQuantity: 10, reorderLevel: 5 })),
+        update: vi.fn(async (args: any) => { pharmacyItemUpdates.push(args); return {}; }),
+      },
+      stockPurchase: { findMany: vi.fn(async () => []) },
+      // Consommables labo DÉJÀ réglés lors d'une visite précédente.
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: new Date("2026-01-01"), status: "PENDING" })),
+        update: vi.fn(async () => ({})),
+      },
+      prescription: { update: vi.fn(async () => ({})) },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1", items, prescriptions: [], labOrders })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    const result = await dispensePendingInvoice("inv1", "INV1", [{ index: 0, quantity: 2 }]);
+
+    expect(result.success).toBe(true);
+    // Seule la ligne pharmacie (item1) est décomptée — pas le produit "x" du labo, déjà réglé.
+    expect(pharmacyItemUpdates).toEqual([{ where: { id: "item1" }, data: { stockQuantity: { decrement: 2 } } }]);
+  });
+
+  it("ne marque une Prescription DISPENSED que lorsque la remise est désormais complète", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    const prescriptionUpdate = vi.fn(async () => ({}));
+    const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 4, unitPrice: 500, amount: 2000 }];
+    const tx = {
+      pharmacyItem: { findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })), update: vi.fn(async () => ({})) },
+      stockPurchase: { findMany: vi.fn(async () => []) },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),
+        update: vi.fn(async () => ({})),
+      },
+      prescription: { update: prescriptionUpdate },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1", items, prescriptions: [{ id: "presc1" }], labOrders: [] })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    // Remise partielle (2 sur 4) : la prescription ne doit PAS être marquée DISPENSED.
+    const partial = await dispensePendingInvoice("inv1", "INV1", [{ index: 0, quantity: 2 }]);
+    expect(partial.success).toBe(true);
+    expect(prescriptionUpdate).not.toHaveBeenCalled();
   });
 
   it("refuse si l'examen labo lié ne consomme aucun produit (rien à remettre)", async () => {
@@ -570,6 +884,133 @@ describe("dispensePendingInvoice", () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/Référence incorrecte/);
     expect(transactionFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("closeUnpaidInvoice", () => {
+  it("clôture un ticket PENDING sans toucher au stock ni créer d'écriture financière", async () => {
+    const pendingInvoiceUpdate = vi.fn(async () => ({ id: "inv1", status: "CANCELLED" }));
+    // Aucune propriété pharmacyItem/stockPurchase/financialTransaction sur ce mock : la clôture
+    // doit se limiter à un seul document PendingInvoice, sans jamais y toucher.
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1" })),
+          update: pendingInvoiceUpdate,
+        },
+      },
+    }));
+    const { closeUnpaidInvoice } = await import("./finance");
+
+    const result = await closeUnpaidInvoice("inv1");
+
+    expect(result.success).toBe(true);
+    expect(pendingInvoiceUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "inv1" },
+        data: expect.objectContaining({ status: "CANCELLED", closedById: "user1" }),
+      })
+    );
+  });
+
+  it("clôture aussi un ticket PARTIAL", async () => {
+    const pendingInvoiceUpdate = vi.fn(async () => ({ id: "inv1", status: "CANCELLED" }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PARTIAL", organizationId: "org1" })),
+          update: pendingInvoiceUpdate,
+        },
+      },
+    }));
+    const { closeUnpaidInvoice } = await import("./finance");
+
+    const result = await closeUnpaidInvoice("inv1");
+
+    expect(result.success).toBe(true);
+    expect(pendingInvoiceUpdate).toHaveBeenCalled();
+  });
+
+  it("refuse de clôturer une facture déjà PAID", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PAID", organizationId: "org1" })),
+          update: vi.fn(async () => ({})),
+        },
+      },
+    }));
+    const { closeUnpaidInvoice } = await import("./finance");
+
+    const result = await closeUnpaidInvoice("inv1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/déjà réglée intégralement ou déjà clôturée/);
+  });
+
+  it("refuse de clôturer une facture déjà CANCELLED", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "CANCELLED", organizationId: "org1" })),
+          update: vi.fn(async () => ({})),
+        },
+      },
+    }));
+    const { closeUnpaidInvoice } = await import("./finance");
+
+    const result = await closeUnpaidInvoice("inv1");
+
+    expect(result.success).toBe(false);
+  });
+
+  it("refuse un rôle non autorisé (ex: un rôle sans accès caisse)", async () => {
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => ({ id: "doc1", role: "DOCTOR", organizationId: "org1" })) }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1" })),
+          update: vi.fn(async () => ({})),
+        },
+      },
+    }));
+    const { closeUnpaidInvoice } = await import("./finance");
+
+    const result = await closeUnpaidInvoice("inv1");
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("listPendingInvoices — forme de computeDispenseLines", () => {
+  it("expose cartLines (index/dispensedQuantity/remainingQuantity) et labLines regroupées", async () => {
+    const items = [
+      { type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 2 },
+      { type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 1000, amount: 1000 },
+    ];
+    const labOrders = [
+      { testDetails: [{ testName: "Exam A", consumables: [{ pharmacyItemId: "x", name: "Produit X", quantity: 2 }] }] },
+    ];
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findMany: vi.fn(async () => [{ id: "inv1", organizationId: "org1", items, labOrders, createdAt: new Date() }]),
+        },
+        financialTransaction: { findMany: vi.fn(async () => []) },
+      },
+    }));
+    const { listPendingInvoices } = await import("./finance");
+
+    // activeUser par défaut (beforeEach global) : CASHIER — couvert par REGISTER_READ_ROLES.
+    const result = await listPendingInvoices("org1");
+
+    expect(result.success).toBe(true);
+    const invoice = (result.data as any[])[0];
+    expect(invoice.cartLines).toEqual([
+      { index: 0, pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, dispensedQuantity: 2, remainingQuantity: 3 },
+    ]);
+    expect(invoice.labLines).toEqual([{ description: "Produit X", quantity: 2 }]);
   });
 });
 

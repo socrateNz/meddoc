@@ -179,6 +179,7 @@ model User {
   stockPurchasesRecorded       StockPurchase[]
   inventoryCountsStarted       InventoryCount[]
   pendingInvoicesCreated       PendingInvoice[]          @relation("PendingInvoiceCreatedBy")
+  pendingInvoicesClosed        PendingInvoice[]          @relation("PendingInvoiceClosedBy")
   labOrdersOrdered             LabOrder[]                @relation("LabOrderOrderedBy")
   labOrdersSampleCollected     LabOrder[]                @relation("LabOrderSampleCollectedBy")
   labResultsRecorded           LabResult[]               @relation("LabResultRecordedBy")
@@ -1107,7 +1108,11 @@ model FinancialTransaction {
 // médicaments avant règlement complet (vente à crédit / paiement échelonné).
 model PendingInvoice {
   id     String @id @default(auto()) @map("_id") @db.ObjectId
-  status String @default("PENDING") // PENDING, PARTIAL, PAID
+  // PENDING, PARTIAL, PAID, CANCELLED — CANCELLED = ticket à crédit/acompte qu'on a renoncé à
+  // recouvrer intégralement (cf. closeUnpaidInvoice) : ce n'est PAS un remboursement, l'argent
+  // déjà encaissé (payments) reste acquis tel quel. Jamais affiché "Annulé" côté UI pour éviter
+  // cette confusion — cf. payment-status-badge.tsx.
+  status String @default("PENDING")
 
   // Optionnel : une vente comptant à la caisse ("Client comptant", sans patient sélectionné)
   // doit quand même passer par un PendingInvoice dès qu'elle contient un article PHARMACY —
@@ -1125,7 +1130,11 @@ model PendingInvoice {
   organizationId String?       @db.ObjectId
   organization   Organization? @relation(fields: [organizationId], references: [id])
 
-  items Json // Même forme que le panier de recordMultiItemInvoice
+  // Même forme que le panier de recordMultiItemInvoice. Chaque ligne de type "PHARMACY" porte en
+  // plus un champ dispensedQuantity (absent/0 = rien encore remis) — cf. dispensePendingInvoice,
+  // qui l'incrémente à chaque remise partielle. Jamais fourni par le client (invoiceItemSchema
+  // ne le valide pas), reporté d'une version à l'autre par payPendingInvoice.
+  items Json
 
   createdById String @db.ObjectId
   createdBy   User   @relation("PendingInvoiceCreatedBy", fields: [createdById], references: [id])
@@ -1146,8 +1155,22 @@ model PendingInvoice {
 
   createdAt   DateTime  @default(now())
   paidAt      DateTime? // posé uniquement au moment où le solde atteint zéro (status -> PAID)
-  dispensedAt DateTime? // seul marqueur de remise pharmacie désormais (avant : status="DISPENSED")
+  // Posé uniquement quand TOUTES les lignes PHARMACY du panier sont intégralement remises (plus
+  // aucun reste sur aucune ligne) ET que les consommables labo, s'il y en a, sont réglés — jamais
+  // sur une remise partielle. Cf. dispensePendingInvoice et labConsumablesDispensedAt ci-dessous.
+  dispensedAt DateTime?
+  // Les consommables labo (réactifs d'un examen) sont tout-ou-rien, indépendamment de la
+  // progression ligne par ligne du panier pharmacie : un examen se réalise en une fois. Posé à la
+  // toute première remise effectuée sur cette facture, quelle que soit la ligne médicament
+  // choisie ce jour-là — jamais redécompté ensuite.
+  labConsumablesDispensedAt DateTime?
   finalizedAt DateTime? // Historique (pré-caisse) — non écrit par le nouveau flux, cf. paidAt
+
+  // Posés par closeUnpaidInvoice (ticket à crédit/acompte dont on renonce à recouvrer le solde) —
+  // cf. commentaire sur `status` ci-dessus.
+  closedAt   DateTime?
+  closedById String?   @db.ObjectId
+  closedBy   User?     @relation("PendingInvoiceClosedBy", fields: [closedById], references: [id])
 
   prescriptions Prescription[]
   labOrders     LabOrder[]     @relation("LabOrderInvoice")

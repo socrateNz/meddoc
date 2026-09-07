@@ -84,7 +84,16 @@ export const updateInvoicePatientInfoSchema = z.object({
   customPatientPhone: z.string().optional(),
 });
 
+// Remise partielle : { index } repère la ligne dans PendingInvoice.items[] (identité stable, ce
+// tableau n'est jamais réordonné/éclaté ailleurs), { quantity } est la quantité remise LORS DE
+// CET APPEL uniquement (pas cumulée) — cf. dispensePendingInvoice.
+const dispenseLineInputSchema = z.object({
+  index: z.number().int().min(0),
+  quantity: z.number().min(0),
+});
+
 export const dispensePendingInvoiceSchema = z.object({
   pendingInvoiceId: z.string().min(1),
   referenceCode: z.string().min(1, "Le code de référence est requis."),
+  lines: z.array(dispenseLineInputSchema).default([]),
 });
