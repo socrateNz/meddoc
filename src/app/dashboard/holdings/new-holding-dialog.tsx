@@ -164,7 +164,7 @@ export default function NewHoldingDialog() {
         Nouvelle Holding
       </DialogTrigger>
 
-      <DialogContent className="max-w-4xl! max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
         {createdHolding ? (
           <>
             <DialogHeader>
@@ -186,7 +186,7 @@ export default function NewHoldingDialog() {
               </p>
             </div>
 
-            <div className="py-4 flex justify-end gap-2">
+            <div className="py-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button variant="outline" onClick={() => handleOpenChange(false)}>Fermer</Button>
               <PDFDownloadButton
                 documentName={`Facture_Abonnement_${createdHolding.name}`}
@@ -223,8 +223,8 @@ export default function NewHoldingDialog() {
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Expiration de la Licence</Label>
-                  <div className="flex items-center gap-4 p-3 border rounded-md">
-                    <div className="flex items-center space-x-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-3 border rounded-md">
+                    <div className="flex items-center space-x-2 shrink-0">
                       <Checkbox
                         id="isUnlimited"
                         checked={isUnlimited}
@@ -238,7 +238,7 @@ export default function NewHoldingDialog() {
                       </label>
                     </div>
                     {!isUnlimited && (
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <Input
                           type="date"
                           {...register("licenseExpiresAt")}
@@ -329,7 +329,7 @@ export default function NewHoldingDialog() {
               </div>
             </div>
 
-            <div className="pt-4 flex justify-end gap-2">
+            <div className="pt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>Annuler</Button>
               <Button type="submit" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

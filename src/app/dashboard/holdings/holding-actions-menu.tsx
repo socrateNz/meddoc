@@ -480,7 +480,7 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
       </Dialog>
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-4xl! w-full max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Modifier</DialogTitle>
             <DialogDescription>
@@ -531,8 +531,8 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Expiration de la Licence</Label>
-                  <div className="flex items-center gap-4 p-3 border rounded-md">
-                    <div className="flex items-center space-x-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-3 border rounded-md">
+                    <div className="flex items-center space-x-2 shrink-0">
                       <Checkbox
                         id={`isUnlimited-${holding.id}`}
                         checked={isUnlimited}
@@ -546,7 +546,7 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
                       </label>
                     </div>
                     {!isUnlimited && (
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <Input
                           type="date"
                           value={licenseExpiresAt}

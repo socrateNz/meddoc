@@ -213,7 +213,7 @@ export default function CaisseView({
   return (
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
-        <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl">
+        <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl h-auto flex-wrap justify-start">
           <TabsTrigger value="caisse" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
             <Landmark className="h-4 w-4 text-blue-500" />
             Caisse

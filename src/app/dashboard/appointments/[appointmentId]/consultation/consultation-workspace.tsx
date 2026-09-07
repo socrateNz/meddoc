@@ -364,7 +364,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
         {/* Colonne principale : onglets */}
         <div className="md:col-span-8 lg:col-span-9">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl mb-6">
+            <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl mb-6 h-auto flex-wrap justify-start">
               <TabsTrigger value="history" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
                 <Activity className="h-4 w-4" />
                 Historique
