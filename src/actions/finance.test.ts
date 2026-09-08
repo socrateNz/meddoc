@@ -965,7 +965,8 @@ describe("closeUnpaidInvoice", () => {
   });
 
   it("refuse un rôle non autorisé (ex: un rôle sans accès caisse)", async () => {
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => ({ id: "doc1", role: "DOCTOR", organizationId: "org1" })) }));
+    const { getCurrentUser } = await import("@/lib/auth");
+    (getCurrentUser as any).mockResolvedValueOnce({ id: "doc1", role: "PATIENT", organizationId: "org1" });
     vi.doMock("@/lib/db", () => ({
       prisma: {
         pendingInvoice: {
@@ -1292,3 +1293,72 @@ describe("getFinanceSummary — revenueByCategory", () => {
     expect(pharmacyEntry?.todaySoldProfit).toBe(8000 - 3000);
   });
 });
+
+describe("changeInvoiceStatus", () => {
+  it("permets au coordonnateur de remettre une facture payée à non payé (PENDING) et supprime les encaissements", async () => {
+    const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+
+    const deleteManyTx = vi.fn(async () => ({ count: 1 }));
+    const updatePending = vi.fn(async () => ({ id: "inv1", status: "PENDING" }));
+
+    const tx = {
+      financialTransaction: { deleteMany: deleteManyTx },
+      pendingInvoice: { update: updatePending },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv1",
+            status: "PAID",
+            organizationId: "org1",
+            payments: [{ id: "tx1", amount: 5000 }],
+          })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+
+    const { changeInvoiceStatus } = await import("./finance");
+
+    const result = await changeInvoiceStatus({
+      pendingInvoiceId: "inv1",
+      newStatus: "PENDING",
+      withdrawPayments: true,
+      reason: "Erreur d'enregistrement caisse",
+    });
+
+    expect(result.success).toBe(true);
+    expect(deleteManyTx).toHaveBeenCalledWith({ where: { pendingInvoiceId: "inv1" } });
+    expect(updatePending).toHaveBeenCalledWith({
+      where: { id: "inv1" },
+      data: expect.objectContaining({ status: "PENDING", paidAt: null, cashSessionId: null }),
+    });
+  });
+
+  it("refuse la modification pour un caissier standard", async () => {
+    const cashierUser = { id: "cashier1", role: "CASHIER", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => cashierUser) }));
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PAID", organizationId: "org1" })),
+        },
+      },
+    }));
+
+    const { changeInvoiceStatus } = await import("./finance");
+
+    const result = await changeInvoiceStatus({
+      pendingInvoiceId: "inv1",
+      newStatus: "PENDING",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Non autorisé/);
+  });
+});
+

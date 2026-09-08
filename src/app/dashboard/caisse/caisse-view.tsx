@@ -34,6 +34,7 @@ import CaisseExpenseDialog from "./caisse-expense-dialog";
 import RecordPaymentDialog from "./record-payment-dialog";
 import CloseInvoiceDialog from "./close-invoice-dialog";
 import { EditInvoiceClientDialog } from "./edit-invoice-client-dialog";
+import { EditInvoiceStatusDialog } from "./edit-invoice-status-dialog";
 import InvoiceModal from "@/app/dashboard/finance/invoice-modal";
 
 function formatFCFA(val: number) {
@@ -98,6 +99,7 @@ export default function CaisseView({
   // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
   const canOperate = currentUserRole === "COORDINATOR" || currentUserRole === "CASHIER" || currentUserRole === "PHARMACIST";
   const canManageRegisters = currentUserRole === "COORDINATOR";
+  const canManageStatus = currentUserRole === "COORDINATOR" || currentUserRole === "ADMIN" || currentUserRole === "SUPER_ADMIN";
 
   const selectedRegister = registers.find((r) => r.id === selectedRegisterId) || null;
 
@@ -514,6 +516,19 @@ export default function CaisseView({
                           onSuccess={handleMutationSuccess}
                         />
                       )}
+                      {canManageStatus && (
+                        <EditInvoiceStatusDialog
+                          pendingInvoice={{
+                            id: inv.id,
+                            status: inv.status,
+                            amountPaid: inv.amountPaid,
+                            invoiceTotalAmount,
+                            patient: inv.patient,
+                            customPatientName: inv.customPatientName,
+                          }}
+                          onSuccess={handleMutationSuccess}
+                        />
+                      )}
                     </div>
                   </div>
                 );
@@ -694,6 +709,19 @@ export default function CaisseView({
                                 onSuccess={handleMutationSuccess}
                               />
                             )
+                          )}
+                          {canManageStatus && (
+                            <EditInvoiceStatusDialog
+                              pendingInvoice={{
+                                id: inv.id,
+                                status: inv.status,
+                                amountPaid: inv.amountPaid,
+                                invoiceTotalAmount: total,
+                                patient: inv.patient,
+                                customPatientName: inv.customPatientName,
+                              }}
+                              onSuccess={handleMutationSuccess}
+                            />
                           )}
                         </div>
                       </div>

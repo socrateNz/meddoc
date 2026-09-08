@@ -12,6 +12,7 @@ import {
   updateInvoicePatientInfoSchema,
   dispensePendingInvoiceSchema,
   importPharmacyItemsSchema,
+  changeInvoiceStatusSchema,
 } from "@/validators/finance";
 import { consumeStockLots, assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
@@ -901,6 +902,82 @@ export async function closeUnpaidInvoice(pendingInvoiceId: string) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la clôture du ticket.") };
   }
 }
+
+// Modification exceptionnelle de statut d'un ticket (ex: rectification d'une erreur de saisie) —
+// réservée au COORDINATOR et aux ADMIN. Si le statut passe à PENDING (ou si l'option d'annulation des
+// paiements est activée), tous les règlements associés à ce ticket sont supprimés pour déduire
+// le montant du solde de caisse.
+export async function changeInvoiceStatus(data: {
+  pendingInvoiceId: string;
+  newStatus: "PENDING" | "PARTIAL" | "PAID" | "CANCELLED";
+  withdrawPayments?: boolean;
+  reason?: string;
+}) {
+  try {
+    changeInvoiceStatusSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const allowedRoles = ["COORDINATOR", "ADMIN", "SUPER_ADMIN"];
+    if (!allowedRoles.includes(activeUser.role)) {
+      throw new Error("Non autorisé. Seul le coordonnateur ou un administrateur peut modifier le statut d'un ticket.");
+    }
+
+    const pending = await prisma.pendingInvoice.findUnique({
+      where: { id: data.pendingInvoiceId },
+      include: { payments: true },
+    });
+    if (!pending) throw new Error("Facture introuvable.");
+
+    const oldStatus = pending.status;
+    const shouldWithdraw = data.withdrawPayments ?? (data.newStatus === "PENDING");
+
+    await prisma.$transaction(async (tx) => {
+      if (shouldWithdraw) {
+        await tx.financialTransaction.deleteMany({
+          where: { pendingInvoiceId: data.pendingInvoiceId },
+        });
+      }
+
+      const updateData: any = {
+        status: data.newStatus,
+      };
+
+      if (data.newStatus === "PENDING") {
+        updateData.paidAt = null;
+        updateData.cashSessionId = null;
+      } else if (data.newStatus === "PAID") {
+        updateData.paidAt = new Date();
+      } else if (data.newStatus === "CANCELLED") {
+        updateData.closedAt = new Date();
+        updateData.closedById = activeUser.id;
+      }
+
+      await tx.pendingInvoice.update({
+        where: { id: data.pendingInvoiceId },
+        data: updateData,
+      });
+    });
+
+    await logAuditAction(activeUser.id, "CHANGE_INVOICE_STATUS", "PendingInvoice", data.pendingInvoiceId, {
+      oldStatus,
+      newStatus: data.newStatus,
+      withdrawPayments: shouldWithdraw,
+      reason: data.reason || null,
+    });
+
+    revalidatePath(`/dashboard/clinics/${pending.organizationId}/caisse`);
+    revalidatePath(`/dashboard/clinics/${pending.organizationId}/pharmacie`);
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard/lab");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la modification du statut du ticket.") };
+  }
+}
+
 
 export async function getFinanceSummary(organizationId?: string) {
   try {
