@@ -134,9 +134,6 @@ function ProfitBreakdownCard({
   profit,
   footer,
   formatFCFA,
-  soldCost,
-  soldProfit,
-  todaySoldProfit,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   color: string;
@@ -146,11 +143,6 @@ function ProfitBreakdownCard({
   profit: number;
   footer: React.ReactNode;
   formatFCFA: (val: number) => string;
-  // Second calcul, Médicament uniquement : coût des seules unités déjà vendues plutôt que des
-  // achats de la période — cf. getFinanceSummary. Absent pour les autres catégories.
-  soldCost?: number;
-  soldProfit?: number;
-  todaySoldProfit?: number;
 }) {
   const theme = COLOR_THEME[color] || COLOR_THEME.slate;
   return (
@@ -180,25 +172,6 @@ function ProfitBreakdownCard({
           </span>
         </div>
         <div className="text-[11px] text-slate-400">{footer}</div>
-
-        {soldProfit !== undefined && (
-          <div className="pt-2 mt-1.5 border-t border-dashed border-slate-200/60 dark:border-slate-800/60 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500 dark:text-slate-400 font-medium">Coût des ventes réalisées</span>
-              <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(soldCost || 0)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Bénéfice sur ventes réalisées</span>
-              <span className={`text-lg font-extrabold ${soldProfit < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                {formatFCFA(soldProfit)}
-              </span>
-            </div>
-            <div className="text-[11px] text-slate-400">
-              Basé sur le coût des unités déjà vendues (pas les achats de la période)
-              {!!todaySoldProfit && <> · {todaySoldProfit > 0 ? "+" : ""}{formatFCFA(todaySoldProfit)} auj.</>}
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
@@ -433,51 +406,86 @@ export default function FinanceView({ summary, organizationId, organizationName,
               <span className="text-xs font-normal text-slate-400">— total : {formatFCFA(totalProfit)}</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {summary.profitByCategory.map((c) => {
-                const marginRate = c.revenue > 0 ? Math.round((c.profit / c.revenue) * 100) : 0;
-                const isNegative = c.profit < 0;
-                // Une "part du bénéfice total" n'a de sens que si le total ET cette catégorie
-                // sont tous deux positifs — sinon le ratio devient un nombre incompréhensible
-                // (ex : une catégorie en perte rapportée à un total lui-même négatif affiche un
-                // pourcentage POSITIF d'une perte). On l'omet plutôt que d'afficher ça.
-                const share = totalProfit > 0 && c.profit >= 0 ? Math.round((c.profit / totalProfit) * 100) : null;
-                // Pour le médicament, un "bénéfice" négatif signifie le plus souvent que du stock
-                // a été acheté mais pas encore vendu (marge simple = achats de la période, pas le
-                // coût des seules ventes) — pas une perte réelle. On le précise, avec la valeur
-                // du stock actuellement en rayon quand elle est disponible.
-                const isLikelyUnsoldStock = isNegative && c.category === "PHARMACY_SALE";
-                return (
-                  <ProfitBreakdownCard
-                    key={c.category}
-                    icon={CATEGORY_ICON[c.category] || PieChart}
-                    color={isNegative ? "rose" : "emerald"}
-                    label={TRANSACTION_CATEGORY_LABELS[c.category] || c.category}
-                    revenue={c.revenue}
-                    cost={c.cost}
-                    profit={c.profit}
-                    formatFCFA={formatFCFA}
-                    soldCost={c.soldCost}
-                    soldProfit={c.soldProfit}
-                    todaySoldProfit={c.todaySoldProfit}
-                    footer={
-                      <>
-                        {isLikelyUnsoldStock ? (
-                          <>
-                            Achats supérieurs aux ventes de la période : probablement du stock pas
-                            encore vendu, pas une perte réelle
-                            {valuation && <> (stock actuel en valeur : {formatFCFA(valuation.totalCostValue)})</>}.
-                          </>
-                        ) : (
-                          <>Marge {marginRate}%{share !== null && <> · {share}% du bénéfice total</>}</>
-                        )}
-                        {c.todayProfit !== 0 && (
-                          <> · {c.todayProfit > 0 ? "+" : ""}{formatFCFA(c.todayProfit)} auj.</>
-                        )}
-                      </>
-                    }
-                  />
-                );
-              })}
+              {(() => {
+                const baseCards = summary.profitByCategory.map((c) => {
+                  const marginRate = c.revenue > 0 ? Math.round((c.profit / c.revenue) * 100) : 0;
+                  const isNegative = c.profit < 0;
+                  // Une "part du bénéfice total" n'a de sens que si le total ET cette catégorie
+                  // sont tous deux positifs — sinon le ratio devient un nombre incompréhensible
+                  // (ex : une catégorie en perte rapportée à un total lui-même négatif affiche un
+                  // pourcentage POSITIF d'une perte). On l'omet plutôt que d'afficher ça.
+                  const share = totalProfit > 0 && c.profit >= 0 ? Math.round((c.profit / totalProfit) * 100) : null;
+                  // Pour le médicament, un "bénéfice" négatif signifie le plus souvent que du
+                  // stock a été acheté mais pas encore vendu (marge simple = achats de la
+                  // période, pas le coût des seules ventes) — pas une perte réelle. On le
+                  // précise, avec la valeur du stock actuellement en rayon quand disponible.
+                  const isLikelyUnsoldStock = isNegative && c.category === "PHARMACY_SALE";
+                  return (
+                    <ProfitBreakdownCard
+                      key={c.category}
+                      icon={CATEGORY_ICON[c.category] || PieChart}
+                      color={isNegative ? "rose" : "emerald"}
+                      label={TRANSACTION_CATEGORY_LABELS[c.category] || c.category}
+                      revenue={c.revenue}
+                      cost={c.cost}
+                      profit={c.profit}
+                      formatFCFA={formatFCFA}
+                      footer={
+                        <>
+                          {isLikelyUnsoldStock ? (
+                            <>
+                              Achats supérieurs aux ventes de la période : probablement du stock
+                              pas encore vendu, pas une perte réelle
+                              {valuation && <> (stock actuel en valeur : {formatFCFA(valuation.totalCostValue)})</>}.
+                            </>
+                          ) : (
+                            <>Marge {marginRate}%{share !== null && <> · {share}% du bénéfice total</>}</>
+                          )}
+                          {c.todayProfit !== 0 && (
+                            <> · {c.todayProfit > 0 ? "+" : ""}{formatFCFA(c.todayProfit)} auj.</>
+                          )}
+                        </>
+                      }
+                    />
+                  );
+                });
+
+                // Carte dédiée, toujours en 2ᵉ position (peu importe où Médicament se classe dans
+                // le tri par bénéfice) : bénéfice sur ce qui a déjà été vendu (coût des seules
+                // unités vendues), plutôt que sur les achats de la période — cf. getFinanceSummary.
+                const pharmacyEntry = summary.profitByCategory.find((c) => c.category === "PHARMACY_SALE");
+                if (pharmacyEntry && pharmacyEntry.soldProfit !== undefined) {
+                  const soldCost = pharmacyEntry.soldCost || 0;
+                  const soldProfit = pharmacyEntry.soldProfit;
+                  const soldIsNegative = soldProfit < 0;
+                  const soldMarginRate = pharmacyEntry.revenue > 0 ? Math.round((soldProfit / pharmacyEntry.revenue) * 100) : 0;
+                  baseCards.splice(
+                    1,
+                    0,
+                    <ProfitBreakdownCard
+                      key="PHARMACY_SALE-sold"
+                      icon={CATEGORY_ICON["PHARMACY_SALE"] || PieChart}
+                      color={soldIsNegative ? "rose" : "emerald"}
+                      label="Bénéfice sur ventes réalisées"
+                      revenue={pharmacyEntry.revenue}
+                      cost={soldCost}
+                      profit={soldProfit}
+                      formatFCFA={formatFCFA}
+                      footer={
+                        <>
+                          Basé sur le coût des unités déjà vendues, pas les achats de la période.
+                          {" "}Marge {soldMarginRate}%
+                          {!!pharmacyEntry.todaySoldProfit && (
+                            <> · {pharmacyEntry.todaySoldProfit > 0 ? "+" : ""}{formatFCFA(pharmacyEntry.todaySoldProfit)} auj.</>
+                          )}
+                        </>
+                      }
+                    />
+                  );
+                }
+
+                return baseCards;
+              })()}
             </div>
           </div>
         );
