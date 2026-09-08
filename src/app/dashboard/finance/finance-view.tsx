@@ -134,6 +134,9 @@ function ProfitBreakdownCard({
   profit,
   footer,
   formatFCFA,
+  soldCost,
+  soldProfit,
+  todaySoldProfit,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   color: string;
@@ -143,6 +146,11 @@ function ProfitBreakdownCard({
   profit: number;
   footer: React.ReactNode;
   formatFCFA: (val: number) => string;
+  // Second calcul, Médicament uniquement : coût des seules unités déjà vendues plutôt que des
+  // achats de la période — cf. getFinanceSummary. Absent pour les autres catégories.
+  soldCost?: number;
+  soldProfit?: number;
+  todaySoldProfit?: number;
 }) {
   const theme = COLOR_THEME[color] || COLOR_THEME.slate;
   return (
@@ -172,6 +180,25 @@ function ProfitBreakdownCard({
           </span>
         </div>
         <div className="text-[11px] text-slate-400">{footer}</div>
+
+        {soldProfit !== undefined && (
+          <div className="pt-2 mt-1.5 border-t border-dashed border-slate-200/60 dark:border-slate-800/60 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 dark:text-slate-400 font-medium">Coût des ventes réalisées</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(soldCost || 0)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Bénéfice sur ventes réalisées</span>
+              <span className={`text-lg font-extrabold ${soldProfit < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                {formatFCFA(soldProfit)}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Basé sur le coût des unités déjà vendues (pas les achats de la période)
+              {!!todaySoldProfit && <> · {todaySoldProfit > 0 ? "+" : ""}{formatFCFA(todaySoldProfit)} auj.</>}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -206,7 +233,19 @@ interface FinanceViewProps {
     transactions: any[];
     pharmacyItems: any[];
     revenueByCategory?: { category: string; totalIncome: number; todayIncome: number }[];
-    profitByCategory?: { category: string; revenue: number; cost: number; profit: number; todayRevenue: number; todayCost: number; todayProfit: number }[];
+    profitByCategory?: {
+      category: string;
+      revenue: number;
+      cost: number;
+      profit: number;
+      todayRevenue: number;
+      todayCost: number;
+      todayProfit: number;
+      soldCost?: number;
+      soldProfit?: number;
+      todaySoldCost?: number;
+      todaySoldProfit?: number;
+    }[];
   };
   organizationId?: string;
   organizationName?: string;
@@ -417,6 +456,9 @@ export default function FinanceView({ summary, organizationId, organizationName,
                     cost={c.cost}
                     profit={c.profit}
                     formatFCFA={formatFCFA}
+                    soldCost={c.soldCost}
+                    soldProfit={c.soldProfit}
+                    todaySoldProfit={c.todaySoldProfit}
                     footer={
                       <>
                         {isLikelyUnsoldStock ? (

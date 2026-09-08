@@ -1065,7 +1065,12 @@ describe("getFinanceSummary — revenueByCategory", () => {
     // Marge simple : Médicament = revenu - achats de stock de la période ; Examens/Services =
     // aucun coût connu ici (aucun LabOrder mocké) donc marge = 100% du revenu.
     expect(result.data?.profitByCategory).toEqual([
-      { category: "PHARMACY_SALE", revenue: 244000, cost: 100000, profit: 144000, todayRevenue: 5000, todayCost: 2000, todayProfit: 3000 },
+      {
+        category: "PHARMACY_SALE", revenue: 244000, cost: 100000, profit: 144000, todayRevenue: 5000, todayCost: 2000, todayProfit: 3000,
+        // Aucune vente PHARMACY mockée (financialTransaction.findMany renvoie []) : coût des
+        // ventes réalisées à 0, bénéfice réalisé = revenu en totalité.
+        soldCost: 0, soldProfit: 244000, todaySoldCost: 0, todaySoldProfit: 5000,
+      },
       { category: "LAB_EXAM_FEE", revenue: 30000, cost: 0, profit: 30000, todayRevenue: 0, todayCost: 0, todayProfit: 0 },
       { category: "SERVICE_FEE", revenue: 13000, cost: 0, profit: 13000, todayRevenue: 0, todayCost: 0, todayProfit: 0 },
     ]);
@@ -1223,6 +1228,67 @@ describe("getFinanceSummary — revenueByCategory", () => {
       todayRevenue: 0,
       todayCost: 0,
       todayProfit: 0,
+      soldCost: 0,
+      soldProfit: 50000,
+      todaySoldCost: 0,
+      todaySoldProfit: 0,
     });
+  });
+
+  it("bénéfice sur ventes réalisées : coût des quantités effectivement vendues (coût moyen des lots restants), pas les achats de la période", async () => {
+    const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+
+    const yesterday = new Date(Date.now() - 2 * 24 * 3600 * 1000);
+    const now = new Date();
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          // 2 ventes PHARMACY_SALE : 10 unités d'item1 hier, puis 5 unités d'item1 + 2 unités
+          // d'item2 aujourd'hui.
+          findMany: vi.fn(async () => [
+            { items: [{ type: "PHARMACY", pharmacyItemId: "item1", quantity: 10 }], createdAt: yesterday },
+            {
+              items: [
+                { type: "PHARMACY", pharmacyItemId: "item1", quantity: 5 },
+                { type: "PHARMACY", pharmacyItemId: "item2", quantity: 2 },
+              ],
+              createdAt: now,
+            },
+          ]),
+          groupBy: vi.fn(async ({ where }: any) =>
+            where.createdAt
+              ? [{ category: "PHARMACY_SALE", _sum: { amount: 8000 } }]
+              : [{ category: "PHARMACY_SALE", _sum: { amount: 20000 } }]
+          ),
+        },
+        pharmacyItem: {},
+        user: { findMany: vi.fn(async () => []) },
+        cashSession: { findMany: vi.fn(async () => []) },
+        labOrder: { findMany: vi.fn(async () => []) },
+        stockPurchase: {
+          aggregate: vi.fn(async () => ({ _sum: { totalCost: 0 } })),
+          // Coût moyen actuel des lots restants (getItemUnitCostMap) : un seul lot par produit.
+          findMany: vi.fn(async () => [
+            { pharmacyItemId: "item1", remainingQuantity: 100, purchasePrice: 200 },
+            { pharmacyItemId: "item2", remainingQuantity: 50, purchasePrice: 1000 },
+          ]),
+        },
+        $runCommandRaw: vi.fn(async () => ({ cursor: { firstBatch: [] } })),
+      },
+    }));
+    const { getFinanceSummary } = await import("./finance");
+
+    const result = await getFinanceSummary("org1");
+
+    expect(result.success).toBe(true);
+    const pharmacyEntry = result.data?.profitByCategory?.find((c: any) => c.category === "PHARMACY_SALE");
+    // 15 unités d'item1 (10 hier + 5 aujourd'hui) x 200 + 2 unités d'item2 x 1000 = 5000.
+    expect(pharmacyEntry?.soldCost).toBe(5000);
+    expect(pharmacyEntry?.soldProfit).toBe(20000 - 5000);
+    // Aujourd'hui seulement : 5 x 200 + 2 x 1000 = 3000.
+    expect(pharmacyEntry?.todaySoldCost).toBe(3000);
+    expect(pharmacyEntry?.todaySoldProfit).toBe(8000 - 3000);
   });
 });

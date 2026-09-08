@@ -173,14 +173,20 @@ export default function CaisseView({
   const handlePrintInvoice = (inv: any) => {
     const items = Array.isArray(inv.items) ? inv.items : [];
     const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
+    const amountPaid = inv.amountPaid ?? (inv.status === "PAID" ? total : 0);
     const desc = items.map((it: any) => `${it.description || "Article"} x${it.quantity || 1}`).join(", ") || "Ticket de caisse";
     setSelectedTransaction({
       id: inv.id,
       pendingInvoiceId: inv.id,
       type: "INCOME",
       category: items.some((i: any) => i.type === "PHARMACY") ? "PHARMACY_SALE" : "SERVICE_PAYMENT",
-      amount: total,
-      amountPaid: inv.amountPaid ?? (inv.status === "PAID" ? total : 0),
+      // Montant réellement encaissé (cumulé), jamais le total facturé — invoice-modal.tsx/
+      // invoice-pdf.tsx distinguent déjà "encaissé" du "total facture" dès qu'un solde existe
+      // (partiel, ou abandonné pour un ticket clôturé).
+      amount: amountPaid,
+      amountPaid,
+      invoiceTotalAmount: total,
+      remainingDue: Math.max(0, total - amountPaid),
       description: desc,
       items: items,
       patient: inv.patient,

@@ -1064,7 +1064,7 @@ export async function getFinanceSummary(organizationId?: string) {
       stockPurchaseWhere.organizationId = targetOrgId;
     }
 
-    const [openSessions, lastClosedSessions, categoryAllTime, categoryToday, pharmacyPurchaseAllTime, pharmacyPurchaseToday, labOrdersForCost] = await Promise.all([
+    const [openSessions, lastClosedSessions, categoryAllTime, categoryToday, pharmacyPurchaseAllTime, pharmacyPurchaseToday, labOrdersForCost, pharmacySaleTransactions] = await Promise.all([
       prisma.cashSession.findMany({
         where: sessionWhere,
         include: { transactions: { select: { type: true, amount: true } } },
@@ -1096,6 +1096,13 @@ export async function getFinanceSummary(organizationId?: string) {
         _sum: { totalCost: true },
       }),
       prisma.labOrder.findMany({ where: labOrderWhere, select: { testDetails: true, createdAt: true } }),
+      // Bénéfice sur les ventes déjà réalisées (par opposition à la marge simple ci-dessus, basée
+      // sur les achats de LA PÉRIODE) : quantités effectivement vendues, uncapped comme
+      // labOrdersForCost — jamais depuis `transactions` (plafonné à 500 lignes).
+      prisma.financialTransaction.findMany({
+        where: { ...categoryWhere, category: "PHARMACY_SALE" },
+        select: { items: true, createdAt: true },
+      }),
     ]);
 
     // Marge simple côté Examens : coût propre de chaque test (LabTest.baseCost, figé sur
@@ -1126,6 +1133,29 @@ export async function getFinanceSummary(organizationId?: string) {
       labCostAllTime += orderCost;
       if (order.createdAt && new Date(order.createdAt) >= startOfToday) labCostToday += orderCost;
     }
+
+    // Coût des ventes Médicament déjà réalisées : quantités PHARMACY effectivement vendues sur la
+    // période × coût unitaire moyen ACTUEL des lots restants (même méthode d'estimation que pour
+    // les consommables labo ci-dessus — pas le coût historique exact du lot réellement consommé
+    // à la vente, cf. consumeStockLots). Limite connue : un produit totalement épuisé depuis
+    // n'a plus de lot restant pour estimer son coût, et compte alors pour 0 ici plutôt que de
+    // fausser le total avec un coût obsolète.
+    const soldQtyAllTime = new Map<string, number>();
+    const soldQtyToday = new Map<string, number>();
+    for (const tx of pharmacySaleTransactions) {
+      const isToday = tx.createdAt && new Date(tx.createdAt) >= startOfToday;
+      for (const it of (tx.items as any[]) || []) {
+        if (it.type !== "PHARMACY" || !it.pharmacyItemId) continue;
+        const qty = Number(it.quantity) || 0;
+        soldQtyAllTime.set(it.pharmacyItemId, (soldQtyAllTime.get(it.pharmacyItemId) || 0) + qty);
+        if (isToday) soldQtyToday.set(it.pharmacyItemId, (soldQtyToday.get(it.pharmacyItemId) || 0) + qty);
+      }
+    }
+    const soldUnitCosts = await getItemUnitCostMap([...soldQtyAllTime.keys()]);
+    let soldCogsAllTime = 0;
+    for (const [itemId, qty] of soldQtyAllTime) soldCogsAllTime += qty * (soldUnitCosts.get(itemId) || 0);
+    let soldCogsToday = 0;
+    for (const [itemId, qty] of soldQtyToday) soldCogsToday += qty * (soldUnitCosts.get(itemId) || 0);
     // Caisses avec une session ouverte : solde théorique vivant (fond + encaissements - dépenses
     // de CETTE session). Caisses sans session ouverte en ce moment (entre une clôture et la
     // réouverture suivante) : on retient le dernier montant compté à la clôture précédente plutôt
@@ -1173,7 +1203,19 @@ export async function getFinanceSummary(organizationId?: string) {
     const profitByCategory = revenueByCategory
       .map((c) => {
         const cost = categoryCost[c.category] || { allTime: 0, today: 0 };
-        return {
+        const entry: {
+          category: string;
+          revenue: number;
+          cost: number;
+          profit: number;
+          todayRevenue: number;
+          todayCost: number;
+          todayProfit: number;
+          soldCost?: number;
+          soldProfit?: number;
+          todaySoldCost?: number;
+          todaySoldProfit?: number;
+        } = {
           category: c.category,
           revenue: c.totalIncome,
           cost: cost.allTime,
@@ -1182,6 +1224,15 @@ export async function getFinanceSummary(organizationId?: string) {
           todayCost: cost.today,
           todayProfit: c.todayIncome - cost.today,
         };
+        // Second calcul, Médicament uniquement : bénéfice sur ce qui a déjà été vendu (coût des
+        // seules unités vendues) plutôt que sur les achats de la période — cf. calcul plus haut.
+        if (c.category === "PHARMACY_SALE") {
+          entry.soldCost = soldCogsAllTime;
+          entry.soldProfit = c.totalIncome - soldCogsAllTime;
+          entry.todaySoldCost = soldCogsToday;
+          entry.todaySoldProfit = c.todayIncome - soldCogsToday;
+        }
+        return entry;
       })
       .sort((a, b) => b.profit - a.profit);
 

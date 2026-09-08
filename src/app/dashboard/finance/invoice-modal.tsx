@@ -119,6 +119,9 @@ export default function InvoiceModal({ transaction, organizationName, organizati
   // facture (paiement échelonné / vente à crédit) — absent (undefined) pour les transactions
   // antérieures à cette fonctionnalité, qui gardent l'affichage à une seule ligne "TOTAL NET".
   const hasRemainingDue = Number(transaction.remainingDue) > 0;
+  // Clôturé côté caisse (cf. closeUnpaidInvoice) : le solde restant est abandonné, pas juste "pas
+  // encore payé" — affiché en rouge plutôt qu'en ambre pour marquer cette différence.
+  const isCancelled = transaction.status === "CANCELLED";
 
   const handlePrint = () => {
     window.print();
@@ -250,11 +253,11 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                       <span>{formatFCFA(transaction.invoiceTotalAmount)}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm font-extrabold pt-1">
-                      <span>RÉGLÉ CE JOUR :</span>
+                      <span>{isCancelled ? "TOTAL ENCAISSÉ :" : "RÉGLÉ CE JOUR :"}</span>
                       <span className="text-base text-black">{formatFCFA(transaction.amount)}</span>
                     </div>
-                    <div className="flex justify-between text-[11px] text-amber-700 font-extrabold">
-                      <span>RESTE À PAYER :</span>
+                    <div className={`flex justify-between text-[11px] font-extrabold ${isCancelled ? "text-red-700" : "text-amber-700"}`}>
+                      <span>{isCancelled ? "SOLDE ABANDONNÉ :" : "RESTE À PAYER :"}</span>
                       <span>{formatFCFA(transaction.remainingDue)}</span>
                     </div>
                   </>
@@ -271,8 +274,8 @@ export default function InvoiceModal({ transaction, organizationName, organizati
               </div>
 
               {hasRemainingDue && (
-                <div className="text-center text-[11px] font-extrabold text-amber-800 my-2 uppercase tracking-wider border border-dashed border-amber-600 rounded py-1">
-                  Paiement partiel — solde à régler
+                <div className={`text-center text-[11px] font-extrabold my-2 uppercase tracking-wider border border-dashed rounded py-1 ${isCancelled ? "text-red-800 border-red-600" : "text-amber-800 border-amber-600"}`}>
+                  {isCancelled ? "Clôturé — non réglé intégralement" : "Paiement partiel — solde à régler"}
                 </div>
               )}
 
@@ -370,11 +373,11 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                         <span className="font-bold text-slate-800">{formatFCFA(transaction.invoiceTotalAmount)}</span>
                       </div>
                       <div className="p-3.5 rounded-xl border border-blue-500/30 bg-blue-50 text-blue-950 flex justify-between items-center">
-                        <span className="font-bold text-sm uppercase">Réglé ce jour :</span>
+                        <span className="font-bold text-sm uppercase">{isCancelled ? "Total encaissé :" : "Réglé ce jour :"}</span>
                         <span className="text-xl font-extrabold text-blue-700">{formatFCFA(transaction.amount)}</span>
                       </div>
-                      <div className="p-3 rounded-xl border border-amber-400/50 bg-amber-50 text-amber-900 flex justify-between items-center">
-                        <span className="font-bold text-xs uppercase">Reste à payer</span>
+                      <div className={`p-3 rounded-xl border flex justify-between items-center ${isCancelled ? "border-red-400/50 bg-red-50 text-red-900" : "border-amber-400/50 bg-amber-50 text-amber-900"}`}>
+                        <span className="font-bold text-xs uppercase">{isCancelled ? "Solde abandonné" : "Reste à payer"}</span>
                         <span className="font-extrabold">{formatFCFA(transaction.remainingDue)}</span>
                       </div>
                     </>
@@ -388,8 +391,8 @@ export default function InvoiceModal({ transaction, organizationName, organizati
               </div>
 
               {hasRemainingDue && (
-                <div className="text-center text-xs font-extrabold text-amber-800 uppercase tracking-wider border border-dashed border-amber-500 rounded-xl py-2">
-                  Paiement partiel — vente à crédit
+                <div className={`text-center text-xs font-extrabold uppercase tracking-wider border border-dashed rounded-xl py-2 ${isCancelled ? "text-red-800 border-red-500" : "text-amber-800 border-amber-500"}`}>
+                  {isCancelled ? "Clôturé — vente à crédit non honorée" : "Paiement partiel — vente à crédit"}
                 </div>
               )}
             </div>

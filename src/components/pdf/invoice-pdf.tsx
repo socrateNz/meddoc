@@ -212,6 +212,41 @@ const a4Styles = StyleSheet.create({
     padding: 6,
     marginBottom: 20,
   },
+  // Variante rouge : solde abandonné (ticket clôturé, cf. closeUnpaidInvoice), distincte du
+  // "reste à payer" ambre ci-dessus qui reste, lui, activement recouvrable.
+  amountDueBoxDanger: {
+    width: "45%",
+    borderWidth: 1,
+    borderColor: "#dc2626",
+    backgroundColor: "#fef2f2",
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 6,
+  },
+  amountDueLabelDanger: {
+    fontSize: 8,
+    fontWeight: "bold",
+    color: "#991b1b",
+    textTransform: "uppercase",
+  },
+  amountDueValueDanger: {
+    fontSize: 10,
+    fontWeight: "bold",
+    color: "#991b1b",
+  },
+  creditBannerDanger: {
+    textAlign: "center",
+    fontSize: 9,
+    fontWeight: "bold",
+    color: "#991b1b",
+    textTransform: "uppercase",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#dc2626",
+    borderRadius: 6,
+    padding: 6,
+    marginBottom: 20,
+  },
   footer: {
     marginTop: 40,
     flexDirection: "row",
@@ -372,6 +407,27 @@ const thermalStyles = StyleSheet.create({
     borderColor: "#92400e",
     paddingVertical: 2,
   },
+  // Variante rouge : solde abandonné (ticket clôturé), cf. équivalent a4Styles ci-dessus.
+  remainingRowDanger: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    fontFamily: "Courier-Bold",
+    fontSize: 8,
+    marginTop: 1,
+    color: "#dc2626",
+  },
+  creditBannerDanger: {
+    textAlign: "center",
+    fontSize: 7.5,
+    fontFamily: "Courier-Bold",
+    marginTop: 4,
+    marginBottom: 2,
+    color: "#dc2626",
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#dc2626",
+    paddingVertical: 2,
+  },
   barcodeBox: {
     alignItems: "center",
     marginTop: 8,
@@ -477,6 +533,9 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
   // Cf. invoice-modal.tsx : absent (undefined) pour les transactions antérieures au paiement
   // échelonné, qui gardent l'affichage à une seule ligne "TOTAL NET".
   const hasRemainingDue = Number(transaction.remainingDue) > 0;
+  // Clôturé côté caisse (cf. closeUnpaidInvoice) : le solde restant est abandonné, pas juste "pas
+  // encore payé" — affiché en rouge plutôt qu'en ambre pour marquer cette différence.
+  const isCancelled = transaction.status === "CANCELLED";
 
   // Thermal 80mm format (default)
   if (format === "thermal") {
@@ -540,11 +599,11 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
                   <Text>{formatFCFA(transaction.invoiceTotalAmount)}</Text>
                 </View>
                 <View style={thermalStyles.totalRow}>
-                  <Text>REGLE CE JOUR :</Text>
+                  <Text>{isCancelled ? "TOTAL ENCAISSE :" : "REGLE CE JOUR :"}</Text>
                   <Text style={thermalStyles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
                 </View>
-                <View style={thermalStyles.remainingRow}>
-                  <Text>RESTE A PAYER :</Text>
+                <View style={isCancelled ? thermalStyles.remainingRowDanger : thermalStyles.remainingRow}>
+                  <Text>{isCancelled ? "SOLDE ABANDONNE :" : "RESTE A PAYER :"}</Text>
                   <Text>{formatFCFA(transaction.remainingDue)}</Text>
                 </View>
               </>
@@ -560,7 +619,9 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
           </View>
 
           {hasRemainingDue && (
-            <Text style={thermalStyles.creditBanner}>PAIEMENT PARTIEL - SOLDE A REGLER</Text>
+            <Text style={isCancelled ? thermalStyles.creditBannerDanger : thermalStyles.creditBanner}>
+              {isCancelled ? "CLOTURE - NON REGLE INTEGRALEMENT" : "PAIEMENT PARTIEL - SOLDE A REGLER"}
+            </Text>
           )}
 
           <View style={thermalStyles.divider} />
@@ -655,14 +716,14 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
               </View>
               <View style={a4Styles.totalBox}>
                 <View style={a4Styles.totalRow}>
-                  <Text style={a4Styles.totalLabel}>Réglé ce jour :</Text>
+                  <Text style={a4Styles.totalLabel}>{isCancelled ? "Total encaissé :" : "Réglé ce jour :"}</Text>
                   <Text style={a4Styles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
                 </View>
               </View>
-              <View style={a4Styles.amountDueBox}>
+              <View style={isCancelled ? a4Styles.amountDueBoxDanger : a4Styles.amountDueBox}>
                 <View style={a4Styles.totalRow}>
-                  <Text style={a4Styles.amountDueLabel}>Reste à payer</Text>
-                  <Text style={a4Styles.amountDueValue}>{formatFCFA(transaction.remainingDue)}</Text>
+                  <Text style={isCancelled ? a4Styles.amountDueLabelDanger : a4Styles.amountDueLabel}>{isCancelled ? "Solde abandonné" : "Reste à payer"}</Text>
+                  <Text style={isCancelled ? a4Styles.amountDueValueDanger : a4Styles.amountDueValue}>{formatFCFA(transaction.remainingDue)}</Text>
                 </View>
               </View>
             </>
@@ -677,7 +738,9 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
         </View>
 
         {hasRemainingDue && (
-          <Text style={a4Styles.creditBanner}>Paiement partiel — vente à crédit</Text>
+          <Text style={isCancelled ? a4Styles.creditBannerDanger : a4Styles.creditBanner}>
+            {isCancelled ? "Clôturé — vente à crédit non honorée" : "Paiement partiel — vente à crédit"}
+          </Text>
         )}
 
         {/* Signatures */}
