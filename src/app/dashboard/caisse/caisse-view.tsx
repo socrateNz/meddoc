@@ -35,6 +35,7 @@ import RecordPaymentDialog from "./record-payment-dialog";
 import CloseInvoiceDialog from "./close-invoice-dialog";
 import { EditInvoiceClientDialog } from "./edit-invoice-client-dialog";
 import { EditInvoiceStatusDialog } from "./edit-invoice-status-dialog";
+import { DeleteInvoiceDialog } from "./delete-invoice-dialog";
 import InvoiceModal from "@/app/dashboard/finance/invoice-modal";
 
 function formatFCFA(val: number) {
@@ -517,17 +518,30 @@ export default function CaisseView({
                         />
                       )}
                       {canManageStatus && (
-                        <EditInvoiceStatusDialog
-                          pendingInvoice={{
-                            id: inv.id,
-                            status: inv.status,
-                            amountPaid: inv.amountPaid,
-                            invoiceTotalAmount,
-                            patient: inv.patient,
-                            customPatientName: inv.customPatientName,
-                          }}
-                          onSuccess={handleMutationSuccess}
-                        />
+                        <>
+                          <EditInvoiceStatusDialog
+                            pendingInvoice={{
+                              id: inv.id,
+                              status: inv.status,
+                              amountPaid: inv.amountPaid,
+                              invoiceTotalAmount,
+                              patient: inv.patient,
+                              customPatientName: inv.customPatientName,
+                            }}
+                            onSuccess={handleMutationSuccess}
+                          />
+                          {/* Bouton de suppression temporaire (commenté)
+                          <DeleteInvoiceDialog
+                            pendingInvoice={{
+                              id: inv.id,
+                              amountPaid: inv.amountPaid,
+                              invoiceTotalAmount,
+                              patient: inv.patient,
+                              customPatientName: inv.customPatientName,
+                            }}
+                            onSuccess={handleMutationSuccess}
+                          /> */}
+                        </>
                       )}
                     </div>
                   </div>
@@ -711,17 +725,30 @@ export default function CaisseView({
                             )
                           )}
                           {canManageStatus && (
-                            <EditInvoiceStatusDialog
-                              pendingInvoice={{
-                                id: inv.id,
-                                status: inv.status,
-                                amountPaid: inv.amountPaid,
-                                invoiceTotalAmount: total,
-                                patient: inv.patient,
-                                customPatientName: inv.customPatientName,
-                              }}
-                              onSuccess={handleMutationSuccess}
-                            />
+                            <>
+                              <EditInvoiceStatusDialog
+                                pendingInvoice={{
+                                  id: inv.id,
+                                  status: inv.status,
+                                  amountPaid: inv.amountPaid,
+                                  invoiceTotalAmount: total,
+                                  patient: inv.patient,
+                                  customPatientName: inv.customPatientName,
+                                }}
+                                onSuccess={handleMutationSuccess}
+                              />
+                              {/* Bouton de suppression temporaire (commenté)
+                              <DeleteInvoiceDialog
+                                pendingInvoice={{
+                                  id: inv.id,
+                                  amountPaid: inv.amountPaid,
+                                  invoiceTotalAmount: total,
+                                  patient: inv.patient,
+                                  customPatientName: inv.customPatientName,
+                                }}
+                                onSuccess={handleMutationSuccess}
+                              /> */}
+                            </>
                           )}
                         </div>
                       </div>

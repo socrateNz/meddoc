@@ -105,3 +105,9 @@ export const changeInvoiceStatusSchema = z.object({
   reason: z.string().optional(),
 });
 
+export const deletePendingInvoiceSchema = z.object({
+  pendingInvoiceId: z.string().min(1, "Identifiant de la facture requis."),
+  reason: z.string().optional(),
+});
+
+

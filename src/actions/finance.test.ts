@@ -1362,3 +1362,70 @@ describe("changeInvoiceStatus", () => {
   });
 });
 
+describe("deletePendingInvoice", () => {
+  const coordUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it("supprime le ticket et ses paiements associés pour un coordonnateur", async () => {
+    const deleteManyTx = vi.fn(async () => ({ count: 1 }));
+    const updateManyPrescriptions = vi.fn(async () => ({ count: 1 }));
+    const updateManyLabOrders = vi.fn(async () => ({ count: 1 }));
+    const deleteInvoice = vi.fn(async () => ({ id: "inv1" }));
+
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordUser) }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1" })),
+        },
+        $transaction: vi.fn(async (cb: any) =>
+          cb({
+            financialTransaction: { deleteMany: deleteManyTx },
+            prescription: { updateMany: updateManyPrescriptions },
+            labOrder: { updateMany: updateManyLabOrders },
+            pendingInvoice: { delete: deleteInvoice },
+          })
+        ),
+      },
+    }));
+
+    const { deletePendingInvoice } = await import("./finance");
+
+    const result = await deletePendingInvoice({
+      pendingInvoiceId: "inv1",
+      reason: "Erreur de doublon",
+    });
+
+    expect(result.success).toBe(true);
+    expect(deleteManyTx).toHaveBeenCalledWith({ where: { pendingInvoiceId: "inv1" } });
+    expect(deleteInvoice).toHaveBeenCalledWith({ where: { id: "inv1" } });
+  });
+
+  it("refuse la suppression pour un caissier standard", async () => {
+    const cashierUser = { id: "cashier1", role: "CASHIER", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => cashierUser) }));
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1" })),
+        },
+      },
+    }));
+
+    const { deletePendingInvoice } = await import("./finance");
+
+    const result = await deletePendingInvoice({
+      pendingInvoiceId: "inv1",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Non autorisé/);
+  });
+});
+
+

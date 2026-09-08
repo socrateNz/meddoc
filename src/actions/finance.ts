@@ -13,6 +13,7 @@ import {
   dispensePendingInvoiceSchema,
   importPharmacyItemsSchema,
   changeInvoiceStatusSchema,
+  deletePendingInvoiceSchema,
 } from "@/validators/finance";
 import { consumeStockLots, assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
@@ -975,6 +976,71 @@ export async function changeInvoiceStatus(data: {
     return { success: true };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la modification du statut du ticket.") };
+  }
+}
+
+// Suppression temporaire exceptionnelle d'un ticket de caisse —
+// réservée au COORDINATOR et aux ADMIN.
+// Tous les règlements et liens associés (ordonnances, labo) sont nettoyés pour maintenir la cohérence.
+export async function deletePendingInvoice(data: {
+  pendingInvoiceId: string;
+  reason?: string;
+}) {
+  try {
+    deletePendingInvoiceSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const allowedRoles = ["COORDINATOR", "ADMIN", "SUPER_ADMIN"];
+    if (!allowedRoles.includes(activeUser.role)) {
+      throw new Error("Non autorisé. Seul le coordonnateur ou un administrateur peut supprimer un ticket.");
+    }
+
+    const pending = await prisma.pendingInvoice.findUnique({
+      where: { id: data.pendingInvoiceId },
+    });
+    if (!pending) throw new Error("Facture introuvable.");
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Supprimer les paiements en caisse associés (pour retirer les montants du solde de caisse)
+      await tx.financialTransaction.deleteMany({
+        where: { pendingInvoiceId: data.pendingInvoiceId },
+      });
+
+      // 2. Déconnecter les ordonnances rattachées
+      await tx.prescription.updateMany({
+        where: { pendingInvoiceId: data.pendingInvoiceId },
+        data: { pendingInvoiceId: null },
+      });
+
+      // 3. Déconnecter les demandes d'examens labo rattachées
+      await tx.labOrder.updateMany({
+        where: { pendingInvoiceId: data.pendingInvoiceId },
+        data: { pendingInvoiceId: null },
+      });
+
+      // 4. Supprimer le PendingInvoice
+      await tx.pendingInvoice.delete({
+        where: { id: data.pendingInvoiceId },
+      });
+    });
+
+    await logAuditAction(activeUser.id, "DELETE_PENDING_INVOICE", "PendingInvoice", data.pendingInvoiceId, {
+      deletedInvoiceId: data.pendingInvoiceId,
+      reason: data.reason || null,
+    });
+
+    if (pending.organizationId) {
+      revalidatePath(`/dashboard/clinics/${pending.organizationId}/caisse`);
+      revalidatePath(`/dashboard/clinics/${pending.organizationId}/pharmacie`);
+    }
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard/lab");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la suppression du ticket.") };
   }
 }
 
