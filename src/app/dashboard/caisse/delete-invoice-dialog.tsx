@@ -73,7 +73,7 @@ export function DeleteInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
+      <DialogTrigger>
         {triggerBtn || (
           <Button
             variant="outline"
