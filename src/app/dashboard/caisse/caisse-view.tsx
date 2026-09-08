@@ -416,6 +416,38 @@ export default function CaisseView({
             </Card>
           ) : (
             <div className="space-y-2">
+              {(() => {
+                let totalValue = 0;
+                let totalPaid = 0;
+                let partialCount = 0;
+                for (const inv of unpaidInvoices) {
+                  const invoiceTotalAmount = (inv.items || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
+                  totalValue += invoiceTotalAmount;
+                  totalPaid += Number(inv.amountPaid || 0);
+                  if (inv.status === "PARTIAL") partialCount++;
+                }
+                const totalUnpaid = Math.max(0, totalValue - totalPaid);
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-1">
+                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60">
+                      <p className="text-[10px] font-bold uppercase text-slate-400">Tickets impayés</p>
+                      <p className="text-sm font-extrabold mt-1">{unpaidInvoices.length}{partialCount > 0 && <span className="font-medium text-slate-400"> · {partialCount} partiel{partialCount > 1 ? "s" : ""}</span>}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
+                      <p className="text-[10px] font-bold uppercase text-amber-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" />Montant total impayé</p>
+                      <p className="text-sm font-extrabold mt-1 text-amber-700 dark:text-amber-400">{formatFCFA(totalUnpaid)}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
+                      <p className="text-[10px] font-bold uppercase text-emerald-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" />Déjà encaissé</p>
+                      <p className="text-sm font-extrabold mt-1 text-emerald-700 dark:text-emerald-400">{formatFCFA(totalPaid)}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/30">
+                      <p className="text-[10px] font-bold uppercase text-blue-600 flex items-center gap-1"><Wallet className="h-3 w-3" />Valeur totale des tickets</p>
+                      <p className="text-sm font-extrabold mt-1 text-blue-700 dark:text-blue-400">{formatFCFA(totalValue)}</p>
+                    </div>
+                  </div>
+                );
+              })()}
               {!selectedRegister?.openSession && (
                 <div className="p-3 text-xs font-medium rounded-xl border bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-900/30 flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 shrink-0" />
