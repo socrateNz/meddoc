@@ -211,9 +211,12 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                   <span>CAISSE: {transaction.recordedBy ? `${transaction.recordedBy.lastName}` : "Caissier 01"}</span>
                   <span>HEURE: {formattedTime}</span>
                 </div>
-                {transaction.patient?.user && (
+                {(transaction.patient?.user || transaction.customPatientName || transaction.customPatientPhone) && (
                   <div className="text-slate-800 font-medium truncate pt-0.5">
-                    CLIENT: {transaction.patient.user.lastName} {transaction.patient.user.firstName}
+                    CLIENT: {transaction.patient?.user
+                      ? `${transaction.patient.user.lastName} ${transaction.patient.user.firstName}`
+                      : (transaction.customPatientName || "Client comptant")}
+                    {transaction.customPatientPhone && !transaction.patient?.user ? ` (${transaction.customPatientPhone})` : ""}
                   </div>
                 )}
               </div>

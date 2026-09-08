@@ -433,6 +433,10 @@ export default function CaisseView({
                       <p className="text-[10px] font-bold uppercase text-slate-400">Tickets impayés</p>
                       <p className="text-sm font-extrabold mt-1">{unpaidInvoices.length}{partialCount > 0 && <span className="font-medium text-slate-400"> · {partialCount} partiel{partialCount > 1 ? "s" : ""}</span>}</p>
                     </div>
+                    <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/30">
+                      <p className="text-[10px] font-bold uppercase text-blue-600 flex items-center gap-1"><Wallet className="h-3 w-3" />Valeur totale des tickets</p>
+                      <p className="text-sm font-extrabold mt-1 text-blue-700 dark:text-blue-400">{formatFCFA(totalValue)}</p>
+                    </div>
                     <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
                       <p className="text-[10px] font-bold uppercase text-amber-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" />Montant total impayé</p>
                       <p className="text-sm font-extrabold mt-1 text-amber-700 dark:text-amber-400">{formatFCFA(totalUnpaid)}</p>
@@ -440,10 +444,6 @@ export default function CaisseView({
                     <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
                       <p className="text-[10px] font-bold uppercase text-emerald-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" />Déjà encaissé</p>
                       <p className="text-sm font-extrabold mt-1 text-emerald-700 dark:text-emerald-400">{formatFCFA(totalPaid)}</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/30">
-                      <p className="text-[10px] font-bold uppercase text-blue-600 flex items-center gap-1"><Wallet className="h-3 w-3" />Valeur totale des tickets</p>
-                      <p className="text-sm font-extrabold mt-1 text-blue-700 dark:text-blue-400">{formatFCFA(totalValue)}</p>
                     </div>
                   </div>
                 );
@@ -464,6 +464,9 @@ export default function CaisseView({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{name}</p>
+                        <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.patient?.user ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" : "bg-slate-500/10 text-slate-500 border-slate-500/20"}`}>
+                          {inv.patient?.user ? "Patient" : "Client comptant"}
+                        </Badge>
                         {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
                         <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
                           {inv.status === "PARTIAL" ? "Partiel" : "Non payé"}
@@ -620,6 +623,9 @@ export default function CaisseView({
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-bold text-slate-800 dark:text-slate-200">{name}</p>
+                            <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.patient?.user ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" : "bg-slate-500/10 text-slate-500 border-slate-500/20"}`}>
+                              {inv.patient?.user ? "Patient" : "Client comptant"}
+                            </Badge>
                             {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
                             <Badge variant="outline" className="text-[10px] font-mono bg-slate-500/10 text-slate-500 border-slate-500/20">
                               #{ticketNum}
