@@ -610,6 +610,10 @@ export default function CaisseView({
                           <p className="text-[11px] text-slate-500 mt-0.5">
                             Créé le {formatDateTime(inv.createdAt)} • Total {formatFCFA(total)}
                             {inv.status === "PARTIAL" && ` • Réglé ${formatFCFA(inv.amountPaid)} • Reste ${formatFCFA(total - inv.amountPaid)}`}
+                            {inv.status === "CANCELLED" && (
+                              ` • Encaissé ${formatFCFA(inv.amountPaid)}` +
+                              (total - inv.amountPaid > 0 ? ` • Solde abandonné ${formatFCFA(total - inv.amountPaid)}` : "")
+                            )}
                           </p>
                         </div>
 
