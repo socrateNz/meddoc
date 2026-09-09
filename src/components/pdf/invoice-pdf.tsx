@@ -530,6 +530,10 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
   }
 
   const hasPharmacyItem = itemList.some((item: any) => item.type === "PHARMACY");
+  // Cf. invoice-modal.tsx : jamais transaction.amount pour "TOTAL NET" — sur la dernière tranche
+  // d'un paiement échelonné, amount ne porte que cette tranche alors que items contient tout le
+  // panier de la facture. Toujours la somme des lignes réellement imprimées ci-dessus.
+  const itemsTotal = itemList.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);
   // Cf. invoice-modal.tsx : absent (undefined) pour les transactions antérieures au paiement
   // échelonné, qui gardent l'affichage à une seule ligne "TOTAL NET".
   const hasRemainingDue = Number(transaction.remainingDue) > 0;
@@ -610,7 +614,7 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
             ) : (
               <View style={thermalStyles.totalRow}>
                 <Text>TOTAL NET :</Text>
-                <Text style={thermalStyles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
+                <Text style={thermalStyles.totalAmount}>{formatFCFA(itemsTotal)}</Text>
               </View>
             )}
             <View style={thermalStyles.metaLine}>
@@ -731,7 +735,7 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
             <View style={a4Styles.totalBox}>
               <View style={a4Styles.totalRow}>
                 <Text style={a4Styles.totalLabel}>TOTAL NET À PAYER :</Text>
-                <Text style={a4Styles.totalAmount}>{formatFCFA(transaction.amount)}</Text>
+                <Text style={a4Styles.totalAmount}>{formatFCFA(itemsTotal)}</Text>
               </View>
             </View>
           )}

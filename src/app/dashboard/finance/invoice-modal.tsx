@@ -115,6 +115,12 @@ export default function InvoiceModal({ transaction, organizationName, organizati
   }
 
   const hasPharmacyItem = itemList.some((item: any) => item.type === "PHARMACY");
+  // Somme des lignes réellement imprimées ci-dessus — jamais transaction.amount pour le "TOTAL
+  // NET" ci-dessous : sur un paiement échelonné, la dernière tranche qui solde la facture porte
+  // en `amount` le montant de CETTE tranche (ex: 200 FCFA), alors que `items` contient tout le
+  // panier de la facture (ex: 7350 FCFA) — afficher transaction.amount y produisait un total qui
+  // ne correspondait pas à la somme des lignes juste au-dessus.
+  const itemsTotal = itemList.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);
   // Posé par createCaisseSale/payPendingInvoice quand ce règlement ne solde pas intégralement la
   // facture (paiement échelonné / vente à crédit) — absent (undefined) pour les transactions
   // antérieures à cette fonctionnalité, qui gardent l'affichage à une seule ligne "TOTAL NET".
@@ -267,7 +273,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                 ) : (
                   <div className="flex justify-between items-center text-sm font-extrabold pt-1">
                     <span>TOTAL NET :</span>
-                    <span className="text-base text-black">{formatFCFA(transaction.amount)}</span>
+                    <span className="text-base text-black">{formatFCFA(itemsTotal)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-[10px] text-slate-700 font-semibold">
@@ -387,7 +393,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                   ) : (
                     <div className="p-3.5 rounded-xl border border-blue-500/30 bg-blue-50 text-blue-950 flex justify-between items-center">
                       <span className="font-bold text-sm uppercase">TOTAL NET :</span>
-                      <span className="text-xl font-extrabold text-blue-700">{formatFCFA(transaction.amount)}</span>
+                      <span className="text-xl font-extrabold text-blue-700">{formatFCFA(itemsTotal)}</span>
                     </div>
                   )}
                 </div>
