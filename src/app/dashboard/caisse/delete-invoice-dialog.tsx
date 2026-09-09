@@ -86,7 +86,7 @@ export function DeleteInvoiceDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[460px]">
+      <DialogContent className="sm:max-w-115">
         <form onSubmit={handleDelete}>
           <DialogHeader>
             <div className="flex items-center gap-2">
@@ -129,7 +129,7 @@ export function DeleteInvoiceDialog({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 placeholder="Ex: Erreur de saisie doublon, annulation exceptionnelle..."
-                className="text-xs min-h-[70px] resize-none"
+                className="text-xs min-h-17.5 resize-none"
               />
             </div>
           </div>
