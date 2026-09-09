@@ -1015,6 +1015,75 @@ describe("listPendingInvoices — forme de computeDispenseLines", () => {
   });
 });
 
+describe("listFinancialTransactions", () => {
+  it("attache invoiceTotalAmount et remainingDue à une transaction liée à une facture pas intégralement soldée (paiement échelonné)", async () => {
+    const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+
+    const items = [
+      { type: "PHARMACY", pharmacyItemId: "item1", description: "Ceftriaxone", quantity: 1, unitPrice: 800, amount: 800 },
+      { type: "PHARMACY", pharmacyItemId: "item2", description: "Atenor", quantity: 1, unitPrice: 1000, amount: 1000 },
+    ];
+    // Ce règlement précis (la dernière tranche imprimée) ne porte que 200 FCFA, alors que le
+    // panier complet de la facture (déjà stocké sur `items`, cf. payPendingInvoice) totalise
+    // 1800 FCFA — exactement le cas signalé (le reçu affichait 200 au lieu de 1800).
+    const transaction = { id: "tx1", amount: 200, items, pendingInvoiceId: "inv1", pendingInvoice: { status: "PARTIAL", createdAt: new Date() } };
+
+    const groupByCall = vi.fn(async () => [{ pendingInvoiceId: "inv1", _sum: { amount: 1600 } }]);
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          findMany: vi.fn(async () => [transaction]),
+          count: vi.fn(async () => 1),
+          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
+          groupBy: groupByCall,
+        },
+      },
+    }));
+    const { listFinancialTransactions } = await import("./finance");
+
+    const result = await listFinancialTransactions({ organizationId: "org1" });
+
+    expect(result.success).toBe(true);
+    expect(groupByCall).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { pendingInvoiceId: { in: ["inv1"] } } })
+    );
+    const enriched = (result.data as any).transactions[0];
+    expect(enriched.invoiceTotalAmount).toBe(1800);
+    // 1600 déjà encaissé au total (toutes tranches confondues) sur une facture de 1800 : il reste 200 dus.
+    expect(enriched.remainingDue).toBe(200);
+    expect(enriched.status).toBe("PARTIAL");
+    // Le montant de CETTE transaction précise reste inchangé (jamais écrasé par le cumul).
+    expect(enriched.amount).toBe(200);
+  });
+
+  it("laisse une transaction sans facture liée inchangée (pas d'appel groupBy inutile)", async () => {
+    const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+
+    const transaction = { id: "tx1", amount: 5000, items: [], pendingInvoiceId: null };
+    const groupByCall = vi.fn(async () => []);
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          findMany: vi.fn(async () => [transaction]),
+          count: vi.fn(async () => 1),
+          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
+          groupBy: groupByCall,
+        },
+      },
+    }));
+    const { listFinancialTransactions } = await import("./finance");
+
+    const result = await listFinancialTransactions({ organizationId: "org1" });
+
+    expect(result.success).toBe(true);
+    expect(groupByCall).not.toHaveBeenCalled();
+    const passthrough = (result.data as any).transactions[0];
+    expect(passthrough).toEqual(transaction);
+  });
+});
+
 describe("getFinanceSummary — revenueByCategory", () => {
   it("regroupe le revenu par catégorie (tout-temps + aujourd'hui) sans passer par le tableau plafonné à 500 lignes", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };

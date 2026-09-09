@@ -1514,10 +1514,41 @@ export async function listFinancialTransactions(filters: {
       }),
     ]);
 
+    // Attache le total facturé et le reste dû à chaque transaction liée à une facture (impression
+    // depuis le Journal, cf. finance-journal.tsx → InvoiceModal) : sans ça, seul le montant de
+    // CETTE transaction précise est connu — sur la dernière tranche d'un paiement échelonné, ça
+    // ne correspond ni au total réel de la facture ni à ce qui est encore dû si elle n'est pas
+    // intégralement soldée. `invoiceTotalAmount` se déduit des lignes déjà présentes sur la
+    // transaction (le panier complet de la facture, cf. payPendingInvoice) ; `amountPaid` cumule
+    // tous les règlements liés à la même facture.
+    const linkedInvoiceIds = [...new Set(transactions.map((t) => t.pendingInvoiceId).filter((id): id is string => !!id))];
+    const paidByInvoice = new Map<string, number>();
+    if (linkedInvoiceIds.length > 0) {
+      const paidAgg = await prisma.financialTransaction.groupBy({
+        by: ["pendingInvoiceId"],
+        where: { pendingInvoiceId: { in: linkedInvoiceIds } },
+        _sum: { amount: true },
+      });
+      for (const row of paidAgg) {
+        if (row.pendingInvoiceId) paidByInvoice.set(row.pendingInvoiceId, row._sum.amount || 0);
+      }
+    }
+    const transactionsWithInvoiceTotals = transactions.map((t) => {
+      if (!t.pendingInvoiceId) return t;
+      const invoiceTotalAmount = ((t.items as any[]) || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
+      const amountPaid = paidByInvoice.get(t.pendingInvoiceId) ?? t.amount;
+      return {
+        ...t,
+        invoiceTotalAmount,
+        remainingDue: Math.max(0, invoiceTotalAmount - amountPaid),
+        status: t.pendingInvoice?.status,
+      };
+    });
+
     return {
       success: true,
       data: {
-        transactions,
+        transactions: transactionsWithInvoiceTotals,
         totalCount,
         page,
         pageSize,
