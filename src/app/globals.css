@@ -197,12 +197,24 @@
 @media print {
   body * {
     visibility: hidden !important;
+    /* Le ticket est affiché dans une boîte de dialogue à hauteur limitée (max-h-[92vh]) avec un
+       conteneur scrollable (overflow-y-auto) — sans neutraliser ça aussi à l'impression, un long
+       ticket restait rogné à la hauteur visible du modal à l'écran, même une fois #printable-
+       receipt sorti du flux normal ci-dessous. Sans effet visuel ici puisque ces éléments sont
+       de toute façon invisible ci-dessus. */
+    overflow: visible !important;
+    max-height: none !important;
   }
   #printable-receipt, #printable-receipt * {
     visibility: visible !important;
   }
   #printable-receipt {
-    position: fixed !important;
+    /* absolute, pas fixed : un élément fixed est répété à l'identique sur chaque page et son
+       contenu est rogné à la hauteur d'une page plutôt que de continuer sur la suivante — les
+       longs tickets (beaucoup de lignes) se coupaient net en bas de la première page. absolute
+       se positionne au même endroit mais laisse le contenu se répartir normalement sur plusieurs
+       pages quand il dépasse une page. */
+    position: absolute !important;
     left: 0 !important;
     top: 0 !important;
     margin: 0 !important;
