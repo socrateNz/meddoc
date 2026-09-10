@@ -24,12 +24,14 @@ import {
   Search,
   History,
   KeyRound,
+  ShoppingCart,
 } from "lucide-react";
 import { EditInvoiceClientDialog } from "../caisse/edit-invoice-client-dialog";
 import PharmacyDialog from "@/app/dashboard/finance/pharmacy-dialog";
 import StockPurchaseDialog from "@/app/dashboard/finance/stock-purchase-dialog";
 import ImportPharmacyCsvDialog from "@/app/dashboard/finance/import-pharmacy-csv-dialog";
 import InventoryPanel from "@/app/dashboard/finance/inventory-panel";
+import PurchaseHistoryPanel from "@/app/dashboard/finance/purchase-history-panel";
 import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
 import { dispensePendingInvoice } from "@/actions/finance";
 
@@ -177,6 +179,10 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
             <TabsTrigger value="inventaire" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <ClipboardList className="h-4 w-4 text-rose-500" />
               Inventaire
+            </TabsTrigger>
+            <TabsTrigger value="achats" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+              <ShoppingCart className="h-4 w-4 text-amber-500" />
+              Achats
             </TabsTrigger>
             <TabsTrigger value="fournisseurs" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <Truck className="h-4 w-4 text-emerald-500" />
@@ -517,6 +523,12 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
         {/* TAB: Inventaire (comptage physique vs stock système) */}
         <TabsContent value="inventaire" className="pt-6 space-y-4">
           <InventoryPanel organizationId={organizationId} canWrite={canWrite} />
+        </TabsContent>
+
+        {/* TAB: Historique des achats — tous les lots StockPurchase (recordStockPurchase, import
+            CSV, réception de commande fournisseur, surplus d'inventaire), cf. getStockPurchaseHistory. */}
+        <TabsContent value="achats" className="pt-6 space-y-4">
+          <PurchaseHistoryPanel organizationId={organizationId} />
         </TabsContent>
 
         <TabsContent value="fournisseurs" className="pt-6">

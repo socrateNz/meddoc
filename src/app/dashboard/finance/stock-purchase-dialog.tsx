@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ShoppingCart, Truck, Loader2 } from "lucide-react";
+import { ShoppingCart, Truck, Loader2, Info } from "lucide-react";
 import { recordStockPurchase } from "@/actions/stock";
 
 interface PharmacyItemOption {
@@ -271,6 +271,13 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
                 Oui
               </button>
             </div>
+
+            <p className="flex items-start gap-1.5 text-[11px] text-slate-400">
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              Répondez « Oui » uniquement si l&apos;argent n&apos;a pas déjà quitté la caisse autrement
+              (ex : un retrait via « Nouvelle dépense » pour aller faire cet achat). Sinon, la même
+              sortie d&apos;argent serait comptée deux fois dans les dépenses.
+            </p>
 
             {formData.deductFromCash && (
               openRegisters.length === 0 ? (
