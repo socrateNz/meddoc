@@ -274,6 +274,15 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
                         {t.pendingInvoice && t.pendingInvoice.status !== "PAID" && (
                           <PaymentStatusBadge status={t.pendingInvoice.status} />
                         )}
+                        {t.absorbedByPurchaseId && (
+                          <Badge
+                            variant="outline"
+                            title="Ce retrait a été utilisé pour régler un achat pharmacie — exclu des dépenses totales pour ne pas compter cet argent deux fois."
+                            className="text-[10px] shrink-0 bg-slate-500/10 text-slate-500 border-slate-500/20"
+                          >
+                            Absorbée
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">

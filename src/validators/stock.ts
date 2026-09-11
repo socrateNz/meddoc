@@ -24,6 +24,10 @@ export const recordStockPurchaseSchema = z
     invoiceRef: z.string().optional(),
     organizationId: z.string().optional(),
     cashSessionId: z.string().optional(),
+    // Retrait "Nouvelle dépense" déjà enregistré que cet achat vient régler — mutuellement
+    // exclusif avec cashSessionId (cf. refine ci-dessous) : soit l'achat décaisse directement une
+    // caisse ouverte, soit il règle un retrait déjà effectué, jamais les deux à la fois.
+    linkedExpenseTransactionId: z.string().optional(),
   })
   .refine((data) => !!data.pharmacyItemId || !!data.newItem, {
     message: "Sélectionnez un produit existant ou renseignez un nouveau produit",
@@ -32,6 +36,10 @@ export const recordStockPurchaseSchema = z
   .refine((data) => !data.newItem || data.purchasePrice !== undefined, {
     message: "Le prix d'achat est requis pour un nouveau produit (aucun historique à réutiliser).",
     path: ["purchasePrice"],
+  })
+  .refine((data) => !(data.cashSessionId && data.linkedExpenseTransactionId), {
+    message: "Un achat ne peut pas à la fois décaisser une caisse ouverte et régler un retrait déjà effectué.",
+    path: ["linkedExpenseTransactionId"],
   });
 
 export const inventoryCountLineInputSchema = z.object({

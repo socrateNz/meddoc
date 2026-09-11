@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Unlock, Lock, Plus } from "lucide-react";
+import { Loader2, Unlock, Lock, Plus, Pencil } from "lucide-react";
 import { createRegister } from "@/actions/registers";
 
 function formatFCFA(val: number) {
@@ -165,6 +165,109 @@ export function CloseSessionDialog({ registerName, expectedAmount, onClose }: Cl
               Fermer la caisse
             </Button>
           </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface EditOpeningFloatDialogProps {
+  currentOpeningFloat: number;
+  // false une fois qu'au moins une transaction est passée sur la session ET que l'utilisateur
+  // n'est pas coordinateur — cf. correctOpeningFloat côté serveur, qui refuse dans ce cas.
+  disabledReason?: string;
+  onSubmit: (newOpeningFloat: number, reason?: string) => Promise<{ success: boolean; error?: string }>;
+}
+
+export function EditOpeningFloatDialog({ currentOpeningFloat, disabledReason, onSubmit }: EditOpeningFloatDialogProps) {
+  const [open, setOpen] = useState(false);
+  const [newOpeningFloat, setNewOpeningFloat] = useState("");
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleOpenChange = (v: boolean) => {
+    setOpen(v);
+    if (v) {
+      setNewOpeningFloat(String(currentOpeningFloat));
+    } else {
+      setReason("");
+      setError("");
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    const res = await onSubmit(Number(newOpeningFloat), reason.trim() || undefined);
+    setLoading(false);
+    if (res.success) {
+      setOpen(false);
+      setReason("");
+    } else {
+      setError(res.error || "Erreur lors de la correction.");
+    }
+  };
+
+  if (disabledReason) {
+    return (
+      <Button size="sm" variant="ghost" disabled title={disabledReason} className="h-6 w-6 p-0 text-slate-300">
+        <Pencil className="h-3 w-3" />
+      </Button>
+    );
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger render={<Button size="sm" variant="ghost" title="Corriger le montant d'ouverture" className="h-6 w-6 p-0 text-slate-400 hover:text-slate-700" />}>
+        <Pencil className="h-3 w-3" />
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[400px] rounded-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="h-4 w-4 text-slate-500" />
+            Corriger le fond de caisse
+          </DialogTitle>
+          <DialogDescription>
+            À utiliser en cas d&apos;erreur de saisie au moment de l&apos;ouverture — le montant théorique et l&apos;écart de fermeture seront recalculés automatiquement.
+          </DialogDescription>
+        </DialogHeader>
+        {error && (
+          <div className="p-3 text-xs font-medium bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 rounded-xl border border-red-200 dark:border-red-900/30">
+            {error}
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="newOpeningFloat">Montant d&apos;ouverture correct (FCFA) *</Label>
+            <Input
+              id="newOpeningFloat"
+              type="number"
+              min="0"
+              required
+              value={newOpeningFloat}
+              onChange={(e) => setNewOpeningFloat(e.target.value)}
+              className="rounded-xl"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="openingFloatReason">Motif (optionnel)</Label>
+            <Input
+              id="openingFloatReason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="ex: erreur de saisie à l'ouverture"
+              className="rounded-xl"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Annuler</Button>
+            <Button type="submit" disabled={loading || !newOpeningFloat} className="rounded-xl">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
+              Corriger
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

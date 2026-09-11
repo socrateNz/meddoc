@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Package,
@@ -25,6 +26,7 @@ import {
   History,
   KeyRound,
   ShoppingCart,
+  Undo2,
 } from "lucide-react";
 import { EditInvoiceClientDialog } from "../caisse/edit-invoice-client-dialog";
 import PharmacyDialog from "@/app/dashboard/finance/pharmacy-dialog";
@@ -33,7 +35,7 @@ import ImportPharmacyCsvDialog from "@/app/dashboard/finance/import-pharmacy-csv
 import InventoryPanel from "@/app/dashboard/finance/inventory-panel";
 import PurchaseHistoryPanel from "@/app/dashboard/finance/purchase-history-panel";
 import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
-import { dispensePendingInvoice } from "@/actions/finance";
+import { dispensePendingInvoice, cancelDispense } from "@/actions/finance";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -91,6 +93,10 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
   // Remise physique des médicaments : réservée au PHARMACIST, plus strict que canWrite — même
   // séparation que côté serveur (dispensePendingInvoice).
   const canDispense = currentUserRole === "PHARMACIST";
+  // Annulation d'une remise (correction si le pharmacien s'est trompé) : réservée au
+  // COORDINATOR, séparation des rôles voulue — même logique que côté serveur (cancelDispense),
+  // celui qui remet ne peut pas se corriger lui-même sans supervision.
+  const canCancelDispense = currentUserRole === "COORDINATOR";
 
   const now = new Date();
 
@@ -147,6 +153,40 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
       setFinalizeError(err.message || "Erreur de connexion.");
     } finally {
       setFinalizing(false);
+    }
+  };
+
+  // Annulation d'une remise depuis l'Historique (COORDINATOR uniquement) : tout ou rien, pas de
+  // sélection de lignes/quantités — cf. cancelDispense côté serveur.
+  const [cancellingInvoice, setCancellingInvoice] = useState<any | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  const closeCancelDialog = () => {
+    setCancellingInvoice(null);
+    setCancelReason("");
+    setCancelError(null);
+  };
+
+  const handleCancelDispense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cancellingInvoice) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await cancelDispense(cancellingInvoice.id, cancelReason.trim() || undefined);
+      if (res.success) {
+        setMsg({ type: "success", text: "Remise annulée : le stock a été réintégré et le ticket est revenu en file d'attente." });
+        closeCancelDialog();
+        router.refresh();
+      } else {
+        setCancelError(res.error || "Erreur lors de l'annulation de la remise.");
+      }
+    } catch (err: any) {
+      setCancelError(err.message || "Erreur de connexion.");
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -324,6 +364,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                 const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : (inv.customPatientName || "Client comptant");
                 const phone = inv.patient?.user?.phone || inv.customPatientPhone;
                 const ticketNum = String(inv.id).slice(-6).toUpperCase();
+                const hasSomethingDispensed = !!inv.dispensedAt || !!inv.labConsumablesDispensedAt || cartLines.some((l: any) => (l.dispensedQuantity || 0) > 0);
 
                 return (
                   <Card key={inv.id} className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
@@ -360,9 +401,21 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                           {[...cartLines, ...labLines].map((line: any) => line.description).join(", ") || "Aucun médicament listé"}
                         </p>
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
                         <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{formatFCFA(total)}</p>
                         <p className="text-[10px] text-slate-400">{inv.dispensedAt ? formatDateTime(inv.dispensedAt) : "-"}</p>
+                        {canCancelDispense && hasSomethingDispensed && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCancellingInvoice(inv)}
+                            className="h-7 text-[11px] gap-1 rounded-lg border-rose-500/30 text-rose-600 hover:bg-rose-500/10"
+                          >
+                            <Undo2 className="h-3 w-3" />
+                            Annuler la remise
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -648,6 +701,62 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                     <Button type="submit" disabled={finalizing || !finalizeReference.trim() || !hasSomethingToGive} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
                       {finalizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
                       Remettre
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Annulation d'une remise (COORDINATOR) : tout ou rien — remet le ticket en file d'attente
+          et réintègre le stock, cf. cancelDispense. */}
+      <Dialog open={!!cancellingInvoice} onOpenChange={(v) => !v && closeCancelDialog()}>
+        <DialogContent className="sm:max-w-[440px] rounded-2xl">
+          {cancellingInvoice && (() => {
+            const name = cancellingInvoice.patient?.user
+              ? `${cancellingInvoice.patient.user.lastName} ${cancellingInvoice.patient.user.firstName}`
+              : (cancellingInvoice.customPatientName || "Client comptant");
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+                    <Undo2 className="h-5 w-5" />
+                    Annuler la remise de {name}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Le stock remis sera réintégré et ce ticket redeviendra visible dans la file
+                    d&apos;attente pharmacie. Le paiement déjà perçu n&apos;est pas concerné.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <form onSubmit={handleCancelDispense} className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cancelReason" className="text-xs">Motif (recommandé)</Label>
+                    <Textarea
+                      id="cancelReason"
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      placeholder="Ex: erreur du pharmacien, mauvais produit remis..."
+                      className="text-sm rounded-xl"
+                      rows={2}
+                    />
+                  </div>
+
+                  {cancelError && (
+                    <div className="p-2.5 text-xs font-medium rounded-lg border bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/30">
+                      {cancelError}
+                    </div>
+                  )}
+
+                  <DialogFooter className="pt-2">
+                    <Button type="button" variant="outline" onClick={closeCancelDialog} disabled={cancelling}>
+                      Retour
+                    </Button>
+                    <Button type="submit" disabled={cancelling} className="gap-2 bg-rose-600 hover:bg-rose-700 text-white">
+                      {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+                      Annuler la remise
                     </Button>
                   </DialogFooter>
                 </form>

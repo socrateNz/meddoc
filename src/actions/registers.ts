@@ -8,6 +8,7 @@ import {
   createRegisterSchema,
   openRegisterSessionSchema,
   closeRegisterSessionSchema,
+  correctOpeningFloatSchema,
 } from "@/validators/registers";
 import { revalidatePath } from "next/cache";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
@@ -164,6 +165,54 @@ export async function openRegisterSession(data: { registerId: string; openingFlo
     return { success: true, data: session };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'ouverture de la caisse.") };
+  }
+}
+
+// Corrige une erreur de saisie sur le montant d'ouverture — expectedAmount/variance sont
+// recalculés à la lecture (cf. getSessionSummary/listCashSessions), donc corriger ce seul champ
+// suffit à tout remettre juste, sans rien recalculer ailleurs. Auto-correction ouverte à tout
+// rôle opérant la caisse tant qu'AUCUNE transaction n'a encore été enregistrée sur la session
+// (une vraie coquille de frappe, sans conséquence comptable) ; dès qu'une vente/dépense est
+// passée, seul un COORDINATOR peut corriger — pour qu'un montant d'ouverture ne puisse jamais
+// être modifié en cours de journée pour maquiller un écart de caisse constaté entretemps.
+export async function correctOpeningFloat(data: { sessionId: string; newOpeningFloat: number; reason?: string }) {
+  try {
+    correctOpeningFloatSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertRegisterOperateRole(activeUser.role);
+
+    const session = await prisma.cashSession.findUnique({ where: { id: data.sessionId } });
+    if (!session) throw new Error("Session de caisse introuvable.");
+    await assertClinicScope(session.organizationId, activeUser);
+    if (session.status !== "OPEN") {
+      throw new Error("Cette session de caisse est déjà clôturée ; le montant d'ouverture ne peut plus être corrigé.");
+    }
+
+    const transactionCount = await prisma.financialTransaction.count({ where: { cashSessionId: data.sessionId } });
+    if (transactionCount > 0) {
+      assertRegisterStructureRole(activeUser.role);
+    }
+
+    const oldOpeningFloat = session.openingFloat;
+    const updated = await prisma.cashSession.update({
+      where: { id: data.sessionId },
+      data: { openingFloat: Number(data.newOpeningFloat) },
+    });
+
+    await logAuditAction(activeUser.id, "CORRECT_OPENING_FLOAT", "CashSession", data.sessionId, {
+      oldOpeningFloat,
+      newOpeningFloat: data.newOpeningFloat,
+      transactionCountAtCorrection: transactionCount,
+      reason: data.reason || null,
+    });
+    revalidatePath(`/dashboard/clinics/${session.organizationId}/caisse`);
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true, data: updated };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la correction du montant d'ouverture.") };
   }
 }
 

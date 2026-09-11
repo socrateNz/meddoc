@@ -1,12 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShoppingCart, Truck, Loader2, Info } from "lucide-react";
-import { recordStockPurchase } from "@/actions/stock";
+import { recordStockPurchase, getAvailableExpenseWithdrawals } from "@/actions/stock";
+
+function formatFCFA(val: number) {
+  const num = Math.round(Number(val) || 0);
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
+}
+
+function formatDate(date: string | Date) {
+  return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(date));
+}
 
 interface PharmacyItemOption {
   id: string;
@@ -39,13 +48,31 @@ const emptyForm = {
   invoiceRef: "",
   deductFromCash: false,
   cashSessionId: "",
+  linkedExpenseTransactionId: "",
 };
+
+interface WithdrawalOption {
+  id: string;
+  description: string;
+  amount: number;
+  createdAt: string | Date;
+}
 
 export default function StockPurchaseDialog({ pharmacyItems, organizationId, openRegisters = [] }: StockPurchaseDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [formData, setFormData] = useState(emptyForm);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalOption[]>([]);
+  const [withdrawalsLoading, setWithdrawalsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !organizationId) return;
+    setWithdrawalsLoading(true);
+    getAvailableExpenseWithdrawals(organizationId)
+      .then((res) => setWithdrawals(res.success ? (res.data as WithdrawalOption[]) : []))
+      .finally(() => setWithdrawalsLoading(false));
+  }, [open, organizationId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,6 +102,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
         invoiceRef: formData.invoiceRef || undefined,
         organizationId,
         cashSessionId: formData.deductFromCash ? formData.cashSessionId || undefined : undefined,
+        linkedExpenseTransactionId: formData.deductFromCash ? undefined : formData.linkedExpenseTransactionId || undefined,
       });
 
       if (res.success) {
@@ -265,7 +293,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
               </button>
               <button
                 type="button"
-                onClick={() => setFormData({ ...formData, deductFromCash: true })}
+                onClick={() => setFormData({ ...formData, deductFromCash: true, linkedExpenseTransactionId: "" })}
                 className={`px-3 py-1.5 rounded-lg font-semibold border ${formData.deductFromCash ? "bg-indigo-600 text-white border-indigo-600" : "text-slate-500 border-slate-200 dark:border-slate-800"}`}
               >
                 Oui
@@ -279,7 +307,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
               sortie d&apos;argent serait comptée deux fois dans les dépenses.
             </p>
 
-            {formData.deductFromCash && (
+            {formData.deductFromCash ? (
               openRegisters.length === 0 ? (
                 <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
                   Aucune caisse n'est actuellement ouverte. Ouvrez une session de caisse pour pouvoir décaisser cet achat.
@@ -299,6 +327,31 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
                   ))}
                 </select>
               )
+            ) : (
+              <div className="space-y-1">
+                <Label htmlFor="linkedExpense" className="text-[11px] text-slate-500">
+                  Cet achat provient-il d&apos;un retrait déjà enregistré (« Nouvelle dépense ») ?
+                </Label>
+                <select
+                  id="linkedExpense"
+                  value={formData.linkedExpenseTransactionId}
+                  onChange={(e) => setFormData({ ...formData, linkedExpenseTransactionId: e.target.value })}
+                  disabled={withdrawalsLoading}
+                  className="w-full h-9 px-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white disabled:opacity-50"
+                >
+                  <option value="">-- Aucun (financement externe : virement, argent personnel...) --</option>
+                  {withdrawals.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {formatDate(w.createdAt)} · {w.description} ({formatFCFA(w.amount)})
+                    </option>
+                  ))}
+                </select>
+                {formData.linkedExpenseTransactionId && (
+                  <p className="text-[11px] text-slate-400">
+                    Ce retrait sera marqué comme réglé par cet achat et ne comptera plus dans les dépenses totales à part.
+                  </p>
+                )}
+              </div>
             )}
           </div>
 

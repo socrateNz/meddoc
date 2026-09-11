@@ -945,7 +945,7 @@ model StockAdjustment {
 
   quantityDelta   Int
   valuationAmount Float?
-  reason          String @default("INVENTORY") // INVENTORY, MANUAL
+  reason          String @default("INVENTORY") // INVENTORY, MANUAL, DISPENSE_CANCELLED
 
   createdById String   @db.ObjectId
   createdAt   DateTime @default(now())
@@ -1108,6 +1108,17 @@ model FinancialTransaction {
   // l'ancien lien 1:1 procédural (PendingInvoice.financialTransactionId).
   pendingInvoiceId String?         @db.ObjectId
   pendingInvoice   PendingInvoice? @relation(fields: [pendingInvoiceId], references: [id])
+
+  // Posé sur une dépense OPERATIONAL_EXPENSE (retrait de caisse, cf. recordExpense) quand elle a
+  // été explicitement liée, en enregistrant un achat pharmacie payé "hors caisse", à l'achat
+  // qu'elle a servi à financer (cf. recordStockPurchase, linkedExpenseTransactionId). Le retrait
+  // reste visible dans le Journal pour la traçabilité mais est exclu de Dépenses totales/du jour
+  // dans getFinanceSummary : seul le coût réel de l'achat (PHARMACY_PURCHASE) compte, pour ne
+  // jamais compter deux fois le même argent — le retrait n'était qu'un transfert de caisse vers
+  // l'achat, pas une dépense propre à l'établissement.
+  absorbedByPurchaseId String?               @db.ObjectId
+  absorbedByPurchase   FinancialTransaction? @relation("ExpenseAbsorbedByPurchase", fields: [absorbedByPurchaseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  absorbedExpenses     FinancialTransaction[] @relation("ExpenseAbsorbedByPurchase")
 
   createdAt DateTime @default(now())
 

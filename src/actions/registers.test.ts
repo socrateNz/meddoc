@@ -81,6 +81,84 @@ describe("openRegisterSession", () => {
   });
 });
 
+describe("correctOpeningFloat", () => {
+  it("laisse la caissière elle-même corriger tant qu'aucune transaction n'a encore été enregistrée sur la session", async () => {
+    const sessionUpdate = vi.fn(async ({ data }: any) => ({ id: "sess1", ...data }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: {
+          findUnique: vi.fn(async () => ({ id: "sess1", organizationId: "clinicA", status: "OPEN", openingFloat: 5000 })),
+          update: sessionUpdate,
+        },
+        financialTransaction: { count: vi.fn(async () => 0) },
+      },
+    }));
+    const { correctOpeningFloat } = await import("./registers");
+
+    const result = await correctOpeningFloat({ sessionId: "sess1", newOpeningFloat: 8000 });
+
+    expect(result.success).toBe(true);
+    expect(sessionUpdate).toHaveBeenCalledWith({ where: { id: "sess1" }, data: { openingFloat: 8000 } });
+  });
+
+  it("refuse la correction par une caissière dès qu'une transaction existe déjà sur la session", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: {
+          findUnique: vi.fn(async () => ({ id: "sess1", organizationId: "clinicA", status: "OPEN", openingFloat: 5000 })),
+          update: vi.fn(),
+        },
+        financialTransaction: { count: vi.fn(async () => 1) },
+      },
+    }));
+    const { correctOpeningFloat } = await import("./registers");
+
+    const result = await correctOpeningFloat({ sessionId: "sess1", newOpeningFloat: 8000 });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/coordinateurs/);
+  });
+
+  it("laisse un COORDINATOR corriger même après que des transactions ont déjà été enregistrées", async () => {
+    const coordinatorUser = { id: "u2", role: "COORDINATOR", organizationId: "clinicA", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+
+    const sessionUpdate = vi.fn(async ({ data }: any) => ({ id: "sess1", ...data }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: {
+          findUnique: vi.fn(async () => ({ id: "sess1", organizationId: "clinicA", status: "OPEN", openingFloat: 5000 })),
+          update: sessionUpdate,
+        },
+        financialTransaction: { count: vi.fn(async () => 3) },
+      },
+    }));
+    const { correctOpeningFloat } = await import("./registers");
+
+    const result = await correctOpeningFloat({ sessionId: "sess1", newOpeningFloat: 8000, reason: "erreur de saisie" });
+
+    expect(result.success).toBe(true);
+    expect(sessionUpdate).toHaveBeenCalledWith({ where: { id: "sess1" }, data: { openingFloat: 8000 } });
+  });
+
+  it("refuse de corriger une session déjà clôturée", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: {
+          findUnique: vi.fn(async () => ({ id: "sess1", organizationId: "clinicA", status: "CLOSED", openingFloat: 5000 })),
+          update: vi.fn(),
+        },
+      },
+    }));
+    const { correctOpeningFloat } = await import("./registers");
+
+    const result = await correctOpeningFloat({ sessionId: "sess1", newOpeningFloat: 8000 });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/déjà clôturée/);
+  });
+});
+
 describe("closeRegisterSession", () => {
   it("libère le verrou hasOpenSession de la caisse à la fermeture", async () => {
     const cashRegisterUpdate = vi.fn(async () => ({}));

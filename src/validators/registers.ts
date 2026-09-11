@@ -15,3 +15,9 @@ export const closeRegisterSessionSchema = z.object({
   countedAmount: z.number().min(0, "Le montant compté doit être positif ou nul"),
   notes: z.string().optional(),
 });
+
+export const correctOpeningFloatSchema = z.object({
+  sessionId: z.string().min(1),
+  newOpeningFloat: z.number().min(0, "Le fond de caisse doit être positif ou nul"),
+  reason: z.string().optional(),
+});

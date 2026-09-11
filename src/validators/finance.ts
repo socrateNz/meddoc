@@ -98,6 +98,11 @@ export const dispensePendingInvoiceSchema = z.object({
   lines: z.array(dispenseLineInputSchema).default([]),
 });
 
+export const cancelDispenseSchema = z.object({
+  pendingInvoiceId: z.string().min(1),
+  reason: z.string().optional(),
+});
+
 export const changeInvoiceStatusSchema = z.object({
   pendingInvoiceId: z.string().min(1, "Identifiant de la facture requis."),
   newStatus: z.enum(["PENDING", "PARTIAL", "PAID", "CANCELLED"]),

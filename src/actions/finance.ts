@@ -11,6 +11,7 @@ import {
   createCaisseSaleSchema,
   updateInvoicePatientInfoSchema,
   dispensePendingInvoiceSchema,
+  cancelDispenseSchema,
   importPharmacyItemsSchema,
   changeInvoiceStatusSchema,
   deletePendingInvoiceSchema,
@@ -866,6 +867,138 @@ export async function dispensePendingInvoice(
   }
 }
 
+// Annule intégralement la remise d'un ticket (tout ou rien, pas ligne par ligne ni comptage par
+// comptage) — correction réservée au COORDINATOR quand le pharmacien a remis par erreur : remet
+// dispensedQuantity à 0 sur toutes les lignes PHARMACY, réintègre le stock consommé (un nouveau
+// lot StockPurchase par produit, valorisé au coût moyen actuel des lots restants — la remise
+// d'origine ne garde pas trace des lots précis consommés via consumeStockLots en FEFO, donc
+// impossible de les restaurer eux-mêmes ; même logique que le surplus constaté à la clôture d'un
+// inventaire, cf. completeInventoryCount), annule labConsumablesDispensedAt le cas échéant, et
+// repasse dispensedAt à null ainsi que les ordonnances liées de DISPENSED à SENT_TO_PHARMACY.
+// N'annule jamais un paiement déjà perçu (cf. payPendingInvoice, totalement indépendant de la
+// remise) : seul le mouvement de stock est corrigé.
+export async function cancelDispense(pendingInvoiceId: string, reason?: string) {
+  try {
+    cancelDispenseSchema.parse({ pendingInvoiceId, reason });
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+
+    const allowedRoles = ["COORDINATOR"];
+    if (!allowedRoles.includes(activeUser.role)) {
+      throw new Error("Non autorisé. Seul le coordonnateur peut annuler une remise.");
+    }
+
+    const pending = await prisma.pendingInvoice.findUnique({
+      where: { id: pendingInvoiceId },
+      include: { prescriptions: true, labOrders: { select: { id: true, testDetails: true } } },
+    });
+    if (!pending) throw new Error("Facture introuvable.");
+
+    // Recette figée au moment de la commande labo (cf. dispensePendingInvoice) : jamais mutée
+    // ensuite, donc pas besoin d'une relecture fraîche comme pour pending.items ci-dessous.
+    const labConsumableItems = (pending.labOrders || []).flatMap((lo) =>
+      ((lo.testDetails as any[]) || []).flatMap((td) =>
+        (td.consumables || []).map((c: any) => ({
+          pharmacyItemId: c.pharmacyItemId as string | undefined,
+          quantity: Number(c.quantity) || 0,
+        }))
+      )
+    );
+
+    await prisma.$transaction(
+      async (tx) => {
+        const fresh = await tx.pendingInvoice.findUnique({
+          where: { id: pendingInvoiceId },
+          select: { items: true, labConsumablesDispensedAt: true },
+        });
+        if (!fresh) throw new Error("Facture introuvable.");
+
+        const freshItems: any[] = (fresh.items as any[]) || [];
+        const toRestore = new Map<string, number>();
+
+        for (const item of freshItems) {
+          if (item.type !== "PHARMACY" || !item.pharmacyItemId) continue;
+          const qty = Number(item.dispensedQuantity) || 0;
+          if (qty > 0) {
+            toRestore.set(item.pharmacyItemId, (toRestore.get(item.pharmacyItemId) || 0) + qty);
+            item.dispensedQuantity = 0;
+          }
+        }
+
+        if (fresh.labConsumablesDispensedAt) {
+          for (const c of labConsumableItems) {
+            if (!c.pharmacyItemId || c.quantity <= 0) continue;
+            toRestore.set(c.pharmacyItemId, (toRestore.get(c.pharmacyItemId) || 0) + c.quantity);
+          }
+        }
+
+        if (toRestore.size === 0) {
+          throw new Error("Rien n'a été remis pour cette facture : rien à annuler.");
+        }
+
+        const costByItem = await getItemUnitCostMap(Array.from(toRestore.keys()), tx);
+
+        for (const [pharmacyItemId, quantity] of toRestore) {
+          const avgCost = costByItem.get(pharmacyItemId) ?? 0;
+          await tx.pharmacyItem.update({
+            where: { id: pharmacyItemId },
+            data: { stockQuantity: { increment: quantity } },
+          });
+          await tx.stockPurchase.create({
+            data: {
+              pharmacyItemId,
+              quantity,
+              remainingQuantity: quantity,
+              purchasePrice: avgCost,
+              totalCost: avgCost * quantity,
+              organizationId: pending.organizationId,
+              purchasedById: activeUser.id,
+              batchNumber: "ANNULATION-REMISE",
+            },
+          });
+          await tx.stockAdjustment.create({
+            data: {
+              pharmacyItemId,
+              quantityDelta: quantity,
+              valuationAmount: avgCost * quantity,
+              reason: "DISPENSE_CANCELLED",
+              createdById: activeUser.id,
+            },
+          });
+        }
+
+        await tx.pendingInvoice.update({
+          where: { id: pendingInvoiceId },
+          data: {
+            items: freshItems,
+            dispensedAt: null,
+            ...(fresh.labConsumablesDispensedAt ? { labConsumablesDispensedAt: null } : {}),
+          },
+        });
+
+        for (const prescription of pending.prescriptions) {
+          if (prescription.status === "DISPENSED") {
+            await tx.prescription.update({
+              where: { id: prescription.id },
+              data: { status: "SENT_TO_PHARMACY", dispensedById: null, dispensedAt: null },
+            });
+          }
+        }
+      },
+      { timeout: 20000, maxWait: 10000 }
+    );
+
+    await logAuditAction(activeUser.id, "CANCEL_DISPENSE", "PendingInvoice", pendingInvoiceId, { reason: reason || null });
+    revalidatePath(`/dashboard/clinics/${pending.organizationId}/pharmacie`);
+    revalidatePath("/dashboard/pharmacie");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'annulation de la remise.") };
+  }
+}
+
 // Clôture un ticket à crédit/acompte dont on sait qu'il ne sera jamais réglé intégralement —
 // déclenchée depuis la Caisse (onglet "Tickets impayés"), jamais depuis la pharmacie. N'exige
 // aucune saisie de quantité : ce qui a déjà été remis est déjà connu via
@@ -1123,9 +1256,16 @@ export async function getFinanceSummary(organizationId?: string) {
           todayIncome += amt;
         }
       } else if (t.type === "EXPENSE") {
-        totalExpenses += amt;
-        if (createdAt >= startOfToday) {
-          todayExpenses += amt;
+        // Un retrait de caisse (OPERATIONAL_EXPENSE) réclamé par un achat pharmacie
+        // (absorbedByPurchaseId posé, cf. recordStockPurchase) n'est plus qu'un transfert vers
+        // cet achat, pas une dépense propre à l'établissement — le coût réel est déjà compté via
+        // la FinancialTransaction PHARMACY_PURCHASE de l'achat lui-même. L'exclure ici évite de
+        // compter deux fois le même argent, cf. échange avec l'utilisateur sur ce point précis.
+        if (!t.absorbedByPurchaseId) {
+          totalExpenses += amt;
+          if (createdAt >= startOfToday) {
+            todayExpenses += amt;
+          }
         }
       }
     }

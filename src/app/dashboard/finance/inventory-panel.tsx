@@ -37,7 +37,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
   const [completing, setCompleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [lastClosure, setLastClosure] = useState<{ totalLossValue: number } | null>(null);
+  const [lastClosure, setLastClosure] = useState<{ totalLossValue: number; staleProducts?: string[] } | null>(null);
 
   const countQueryKey = ["activeInventoryCount", organizationId];
   const historyQueryKey = ["inventoryHistory", organizationId];
@@ -197,6 +197,13 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
             <span className="font-bold text-rose-600">{formatFCFA(lastClosure.totalLossValue)}</span> — enregistrées
             comme dépense dans le journal de caisse.
           </p>
+          {!!lastClosure.staleProducts?.length && (
+            <p className="mt-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 text-xs">
+              <span className="font-bold">{lastClosure.staleProducts.length} produit(s) non pris en compte</span> —
+              leur stock a changé (ravitaillement reçu, remise pharmacie...) après votre comptage :{" "}
+              {lastClosure.staleProducts.join(", ")}. Redémarrez un inventaire pour les recompter.
+            </p>
+          )}
         </div>
       )}
 

@@ -887,6 +887,116 @@ describe("dispensePendingInvoice", () => {
   });
 });
 
+describe("cancelDispense", () => {
+  it("réintègre le stock (nouveau lot valorisé au coût moyen), remet dispensedQuantity à 0, dispensedAt à null, et l'ordonnance à SENT_TO_PHARMACY — pour un COORDINATOR", async () => {
+    const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+
+    const pharmacyItemUpdate = vi.fn(async () => ({}));
+    const stockPurchaseCreate = vi.fn(async ({ data }: any) => ({ id: "sp1", ...data }));
+    const stockAdjustmentCreate = vi.fn(async () => ({}));
+    const pendingInvoiceUpdate = vi.fn(async () => ({}));
+    const prescriptionUpdate = vi.fn(async () => ({}));
+    const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 2 }];
+
+    const tx = {
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, labConsumablesDispensedAt: null })),
+        update: pendingInvoiceUpdate,
+      },
+      // Lots restants valorisés à 300 : coût moyen repris pour le nouveau lot de restitution.
+      stockPurchase: { findMany: vi.fn(async () => [{ pharmacyItemId: "item1", remainingQuantity: 5, purchasePrice: 300 }]), create: stockPurchaseCreate },
+      pharmacyItem: { update: pharmacyItemUpdate },
+      stockAdjustment: { create: stockAdjustmentCreate },
+      prescription: { update: prescriptionUpdate },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv1",
+            organizationId: "org1",
+            items,
+            prescriptions: [{ id: "presc1", status: "DISPENSED" }],
+            labOrders: [],
+          })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { cancelDispense } = await import("./finance");
+
+    const result = await cancelDispense("inv1", "erreur du pharmacien");
+
+    expect(result.success).toBe(true);
+    expect(pharmacyItemUpdate).toHaveBeenCalledWith({ where: { id: "item1" }, data: { stockQuantity: { increment: 2 } } });
+    expect(stockPurchaseCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          pharmacyItemId: "item1",
+          quantity: 2,
+          remainingQuantity: 2,
+          purchasePrice: 300,
+          totalCost: 600,
+          batchNumber: "ANNULATION-REMISE",
+        }),
+      })
+    );
+    expect(stockAdjustmentCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ pharmacyItemId: "item1", quantityDelta: 2, reason: "DISPENSE_CANCELLED" }) })
+    );
+    expect(pendingInvoiceUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: [expect.objectContaining({ dispensedQuantity: 0 })],
+          dispensedAt: null,
+        }),
+      })
+    );
+    expect(prescriptionUpdate).toHaveBeenCalledWith({
+      where: { id: "presc1" },
+      data: { status: "SENT_TO_PHARMACY", dispensedById: null, dispensedAt: null },
+    });
+  });
+
+  it("refuse pour un rôle autre que COORDINATOR (ex: le PHARMACIST qui a fait la remise ne peut pas se corriger seul)", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    vi.doMock("@/lib/db", () => ({ prisma: {} }));
+    const { cancelDispense } = await import("./finance");
+
+    const result = await cancelDispense("inv1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/coordonnateur/);
+  });
+
+  it("refuse quand rien n'a été remis pour cette facture", async () => {
+    const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+
+    const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 0 }];
+    const tx = {
+      pendingInvoice: { findUnique: vi.fn(async () => ({ items, labConsumablesDispensedAt: null })) },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", organizationId: "org1", items, prescriptions: [], labOrders: [] })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { cancelDispense } = await import("./finance");
+
+    const result = await cancelDispense("inv1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/rien à annuler/);
+  });
+});
+
 describe("closeUnpaidInvoice", () => {
   it("clôture un ticket PENDING sans toucher au stock ni créer d'écriture financière", async () => {
     const pendingInvoiceUpdate = vi.fn(async () => ({ id: "inv1", status: "CANCELLED" }));
@@ -1144,6 +1254,46 @@ describe("getFinanceSummary — revenueByCategory", () => {
       { category: "LAB_EXAM_FEE", revenue: 30000, cost: 0, profit: 30000, todayRevenue: 0, todayCost: 0, todayProfit: 0 },
       { category: "SERVICE_FEE", revenue: 13000, cost: 0, profit: 13000, todayRevenue: 0, todayCost: 0, todayProfit: 0 },
     ]);
+  });
+
+  it("exclut des Dépenses totales/du jour un retrait de caisse déjà absorbé par un achat pharmacie (évite le double comptage)", async () => {
+    const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+
+    const now = new Date();
+    const transactions = [
+      { id: "tx-income", type: "INCOME", amount: 5000, createdAt: now },
+      // Retrait "Nouvelle dépense" absorbé par l'achat ci-dessous : ne doit plus compter à part.
+      { id: "tx-withdrawal-absorbed", type: "EXPENSE", amount: 500, createdAt: now, absorbedByPurchaseId: "tx-purchase" },
+      // Un autre retrait, non lié à un achat : compte normalement.
+      { id: "tx-withdrawal-other", type: "EXPENSE", amount: 300, createdAt: now, absorbedByPurchaseId: null },
+      // L'achat pharmacie lui-même, coût réel : compte normalement.
+      { id: "tx-purchase", type: "EXPENSE", amount: 2000, createdAt: now, absorbedByPurchaseId: null },
+    ];
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          findMany: vi.fn(async (args: any) => (args?.where?.category === "PHARMACY_SALE" ? [] : transactions)),
+          groupBy: vi.fn(async () => []),
+        },
+        pharmacyItem: {},
+        user: { findMany: vi.fn(async () => []) },
+        cashSession: { findMany: vi.fn(async () => []) },
+        stockPurchase: { aggregate: vi.fn(async () => ({ _sum: { totalCost: 0 } })) },
+        labOrder: { findMany: vi.fn(async () => []) },
+        $runCommandRaw: vi.fn(async () => ({ cursor: { firstBatch: [] } })),
+      },
+    }));
+    const { getFinanceSummary } = await import("./finance");
+
+    const result = await getFinanceSummary("org1");
+
+    expect(result.success).toBe(true);
+    // 300 (retrait non lié) + 2000 (achat, coût réel) — le retrait absorbé (500) est exclu.
+    expect(result.data?.totalExpenses).toBe(2300);
+    expect(result.data?.todayExpenses).toBe(2300);
+    expect(result.data?.totalIncome).toBe(5000);
   });
 
   it("calcule le coût des examens (marge Examens) depuis testDetails : baseCost du test figé + coût moyen actuel des consommables", async () => {

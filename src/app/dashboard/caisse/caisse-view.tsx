@@ -26,9 +26,9 @@ import {
   Filter,
 } from "lucide-react";
 import PaymentStatusBadge from "@/components/payment-status-badge";
-import { listRegistersWithStatus, openRegisterSession, getSessionSummary, closeRegisterSession } from "@/actions/registers";
+import { listRegistersWithStatus, openRegisterSession, getSessionSummary, closeRegisterSession, correctOpeningFloat } from "@/actions/registers";
 import { listPendingInvoices, listCaisseHistoryInvoices } from "@/actions/finance";
-import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog } from "./register-session-dialogs";
+import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog, EditOpeningFloatDialog } from "./register-session-dialogs";
 import CaisseCartDialog from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
 import RecordPaymentDialog from "./record-payment-dialog";
@@ -162,6 +162,16 @@ export default function CaisseView({
     if (res.success) {
       await refreshRegisters();
       setSummary(null);
+    }
+    return res;
+  };
+
+  const handleCorrectOpeningFloat = async (newOpeningFloat: number, reason?: string) => {
+    if (!selectedRegister?.openSession) return { success: false, error: "Aucune session ouverte." };
+    const res = await correctOpeningFloat({ sessionId: selectedRegister.openSession.id, newOpeningFloat, reason });
+    if (res.success) {
+      await refreshSummary(selectedRegister.openSession.id);
+      await refreshRegisters();
     }
     return res;
   };
@@ -317,7 +327,20 @@ export default function CaisseView({
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60">
-                      <p className="text-[10px] font-bold uppercase text-slate-400">Fond de départ</p>
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-[10px] font-bold uppercase text-slate-400">Fond de départ</p>
+                        {canOperate && (
+                          <EditOpeningFloatDialog
+                            currentOpeningFloat={summary.session.openingFloat}
+                            disabledReason={
+                              summary.transactions.length > 0 && !canManageRegisters
+                                ? "Des opérations ont déjà été enregistrées sur cette session : seul un coordinateur peut encore corriger le fond de départ."
+                                : undefined
+                            }
+                            onSubmit={handleCorrectOpeningFloat}
+                          />
+                        )}
+                      </div>
                       <p className="text-sm font-extrabold mt-1">{formatFCFA(summary.session.openingFloat)}</p>
                     </div>
                     <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
