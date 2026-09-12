@@ -199,11 +199,10 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     <div className="space-y-4">
       {msg && (
         <div
-          className={`p-3 text-xs font-medium rounded-xl border ${
-            msg.type === "success"
-              ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/30"
-              : "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/30"
-          }`}
+          className={`p-3 text-xs font-medium rounded-xl border ${msg.type === "success"
+            ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/30"
+            : "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900/30"
+            }`}
         >
           {msg.text}
         </div>
@@ -253,15 +252,6 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
             </p>
             {canWrite && (
               <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setCancelConfirmOpen(true)}
-                  disabled={cancelling || completing}
-                  className="gap-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-500/10"
-                >
-                  {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-                  Annuler l'inventaire
-                </Button>
                 <Button variant="outline" onClick={() => handleSaveDraft(false)} disabled={saving} className="gap-2 rounded-xl">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   Enregistrer le comptage
@@ -269,6 +259,15 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                 <Button onClick={() => setConfirmOpen(true)} disabled={completing} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
                   {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                   Clôturer l'inventaire
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => setCancelConfirmOpen(true)}
+                  disabled={cancelling || completing}
+                  className="gap-2 rounded-xl"
+                >
+                  {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Annuler l'inventaire
                 </Button>
               </div>
             )}
@@ -412,7 +411,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
             <Button variant="outline" onClick={() => setCancelConfirmOpen(false)} disabled={cancelling} className="rounded-xl">
               Retour
             </Button>
-            <Button onClick={handleCancelInventory} disabled={cancelling} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+            <Button variant="destructive" onClick={handleCancelInventory} disabled={cancelling} className="gap-2 rounded-xl">
               {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
               Annuler l'inventaire
             </Button>
