@@ -227,3 +227,29 @@
     max-width: 80mm !important;
   }
 }
+
+/* Barre de défilement fine et violette (même teinte que le violet-500/600 déjà utilisé ailleurs
+   dans l'app, cf. sidebar.tsx) sur toute l'application. Firefox ne permet pas une largeur exacte
+   en pixels (juste le mot-clé "thin"), donc le 1px demandé n'est appliqué qu'aux navigateurs
+   basés sur WebKit/Blink (Chrome, Edge, Safari) via ::-webkit-scrollbar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #7c3aed transparent;
+}
+
+::-webkit-scrollbar {
+  width: 1px;
+  height: 1px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #7c3aed;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #6d28d9;
+}
