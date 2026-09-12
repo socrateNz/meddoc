@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ClipboardList, PlayCircle, Save, CheckCircle2, Loader2, AlertTriangle, History, XCircle } from "lucide-react";
+import { ClipboardList, PlayCircle, Save, CheckCircle2, Loader2, AlertTriangle, History, XCircle, Search } from "lucide-react";
 import {
   startInventoryCount,
   getActiveInventoryCount,
@@ -41,6 +41,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [lastClosure, setLastClosure] = useState<{ totalLossValue: number; staleProducts?: string[] } | null>(null);
+  const [inventorySearch, setInventorySearch] = useState("");
 
   const countQueryKey = ["activeInventoryCount", organizationId];
   const historyQueryKey = ["inventoryHistory", organizationId];
@@ -195,6 +196,17 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     );
   }
 
+  // Filtre d'affichage uniquement — le comptage, la clôture et le résumé continuent de porter
+  // sur count.lines en entier (jamais sur ce sous-ensemble), pour ne jamais perdre de saisie ou
+  // fausser le résumé de clôture sur une ligne simplement masquée par la recherche.
+  const q = inventorySearch.trim().toLowerCase();
+  const filteredLines = q
+    ? (count?.lines || []).filter((line: any) => {
+        const name = `${line.pharmacyItem?.name || ""} ${line.pharmacyItem?.dosage || ""}`.toLowerCase();
+        return name.includes(q);
+      })
+    : count?.lines || [];
+
   return (
     <div className="space-y-4">
       {msg && (
@@ -273,6 +285,16 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
             )}
           </div>
 
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <Input
+              value={inventorySearch}
+              onChange={(e) => setInventorySearch(e.target.value)}
+              placeholder="Rechercher un produit..."
+              className="pl-9 h-9 text-sm rounded-xl"
+            />
+          </div>
+
           <div className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 overflow-hidden">
             <Table>
               <TableHeader className="bg-slate-50/50 dark:bg-slate-900/40">
@@ -285,7 +307,14 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {count.lines.map((line: any) => {
+                {filteredLines.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                      Aucun produit ne correspond à votre recherche.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredLines.map((line: any) => {
                   const counted = Number(countedValues[line.id] ?? line.systemQuantity);
                   const variance = counted - line.systemQuantity;
                   return (
@@ -329,7 +358,8 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                       </TableCell>
                     </TableRow>
                   );
-                })}
+                  })
+                )}
               </TableBody>
             </Table>
           </div>
