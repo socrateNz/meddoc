@@ -757,6 +757,40 @@ export async function completeInventoryCount(inventoryCountId: string) {
   }
 }
 
+// Abandonne un inventaire IN_PROGRESS sans rien appliquer — aucune écriture de stock/finance n'a
+// encore eu lieu à ce stade (tout se joue à la clôture, cf. completeInventoryCount ci-dessus),
+// donc annuler se résume à marquer le comptage CANCELLED : rien à réintégrer ni à corriger
+// ailleurs. Utile quand un inventaire a été démarré par erreur, ou laissé ouvert trop longtemps
+// (ravitaillements reçus entretemps, cf. syncInventoryCountLines) au point qu'il vaut mieux
+// repartir d'un comptage propre plutôt que de le clôturer. Mêmes rôles que pour le démarrer/le
+// clôturer : pas de séparation des tâches nécessaire ici, contrairement à cancelDispense,
+// puisqu'il n'y a rien de physique (stock déjà remis) à corriger.
+export async function cancelInventoryCount(inventoryCountId: string, reason?: string) {
+  try {
+    z.string().min(1).parse(inventoryCountId);
+    const activeUser = await getCurrentUser();
+    await assertStockWrite(activeUser);
+
+    const count = await prisma.inventoryCount.findUnique({ where: { id: inventoryCountId } });
+    if (!count || count.status !== "IN_PROGRESS") {
+      throw new Error("Cet inventaire n'est plus modifiable.");
+    }
+
+    await prisma.inventoryCount.update({
+      where: { id: inventoryCountId },
+      data: { status: "CANCELLED", cancelledAt: new Date(), cancelledById: activeUser!.id, notes: reason || null },
+    });
+
+    await logAuditAction(activeUser!.id, "CANCEL_INVENTORY_COUNT", "InventoryCount", inventoryCountId, { reason: reason || null });
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'annulation de l'inventaire.") };
+  }
+}
+
 export async function getInventoryHistory(organizationId: string) {
   try {
     const activeUser = await getCurrentUser();

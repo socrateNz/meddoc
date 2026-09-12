@@ -785,3 +785,67 @@ describe("completeInventoryCount — rattrapage de sécurité avant clôture", (
     expect(txStockAdjustmentCreate).not.toHaveBeenCalled();
   });
 });
+
+describe("cancelInventoryCount", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+  });
+
+  it("marque l'inventaire CANCELLED sans toucher au stock ni aux lignes", async () => {
+    const inventoryCountUpdate = vi.fn(async () => ({}));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        inventoryCount: {
+          findUnique: vi.fn(async () => ({ id: "inv1", organizationId: "org1", status: "IN_PROGRESS" })),
+          update: inventoryCountUpdate,
+        },
+      },
+    }));
+    const { cancelInventoryCount } = await import("./stock");
+
+    const result = await cancelInventoryCount("inv1", "démarré par erreur");
+
+    expect(result.success).toBe(true);
+    expect(inventoryCountUpdate).toHaveBeenCalledWith({
+      where: { id: "inv1" },
+      data: { status: "CANCELLED", cancelledAt: expect.any(Date), cancelledById: "coord1", notes: "démarré par erreur" },
+    });
+  });
+
+  it("refuse d'annuler un inventaire déjà clôturé", async () => {
+    const inventoryCountUpdate = vi.fn();
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        inventoryCount: {
+          findUnique: vi.fn(async () => ({ id: "inv1", organizationId: "org1", status: "COMPLETED" })),
+          update: inventoryCountUpdate,
+        },
+      },
+    }));
+    const { cancelInventoryCount } = await import("./stock");
+
+    const result = await cancelInventoryCount("inv1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/n'est plus modifiable/);
+    expect(inventoryCountUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuse pour un rôle hors COORDINATOR/PHARMACIST", async () => {
+    const cashierUser = { id: "cash1", role: "CASHIER", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => cashierUser) }));
+    vi.doMock("@/lib/db", () => ({ prisma: {} }));
+    const { cancelInventoryCount } = await import("./stock");
+
+    const result = await cancelInventoryCount("inv1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Réservé aux coordinateurs et pharmacien/);
+  });
+});

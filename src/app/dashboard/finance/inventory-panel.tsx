@@ -7,12 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ClipboardList, PlayCircle, Save, CheckCircle2, Loader2, AlertTriangle, History } from "lucide-react";
+import { ClipboardList, PlayCircle, Save, CheckCircle2, Loader2, AlertTriangle, History, XCircle } from "lucide-react";
 import {
   startInventoryCount,
   getActiveInventoryCount,
   saveInventoryCounts,
   completeInventoryCount,
+  cancelInventoryCount,
   getInventoryHistory,
 } from "@/actions/stock";
 
@@ -36,6 +37,8 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
   const [starting, setStarting] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [lastClosure, setLastClosure] = useState<{ totalLossValue: number; staleProducts?: string[] } | null>(null);
 
@@ -165,6 +168,25 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     }
   };
 
+  const handleCancelInventory = async () => {
+    if (!count) return;
+    setCancelConfirmOpen(false);
+    setCancelling(true);
+    setMsg(null);
+    try {
+      const res = await cancelInventoryCount(count.id);
+      if (res.success) {
+        queryClient.setQueryData(countQueryKey, null);
+        setCountedValues({});
+        setMsg({ type: "success", text: "Inventaire annulé — aucun ajustement n'a été appliqué." });
+      } else {
+        setMsg({ type: "error", text: res.error || "Erreur lors de l'annulation de l'inventaire." });
+      }
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-40">
@@ -231,6 +253,15 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
             </p>
             {canWrite && (
               <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => setCancelConfirmOpen(true)}
+                  disabled={cancelling || completing}
+                  className="gap-2 rounded-xl text-slate-500 hover:text-rose-600 hover:bg-rose-500/10"
+                >
+                  {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  Annuler l'inventaire
+                </Button>
                 <Button variant="outline" onClick={() => handleSaveDraft(false)} disabled={saving} className="gap-2 rounded-xl">
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   Enregistrer le comptage
@@ -359,6 +390,31 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
             <Button onClick={handleComplete} disabled={completing} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
               {completing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Confirmer la clôture
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
+        <DialogContent className="sm:max-w-[420px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+              <XCircle className="h-5 w-5" />
+              Annuler cet inventaire ?
+            </DialogTitle>
+            <DialogDescription>
+              Aucun ajustement de stock n&apos;a encore eu lieu (rien n&apos;est appliqué avant la
+              clôture) — annuler abandonne simplement ce comptage, y compris les quantités déjà
+              saisies. Vous pourrez démarrer un nouvel inventaire immédiatement après.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelConfirmOpen(false)} disabled={cancelling} className="rounded-xl">
+              Retour
+            </Button>
+            <Button onClick={handleCancelInventory} disabled={cancelling} className="gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white">
+              {cancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+              Annuler l'inventaire
             </Button>
           </DialogFooter>
         </DialogContent>

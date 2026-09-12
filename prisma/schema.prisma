@@ -179,6 +179,7 @@ model User {
   passwordResetTokens          PasswordResetToken[]
   stockPurchasesRecorded       StockPurchase[]
   inventoryCountsStarted       InventoryCount[]
+  inventoryCountsCancelled     InventoryCount[]          @relation("InventoryCountCancelledBy")
   pendingInvoicesCreated       PendingInvoice[]          @relation("PendingInvoiceCreatedBy")
   pendingInvoicesClosed        PendingInvoice[]          @relation("PendingInvoiceClosedBy")
   labOrdersOrdered             LabOrder[]                @relation("LabOrderOrderedBy")
@@ -957,12 +958,20 @@ model InventoryCount {
   id             String       @id @default(auto()) @map("_id") @db.ObjectId
   organizationId String       @db.ObjectId
   organization   Organization @relation(fields: [organizationId], references: [id])
-  status         String       @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+  status         String       @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED, CANCELLED
 
   startedById String    @db.ObjectId
   startedBy   User      @relation(fields: [startedById], references: [id])
   completedAt DateTime?
-  notes       String?
+  notes       String? // motif de clôture ou d'annulation (cf. cancelInventoryCount)
+
+  // Abandon d'un inventaire IN_PROGRESS sans appliquer aucun ajustement (aucune écriture de
+  // stock/finance n'a encore eu lieu à ce stade, cf. completeInventoryCount) — permet de
+  // relancer un inventaire propre sans attendre que l'ancien soit clôturé. Jamais posé sur un
+  // inventaire déjà COMPLETED.
+  cancelledAt   DateTime?
+  cancelledById String?   @db.ObjectId
+  cancelledBy   User?     @relation("InventoryCountCancelledBy", fields: [cancelledById], references: [id])
 
   lines     InventoryCountLine[]
   createdAt DateTime             @default(now())
