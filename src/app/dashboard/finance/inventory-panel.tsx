@@ -119,18 +119,34 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     }
   };
 
+  // N'envoie que les lignes réellement modifiées depuis leur dernier enregistrement — sur un
+  // catalogue de plusieurs centaines de produits, retaper les 276 lignes à chaque clic (dont
+  // l'immense majorité jamais touchée, juste par défaut à la valeur système) faisait exploser le
+  // temps de la transaction serveur. Une ligne jamais comptée (countedQuantity null) qui reste à
+  // sa valeur système par défaut n'a rien de nouveau à écrire : la clôture la traite déjà comme
+  // conforme dans ce cas (cf. completeInventoryCount), donc l'omettre ne change aucun comportement.
   const buildLinesPayload = () =>
-    (count?.lines || []).map((line: any) => ({
-      lineId: line.id,
-      countedQuantity: Number(countedValues[line.id] ?? line.systemQuantity),
-    }));
+    (count?.lines || [])
+      .map((line: any) => ({ lineId: line.id, countedQuantity: Number(countedValues[line.id] ?? line.systemQuantity) }))
+      .filter(({ lineId, countedQuantity }: any) => {
+        const original = count?.lines.find((l: any) => l.id === lineId);
+        const alreadyStored = original?.countedQuantity ?? original?.systemQuantity;
+        return countedQuantity !== alreadyStored;
+      });
 
   const handleSaveDraft = async (silent = false) => {
     if (!count) return { success: false, error: "Aucun inventaire en cours." };
+    const linesPayload = buildLinesPayload();
+    // Rien de nouveau à enregistrer : succès immédiat sans appel serveur (saveInventoryCounts
+    // refuse de toute façon un tableau vide).
+    if (linesPayload.length === 0) {
+      if (!silent) setMsg({ type: "success", text: "Rien de nouveau à enregistrer." });
+      return { success: true };
+    }
     setSaving(true);
     if (!silent) setMsg(null);
     try {
-      const res = await saveInventoryCounts(count.id, buildLinesPayload());
+      const res = await saveInventoryCounts(count.id, linesPayload);
       if (!silent) {
         if (res.success) {
           setMsg({ type: "success", text: "Comptage enregistré." });
@@ -469,14 +485,18 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
               </TableHeader>
               <TableBody>
                 {history.map((h: any) => {
-                  const variances = h.lines.filter((l: any) => l.countedQuantity !== l.systemQuantity).length;
+                  // Une ligne jamais comptée (countedQuantity null, cf. buildLinesPayload qui
+                  // n'envoie plus que les lignes modifiées) n'est pas un écart — juste une ligne
+                  // sur laquelle personne n'a rien saisi, traitée comme conforme à la clôture.
+                  const countedLines = h.lines.filter((l: any) => l.countedQuantity !== null);
+                  const variances = countedLines.filter((l: any) => l.countedQuantity !== l.systemQuantity).length;
                   return (
                     <TableRow key={h.id}>
                       <TableCell className="py-2.5 text-xs">{h.completedAt ? formatDate(h.completedAt) : "-"}</TableCell>
                       <TableCell className="py-2.5 text-xs">
                         {h.startedBy?.firstName} {h.startedBy?.lastName}
                       </TableCell>
-                      <TableCell className="py-2.5 text-xs">{h.lines.length}</TableCell>
+                      <TableCell className="py-2.5 text-xs">{countedLines.length}/{h.lines.length}</TableCell>
                       <TableCell className="py-2.5 text-xs">
                         {variances === 0 ? (
                           <span className="text-emerald-600 font-semibold">Aucun écart</span>
