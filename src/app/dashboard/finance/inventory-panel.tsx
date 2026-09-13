@@ -126,7 +126,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     }));
 
   const handleSaveDraft = async (silent = false) => {
-    if (!count) return;
+    if (!count) return { success: false, error: "Aucun inventaire en cours." };
     setSaving(true);
     if (!silent) setMsg(null);
     try {
@@ -138,7 +138,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
           setMsg({ type: "error", text: res.error || "Erreur lors de l'enregistrement." });
         }
       }
-      return res.success;
+      return res;
     } finally {
       setSaving(false);
     }
@@ -150,9 +150,12 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     setCompleting(true);
     setMsg(null);
     try {
-      const savedOk = await handleSaveDraft(true);
-      if (!savedOk) {
-        setMsg({ type: "error", text: "Impossible d'enregistrer le comptage avant clôture." });
+      const saveRes = await handleSaveDraft(true);
+      if (!saveRes.success) {
+        // Affiche la vraie cause (ex: dépassement du délai de transaction sur un grand
+        // catalogue) plutôt qu'un message générique qui la masquait complètement — cf. échange
+        // avec l'utilisateur, ce message trop vague avait rendu le diagnostic difficile.
+        setMsg({ type: "error", text: saveRes.error || "Impossible d'enregistrer le comptage avant clôture." });
         return;
       }
       const res = await completeInventoryCount(count.id);

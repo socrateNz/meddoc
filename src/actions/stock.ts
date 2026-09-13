@@ -583,17 +583,26 @@ export async function saveInventoryCounts(
     const liveStockByItem = new Map(currentItems.map((i) => [i.id, i.stockQuantity]));
 
     await prisma.$transaction(
-      lines.map((line) => {
-        const pharmacyItemId = lineById.get(line.lineId)?.pharmacyItemId;
-        const liveStock = pharmacyItemId ? liveStockByItem.get(pharmacyItemId) : undefined;
-        return prisma.inventoryCountLine.update({
-          where: { id: line.lineId },
-          data: {
-            countedQuantity: Math.round(line.countedQuantity),
-            ...(liveStock !== undefined ? { systemQuantity: liveStock } : {}),
-          },
-        });
-      })
+      async (tx) => {
+        for (const line of lines) {
+          const pharmacyItemId = lineById.get(line.lineId)?.pharmacyItemId;
+          const liveStock = pharmacyItemId ? liveStockByItem.get(pharmacyItemId) : undefined;
+          await tx.inventoryCountLine.update({
+            where: { id: line.lineId },
+            data: {
+              countedQuantity: Math.round(line.countedQuantity),
+              ...(liveStock !== undefined ? { systemQuantity: liveStock } : {}),
+            },
+          });
+        }
+      },
+      // La forme tableau de $transaction ne prend pas d'option timeout (seule la forme callback
+      // le permet) — nécessaire ici car un catalogue de plusieurs centaines de produits (276
+      // constatés en production) dépasse largement le timeout par défaut de Prisma (5s) une fois
+      // chaque ligne comptée envoyée en une seule transaction Mongo : l'enregistrement échouait
+      // silencieusement avant même d'atteindre la validation métier, cf. échange avec
+      // l'utilisateur sur ce blocage précis.
+      { timeout: 60000, maxWait: 15000 }
     );
 
     revalidatePath("/dashboard/finance");
@@ -736,7 +745,7 @@ export async function completeInventoryCount(inventoryCountId: string) {
         where: { id: inventoryCountId },
         data: { status: "COMPLETED", completedAt: new Date() },
       });
-    });
+    }, { timeout: 60000, maxWait: 15000 }); // cf. saveInventoryCounts : un grand catalogue dépasse le timeout Prisma par défaut (5s)
 
     await logAuditAction(activeUser!.id, "COMPLETE_INVENTORY_COUNT", "InventoryCount", inventoryCountId, {
       totalLossValue,

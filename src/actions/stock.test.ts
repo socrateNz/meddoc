@@ -537,6 +537,7 @@ describe("saveInventoryCounts — rafraîchit systemQuantity au moment du compta
 
   it("fige systemQuantity à la valeur actuelle du stock au moment de l'enregistrement, pas celle figée au démarrage", async () => {
     const updateCall = vi.fn(async ({ data }: any) => ({ ...data }));
+    const tx = { inventoryCountLine: { update: updateCall } };
     vi.doMock("@/lib/db", () => ({
       prisma: {
         inventoryCount: {
@@ -549,12 +550,14 @@ describe("saveInventoryCounts — rafraîchit systemQuantity au moment du compta
         },
         // Un ravitaillement de +10 a été reçu depuis le démarrage : stock réel maintenant 16.
         pharmacyItem: { findMany: vi.fn(async () => [{ id: "item1", stockQuantity: 16 }]) },
-        inventoryCountLine: { update: updateCall },
-        $transaction: vi.fn(async (arr: any[]) => Promise.all(arr)),
+        // Forme callback (pas tableau) : seule celle-ci accepte un timeout étendu, nécessaire
+        // pour un grand catalogue — cf. commentaire de saveInventoryCounts.
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
       },
     }));
     const { saveInventoryCounts } = await import("./stock");
 
+    const transactionCall = vi.mocked((await import("@/lib/db")).prisma.$transaction);
     const result = await saveInventoryCounts("inv1", [{ lineId: "line1", countedQuantity: 16 }]);
 
     expect(result.success).toBe(true);
@@ -562,6 +565,9 @@ describe("saveInventoryCounts — rafraîchit systemQuantity au moment du compta
       where: { id: "line1" },
       data: { countedQuantity: 16, systemQuantity: 16 },
     });
+    // Un catalogue de plusieurs centaines de produits dépasse le timeout par défaut de Prisma
+    // (5s) — cf. bug signalé en production sur un inventaire de 276 produits.
+    expect(transactionCall.mock.calls[0][1]).toEqual({ timeout: 60000, maxWait: 15000 });
   });
 });
 
@@ -725,6 +731,7 @@ describe("completeInventoryCount — rattrapage de sécurité avant clôture", (
         $transaction: vi.fn(async (fn: any) => fn(tx)),
       },
     }));
+    const dbModule = await import("@/lib/db");
     const { completeInventoryCount } = await import("./stock");
 
     const result = await completeInventoryCount("inv1");
@@ -737,6 +744,9 @@ describe("completeInventoryCount — rattrapage de sécurité avant clôture", (
     // (countedQuantity null) : aucune des deux ne doit déclencher un ajustement de stock.
     expect(txPharmacyItemUpdate).not.toHaveBeenCalled();
     expect(txStockAdjustmentCreate).not.toHaveBeenCalled();
+    // Un catalogue de plusieurs centaines de produits dépasse le timeout par défaut de Prisma
+    // (5s) — cf. bug signalé en production sur un inventaire de 276 produits.
+    expect(vi.mocked(dbModule.prisma.$transaction).mock.calls[0][1]).toEqual({ timeout: 60000, maxWait: 15000 });
   });
 
   it("ignore (sans ajustement) une ligne dont le stock a bougé depuis l'enregistrement du comptage — ex: ravitaillement reçu entretemps — et la signale dans staleProducts", async () => {
