@@ -9,6 +9,11 @@ import { recordStockPurchaseSchema, saveInventoryCountsSchema } from "@/validato
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+// maxDuration (limite de durée Vercel pour les Server Actions définies ici, cf. saveInventoryCounts/
+// completeInventoryCount) NE PEUT PAS être exporté depuis ce fichier : un fichier "use server"
+// n'autorise que des exports de fonctions async — voir plutôt les page.tsx qui rendent
+// InventoryPanel (dashboard/clinics/[id]/pharmacie, dashboard/clinics/[id]/finance, etc.).
+
 const STOCK_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST"];
 const STOCK_WRITE_ROLES = ["COORDINATOR", "PHARMACIST"];
 

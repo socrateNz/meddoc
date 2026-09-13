@@ -5,6 +5,14 @@ import SidebarData from "./sidebar-data";
 import SidebarSkeleton from "./sidebar-skeleton";
 
 export const dynamic = "force-dynamic";
+// S'applique à toutes les routes /dashboard/* (Server Actions et Route Handlers déclenchés
+// depuis elles y compris) — un fichier "use server" n'autorisant pas cet export lui-même
+// (seules les fonctions async y sont permises, cf. src/actions/stock.ts et finance.ts), le poser
+// ici sur le layout partagé couvre chaque page sans avoir à traquer individuellement laquelle
+// invoque une action à transaction longue (saveInventoryCounts/completeInventoryCount sur un
+// grand catalogue, dispensePendingInvoice/cancelDispense) — sinon Vercel coupe la fonction à la
+// limite par défaut du plan (souvent 10s) avant même que Prisma n'atteigne son propre timeout.
+export const maxDuration = 60;
 
 import { OfflineBanner } from "@/components/ui/offline-banner";
 import PushNotificationsInit from "@/components/push-notifications-init";

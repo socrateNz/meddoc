@@ -21,6 +21,11 @@ import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/reg
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+// maxDuration (limite de durée Vercel pour dispensePendingInvoice/cancelDispense, déjà à
+// { timeout: 20000, maxWait: 10000 } côté Prisma) NE PEUT PAS être exporté depuis ce fichier : un
+// fichier "use server" n'autorise que des exports de fonctions async — voir plutôt les page.tsx
+// qui rendent PharmacieView (dashboard/clinics/[id]/pharmacie).
+
 // ADMIN (holding) garde une vue lecture seule de la finance (KPI, journal, valorisation) ;
 // COORDINATOR seul y a un accès d'écriture directe (dépenses hors-session exceptées — voir
 // recordExpense, désormais rattaché à une session de caisse). Le catalogue pharmacie a son
