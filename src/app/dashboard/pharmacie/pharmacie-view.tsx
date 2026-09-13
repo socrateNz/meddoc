@@ -203,28 +203,34 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/60 dark:border-slate-800/60 pb-3">
-          <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl h-auto flex-wrap justify-start">
-            <TabsTrigger value="queue" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+          {/* overflow-x-auto + flex-nowrap plutôt que flex-wrap : TabsList impose une hauteur
+              fixe (group-data-horizontal/tabs:h-8, cf. components/ui/tabs.tsx) plus spécifique en
+              CSS que n'importe quel h-auto ajouté ici — passer les 6 onglets à la ligne sur mobile
+              les faisait déborder hors de cette boîte figée à 32px, chevauchant les boutons juste
+              en dessous (Nouvel achat/+ Nouveau produit), les rendant alors incliquables. Un
+              défilement horizontal reste dans la hauteur prévue par le composant. */}
+          <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl overflow-x-auto flex-nowrap justify-start w-full sm:w-auto">
+            <TabsTrigger value="queue" className="shrink-0 rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <PackageCheck className="h-4 w-4 text-emerald-500" />
               File d&apos;attente ({queue.length})
             </TabsTrigger>
-            <TabsTrigger value="historique" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            <TabsTrigger value="historique" className="shrink-0 rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <History className="h-4 w-4 text-blue-500" />
               Historique
             </TabsTrigger>
-            <TabsTrigger value="stock" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            <TabsTrigger value="stock" className="shrink-0 rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <Package className="h-4 w-4 text-indigo-500" />
               Stock ({pharmacyItems.length})
             </TabsTrigger>
-            <TabsTrigger value="inventaire" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            <TabsTrigger value="inventaire" className="shrink-0 rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <ClipboardList className="h-4 w-4 text-rose-500" />
               Inventaire
             </TabsTrigger>
-            <TabsTrigger value="achats" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            <TabsTrigger value="achats" className="shrink-0 rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <ShoppingCart className="h-4 w-4 text-amber-500" />
               Achats
             </TabsTrigger>
-            <TabsTrigger value="fournisseurs" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            <TabsTrigger value="fournisseurs" className="shrink-0 rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <Truck className="h-4 w-4 text-emerald-500" />
               Fournisseurs
             </TabsTrigger>
