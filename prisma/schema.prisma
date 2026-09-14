@@ -920,6 +920,14 @@ model StockPurchase {
   purchasePrice     Float // Prix d'achat unitaire de ce lot précis (FCFA)
   totalCost         Float
 
+  // Stock du produit juste avant/après ce mouvement précis (achat, surplus d'inventaire,
+  // annulation de remise...) — posés au moment du mouvement (cf. applyStockReceipt,
+  // completeInventoryCount, cancelDispense), jamais recalculés après coup. Optionnels : les lots
+  // créés avant l'ajout de ces deux champs restent à null (aucune reconstitution rétroactive de
+  // l'historique de stock, jugée trop fragile pour la valeur ajoutée) — cf. Historique des achats.
+  stockBefore Int?
+  stockAfter  Int?
+
   supplier    String?
   batchNumber String?
   expiryDate  DateTime?
@@ -929,6 +937,9 @@ model StockPurchase {
   purchasedBy    User          @relation(fields: [purchasedById], references: [id])
   organizationId String?       @db.ObjectId
   organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  // Réciproque de FinancialTransaction.stockPurchase — voir son commentaire pour le contexte.
+  financialTransactions FinancialTransaction[]
 
   createdAt DateTime @default(now())
 
@@ -1129,6 +1140,15 @@ model FinancialTransaction {
   absorbedByPurchase   FinancialTransaction? @relation("ExpenseAbsorbedByPurchase", fields: [absorbedByPurchaseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   absorbedExpenses     FinancialTransaction[] @relation("ExpenseAbsorbedByPurchase")
 
+  // Lien direct vers le lot StockPurchase que cette dépense PHARMACY_PURCHASE finance (posé
+  // uniquement par applyStockReceipt — jamais pour un surplus d'inventaire ou un retour de remise
+  // annulée, qui ne créent volontairement aucune FinancialTransaction). Sans ce lien, retrouver la
+  // dépense associée à un achat précis pour l'annuler (cf. cancelStockPurchase) n'aurait été
+  // possible qu'en devinant par pharmacyItemId+quantité+date, ambigu dès que deux achats
+  // identiques se suivent le même jour.
+  stockPurchaseId String?        @db.ObjectId
+  stockPurchase   StockPurchase? @relation(fields: [stockPurchaseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
   createdAt DateTime @default(now())
 
   @@index([organizationId, createdAt])
@@ -1136,6 +1156,7 @@ model FinancialTransaction {
   @@index([pharmacyItemId])
   @@index([cashSessionId])
   @@index([pendingInvoiceId])
+  @@index([stockPurchaseId])
 }
 
 // Facture émise à la caisse : PENDING (rien reçu) -> PARTIAL (acompte reçu, cf. payments) ->

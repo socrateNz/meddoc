@@ -587,7 +587,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
         {/* TAB: Historique des achats — tous les lots StockPurchase (recordStockPurchase, import
             CSV, réception de commande fournisseur, surplus d'inventaire), cf. getStockPurchaseHistory. */}
         <TabsContent value="achats" className="pt-6 space-y-4">
-          <PurchaseHistoryPanel organizationId={organizationId} />
+          <PurchaseHistoryPanel organizationId={organizationId} canWrite={canWrite} />
         </TabsContent>
 
         <TabsContent value="fournisseurs" className="pt-6">

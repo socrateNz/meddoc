@@ -123,6 +123,15 @@ export async function applyStockReceipt(
 ) {
   const totalCost = data.quantity * data.purchasePrice;
 
+  // Incrémenté avant la création du lot pour connaître stockBefore/stockAfter sans lecture
+  // supplémentaire : la valeur retournée par update() est déjà celle d'APRÈS incrément.
+  const updatedItem = await tx.pharmacyItem.update({
+    where: { id: data.pharmacyItemId },
+    data: { stockQuantity: { increment: data.quantity } },
+  });
+  const stockAfter = updatedItem.stockQuantity;
+  const stockBefore = stockAfter - data.quantity;
+
   const purchase = await tx.stockPurchase.create({
     data: {
       pharmacyItemId: data.pharmacyItemId,
@@ -130,6 +139,8 @@ export async function applyStockReceipt(
       remainingQuantity: data.quantity,
       purchasePrice: data.purchasePrice,
       totalCost,
+      stockBefore,
+      stockAfter,
       supplier: data.supplier || null,
       batchNumber: data.batchNumber || null,
       expiryDate: data.expiryDate || null,
@@ -139,11 +150,6 @@ export async function applyStockReceipt(
     },
   });
 
-  await tx.pharmacyItem.update({
-    where: { id: data.pharmacyItemId },
-    data: { stockQuantity: { increment: data.quantity } },
-  });
-
   const transaction = await tx.financialTransaction.create({
     data: {
       type: "EXPENSE",
@@ -151,6 +157,7 @@ export async function applyStockReceipt(
       amount: totalCost,
       description: `Achat pharmacie : ${data.quantity}x ${data.itemName}`,
       pharmacyItemId: data.pharmacyItemId,
+      stockPurchaseId: purchase.id,
       quantity: data.quantity,
       recordedById: data.purchasedById,
       organizationId: data.organizationId || null,
@@ -337,6 +344,86 @@ export async function getAvailableExpenseWithdrawals(organizationId?: string) {
     return { success: true, data: withdrawals };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des retraits disponibles.") };
+  }
+}
+
+// Annule un achat pharmacie erroné (saisie manuelle) : décrémente le stock, supprime le lot et sa
+// dépense associée. Réservé aux lots dont AUCUNE unité n'a encore été consommée
+// (remainingQuantity === quantity) — dès qu'une seule unité a été vendue, remise ou reprise dans
+// un ajustement, la reprendre spécifiquement dans ce lot devient ambigu (cf. le même choix pour
+// cancelDispense : tout-ou-rien plutôt qu'une correction partielle potentiellement fausse). Ne
+// s'applique jamais à un lot "AJUSTEMENT-INVENTAIRE"/"ANNULATION-REMISE" : ce ne sont pas des
+// achats, ils n'ont pas leur place ici.
+//
+// Avant ce correctif, la seule façon de rattraper un achat saisi par erreur était de passer par
+// l'inventaire (constater une "perte" équivalente) — ce qui laisse l'achat erroné ET la perte
+// compensatoire compter chacun comme une dépense séparée (double comptage), au lieu d'annuler
+// proprement l'écriture d'origine.
+export async function cancelStockPurchase(stockPurchaseId: string, reason?: string) {
+  try {
+    z.string().min(1).parse(stockPurchaseId);
+    const activeUser = await getCurrentUser();
+    await assertStockWrite(activeUser);
+
+    const purchase = await prisma.stockPurchase.findUnique({
+      where: { id: stockPurchaseId },
+      include: { pharmacyItem: { select: { name: true } }, financialTransactions: true },
+    });
+    if (!purchase) throw new Error("Achat introuvable.");
+
+    if (purchase.batchNumber === "AJUSTEMENT-INVENTAIRE" || purchase.batchNumber === "ANNULATION-REMISE") {
+      throw new Error("Ce lot n'est pas un achat direct (surplus d'inventaire ou retour de remise annulée) : il ne peut pas être annulé ici.");
+    }
+    if (purchase.remainingQuantity !== purchase.quantity) {
+      const consumed = purchase.quantity - purchase.remainingQuantity;
+      throw new Error(
+        `Impossible d'annuler cet achat : ${consumed} unité(s) sur ${purchase.quantity} ont déjà été vendues, remises ou consommées d'une autre façon.`
+      );
+    }
+
+    const hasLinkedExpense = purchase.financialTransactions.length > 0;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.pharmacyItem.update({
+        where: { id: purchase.pharmacyItemId },
+        data: { stockQuantity: { decrement: purchase.quantity } },
+      });
+
+      for (const t of purchase.financialTransactions) {
+        // Un retrait de caisse absorbé par cet achat (cf. linkedExpenseTransactionId) redevient
+        // une dépense normale : l'achat qu'il finançait est annulé, mais le retrait a bien eu lieu.
+        await tx.financialTransaction.updateMany({
+          where: { absorbedByPurchaseId: t.id },
+          data: { absorbedByPurchaseId: null },
+        });
+        await tx.financialTransaction.delete({ where: { id: t.id } });
+      }
+
+      await tx.stockPurchase.delete({ where: { id: stockPurchaseId } });
+    });
+
+    await logAuditAction(activeUser!.id, "CANCEL_STOCK_PURCHASE", "StockPurchase", stockPurchaseId, {
+      pharmacyItemId: purchase.pharmacyItemId,
+      quantity: purchase.quantity,
+      totalCost: purchase.totalCost,
+      hasLinkedExpense,
+      reason: reason || null,
+    });
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+
+    return {
+      success: true,
+      data: {
+        // Achat antérieur au lien StockPurchase<->FinancialTransaction (cf. schema) : le stock a
+        // bien été corrigé, mais aucune dépense n'a pu être retrouvée/retirée automatiquement.
+        warning: hasLinkedExpense
+          ? null
+          : "Aucune dépense associée n'a été retrouvée pour cet achat (probablement antérieur à cette fonctionnalité) : seul le stock a été corrigé, vérifiez manuellement le journal des dépenses.",
+      },
+    };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'annulation de l'achat.") };
   }
 }
 

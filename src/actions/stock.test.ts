@@ -88,10 +88,12 @@ describe("consumeStockLots", () => {
 // donc réutilise directement l'import statique du haut de fichier — pas besoin de
 // vi.resetModules()/vi.doMock ici.
 describe("applyStockReceipt — décaissement conditionnel", () => {
-  function createFakeReceiptTx() {
+  function createFakeReceiptTx(currentStockAfterIncrement = 20) {
     return {
       stockPurchase: { create: vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data })) },
-      pharmacyItem: { update: vi.fn(async () => ({})) },
+      // update() renvoie déjà la valeur APRÈS incrément (comportement réel de Prisma) — c'est ce
+      // qu'applyStockReceipt lit pour déduire stockBefore/stockAfter sans lecture supplémentaire.
+      pharmacyItem: { update: vi.fn(async () => ({ stockQuantity: currentStockAfterIncrement })) },
       financialTransaction: { create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })) },
     };
   }
@@ -127,6 +129,24 @@ describe("applyStockReceipt — décaissement conditionnel", () => {
 
     const [[{ data }]] = tx.financialTransaction.create.mock.calls;
     expect(data.cashSessionId).toBe("sess1");
+  });
+
+  it("déduit stockBefore/stockAfter de la valeur déjà incrémentée et lie la dépense au lot via stockPurchaseId", async () => {
+    // Stock à 30 après incrément de 10 => avant l'achat, il était à 20.
+    const tx = createFakeReceiptTx(30);
+
+    const { purchase, transaction } = await applyStockReceipt(tx, {
+      pharmacyItemId: "item1",
+      itemName: "Paracétamol",
+      quantity: 10,
+      purchasePrice: 300,
+      purchasedById: "user1",
+      organizationId: "org1",
+    });
+
+    expect(purchase.stockBefore).toBe(20);
+    expect(purchase.stockAfter).toBe(30);
+    expect(transaction.stockPurchaseId).toBe("purchase1");
   });
 });
 
@@ -857,5 +877,146 @@ describe("cancelInventoryCount", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/Réservé aux coordinateurs et pharmacien/);
+  });
+});
+
+describe("cancelStockPurchase", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+  });
+
+  it("décrémente le stock, supprime le lot et sa dépense associée, et libère un retrait absorbé", async () => {
+    const pharmacyItemUpdate = vi.fn(async () => ({}));
+    const financialTransactionUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const financialTransactionDelete = vi.fn(async () => ({}));
+    const stockPurchaseDelete = vi.fn(async () => ({}));
+    const tx = {
+      pharmacyItem: { update: pharmacyItemUpdate },
+      financialTransaction: { updateMany: financialTransactionUpdateMany, delete: financialTransactionDelete },
+      stockPurchase: { delete: stockPurchaseDelete },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        stockPurchase: {
+          findUnique: vi.fn(async () => ({
+            id: "purchase1",
+            pharmacyItemId: "item1",
+            quantity: 3000,
+            remainingQuantity: 3000,
+            totalCost: 2100000,
+            batchNumber: null,
+            pharmacyItem: { name: "Metronidazol" },
+            financialTransactions: [{ id: "tx1" }],
+          })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { cancelStockPurchase } = await import("./stock");
+
+    const result = await cancelStockPurchase("purchase1", "erreur de saisie");
+
+    expect(result.success).toBe(true);
+    expect(pharmacyItemUpdate).toHaveBeenCalledWith({ where: { id: "item1" }, data: { stockQuantity: { decrement: 3000 } } });
+    expect(financialTransactionUpdateMany).toHaveBeenCalledWith({
+      where: { absorbedByPurchaseId: "tx1" },
+      data: { absorbedByPurchaseId: null },
+    });
+    expect(financialTransactionDelete).toHaveBeenCalledWith({ where: { id: "tx1" } });
+    expect(stockPurchaseDelete).toHaveBeenCalledWith({ where: { id: "purchase1" } });
+    expect((result.data as any).warning).toBeNull();
+  });
+
+  it("refuse d'annuler un achat déjà partiellement consommé", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        stockPurchase: {
+          findUnique: vi.fn(async () => ({
+            id: "purchase1",
+            pharmacyItemId: "item1",
+            quantity: 3000,
+            remainingQuantity: 1987,
+            totalCost: 2100000,
+            batchNumber: null,
+            pharmacyItem: { name: "Metronidazol" },
+            financialTransactions: [{ id: "tx1" }],
+          })),
+        },
+      },
+    }));
+    const { cancelStockPurchase } = await import("./stock");
+
+    const result = await cancelStockPurchase("purchase1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/1013 unité\(s\) sur 3000/);
+  });
+
+  it("refuse d'annuler un lot de surplus d'inventaire ou de retour de remise annulée", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        stockPurchase: {
+          findUnique: vi.fn(async () => ({
+            id: "purchase1",
+            pharmacyItemId: "item1",
+            quantity: 10,
+            remainingQuantity: 10,
+            totalCost: 5000,
+            batchNumber: "AJUSTEMENT-INVENTAIRE",
+            pharmacyItem: { name: "Metronidazol" },
+            financialTransactions: [],
+          })),
+        },
+      },
+    }));
+    const { cancelStockPurchase } = await import("./stock");
+
+    const result = await cancelStockPurchase("purchase1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/n'est pas un achat direct/);
+  });
+
+  it("corrige quand même le stock (avec un avertissement) quand aucune dépense liée n'est retrouvée — achat antérieur à ce lien", async () => {
+    const pharmacyItemUpdate = vi.fn(async () => ({}));
+    const stockPurchaseDelete = vi.fn(async () => ({}));
+    const tx = {
+      pharmacyItem: { update: pharmacyItemUpdate },
+      financialTransaction: { updateMany: vi.fn(), delete: vi.fn() },
+      stockPurchase: { delete: stockPurchaseDelete },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        stockPurchase: {
+          findUnique: vi.fn(async () => ({
+            id: "purchase1",
+            pharmacyItemId: "item1",
+            quantity: 10,
+            remainingQuantity: 10,
+            totalCost: 5000,
+            batchNumber: null,
+            pharmacyItem: { name: "Metronidazol" },
+            financialTransactions: [],
+          })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { cancelStockPurchase } = await import("./stock");
+
+    const result = await cancelStockPurchase("purchase1");
+
+    expect(result.success).toBe(true);
+    expect(pharmacyItemUpdate).toHaveBeenCalledWith({ where: { id: "item1" }, data: { stockQuantity: { decrement: 10 } } });
+    expect(stockPurchaseDelete).toHaveBeenCalledWith({ where: { id: "purchase1" } });
+    expect((result.data as any).warning).toMatch(/Aucune dépense associée/);
   });
 });
