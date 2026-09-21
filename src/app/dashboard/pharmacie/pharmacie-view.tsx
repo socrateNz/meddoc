@@ -27,6 +27,7 @@ import {
   KeyRound,
   ShoppingCart,
   Undo2,
+  Ban,
 } from "lucide-react";
 import { EditInvoiceClientDialog } from "../caisse/edit-invoice-client-dialog";
 import PharmacyDialog from "@/app/dashboard/finance/pharmacy-dialog";
@@ -34,6 +35,7 @@ import StockPurchaseDialog from "@/app/dashboard/finance/stock-purchase-dialog";
 import ImportPharmacyCsvDialog from "@/app/dashboard/finance/import-pharmacy-csv-dialog";
 import InventoryPanel from "@/app/dashboard/finance/inventory-panel";
 import PurchaseHistoryPanel from "@/app/dashboard/finance/purchase-history-panel";
+import SaleBlockDialog from "@/app/dashboard/finance/sale-block-dialog";
 import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
 import { dispensePendingInvoice, cancelDispense } from "@/actions/finance";
 
@@ -97,6 +99,9 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
   // COORDINATOR, séparation des rôles voulue — même logique que côté serveur (cancelDispense),
   // celui qui remet ne peut pas se corriger lui-même sans supervision.
   const canCancelDispense = currentUserRole === "COORDINATOR";
+  // Décisions de supervision réservées au coordinateur, comme côté serveur : bloquer/débloquer la
+  // vente d'un médicament (setPharmacyItemSaleBlock) et annuler un achat (cancelStockPurchase).
+  const isCoordinator = currentUserRole === "COORDINATOR";
 
   const now = new Date();
 
@@ -566,9 +571,26 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                               ⏳ Péremption ({daysUntilExp}j)
                             </Badge>
                           ) : null}
+
+                          {item.saleBlockedAt ? (
+                            <div className="pt-0.5">
+                              <Badge variant="outline" className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-transparent gap-1 text-[10px] font-bold w-fit">
+                                <Ban className="h-3 w-3" />
+                                Vente bloquée
+                              </Badge>
+                              {item.saleBlockedReason && (
+                                <p className="text-[10px] text-slate-500 mt-0.5 max-w-[220px] whitespace-normal">
+                                  Motif : {item.saleBlockedReason}
+                                </p>
+                              )}
+                            </div>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-right py-3.5">
-                          {canWrite && <PharmacyDialog item={item} organizationId={organizationId} />}
+                          <div className="flex items-center justify-end gap-2">
+                            {isCoordinator && <SaleBlockDialog item={item} />}
+                            {canWrite && <PharmacyDialog item={item} organizationId={organizationId} />}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -587,7 +609,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
         {/* TAB: Historique des achats — tous les lots StockPurchase (recordStockPurchase, import
             CSV, réception de commande fournisseur, surplus d'inventaire), cf. getStockPurchaseHistory. */}
         <TabsContent value="achats" className="pt-6 space-y-4">
-          <PurchaseHistoryPanel organizationId={organizationId} canWrite={canWrite} />
+          <PurchaseHistoryPanel organizationId={organizationId} canCancel={isCoordinator} />
         </TabsContent>
 
         <TabsContent value="fournisseurs" className="pt-6">

@@ -42,6 +42,19 @@ export const recordStockPurchaseSchema = z
     path: ["linkedExpenseTransactionId"],
   });
 
+// Bloquer exige un motif (visible de la caisse et tracé), débloquer non — cf.
+// setPharmacyItemSaleBlock.
+export const setPharmacyItemSaleBlockSchema = z
+  .object({
+    pharmacyItemId: z.string().min(1),
+    blocked: z.boolean(),
+    reason: z.string().optional(),
+  })
+  .refine((data) => !data.blocked || (data.reason?.trim().length ?? 0) >= 3, {
+    message: "Un motif est requis pour bloquer la vente d'un médicament.",
+    path: ["reason"],
+  });
+
 export const inventoryCountLineInputSchema = z.object({
   lineId: z.string().min(1),
   countedQuantity: z.number().min(0, "La quantité comptée ne peut pas être négative"),

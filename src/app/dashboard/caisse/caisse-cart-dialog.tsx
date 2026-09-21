@@ -95,6 +95,16 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       if (!addPharmacyItemId) return;
       const item = pharmacyItems.find((i) => i.id === addPharmacyItemId);
       if (!item) return;
+      // Doublon volontaire du contrôle serveur (createCaisseSale/payPendingInvoice) : la
+      // sélection est déjà grisée plus bas, ceci n'est que le filet si elle a été posée avant le
+      // blocage (dialogue resté ouvert pendant que le coordinateur bloquait le produit).
+      if (item.saleBlockedAt) {
+        setMsg({
+          type: "error",
+          text: `Vente bloquée par le coordinateur pour ${item.name}${item.saleBlockedReason ? ` — motif : ${item.saleBlockedReason}` : ""}.`,
+        });
+        return;
+      }
       const qty = Number(addPharmacyQty) || 1;
       if (qty <= 0) return;
       if (item.stockQuantity < qty) {
@@ -268,8 +278,10 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                       options={pharmacyItems.map((item) => ({
                         value: item.id,
                         label: `${item.name}${item.dosage ? ` (${item.dosage})` : ""}`,
-                        description: `Stock: ${item.stockQuantity} · ${formatFCFA(item.unitPrice)}`,
-                        disabled: item.stockQuantity <= 0,
+                        description: item.saleBlockedAt
+                          ? `Vente bloquée${item.saleBlockedReason ? ` — ${item.saleBlockedReason}` : ""}`
+                          : `Stock: ${item.stockQuantity} · ${formatFCFA(item.unitPrice)}`,
+                        disabled: item.stockQuantity <= 0 || !!item.saleBlockedAt,
                       }))}
                     />
                   </div>

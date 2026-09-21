@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { requirePermission } from "@/lib/permissions";
-import { recordStockPurchaseSchema, saveInventoryCountsSchema } from "@/validators/stock";
+import { recordStockPurchaseSchema, saveInventoryCountsSchema, setPharmacyItemSaleBlockSchema } from "@/validators/stock";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -347,6 +347,54 @@ export async function getAvailableExpenseWithdrawals(organizationId?: string) {
   }
 }
 
+// Bloque (ou débloque) la vente d'un médicament à la caisse — réservé au COORDINATOR, volontairement
+// plus strict que assertStockWrite (COORDINATOR + PHARMACIST) : c'est une décision de supervision
+// (rappel de lot, produit périmé, retrait commercial...), pas une opération de stock courante, et
+// ni le caissier qui subit le blocage ni le pharmacien ne doivent pouvoir le lever eux-mêmes.
+// Bloquer exige un motif, affiché à la caisse pour que le caissier comprenne pourquoi le produit
+// est indisponible. N'empêche pas la remise d'un ticket déjà émis : seule la création/modification
+// de ticket est visée (cf. assertPharmacyItemsSellable dans finance.ts).
+export async function setPharmacyItemSaleBlock(data: { pharmacyItemId: string; blocked: boolean; reason?: string }) {
+  try {
+    setPharmacyItemSaleBlockSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    if (activeUser.role !== "COORDINATOR") {
+      throw new Error("Non autorisé. Seul le coordinateur peut bloquer ou débloquer la vente d'un médicament.");
+    }
+
+    const item = await prisma.pharmacyItem.findUnique({ where: { id: data.pharmacyItemId } });
+    if (!item) throw new Error("Produit introuvable.");
+    if (item.organizationId !== activeUser.organizationId) {
+      throw new Error("Non autorisé. Ce produit n'appartient pas à votre établissement.");
+    }
+
+    const reason = data.reason?.trim() || null;
+    await prisma.pharmacyItem.update({
+      where: { id: data.pharmacyItemId },
+      data: data.blocked
+        ? { saleBlockedAt: new Date(), saleBlockedReason: reason, saleBlockedById: activeUser.id }
+        : { saleBlockedAt: null, saleBlockedReason: null, saleBlockedById: null },
+    });
+
+    await logAuditAction(
+      activeUser.id,
+      data.blocked ? "BLOCK_PHARMACY_ITEM_SALE" : "UNBLOCK_PHARMACY_ITEM_SALE",
+      "PharmacyItem",
+      data.pharmacyItemId,
+      { itemName: item.name, reason }
+    );
+    revalidatePath("/dashboard/pharmacie");
+    revalidatePath(`/dashboard/clinics/${item.organizationId}/pharmacie`);
+    revalidatePath(`/dashboard/clinics/${item.organizationId}/caisse`);
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la modification du blocage de vente.") };
+  }
+}
+
 // Annule un achat pharmacie erroné (saisie manuelle) : décrémente le stock, supprime le lot et sa
 // dépense associée. Réservé aux lots dont AUCUNE unité n'a encore été consommée
 // (remainingQuantity === quantity) — dès qu'une seule unité a été vendue, remise ou reprise dans
@@ -363,13 +411,23 @@ export async function cancelStockPurchase(stockPurchaseId: string, reason?: stri
   try {
     z.string().min(1).parse(stockPurchaseId);
     const activeUser = await getCurrentUser();
-    await assertStockWrite(activeUser);
+    // COORDINATOR uniquement, volontairement plus strict que assertStockWrite (qui laisse aussi
+    // le PHARMACIST enregistrer un achat) : effacer une écriture financière déjà passée est une
+    // décision de supervision — celui qui a saisi l'achat ne doit pas pouvoir le faire disparaître
+    // seul, même pour corriger sa propre erreur.
+    if (!activeUser) throw new Error("Non authentifié.");
+    if (activeUser.role !== "COORDINATOR") {
+      throw new Error("Non autorisé. Seul le coordinateur peut annuler un achat.");
+    }
 
     const purchase = await prisma.stockPurchase.findUnique({
       where: { id: stockPurchaseId },
       include: { pharmacyItem: { select: { name: true } }, financialTransactions: true },
     });
     if (!purchase) throw new Error("Achat introuvable.");
+    if (purchase.organizationId && purchase.organizationId !== activeUser.organizationId) {
+      throw new Error("Non autorisé. Cet achat n'appartient pas à votre établissement.");
+    }
 
     if (purchase.batchNumber === "AJUSTEMENT-INVENTAIRE" || purchase.batchNumber === "ANNULATION-REMISE") {
       throw new Error("Ce lot n'est pas un achat direct (surplus d'inventaire ou retour de remise annulée) : il ne peut pas être annulé ici.");

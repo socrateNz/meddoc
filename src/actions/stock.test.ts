@@ -934,6 +934,46 @@ describe("cancelStockPurchase", () => {
     expect((result.data as any).warning).toBeNull();
   });
 
+  it("refuse pour un PHARMACIST : seul le coordinateur peut annuler un achat", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    const findUnique = vi.fn();
+    vi.doMock("@/lib/db", () => ({ prisma: { stockPurchase: { findUnique } } }));
+    const { cancelStockPurchase } = await import("./stock");
+
+    const result = await cancelStockPurchase("purchase1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Seul le coordinateur peut annuler un achat/);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it("refuse d'annuler l'achat d'un autre établissement", async () => {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        stockPurchase: {
+          findUnique: vi.fn(async () => ({
+            id: "purchase1",
+            organizationId: "org-autre",
+            pharmacyItemId: "item1",
+            quantity: 10,
+            remainingQuantity: 10,
+            totalCost: 5000,
+            batchNumber: null,
+            pharmacyItem: { name: "Metronidazol" },
+            financialTransactions: [],
+          })),
+        },
+      },
+    }));
+    const { cancelStockPurchase } = await import("./stock");
+
+    const result = await cancelStockPurchase("purchase1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/n'appartient pas à votre établissement/);
+  });
+
   it("refuse d'annuler un achat déjà partiellement consommé", async () => {
     vi.doMock("@/lib/db", () => ({
       prisma: {
@@ -1018,5 +1058,93 @@ describe("cancelStockPurchase", () => {
     expect(pharmacyItemUpdate).toHaveBeenCalledWith({ where: { id: "item1" }, data: { stockQuantity: { decrement: 10 } } });
     expect(stockPurchaseDelete).toHaveBeenCalledWith({ where: { id: "purchase1" } });
     expect((result.data as any).warning).toMatch(/Aucune dépense associée/);
+  });
+});
+
+describe("setPharmacyItemSaleBlock", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+  });
+
+  function mockItem(overrides: any = {}) {
+    const update = vi.fn(async () => ({}));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pharmacyItem: {
+          findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", organizationId: "org1", ...overrides })),
+          update,
+        },
+      },
+    }));
+    return update;
+  }
+
+  it("bloque la vente avec le motif, la date et l'auteur", async () => {
+    const update = mockItem();
+    const { setPharmacyItemSaleBlock } = await import("./stock");
+
+    const result = await setPharmacyItemSaleBlock({ pharmacyItemId: "item1", blocked: true, reason: "  rappel de lot  " });
+
+    expect(result.success).toBe(true);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "item1" },
+      data: { saleBlockedAt: expect.any(Date), saleBlockedReason: "rappel de lot", saleBlockedById: "coord1" },
+    });
+  });
+
+  it("refuse de bloquer sans motif (ou avec un motif trop court)", async () => {
+    const update = mockItem();
+    const { setPharmacyItemSaleBlock } = await import("./stock");
+
+    const noReason = await setPharmacyItemSaleBlock({ pharmacyItemId: "item1", blocked: true });
+    const shortReason = await setPharmacyItemSaleBlock({ pharmacyItemId: "item1", blocked: true, reason: "  a " });
+
+    expect(noReason.success).toBe(false);
+    expect(noReason.error).toMatch(/motif est requis/);
+    expect(shortReason.success).toBe(false);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("débloque sans exiger de motif et efface les trois champs", async () => {
+    const update = mockItem({ saleBlockedAt: new Date(), saleBlockedReason: "rappel de lot" });
+    const { setPharmacyItemSaleBlock } = await import("./stock");
+
+    const result = await setPharmacyItemSaleBlock({ pharmacyItemId: "item1", blocked: false });
+
+    expect(result.success).toBe(true);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "item1" },
+      data: { saleBlockedAt: null, saleBlockedReason: null, saleBlockedById: null },
+    });
+  });
+
+  it("refuse pour tout rôle autre que COORDINATOR, y compris le PHARMACIST", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    const update = mockItem();
+    const { setPharmacyItemSaleBlock } = await import("./stock");
+
+    const result = await setPharmacyItemSaleBlock({ pharmacyItemId: "item1", blocked: true, reason: "rappel de lot" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Seul le coordinateur/);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("refuse un produit d'un autre établissement", async () => {
+    const update = mockItem({ organizationId: "org-autre" });
+    const { setPharmacyItemSaleBlock } = await import("./stock");
+
+    const result = await setPharmacyItemSaleBlock({ pharmacyItemId: "item1", blocked: true, reason: "rappel de lot" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/n'appartient pas à votre établissement/);
+    expect(update).not.toHaveBeenCalled();
   });
 });

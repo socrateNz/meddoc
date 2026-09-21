@@ -32,10 +32,12 @@ function formatDateTime(date: string | Date) {
 
 interface PurchaseHistoryPanelProps {
   organizationId?: string;
-  canWrite?: boolean;
+  // Annulation d'un achat : COORDINATOR uniquement (cf. cancelStockPurchase côté serveur) — plus
+  // strict que le simple droit d'écriture sur le stock.
+  canCancel?: boolean;
 }
 
-export default function PurchaseHistoryPanel({ organizationId, canWrite = false }: PurchaseHistoryPanelProps) {
+export default function PurchaseHistoryPanel({ organizationId, canCancel: canCancelPurchases = false }: PurchaseHistoryPanelProps) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [cancellingPurchase, setCancellingPurchase] = useState<any | null>(null);
@@ -147,7 +149,7 @@ export default function PurchaseHistoryPanel({ organizationId, canWrite = false 
                 <TableHead className="text-xs uppercase font-bold">Fournisseur</TableHead>
                 <TableHead className="text-xs uppercase font-bold">Lot / Expiration</TableHead>
                 <TableHead className="text-xs uppercase font-bold">Enregistré par</TableHead>
-                {canWrite && <TableHead className="text-xs uppercase font-bold text-right">Actions</TableHead>}
+                {canCancelPurchases && <TableHead className="text-xs uppercase font-bold text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -155,7 +157,7 @@ export default function PurchaseHistoryPanel({ organizationId, canWrite = false 
                 const isInventoryAdjustment = p.batchNumber === "AJUSTEMENT-INVENTAIRE";
                 const isDispenseCancellationReturn = p.batchNumber === "ANNULATION-REMISE";
                 const isUntouched = p.remainingQuantity === p.quantity;
-                const canCancel = canWrite && !isInventoryAdjustment && !isDispenseCancellationReturn;
+                const canCancel = canCancelPurchases && !isInventoryAdjustment && !isDispenseCancellationReturn;
                 return (
                   <TableRow key={p.id}>
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(p.createdAt)}</TableCell>
@@ -182,7 +184,7 @@ export default function PurchaseHistoryPanel({ organizationId, canWrite = false 
                     <TableCell className="text-xs text-muted-foreground">
                       {p.purchasedBy ? `${p.purchasedBy.firstName} ${p.purchasedBy.lastName}` : "—"}
                     </TableCell>
-                    {canWrite && (
+                    {canCancelPurchases && (
                       <TableCell className="text-right">
                         {canCancel && (
                           <Button

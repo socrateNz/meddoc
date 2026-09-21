@@ -430,6 +430,116 @@ describe("createCaisseSale", () => {
     // ni s'afficher ni s'imprimer (InvoiceModal/invoice-pdf.tsx n'ont alors rien à lire).
     expect(financialTransactionCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: 0 }) }));
   });
+
+  it("refuse un panier contenant un médicament dont la vente est bloquée, cite le motif et ne crée aucun ticket", async () => {
+    const pendingInvoiceCreate = vi.fn();
+    const financialTransactionCreate = vi.fn();
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org1" })) },
+        pharmacyItem: {
+          findMany: vi.fn(async () => [
+            { id: "item1", name: "Paracétamol", dosage: "500mg", saleBlockedAt: new Date(), saleBlockedReason: "rappel de lot" },
+            { id: "item2", name: "Amoxicilline", dosage: null, saleBlockedAt: null, saleBlockedReason: null },
+          ]),
+        },
+        pendingInvoice: { create: pendingInvoiceCreate },
+        financialTransaction: { create: financialTransactionCreate },
+      },
+    }));
+    const { createCaisseSale } = await import("./finance");
+
+    const result = await createCaisseSale({
+      cashSessionId: "sess1",
+      items: [
+        { type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol (500mg)", quantity: 1, unitPrice: 500, amount: 500 },
+        { type: "PHARMACY", pharmacyItemId: "item2", description: "Amoxicilline", quantity: 1, unitPrice: 800, amount: 800 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Vente bloquée par le coordinateur/);
+    expect(result.error).toMatch(/Paracétamol \(500mg\)/);
+    expect(result.error).toMatch(/rappel de lot/);
+    // Seul le produit bloqué est cité : l'autre ligne du panier n'y est pas mêlée.
+    expect(result.error).not.toMatch(/Amoxicilline/);
+    expect(pendingInvoiceCreate).not.toHaveBeenCalled();
+    expect(financialTransactionCreate).not.toHaveBeenCalled();
+  });
+
+  it("accepte un panier dont les médicaments ne sont pas bloqués", async () => {
+    const pendingInvoiceCreate = vi.fn(async ({ data }: any) => ({ id: "inv1", ...data }));
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org1" })) },
+        pharmacyItem: {
+          findMany: vi.fn(async () => [{ id: "item2", name: "Amoxicilline", dosage: null, saleBlockedAt: null, saleBlockedReason: null }]),
+        },
+        pendingInvoice: { create: pendingInvoiceCreate },
+        financialTransaction: { create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })) },
+      },
+    }));
+    const { createCaisseSale } = await import("./finance");
+
+    const result = await createCaisseSale({
+      cashSessionId: "sess1",
+      items: [{ type: "PHARMACY", pharmacyItemId: "item2", description: "Amoxicilline", quantity: 1, unitPrice: 800, amount: 800 }],
+    });
+
+    expect(result.success).toBe(true);
+    expect(pendingInvoiceCreate).toHaveBeenCalled();
+  });
+});
+
+describe("payPendingInvoice — produits dont la vente est bloquée", () => {
+  function mockDb(pendingItems: any[], pharmacyItemFindMany: any) {
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", patientId: null, organizationId: "org1", items: pendingItems })),
+          update: vi.fn(async () => ({})),
+        },
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org1" })) },
+        financialTransaction: {
+          create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })),
+          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
+        },
+        pharmacyItem: { findMany: pharmacyItemFindMany },
+      },
+    }));
+  }
+
+  it("refuse d'AJOUTER à un ticket un médicament bloqué (panier modifiable au premier règlement)", async () => {
+    const findMany = vi.fn(async () => [
+      { id: "itemB", name: "Ibuprofène", dosage: null, saleBlockedAt: new Date(), saleBlockedReason: "produit périmé" },
+    ]);
+    mockDb([{ type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 1000, amount: 1000 }], findMany);
+    const { payPendingInvoice } = await import("./finance");
+
+    const result = await payPendingInvoice("inv1", "sess1", 1000, [
+      { type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 1000, amount: 1000 },
+      { type: "PHARMACY", pharmacyItemId: "itemB", description: "Ibuprofène", quantity: 1, unitPrice: 300, amount: 300 },
+    ]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Vente bloquée par le coordinateur/);
+    expect(result.error).toMatch(/produit périmé/);
+  });
+
+  it("laisse encaisser tel quel un ticket qui contenait DÉJÀ le produit avant son blocage (pas de patient coincé)", async () => {
+    const findMany = vi.fn(async () => []);
+    const existing = { type: "PHARMACY" as const, pharmacyItemId: "itemB", description: "Ibuprofène", quantity: 1, unitPrice: 300, amount: 300 };
+    mockDb([existing], findMany);
+    const { payPendingInvoice } = await import("./finance");
+
+    const result = await payPendingInvoice("inv1", "sess1", 300, [existing]);
+
+    expect(result.success).toBe(true);
+    // Rien de nouveau dans le panier : aucune vérification de blocage n'a même besoin d'interroger la base.
+    expect(findMany).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispensePendingInvoice", () => {
@@ -443,7 +553,7 @@ describe("dispensePendingInvoice", () => {
 
     const tx = {
       pharmacyItem: {
-        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })),
+        findMany: vi.fn(async () => [{ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 }]),
         update: pharmacyItemUpdate,
       },
       stockPurchase: { findMany: vi.fn(async () => []) },
@@ -503,7 +613,7 @@ describe("dispensePendingInvoice", () => {
 
     const tx = {
       pharmacyItem: {
-        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })),
+        findMany: vi.fn(async () => [{ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 }]),
         update: pharmacyItemUpdate,
       },
       stockPurchase: { findMany: vi.fn(async () => []) },
@@ -559,7 +669,7 @@ describe("dispensePendingInvoice", () => {
 
     const tx = {
       pharmacyItem: {
-        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })),
+        findMany: vi.fn(async () => [{ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 }]),
         update: vi.fn(async () => ({})),
       },
       stockPurchase: { findMany: vi.fn(async () => []) },
@@ -598,7 +708,7 @@ describe("dispensePendingInvoice", () => {
     const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000, dispensedQuantity: 1 }];
 
     const tx = {
-      pharmacyItem: { findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })), update: pharmacyItemUpdate },
+      pharmacyItem: { findMany: vi.fn(async () => [{ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 }]), update: pharmacyItemUpdate },
       stockPurchase: { findMany: vi.fn(async () => []) },
       pendingInvoice: {
         findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),
@@ -634,7 +744,7 @@ describe("dispensePendingInvoice", () => {
       { type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 1000, amount: 1000 },
     ];
     const tx = {
-      pharmacyItem: { findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })), update: vi.fn(async () => ({})) },
+      pharmacyItem: { findMany: vi.fn(async () => [{ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 }]), update: vi.fn(async () => ({})) },
       stockPurchase: { findMany: vi.fn(async () => []) },
       pendingInvoice: {
         findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),
@@ -684,7 +794,7 @@ describe("dispensePendingInvoice", () => {
     ];
     const tx = {
       pharmacyItem: {
-        findUnique: vi.fn(async ({ where }: any) => ({ id: where.id, name: `Produit ${where.id}`, stockQuantity: 10, reorderLevel: 5 })),
+        findMany: vi.fn(async ({ where }: any) => where.id.in.map((id: string) => ({ id, name: `Produit ${id}`, stockQuantity: 10, reorderLevel: 5 }))),
         update: vi.fn(async (args: any) => { pharmacyItemUpdates.push(args); return {}; }),
       },
       stockPurchase: { findMany: vi.fn(async () => []) },
@@ -721,6 +831,119 @@ describe("dispensePendingInvoice", () => {
     expect(pharmacyItemUpdates).toContainEqual({ where: { id: "y" }, data: { stockQuantity: { decrement: 1 } } });
   });
 
+  it("ticket à nombreuses lignes : lectures groupées (produits + lots) et écritures groupées par quantité identique, FEFO respecté, un même produit sur deux lignes additionné", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    // a, b, c à 6 unités ; d à 10 ; e à 1 ; "a" apparaît sur deux lignes (4 + 2 = 6).
+    const items = [
+      { type: "PHARMACY", pharmacyItemId: "a", description: "A", quantity: 4, unitPrice: 100, amount: 400 },
+      { type: "PHARMACY", pharmacyItemId: "a", description: "A (bis)", quantity: 2, unitPrice: 100, amount: 200 },
+      { type: "PHARMACY", pharmacyItemId: "b", description: "B", quantity: 6, unitPrice: 100, amount: 600 },
+      { type: "PHARMACY", pharmacyItemId: "c", description: "C", quantity: 6, unitPrice: 100, amount: 600 },
+      { type: "PHARMACY", pharmacyItemId: "d", description: "D", quantity: 10, unitPrice: 100, amount: 1000 },
+      { type: "PHARMACY", pharmacyItemId: "e", description: "E", quantity: 1, unitPrice: 100, amount: 100 },
+    ];
+
+    const pharmacyItemFindMany = vi.fn(async ({ where }: any) =>
+      where.id.in.map((id: string) => ({ id, name: `Produit ${id}`, stockQuantity: 50, reorderLevel: 5 }))
+    );
+    const pharmacyItemUpdate = vi.fn(async () => ({}));
+    const pharmacyItemUpdateMany = vi.fn(async () => ({ count: 0 }));
+    // Produit d : deux lots, celui qui périme d'abord (lot-d1, 4 unités) doit être vidé en premier,
+    // puis le reste (6 unités) pris sur lot-d2 (qui en compte 20) — consommation partielle.
+    // Produit e : un lot de 1 unité, entièrement consommé.
+    const lots = [
+      { id: "lot-d1", pharmacyItemId: "d", remainingQuantity: 4, purchasePrice: 100 },
+      { id: "lot-d2", pharmacyItemId: "d", remainingQuantity: 20, purchasePrice: 120 },
+      { id: "lot-e1", pharmacyItemId: "e", remainingQuantity: 1, purchasePrice: 50 },
+    ];
+    const stockPurchaseFindMany = vi.fn(async () => lots);
+    const stockPurchaseUpdate = vi.fn(async () => ({}));
+    const stockPurchaseUpdateMany = vi.fn(async () => ({ count: 0 }));
+
+    const tx = {
+      pharmacyItem: { findMany: pharmacyItemFindMany, update: pharmacyItemUpdate, updateMany: pharmacyItemUpdateMany },
+      stockPurchase: { findMany: stockPurchaseFindMany, update: stockPurchaseUpdate, updateMany: stockPurchaseUpdateMany },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PAID" })),
+        update: vi.fn(async () => ({})),
+      },
+      prescription: { update: vi.fn(async () => ({})) },
+    };
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PAID", organizationId: "org1", items, prescriptions: [], labOrders: [] })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    const result = await dispensePendingInvoice("inv1", "INV1", items.map((it, index) => ({ index, quantity: it.quantity })));
+
+    expect(result.success).toBe(true);
+
+    // Une seule lecture pour tous les produits, une seule pour tous les lots — pas une par ligne.
+    expect(pharmacyItemFindMany).toHaveBeenCalledTimes(1);
+    expect(pharmacyItemFindMany.mock.calls[0][0].where.id.in.sort()).toEqual(["a", "b", "c", "d", "e"]);
+    expect(stockPurchaseFindMany).toHaveBeenCalledTimes(1);
+
+    // Lots : lot-e1 est vidé en entier (updateMany à 0) ; lot-d1 (4) aussi ; lot-d2 est entamé de 6.
+    expect(stockPurchaseUpdateMany).toHaveBeenCalledTimes(1);
+    const [[fullyConsumedCall]] = stockPurchaseUpdateMany.mock.calls as any[];
+    expect(fullyConsumedCall.data).toEqual({ remainingQuantity: 0 });
+    expect(fullyConsumedCall.where.id.in.sort()).toEqual(["lot-d1", "lot-e1"]);
+    expect(stockPurchaseUpdate).toHaveBeenCalledTimes(1);
+    expect(stockPurchaseUpdate).toHaveBeenCalledWith({ where: { id: "lot-d2" }, data: { remainingQuantity: { decrement: 6 } } });
+
+    // Stock agrégé : a, b, c à 6 partagent un seul updateMany ; d (10) et e (1) : un update chacun.
+    expect(pharmacyItemUpdateMany).toHaveBeenCalledTimes(1);
+    const [[groupedCall]] = pharmacyItemUpdateMany.mock.calls as any[];
+    expect(groupedCall.data).toEqual({ stockQuantity: { decrement: 6 } });
+    expect(groupedCall.where.id.in.sort()).toEqual(["a", "b", "c"]);
+    expect(pharmacyItemUpdate).toHaveBeenCalledWith({ where: { id: "d" }, data: { stockQuantity: { decrement: 10 } } });
+    expect(pharmacyItemUpdate).toHaveBeenCalledWith({ where: { id: "e" }, data: { stockQuantity: { decrement: 1 } } });
+  });
+
+  it("refuse une remise dont deux lignes du même produit dépassent ensemble le stock, même si chacune passerait isolément", async () => {
+    const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+
+    const items = [
+      { type: "PHARMACY", pharmacyItemId: "a", description: "A", quantity: 6, unitPrice: 100, amount: 600 },
+      { type: "PHARMACY", pharmacyItemId: "a", description: "A (bis)", quantity: 6, unitPrice: 100, amount: 600 },
+    ];
+    const tx = {
+      // Stock de 10 : chaque ligne (6) passerait seule, mais 12 > 10 au total.
+      pharmacyItem: { findMany: vi.fn(async () => [{ id: "a", name: "Produit A", stockQuantity: 10, reorderLevel: 5 }]), update: vi.fn(), updateMany: vi.fn() },
+      stockPurchase: { findMany: vi.fn(async () => []), update: vi.fn(), updateMany: vi.fn() },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PAID" })),
+        update: vi.fn(async () => ({})),
+      },
+      prescription: { update: vi.fn(async () => ({})) },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PAID", organizationId: "org1", items, prescriptions: [], labOrders: [] })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    const { dispensePendingInvoice } = await import("./finance");
+
+    const result = await dispensePendingInvoice("inv1", "INV1", [{ index: 0, quantity: 6 }, { index: 1, quantity: 6 }]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Stock insuffisant pour "Produit A"\. Disponible: 10, Demandé: 12/);
+    expect(tx.pharmacyItem.update).not.toHaveBeenCalled();
+    expect(tx.pharmacyItem.updateMany).not.toHaveBeenCalled();
+  });
+
   it("ne redécompte pas les consommables labo une deuxième fois sur un appel ultérieur", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
     vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
@@ -732,7 +955,7 @@ describe("dispensePendingInvoice", () => {
     ];
     const tx = {
       pharmacyItem: {
-        findUnique: vi.fn(async ({ where }: any) => ({ id: where.id, name: `Produit ${where.id}`, stockQuantity: 10, reorderLevel: 5 })),
+        findMany: vi.fn(async ({ where }: any) => where.id.in.map((id: string) => ({ id, name: `Produit ${id}`, stockQuantity: 10, reorderLevel: 5 }))),
         update: vi.fn(async (args: any) => { pharmacyItemUpdates.push(args); return {}; }),
       },
       stockPurchase: { findMany: vi.fn(async () => []) },
@@ -768,7 +991,7 @@ describe("dispensePendingInvoice", () => {
     const prescriptionUpdate = vi.fn(async () => ({}));
     const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 4, unitPrice: 500, amount: 2000 }];
     const tx = {
-      pharmacyItem: { findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 })), update: vi.fn(async () => ({})) },
+      pharmacyItem: { findMany: vi.fn(async () => [{ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 }]), update: vi.fn(async () => ({})) },
       stockPurchase: { findMany: vi.fn(async () => []) },
       pendingInvoice: {
         findUnique: vi.fn(async () => ({ items, dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),

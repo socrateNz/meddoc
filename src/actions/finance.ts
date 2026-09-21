@@ -16,7 +16,7 @@ import {
   changeInvoiceStatusSchema,
   deletePendingInvoiceSchema,
 } from "@/validators/finance";
-import { consumeStockLots, assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
+import { assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -84,8 +84,39 @@ function formatMongoDoc(doc: any) {
   if (formatted.pharmacyItemId && formatted.pharmacyItemId.$oid) {
     formatted.pharmacyItemId = formatted.pharmacyItemId.$oid;
   }
+  // Blocage de vente d'un produit de pharmacie (cf. setPharmacyItemSaleBlock) : sans cette
+  // conversion, le format JSON étendu brut ({ $date }) arriverait tel quel au client.
+  if (formatted.saleBlockedAt && formatted.saleBlockedAt.$date) {
+    formatted.saleBlockedAt = new Date(formatted.saleBlockedAt.$date);
+  }
+  if (formatted.saleBlockedById && formatted.saleBlockedById.$oid) {
+    formatted.saleBlockedById = formatted.saleBlockedById.$oid;
+  }
 
   return formatted;
+}
+
+// Refuse qu'un ticket de caisse contienne un produit dont la vente a été bloquée par le
+// coordinateur (cf. setPharmacyItemSaleBlock), en citant le motif pour que le caissier comprenne.
+// Vérifié côté serveur : l'interface de caisse grise déjà ces produits, mais seul ce contrôle est
+// opposable à un appel direct de l'action.
+async function assertPharmacyItemsSellable(items: Array<{ type: string; pharmacyItemId?: string }>) {
+  const ids = Array.from(
+    new Set(items.filter((i) => i.type === "PHARMACY" && i.pharmacyItemId).map((i) => i.pharmacyItemId as string))
+  );
+  if (ids.length === 0) return;
+
+  const found = await prisma.pharmacyItem.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true, dosage: true, saleBlockedAt: true, saleBlockedReason: true },
+  });
+  const blocked = found.filter((p) => p.saleBlockedAt);
+  if (blocked.length === 0) return;
+
+  const detail = blocked
+    .map((p) => `« ${p.name}${p.dosage ? ` (${p.dosage})` : ""} » — ${p.saleBlockedReason || "aucun motif renseigné"}`)
+    .join(" ; ");
+  throw new Error(`Vente bloquée par le coordinateur : ${detail}. Retirez ce produit du panier.`);
 }
 
 export async function getPharmacyItems(organizationId?: string) {
@@ -353,36 +384,104 @@ export async function recordExpense(data: { cashSessionId: string; description: 
   }
 }
 
+// Regroupe des ids par valeur identique pour les écrire d'un seul updateMany plutôt que d'un
+// update par id (ex: dix produits remis chacun en quantité 6 = une seule écriture).
+function groupIdsByValue(entries: Array<[string, number]>): Map<number, string[]> {
+  const groups = new Map<number, string[]>();
+  for (const [id, value] of entries) {
+    const ids = groups.get(value);
+    if (ids) ids.push(id);
+    else groups.set(value, [id]);
+  }
+  return groups;
+}
+
+async function decrementField(model: any, ids: string[], field: string, amount: number) {
+  if (ids.length === 1) {
+    await model.update({ where: { id: ids[0] }, data: { [field]: { decrement: amount } } });
+  } else {
+    await model.updateMany({ where: { id: { in: ids } }, data: { [field]: { decrement: amount } } });
+  }
+}
+
+// Décrémente le stock (agrégé + lots FEFO) de tous les produits d'un ticket avec un nombre de
+// requêtes proche de constant plutôt que proportionnel au nombre de lignes : 2 lectures groupées
+// (produits, lots), puis des écritures groupées par valeur identique. L'ancienne version enchaînait
+// lecture produit + mise à jour + lecture des lots + une mise à jour par lot, ligne après ligne
+// (~5 requêtes séquentielles par ligne) — un ticket de 12 lignes dépassait les 20s de timeout de
+// transaction à ~330ms l'aller-retour vers la base depuis Vercel. Les quantités d'un même produit
+// présent sur plusieurs lignes sont additionnées avant la vérification de stock (l'ancienne
+// version validait chaque ligne isolément et pouvait laisser passer un total supérieur au stock).
 async function decrementStockForItems(
   tx: any,
   items: Array<{ type: "PHARMACY" | "SERVICE" | "LAB"; pharmacyItemId?: string; description: string; quantity: number }>,
   organizationId: string | null
 ) {
-  const stockSnapshots = new Map<string, { name: string; stockQuantity: number; reorderLevel: number }>();
+  const wanted = new Map<string, { quantity: number; description: string }>();
   for (const item of items) {
     if (item.type !== "PHARMACY" || !item.pharmacyItemId) continue;
-    const pItem = await tx.pharmacyItem.findUnique({ where: { id: item.pharmacyItemId } });
-    if (!pItem) throw new Error(`Produit introuvable : ${item.description}`);
-    if (pItem.stockQuantity < item.quantity) {
-      throw new Error(`Stock insuffisant pour "${pItem.name}". Disponible: ${pItem.stockQuantity}, Demandé: ${item.quantity}`);
+    const quantity = Number(item.quantity);
+    const existing = wanted.get(item.pharmacyItemId);
+    if (existing) existing.quantity += quantity;
+    else wanted.set(item.pharmacyItemId, { quantity, description: item.description });
+  }
+  if (wanted.size === 0) return [];
+
+  const itemIds = Array.from(wanted.keys());
+  const pharmacyItems: any[] = await tx.pharmacyItem.findMany({ where: { id: { in: itemIds } } });
+  const pharmacyItemById = new Map(pharmacyItems.map((p) => [p.id, p]));
+
+  const stockSnapshots = new Map<string, { name: string; stockQuantity: number; reorderLevel: number }>();
+  for (const [pharmacyItemId, { quantity, description }] of wanted) {
+    const pItem = pharmacyItemById.get(pharmacyItemId);
+    if (!pItem) throw new Error(`Produit introuvable : ${description}`);
+    if (pItem.stockQuantity < quantity) {
+      throw new Error(`Stock insuffisant pour "${pItem.name}". Disponible: ${pItem.stockQuantity}, Demandé: ${quantity}`);
     }
-    stockSnapshots.set(item.pharmacyItemId, { name: pItem.name, stockQuantity: pItem.stockQuantity, reorderLevel: pItem.reorderLevel });
+    stockSnapshots.set(pharmacyItemId, { name: pItem.name, stockQuantity: pItem.stockQuantity, reorderLevel: pItem.reorderLevel });
   }
 
-  for (const item of items) {
-    if (item.type !== "PHARMACY" || !item.pharmacyItemId) continue;
-    await tx.pharmacyItem.update({
-      where: { id: item.pharmacyItemId },
-      data: { stockQuantity: { decrement: item.quantity } },
-    });
-    await consumeStockLots(tx, item.pharmacyItemId, item.quantity);
+  // Consommation FEFO calculée en mémoire (même ordre que consumeStockLots : péremption la plus
+  // proche d'abord, puis achat le plus ancien). Si les lots ne couvrent pas toute la quantité
+  // (stock hérité d'avant le suivi par lot), la part non couverte n'est simplement pas valorisée
+  // par lot — on ne bloque pas l'opération, comme consumeStockLots.
+  const lots: any[] = await tx.stockPurchase.findMany({
+    where: { pharmacyItemId: { in: itemIds }, remainingQuantity: { gt: 0 } },
+    orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
+  });
+  const lotsByItem = new Map<string, any[]>();
+  for (const lot of lots) {
+    const list = lotsByItem.get(lot.pharmacyItemId);
+    if (list) list.push(lot);
+    else lotsByItem.set(lot.pharmacyItemId, [lot]);
+  }
+
+  const fullyConsumedLotIds: string[] = [];
+  const partialTakes: Array<[string, number]> = [];
+  for (const [pharmacyItemId, { quantity }] of wanted) {
+    let remaining = quantity;
+    for (const lot of lotsByItem.get(pharmacyItemId) || []) {
+      if (remaining <= 0) break;
+      const take = Math.min(lot.remainingQuantity, remaining);
+      if (take === lot.remainingQuantity) fullyConsumedLotIds.push(lot.id);
+      else partialTakes.push([lot.id, take]);
+      remaining -= take;
+    }
+  }
+
+  if (fullyConsumedLotIds.length > 0) {
+    await tx.stockPurchase.updateMany({ where: { id: { in: fullyConsumedLotIds } }, data: { remainingQuantity: 0 } });
+  }
+  for (const [take, lotIds] of groupIdsByValue(partialTakes)) {
+    await decrementField(tx.stockPurchase, lotIds, "remainingQuantity", take);
+  }
+  for (const [quantity, ids] of groupIdsByValue(Array.from(wanted, ([id, v]) => [id, v.quantity] as [string, number]))) {
+    await decrementField(tx.pharmacyItem, ids, "stockQuantity", quantity);
   }
 
   const lowStockAlerts: any[] = [];
   for (const [pharmacyItemId, snapshot] of stockSnapshots) {
-    const soldQty = items
-      .filter((i) => i.type === "PHARMACY" && i.pharmacyItemId === pharmacyItemId)
-      .reduce((sum, i) => sum + Number(i.quantity), 0);
+    const soldQty = wanted.get(pharmacyItemId)!.quantity;
     const newQty = snapshot.stockQuantity - soldQty;
     if (snapshot.stockQuantity > snapshot.reorderLevel && newQty <= snapshot.reorderLevel) {
       lowStockAlerts.push({
@@ -468,6 +567,17 @@ export async function payPendingInvoice(
     }
 
     payPendingInvoiceSchema.parse({ pendingInvoiceId, cashSessionId, amount, items });
+
+    // Seuls les produits AJOUTÉS au ticket sont contrôlés : un ticket déjà émis (ordonnance,
+    // consultation, vente à crédit) qui contenait déjà un produit depuis bloqué doit rester
+    // encaissable tel quel — l'interdire couperait un patient de son règlement, voire coincerait
+    // un ticket déjà partiellement remis (que reconcileItemsWithPriorDispense interdit de vider).
+    if (pending.status === "PENDING" && items) {
+      const alreadyOnTicket = new Set(
+        ((pending.items as any[]) || []).map((i) => i.pharmacyItemId).filter(Boolean)
+      );
+      await assertPharmacyItemsSellable(items.filter((i) => !(i.pharmacyItemId && alreadyOnTicket.has(i.pharmacyItemId))));
+    }
 
     // Le panier n'est modifiable (remplace pending.items) que sur le tout premier règlement,
     // tant que rien n'a encore été perçu — dès qu'un acompte existe (PARTIAL), il est verrouillé
@@ -585,6 +695,8 @@ export async function createCaisseSale(data: {
     if (!session || session.status !== "OPEN") {
       throw new Error("Aucune session de caisse ouverte. Ouvrez la caisse avant d'encaisser.");
     }
+
+    await assertPharmacyItemsSellable(data.items);
 
     const targetOrgId = data.organizationId || session.organizationId;
     const totalAmount = data.items.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -853,7 +965,9 @@ export async function dispensePendingInvoice(
           }
         }
       },
-      { timeout: 20000, maxWait: 10000 }
+      // 50s : sous le maxDuration de 60s posé sur le layout /dashboard (cf. son commentaire) —
+      // la fonction Vercel serait coupée avant qu'un délai Prisma plus long ne serve à quelque chose.
+      { timeout: 50000, maxWait: 10000 }
     );
 
     if (lowStockAlerts.length > 0) {
@@ -990,7 +1104,9 @@ export async function cancelDispense(pendingInvoiceId: string, reason?: string) 
           }
         }
       },
-      { timeout: 20000, maxWait: 10000 }
+      // 50s : sous le maxDuration de 60s posé sur le layout /dashboard (cf. son commentaire) —
+      // la fonction Vercel serait coupée avant qu'un délai Prisma plus long ne serve à quelque chose.
+      { timeout: 50000, maxWait: 10000 }
     );
 
     await logAuditAction(activeUser.id, "CANCEL_DISPENSE", "PendingInvoice", pendingInvoiceId, { reason: reason || null });
