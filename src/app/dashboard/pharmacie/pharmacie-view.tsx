@@ -36,6 +36,7 @@ import ImportPharmacyCsvDialog from "@/app/dashboard/finance/import-pharmacy-csv
 import InventoryPanel from "@/app/dashboard/finance/inventory-panel";
 import PurchaseHistoryPanel from "@/app/dashboard/finance/purchase-history-panel";
 import SaleBlockDialog from "@/app/dashboard/finance/sale-block-dialog";
+import DeletePharmacyItemDialog from "@/app/dashboard/finance/delete-pharmacy-item-dialog";
 import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
 import { dispensePendingInvoice, cancelDispense } from "@/actions/finance";
 
@@ -590,6 +591,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                           <div className="flex items-center justify-end gap-2">
                             {isCoordinator && <SaleBlockDialog item={item} />}
                             {canWrite && <PharmacyDialog item={item} organizationId={organizationId} />}
+                            {isCoordinator && <DeletePharmacyItemDialog item={item} />}
                           </div>
                         </TableCell>
                       </TableRow>

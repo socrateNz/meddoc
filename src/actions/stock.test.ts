@@ -1148,3 +1148,140 @@ describe("setPharmacyItemSaleBlock", () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+describe("deletePharmacyItem / getPharmacyItemDeletionInfo", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+  });
+
+  function mockCatalogDb(overrides: any = {}) {
+    const tx = {
+      stockPurchase: { deleteMany: vi.fn(async () => ({})) },
+      inventoryCountLine: { deleteMany: vi.fn(async () => ({})) },
+      prescriptionItem: { updateMany: vi.fn(async () => ({})) },
+      pharmacyItem: { delete: vi.fn(async () => ({})) },
+    };
+    const prisma = {
+      pharmacyItem: {
+        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", dosage: "500mg", stockQuantity: 12, organizationId: "org1", ...overrides.item })),
+      },
+      financialTransaction: { count: vi.fn(async () => overrides.transactionCount ?? 0) },
+      stockAdjustment: { count: vi.fn(async () => overrides.adjustmentCount ?? 0) },
+      stockPurchase: { findMany: vi.fn(async () => overrides.lots ?? []) },
+      inventoryCountLine: {
+        count: vi.fn(async ({ where }: any) =>
+          where.inventoryCount.status === "COMPLETED" ? overrides.closedLines ?? 0 : overrides.removableLines ?? 0
+        ),
+      },
+      purchaseOrderLine: { count: vi.fn(async () => overrides.poLines ?? 0) },
+      labTest: { findMany: vi.fn(async () => overrides.labTests ?? []) },
+      pendingInvoice: { findMany: vi.fn(async () => overrides.openInvoices ?? []) },
+      $transaction: vi.fn(async (fn: any) => fn(tx)),
+    };
+    vi.doMock("@/lib/db", () => ({ prisma }));
+    return { tx, prisma };
+  }
+
+  it("supprime un produit sans historique, avec ses lots intacts, ses lignes d'inventaire non clôturé, et détache ses lignes d'ordonnance", async () => {
+    const { tx } = mockCatalogDb({
+      lots: [{ quantity: 12, remainingQuantity: 12 }],
+      removableLines: 1,
+    });
+    const { deletePharmacyItem } = await import("./stock");
+
+    const result = await deletePharmacyItem("item1");
+
+    expect(result.success).toBe(true);
+    expect(tx.stockPurchase.deleteMany).toHaveBeenCalledWith({ where: { pharmacyItemId: "item1" } });
+    expect(tx.inventoryCountLine.deleteMany).toHaveBeenCalledWith({ where: { pharmacyItemId: "item1" } });
+    expect(tx.prescriptionItem.updateMany).toHaveBeenCalledWith({ where: { pharmacyItemId: "item1" }, data: { pharmacyItemId: null } });
+    expect(tx.pharmacyItem.delete).toHaveBeenCalledWith({ where: { id: "item1" } });
+  });
+
+  it("refuse et ne supprime rien quand le produit a un historique comptable, un lot entamé ou un inventaire clôturé", async () => {
+    const { tx, prisma } = mockCatalogDb({
+      transactionCount: 2,
+      adjustmentCount: 1,
+      lots: [{ quantity: 10, remainingQuantity: 4 }],
+      closedLines: 3,
+    });
+    const { deletePharmacyItem } = await import("./stock");
+
+    const result = await deletePharmacyItem("item1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Suppression impossible/);
+    expect(result.error).toMatch(/2 écriture\(s\) comptable\(s\)/);
+    expect(result.error).toMatch(/1 ajustement\(s\) de stock/);
+    expect(result.error).toMatch(/1 lot\(s\) d'achat ont déjà été en partie vendus/);
+    expect(result.error).toMatch(/3 inventaire\(s\) déjà clôturé\(s\)/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.pharmacyItem.delete).not.toHaveBeenCalled();
+  });
+
+  it("refuse quand le produit figure dans une commande fournisseur, une recette d'examen labo ou un ticket en cours (panier ou consommable labo)", async () => {
+    const { tx } = mockCatalogDb({
+      poLines: 1,
+      labTests: [
+        { name: "NFS", consumables: [{ pharmacyItemId: "item1", name: "Tube", quantity: 1 }] },
+        { name: "Glycémie", consumables: [{ pharmacyItemId: "autre", name: "Bandelette", quantity: 1 }] },
+      ],
+      openInvoices: [
+        { items: [{ type: "PHARMACY", pharmacyItemId: "item1" }], labOrders: [] },
+        { items: [{ type: "SERVICE" }], labOrders: [{ testDetails: [{ consumables: [{ pharmacyItemId: "item1" }] }] }] },
+        { items: [{ type: "PHARMACY", pharmacyItemId: "autre" }], labOrders: [] },
+      ],
+    });
+    const { deletePharmacyItem } = await import("./stock");
+
+    const result = await deletePharmacyItem("item1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/1 ligne\(s\) de commande fournisseur/);
+    expect(result.error).toMatch(/recette de l'examen labo : NFS/);
+    expect(result.error).not.toMatch(/Glycémie/);
+    expect(result.error).toMatch(/2 ticket\(s\) en cours/);
+    expect(tx.pharmacyItem.delete).not.toHaveBeenCalled();
+  });
+
+  it("refuse pour tout rôle autre que COORDINATOR, y compris le PHARMACIST", async () => {
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => ({ id: "pharma1", role: "PHARMACIST", organizationId: "org1" })) }));
+    const { prisma } = mockCatalogDb();
+    const { deletePharmacyItem } = await import("./stock");
+
+    const result = await deletePharmacyItem("item1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Seul le coordinateur peut supprimer un produit/);
+    expect(prisma.pharmacyItem.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("refuse un produit d'un autre établissement", async () => {
+    const { tx } = mockCatalogDb({ item: { organizationId: "org-autre" } });
+    const { deletePharmacyItem } = await import("./stock");
+
+    const result = await deletePharmacyItem("item1");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/n'appartient pas à votre établissement/);
+    expect(tx.pharmacyItem.delete).not.toHaveBeenCalled();
+  });
+
+  it("getPharmacyItemDeletionInfo décrit ce qui serait perdu (ou bloqué) sans rien modifier", async () => {
+    const { tx, prisma } = mockCatalogDb({ lots: [{ quantity: 12, remainingQuantity: 12 }], removableLines: 2 });
+    const { getPharmacyItemDeletionInfo } = await import("./stock");
+
+    const result = await getPharmacyItemDeletionInfo("item1");
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ name: "Paracétamol", stockQuantity: 12, blockers: [], lotsToRemove: 1, inventoryLinesToRemove: 2 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.pharmacyItem.delete).not.toHaveBeenCalled();
+  });
+});

@@ -395,6 +395,139 @@ export async function setPharmacyItemSaleBlock(data: { pharmacyItemId: string; b
   }
 }
 
+// Suppression d'un produit du catalogue — voir checkPharmacyItemDeletable pour ce qui l'autorise
+// ou l'interdit. Volontairement réservée au COORDINATOR (comme l'annulation d'un achat et le
+// blocage de vente) : détruire une fiche produit est une décision de supervision.
+function assertCoordinatorForCatalog(activeUser: any, action: string) {
+  if (!activeUser) throw new Error("Non authentifié.");
+  if (activeUser.role !== "COORDINATOR") {
+    throw new Error(`Non autorisé. Seul le coordinateur peut ${action}.`);
+  }
+}
+
+// Un produit n'est supprimable que s'il n'a AUCUN historique comptable ou opérationnel à
+// préserver. Sinon la suppression laisserait des écritures (achats, pertes d'inventaire, ventes en
+// cours...) pointer vers un produit disparu, et effacerait rétroactivement le coût d'achat déjà
+// compté dans les rapports financiers. Dans ce cas, "Bloquer la vente" reste l'alternative : il
+// retire le produit de la caisse sans toucher à l'historique.
+//
+// Ne bloquent PAS (retirés avec le produit) : les lots d'achat jamais entamés sans écriture
+// comptable associée (typiquement le stock amorcé par import CSV), et les lignes d'un inventaire
+// non clôturé — un inventaire en cours se poursuit simplement sans ce produit. Les lignes
+// d'ordonnance perdent leur rattachement au catalogue (le libellé du médicament, lui, reste).
+async function checkPharmacyItemDeletable(item: { id: string; organizationId: string | null }) {
+  const [transactionCount, adjustmentCount, lots, closedInventoryLines, removableInventoryLines, purchaseOrderLines, labTests, openInvoices] =
+    await Promise.all([
+      prisma.financialTransaction.count({ where: { pharmacyItemId: item.id } }),
+      prisma.stockAdjustment.count({ where: { pharmacyItemId: item.id } }),
+      prisma.stockPurchase.findMany({ where: { pharmacyItemId: item.id }, select: { quantity: true, remainingQuantity: true } }),
+      prisma.inventoryCountLine.count({ where: { pharmacyItemId: item.id, inventoryCount: { status: "COMPLETED" } } }),
+      prisma.inventoryCountLine.count({ where: { pharmacyItemId: item.id, inventoryCount: { status: { not: "COMPLETED" } } } }),
+      prisma.purchaseOrderLine.count({ where: { pharmacyItemId: item.id } }),
+      prisma.labTest.findMany({ where: { organizationId: item.organizationId }, select: { name: true, consumables: true } }),
+      prisma.pendingInvoice.findMany({
+        where: { organizationId: item.organizationId, status: { not: "CANCELLED" }, dispensedAt: null },
+        select: { items: true, labOrders: { select: { testDetails: true } } },
+      }),
+    ]);
+
+  const blockers: string[] = [];
+  if (transactionCount > 0) {
+    blockers.push(`${transactionCount} écriture(s) comptable(s) (achats, pertes d'inventaire) y sont rattachées.`);
+  }
+  if (adjustmentCount > 0) blockers.push(`${adjustmentCount} ajustement(s) de stock y sont rattachés.`);
+  const consumedLots = lots.filter((l) => l.remainingQuantity !== l.quantity).length;
+  if (consumedLots > 0) blockers.push(`${consumedLots} lot(s) d'achat ont déjà été en partie vendus ou consommés.`);
+  if (closedInventoryLines > 0) blockers.push(`Il figure dans ${closedInventoryLines} inventaire(s) déjà clôturé(s).`);
+  if (purchaseOrderLines > 0) blockers.push(`Il figure dans ${purchaseOrderLines} ligne(s) de commande fournisseur.`);
+
+  const usedByLabTests = labTests
+    .filter((t) => Array.isArray(t.consumables) && (t.consumables as any[]).some((c) => c?.pharmacyItemId === item.id))
+    .map((t) => t.name);
+  if (usedByLabTests.length > 0) {
+    blockers.push(`Il est utilisé dans la recette de l'examen labo : ${usedByLabTests.join(", ")}.`);
+  }
+
+  const openTickets = openInvoices.filter(
+    (inv) =>
+      ((inv.items as any[]) || []).some((i) => i?.pharmacyItemId === item.id) ||
+      (inv.labOrders || []).some((lo) =>
+        ((lo.testDetails as any[]) || []).some((td) => (td?.consumables || []).some((c: any) => c?.pharmacyItemId === item.id))
+      )
+  ).length;
+  if (openTickets > 0) blockers.push(`Il figure dans ${openTickets} ticket(s) en cours (à régler ou à remettre).`);
+
+  return { blockers, lotsToRemove: lots.length, inventoryLinesToRemove: removableInventoryLines };
+}
+
+// Ce que la suppression ferait, sans rien modifier : alimente la boîte de confirmation (qui liste
+// les blocages tout de suite plutôt que de laisser l'utilisateur les découvrir en cliquant).
+export async function getPharmacyItemDeletionInfo(pharmacyItemId: string) {
+  try {
+    z.string().min(1).parse(pharmacyItemId);
+    const activeUser = await getCurrentUser();
+    assertCoordinatorForCatalog(activeUser, "supprimer un produit");
+
+    const item = await prisma.pharmacyItem.findUnique({ where: { id: pharmacyItemId } });
+    if (!item) throw new Error("Produit introuvable.");
+    if (item.organizationId !== activeUser!.organizationId) {
+      throw new Error("Non autorisé. Ce produit n'appartient pas à votre établissement.");
+    }
+
+    const check = await checkPharmacyItemDeletable(item);
+    return {
+      success: true,
+      data: { name: item.name, dosage: item.dosage, stockQuantity: item.stockQuantity, ...check },
+    };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la vérification du produit.") };
+  }
+}
+
+export async function deletePharmacyItem(pharmacyItemId: string) {
+  try {
+    z.string().min(1).parse(pharmacyItemId);
+    const activeUser = await getCurrentUser();
+    assertCoordinatorForCatalog(activeUser, "supprimer un produit");
+
+    const item = await prisma.pharmacyItem.findUnique({ where: { id: pharmacyItemId } });
+    if (!item) throw new Error("Produit introuvable.");
+    if (item.organizationId !== activeUser!.organizationId) {
+      throw new Error("Non autorisé. Ce produit n'appartient pas à votre établissement.");
+    }
+
+    const check = await checkPharmacyItemDeletable(item);
+    if (check.blockers.length > 0) {
+      throw new Error(`Suppression impossible : ${check.blockers.join(" ")}`);
+    }
+
+    // À ce stade, tout lot restant est intact et sans écriture comptable, et toute ligne
+    // d'inventaire restante appartient à un inventaire non clôturé (cf. checkPharmacyItemDeletable).
+    await prisma.$transaction(async (tx) => {
+      await tx.stockPurchase.deleteMany({ where: { pharmacyItemId } });
+      await tx.inventoryCountLine.deleteMany({ where: { pharmacyItemId } });
+      await tx.prescriptionItem.updateMany({ where: { pharmacyItemId }, data: { pharmacyItemId: null } });
+      await tx.pharmacyItem.delete({ where: { id: pharmacyItemId } });
+    });
+
+    await logAuditAction(activeUser!.id, "DELETE_PHARMACY_ITEM", "PharmacyItem", pharmacyItemId, {
+      name: item.name,
+      dosage: item.dosage,
+      stockQuantity: item.stockQuantity,
+      removedLots: check.lotsToRemove,
+      removedInventoryLines: check.inventoryLinesToRemove,
+    });
+    revalidatePath("/dashboard/pharmacie");
+    revalidatePath(`/dashboard/clinics/${item.organizationId}/pharmacie`);
+    revalidatePath(`/dashboard/clinics/${item.organizationId}/caisse`);
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la suppression du produit.") };
+  }
+}
+
 // Annule un achat pharmacie erroné (saisie manuelle) : décrémente le stock, supprime le lot et sa
 // dépense associée. Réservé aux lots dont AUCUNE unité n'a encore été consommée
 // (remainingQuantity === quantity) — dès qu'une seule unité a été vendue, remise ou reprise dans
