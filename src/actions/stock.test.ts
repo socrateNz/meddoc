@@ -410,10 +410,27 @@ describe("recordStockPurchase — linkedExpenseTransactionId (retrait absorbé)"
     });
 
     expect(result.success).toBe(true);
+    // { absorbedByPurchaseId: null } seul ne retrouverait AUCUN retrait existant (le champ est absent
+    // des documents, pas null — vérifié sur les données réelles : 0 sur 108) : il faut aussi isSet:false.
     expect(financialTransactionUpdateMany).toHaveBeenCalledWith({
-      where: { id: "expense1", absorbedByPurchaseId: null },
+      where: {
+        id: "expense1",
+        OR: [{ absorbedByPurchaseId: null }, { absorbedByPurchaseId: { isSet: false } }],
+      },
       data: { absorbedByPurchaseId: "purchase-tx1" },
     });
+  });
+
+  it("getAvailableExpenseWithdrawals retrouve les retraits dont le champ absorbedByPurchaseId est absent (et pas seulement null)", async () => {
+    const findMany = vi.fn(async () => []);
+    vi.doMock("@/lib/db", () => ({ prisma: { financialTransaction: { findMany } } }));
+    const { getAvailableExpenseWithdrawals } = await import("./stock");
+
+    await getAvailableExpenseWithdrawals("org1");
+
+    const [[{ where }]] = findMany.mock.calls as any[];
+    expect(where.OR).toEqual([{ absorbedByPurchaseId: null }, { absorbedByPurchaseId: { isSet: false } }]);
+    expect(where.absorbedByPurchaseId).toBeUndefined();
   });
 
   it("échoue si un autre achat a réclamé le retrait entre-temps (course évitée par updateMany conditionnel)", async () => {
@@ -1226,7 +1243,7 @@ describe("deletePharmacyItem / getPharmacyItemDeletionInfo", () => {
   });
 
   it("refuse quand le produit figure dans une commande fournisseur, une recette d'examen labo ou un ticket en cours (panier ou consommable labo)", async () => {
-    const { tx } = mockCatalogDb({
+    const { tx, prisma } = mockCatalogDb({
       poLines: 1,
       labTests: [
         { name: "NFS", consumables: [{ pharmacyItemId: "item1", name: "Tube", quantity: 1 }] },
@@ -1248,6 +1265,11 @@ describe("deletePharmacyItem / getPharmacyItemDeletionInfo", () => {
     expect(result.error).not.toMatch(/Glycémie/);
     expect(result.error).toMatch(/2 ticket\(s\) en cours/);
     expect(tx.pharmacyItem.delete).not.toHaveBeenCalled();
+
+    // Un ticket jamais remis n'a pas de dispensedAt du tout (champ absent, pas null) : { dispensedAt:
+    // null } seul n'en retrouvait aucun sur les données réelles (0 sur 55) — d'où isSet:false.
+    const [[{ where }]] = (prisma.pendingInvoice.findMany as any).mock.calls;
+    expect(where.OR).toEqual([{ dispensedAt: null }, { dispensedAt: { isSet: false } }]);
   });
 
   it("refuse pour tout rôle autre que COORDINATOR, y compris le PHARMACIST", async () => {

@@ -6,6 +6,8 @@ import { ArrowLeft, Building2, Users, FileText, Settings, Bed, Clock, Phone, Wal
 import { Button } from "@/components/ui/button";
 import { getOrCreateClinicWards } from "@/actions/wards";
 import CacheWriter from "@/components/cache-writer";
+import FinanceTrendChart, { type FinanceTrendPoint } from "@/components/dashboard/finance-trend-chart";
+import RevenueBreakdownChart, { type RevenueSlice } from "@/components/dashboard/revenue-breakdown-chart";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +76,54 @@ async function fetchFinanceSummary(clinicId: string) {
   const lowStockCount = pharmacyItems.filter((item) => item.stockQuantity <= item.reorderLevel).length;
 
   return { todayIncome, cashBalance, lowStockCount };
+}
+
+// Données des deux graphiques du coordinateur : recettes/dépenses jour par jour sur 7 jours, et
+// origine des recettes sur 30 jours. Même périmètre et mêmes règles que getFinanceSummary : une
+// dépense déjà absorbée par un achat (cf. absorbedByPurchaseId) n'est pas recomptée, sinon le
+// même argent apparaîtrait deux fois. Découpage par jour dans le fuseau du serveur, comme
+// "Recettes du jour" juste au-dessus (startOfToday).
+async function fetchFinanceCharts(clinicId: string) {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const weekStart = new Date(startOfToday);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const monthStart = new Date(startOfToday);
+  monthStart.setDate(monthStart.getDate() - 29);
+
+  const [weekTransactions, revenueByCategory] = await Promise.all([
+    prisma.financialTransaction.findMany({
+      where: { organizationId: clinicId, createdAt: { gte: weekStart } },
+      select: { type: true, amount: true, createdAt: true, absorbedByPurchaseId: true },
+    }),
+    prisma.financialTransaction.groupBy({
+      by: ["category"],
+      where: { organizationId: clinicId, type: "INCOME", createdAt: { gte: monthStart } },
+      _sum: { amount: true },
+    }),
+  ]);
+
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const dayLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric" });
+  const days: (FinanceTrendPoint & { key: string })[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    days.push({ key: dayKey(d), label: dayLabel.format(d), income: 0, expense: 0 });
+  }
+  const dayByKey = new Map(days.map((d) => [d.key, d]));
+
+  for (const t of weekTransactions) {
+    const day = dayByKey.get(dayKey(new Date(t.createdAt)));
+    if (!day) continue;
+    if (t.type === "INCOME") day.income += t.amount;
+    else if (t.type === "EXPENSE" && !t.absorbedByPurchaseId) day.expense += t.amount;
+  }
+
+  const trend: FinanceTrendPoint[] = days.map(({ label, income, expense }) => ({ label, income, expense }));
+  const breakdown: RevenueSlice[] = revenueByCategory.map((g) => ({ category: g.category, value: g._sum.amount ?? 0 }));
+
+  return { trend, breakdown };
 }
 
 // Le tableau de bord du pharmacien ne doit afficher aucune donnée financière (recettes, solde
@@ -192,12 +242,14 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     { queueCount, dispensedTodayCount, lowStockCount: pharmacyLowStockCount },
     openIncidentsCount,
     myAppointmentsTodayCount,
+    financeCharts,
   ] = await Promise.all([
     showWardsAndStaff ? fetchWardsAndStaff(clinic.id) : Promise.resolve({ staffMembers: [] as any[], wardsWithOccupancy: [] as any[] }),
     isCoordinator || isCashier ? fetchFinanceSummary(clinic.id) : Promise.resolve({ todayIncome: 0, cashBalance: 0, lowStockCount: 0 }),
     isPharmacist ? fetchPharmacyOverview(clinic.id) : Promise.resolve({ queueCount: 0, dispensedTodayCount: 0, lowStockCount: 0 }),
     isCoordinator || isCaregiver ? prisma.incident.count({ where: { status: "OPEN", patient: { organizationId: clinic.id } } }) : Promise.resolve(0),
     isCaregiver ? fetchMyAppointmentsToday(user.id) : Promise.resolve(0),
+    isCoordinator ? fetchFinanceCharts(clinic.id) : Promise.resolve({ trend: [] as FinanceTrendPoint[], breakdown: [] as RevenueSlice[] }),
   ]);
 
   const lowStockCount = isPharmacist ? pharmacyLowStockCount : financeLowStockCount;
@@ -298,6 +350,16 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Incidents ouverts</p>
             <p className={`text-2xl font-extrabold mt-1 ${openIncidentsCount > 0 ? "text-red-600 dark:text-red-400" : "text-slate-800 dark:text-slate-100"}`}>{openIncidentsCount}</p>
           </Link>
+        </div>
+      )}
+
+      {/* Graphiques finance : COORDINATOR uniquement, comme les indicateurs ci-dessus */}
+      {isCoordinator && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 animate-fade-up">
+          <div className="lg:col-span-2">
+            <FinanceTrendChart data={financeCharts.trend} />
+          </div>
+          <RevenueBreakdownChart data={financeCharts.breakdown} />
         </div>
       )}
 

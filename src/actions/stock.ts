@@ -28,6 +28,16 @@ export async function assertStockRead(activeUser: any) {
   }
 }
 
+// Filtre "ce champ est vide" fiable sur MongoDB : { champ: null } ne retrouve QUE les documents où
+// le champ vaut explicitement null, pas ceux où il est simplement ABSENT (tout document créé
+// avant l'ajout du champ, ou par une création qui ne l'écrit pas) — il faut aussi isSet: false.
+// Vérifié sur les données réelles : absorbedByPurchaseId: null renvoyait 0 retrait sur 108,
+// isSet: false les 108. À utiliser à la place de { champ: null } dans tout where sur un champ
+// optionnel ajouté après coup. À étaler dans le where : { id, ...fieldIsEmpty("champ") }.
+function fieldIsEmpty(field: string): any {
+  return { OR: [{ [field]: null }, { [field]: { isSet: false } }] };
+}
+
 export async function assertStockWrite(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
   if (!STOCK_WRITE_ROLES.includes(activeUser.role)) {
@@ -286,7 +296,7 @@ export async function recordStockPurchase(data: {
       // orphelin sans le retrait qu'il était censé régler.
       if (data.linkedExpenseTransactionId) {
         const claimed = await tx.financialTransaction.updateMany({
-          where: { id: data.linkedExpenseTransactionId, absorbedByPurchaseId: null },
+          where: { id: data.linkedExpenseTransactionId, ...fieldIsEmpty("absorbedByPurchaseId") },
           data: { absorbedByPurchaseId: transaction.id },
         });
         if (claimed.count === 0) {
@@ -332,7 +342,7 @@ export async function getAvailableExpenseWithdrawals(organizationId?: string) {
       where: {
         type: "EXPENSE",
         category: "OPERATIONAL_EXPENSE",
-        absorbedByPurchaseId: null,
+        ...fieldIsEmpty("absorbedByPurchaseId"),
         organizationId: targetOrgId || undefined,
         createdAt: { gte: since },
       },
@@ -426,7 +436,7 @@ async function checkPharmacyItemDeletable(item: { id: string; organizationId: st
       prisma.purchaseOrderLine.count({ where: { pharmacyItemId: item.id } }),
       prisma.labTest.findMany({ where: { organizationId: item.organizationId }, select: { name: true, consumables: true } }),
       prisma.pendingInvoice.findMany({
-        where: { organizationId: item.organizationId, status: { not: "CANCELLED" }, dispensedAt: null },
+        where: { organizationId: item.organizationId, status: { not: "CANCELLED" }, ...fieldIsEmpty("dispensedAt") },
         select: { items: true, labOrders: { select: { testDetails: true } } },
       }),
     ]);

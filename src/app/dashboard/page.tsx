@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSuperAdminOverview } from "@/actions/super-admin";
 import CacheWriter from "@/components/cache-writer";
+import SimpleBarChart from "@/components/dashboard/simple-bar-chart";
 
 export default async function DashboardPage() {
   const currentUser = await getCurrentUser();
@@ -48,7 +49,6 @@ export default async function DashboardPage() {
     };
 
     const planLabels: Record<string, string> = { TRIAL: "Essai", BASIC: "Basique", PREMIUM: "Premium", ENTERPRISE: "Entreprise" };
-    const maxPlanCount = Math.max(1, ...overview.planBreakdown.map((p) => p.count));
 
     return (
       <div className="space-y-6">
@@ -118,21 +118,15 @@ export default async function DashboardPage() {
               <CardTitle className="text-lg font-bold text-slate-800 dark:text-slate-200">Répartition par forfait</CardTitle>
               <CardDescription className="text-xs">Nombre de holdings par forfait souscrit.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 pt-2">
+            <CardContent className="pt-2">
               {overview.planBreakdown.length === 0 ? (
                 <p className="text-sm text-slate-500 py-6 text-center">Aucune holding pour le moment.</p>
               ) : (
-                overview.planBreakdown.map((p) => (
-                  <div key={p.plan} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-                      <span>{planLabels[p.plan] || p.plan}</span>
-                      <span>{p.count}</span>
-                    </div>
-                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-primary rounded-full" style={{ width: `${(p.count / maxPlanCount) * 100}%` }} />
-                    </div>
-                  </div>
-                ))
+                <SimpleBarChart
+                  data={overview.planBreakdown.map((p) => ({ label: planLabels[p.plan] || p.plan, value: p.count }))}
+                  valueLabel="Holdings"
+                  color="var(--chart-5)"
+                />
               )}
             </CardContent>
           </Card>
@@ -502,6 +496,19 @@ export default async function DashboardPage() {
       {isHoldingAdmin && clinicStats.length > 0 && (
         <div className="animate-fade-up" style={{ animationDelay: "450ms" } as React.CSSProperties}>
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white mb-4 mt-2">Répartition des patients par établissement</h2>
+          <Card className="mb-4 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg font-bold text-slate-800 dark:text-slate-200">Patients suivis</CardTitle>
+              <CardDescription className="text-xs">Nombre de dossiers patients par établissement.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-2">
+              <SimpleBarChart
+                data={clinicStats.map((stat) => ({ label: stat.name, value: stat.count }))}
+                valueLabel="Patients"
+                color="var(--chart-1)"
+              />
+            </CardContent>
+          </Card>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {clinicStats.map(stat => (
               <Card key={stat.id} className="rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
