@@ -18,6 +18,7 @@ import {
 } from "@/validators/finance";
 import { assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
+import { assertPharmacyItemsSellable } from "@/lib/pharmacy-sale-block";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -94,29 +95,6 @@ function formatMongoDoc(doc: any) {
   }
 
   return formatted;
-}
-
-// Refuse qu'un ticket de caisse contienne un produit dont la vente a été bloquée par le
-// coordinateur (cf. setPharmacyItemSaleBlock), en citant le motif pour que le caissier comprenne.
-// Vérifié côté serveur : l'interface de caisse grise déjà ces produits, mais seul ce contrôle est
-// opposable à un appel direct de l'action.
-async function assertPharmacyItemsSellable(items: Array<{ type: string; pharmacyItemId?: string }>) {
-  const ids = Array.from(
-    new Set(items.filter((i) => i.type === "PHARMACY" && i.pharmacyItemId).map((i) => i.pharmacyItemId as string))
-  );
-  if (ids.length === 0) return;
-
-  const found = await prisma.pharmacyItem.findMany({
-    where: { id: { in: ids } },
-    select: { id: true, name: true, dosage: true, saleBlockedAt: true, saleBlockedReason: true },
-  });
-  const blocked = found.filter((p) => p.saleBlockedAt);
-  if (blocked.length === 0) return;
-
-  const detail = blocked
-    .map((p) => `« ${p.name}${p.dosage ? ` (${p.dosage})` : ""} » — ${p.saleBlockedReason || "aucun motif renseigné"}`)
-    .join(" ; ");
-  throw new Error(`Vente bloquée par le coordinateur : ${detail}. Retirez ce produit du panier.`);
 }
 
 export async function getPharmacyItems(organizationId?: string) {

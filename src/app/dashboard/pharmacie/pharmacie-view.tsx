@@ -577,7 +577,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
                             <div className="pt-0.5">
                               <Badge variant="outline" className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-transparent gap-1 text-[10px] font-bold w-fit">
                                 <Ban className="h-3 w-3" />
-                                Vente bloquée
+                                Vente et achat bloqués
                               </Badge>
                               {item.saleBlockedReason && (
                                 <p className="text-[10px] text-slate-500 mt-0.5 max-w-[220px] whitespace-normal">

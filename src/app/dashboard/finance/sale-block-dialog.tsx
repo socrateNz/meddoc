@@ -13,9 +13,10 @@ interface SaleBlockDialogProps {
   item: { id: string; name: string; dosage?: string | null; saleBlockedAt?: unknown; saleBlockedReason?: string | null };
 }
 
-// Bouton + dialogue du coordinateur pour bloquer (avec motif obligatoire) ou débloquer la vente
-// d'un médicament à la caisse — cf. setPharmacyItemSaleBlock, qui refait le contrôle de rôle côté
-// serveur (ce composant n'est que la commodité d'interface, jamais la protection).
+// Bouton + dialogue du coordinateur pour bloquer (avec motif obligatoire) ou débloquer un médicament :
+// plus de vente à la caisse, ni d'achat, de commande ou de réception — cf. setPharmacyItemSaleBlock,
+// qui refait le contrôle de rôle côté serveur (ce composant n'est que la commodité d'interface,
+// jamais la protection).
 export default function SaleBlockDialog({ item }: SaleBlockDialogProps) {
   const router = useRouter();
   const isBlocked = !!item.saleBlockedAt;
@@ -75,25 +76,26 @@ export default function SaleBlockDialog({ item }: SaleBlockDialogProps) {
         }
       >
         {isBlocked ? <ShieldCheck className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
-        {isBlocked ? "Débloquer" : "Bloquer la vente"}
+        {isBlocked ? "Débloquer" : "Bloquer"}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[440px] rounded-2xl">
         <DialogHeader>
           <DialogTitle className={`flex items-center gap-2 ${isBlocked ? "text-emerald-600" : "text-rose-600 dark:text-rose-400"}`}>
             {isBlocked ? <ShieldCheck className="h-5 w-5" /> : <Ban className="h-5 w-5" />}
-            {isBlocked ? "Débloquer la vente ?" : "Bloquer la vente ?"}
+            {isBlocked ? "Débloquer ce produit ?" : "Bloquer ce produit ?"}
           </DialogTitle>
           <DialogDescription>
             {isBlocked ? (
               <>
-                <span className="font-semibold">{label}</span> est actuellement bloqué à la caisse
+                <span className="font-semibold">{label}</span> est actuellement bloqué (vente et achat)
                 {item.saleBlockedReason ? <> — motif : « {item.saleBlockedReason} »</> : null}. Le débloquer
-                permettra de nouveau de l&apos;ajouter à un ticket.
+                permettra de nouveau de l&apos;ajouter à un ticket et d&apos;en acheter ou commander.
               </>
             ) : (
               <>
-                La caisse ne pourra plus ajouter <span className="font-semibold">{label}</span> à un ticket.
-                Les tickets déjà émis restent encaissables et remis normalement.
+                La caisse ne pourra plus ajouter <span className="font-semibold">{label}</span> à un ticket, et
+                il ne pourra plus être acheté, commandé ni réceptionné. Les tickets déjà émis restent
+                encaissables et remis normalement.
               </>
             )}
           </DialogDescription>
@@ -132,7 +134,7 @@ export default function SaleBlockDialog({ item }: SaleBlockDialogProps) {
               className={`gap-2 text-white ${isBlocked ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"}`}
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : isBlocked ? <ShieldCheck className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-              {isBlocked ? "Débloquer" : "Bloquer la vente"}
+              {isBlocked ? "Débloquer" : "Bloquer"}
             </Button>
           </DialogFooter>
         </form>

@@ -561,6 +561,71 @@ describe("recordStockPurchase — prix d'achat optionnel pour un produit existan
   });
 });
 
+describe("recordStockPurchase — produit bloqué par le coordinateur", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+  });
+
+  it("refuse l'achat d'un produit bloqué, avec le motif, sans rien écrire", async () => {
+    const stockPurchaseCreate = vi.fn();
+    const financialTransactionCreate = vi.fn();
+    const itemUpdate = vi.fn();
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async () => ({
+          id: "item1",
+          name: "Amoxicilline",
+          dosage: "500mg",
+          saleBlockedAt: new Date(),
+          saleBlockedReason: "Rappel de lot",
+        })),
+        update: itemUpdate,
+      },
+      stockPurchase: { create: stockPurchaseCreate, findFirst: vi.fn(async () => ({ purchasePrice: 100 })) },
+      financialTransaction: { create: financialTransactionCreate },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: { $transaction: vi.fn(async (fn: any) => fn(tx)) },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({ pharmacyItemId: "item1", quantity: 10, purchasePrice: 350 });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Achat impossible/);
+    expect(result.error).toMatch(/Amoxicilline \(500mg\)/);
+    expect(result.error).toMatch(/Rappel de lot/);
+    expect(stockPurchaseCreate).not.toHaveBeenCalled();
+    expect(financialTransactionCreate).not.toHaveBeenCalled();
+    expect(itemUpdate).not.toHaveBeenCalled();
+  });
+
+  it("accepte l'achat d'un produit dont le blocage a été levé (saleBlockedAt null)", async () => {
+    const tx = {
+      pharmacyItem: {
+        findUnique: vi.fn(async () => ({ id: "item1", name: "Amoxicilline", saleBlockedAt: null, saleBlockedReason: null })),
+        update: vi.fn(async () => ({})),
+      },
+      stockPurchase: { create: vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data })), findFirst: vi.fn() },
+      financialTransaction: { create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })) },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: { $transaction: vi.fn(async (fn: any) => fn(tx)) },
+    }));
+    const { recordStockPurchase } = await import("./stock");
+
+    const result = await recordStockPurchase({ pharmacyItemId: "item1", quantity: 10, purchasePrice: 350 });
+
+    expect(result.success).toBe(true);
+  });
+});
+
 describe("saveInventoryCounts — rafraîchit systemQuantity au moment du comptage", () => {
   const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
 

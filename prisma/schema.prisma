@@ -893,9 +893,11 @@ model PharmacyItem {
   organizationId String?          @db.ObjectId
   organization   Organization?    @relation(fields: [organizationId], references: [id])
 
-  // Blocage de vente posé par le coordinateur (cf. setPharmacyItemSaleBlock) : tant que
-  // saleBlockedAt est renseigné, la caisse ne peut plus mettre ce produit dans un ticket
-  // (createCaisseSale, panier modifiable de payPendingInvoice). Volontairement un DateTime
+  // Blocage posé par le coordinateur (cf. setPharmacyItemSaleBlock) : tant que saleBlockedAt est
+  // renseigné, la caisse ne peut plus mettre ce produit dans un ticket (createCaisseSale, panier
+  // modifiable de payPendingInvoice) et il ne peut plus être acheté, commandé ni réceptionné
+  // (recordStockPurchase, createPurchaseOrder, receivePurchaseOrderLines — cf.
+  // src/lib/pharmacy-sale-block.ts). Volontairement un DateTime
   // optionnel plutôt qu'un Boolean requis : les ~centaines de produits déjà en base n'ont pas ce
   // champ, et Prisma sur MongoDB refuse de lire un document où un champ requis est absent — un
   // champ optionnel absent se lit simplement null, ce qui veut dire "vente autorisée".

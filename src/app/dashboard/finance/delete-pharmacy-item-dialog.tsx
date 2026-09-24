@@ -114,8 +114,8 @@ export default function DeletePharmacyItemDialog({ item }: { item: { id: string;
               ))}
             </ul>
             <p className="text-xs rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 p-3 text-slate-600 dark:text-slate-400">
-              Pour le retirer de la vente sans toucher à l&apos;historique, utilisez plutôt{" "}
-              <span className="font-semibold">« Bloquer la vente »</span>.
+              Pour le retirer de la vente et des achats sans toucher à l&apos;historique, utilisez plutôt{" "}
+              <span className="font-semibold">« Bloquer »</span>.
             </p>
           </div>
         ) : info ? (

@@ -21,6 +21,8 @@ interface PharmacyItemOption {
   id: string;
   name: string;
   dosage?: string | null;
+  // Posé par le coordinateur (cf. setPharmacyItemSaleBlock) : un produit bloqué ne peut plus être acheté.
+  saleBlockedAt?: unknown;
 }
 
 interface OpenRegisterOption {
@@ -198,8 +200,8 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
               >
                 <option value="">-- Sélectionner un produit --</option>
                 {pharmacyItems.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}{item.dosage ? ` (${item.dosage})` : ""}
+                  <option key={item.id} value={item.id} disabled={!!item.saleBlockedAt}>
+                    {item.name}{item.dosage ? ` (${item.dosage})` : ""}{item.saleBlockedAt ? " — bloqué par le coordinateur" : ""}
                   </option>
                 ))}
               </select>

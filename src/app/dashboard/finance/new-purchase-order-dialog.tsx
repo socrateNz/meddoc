@@ -54,6 +54,8 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
       if (!pharmacyItemId) return;
       const item = pharmacyItems.find((p) => p.id === pharmacyItemId);
       if (!item) return;
+      // Le serveur refuse aussi (createPurchaseOrder) ; on évite juste d'ajouter une ligne vouée à l'échec.
+      if (item.saleBlockedAt) { toast.error(`« ${item.name} » est bloqué par le coordinateur : commande impossible.`); return; }
       setLines((prev) => [...prev, { id: `line-${Date.now()}`, pharmacyItemId: item.id, label: item.name, quantityOrdered, unitCost: cost }]);
       setPharmacyItemId("");
     } else {
@@ -151,7 +153,11 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
                     className="w-full h-9 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
                   >
                     <option value="">-- Choisir --</option>
-                    {pharmacyItems.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {pharmacyItems.map((p) => (
+                      <option key={p.id} value={p.id} disabled={!!p.saleBlockedAt}>
+                        {p.name}{p.saleBlockedAt ? " — bloqué par le coordinateur" : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
               ) : (

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { requirePermission } from "@/lib/permissions";
+import { assertItemPurchasable } from "@/lib/pharmacy-sale-block";
 import { recordStockPurchaseSchema, saveInventoryCountsSchema, setPharmacyItemSaleBlockSchema } from "@/validators/stock";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -254,6 +255,9 @@ export async function recordStockPurchase(data: {
       } else {
         const existing = await tx.pharmacyItem.findUnique({ where: { id: itemId } });
         if (!existing) throw new Error("Produit introuvable.");
+        // Un produit bloqué par le coordinateur ne peut plus recevoir de nouveau stock (rappel de
+        // lot, périmé...) — refusé avant toute écriture de la transaction.
+        assertItemPurchasable(existing);
         itemName = existing.name;
       }
 

@@ -8,6 +8,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createPurchaseOrderSchema, receivePurchaseOrderLinesSchema } from "@/validators/purchase-orders";
 import { assertStockRead, assertStockWrite, applyStockReceipt } from "@/actions/stock";
+import { assertItemPurchasable, assertPharmacyItemsPurchasable } from "@/lib/pharmacy-sale-block";
 
 export async function createPurchaseOrder(data: {
   supplierId: string;
@@ -23,6 +24,10 @@ export async function createPurchaseOrder(data: {
 
     const targetOrgId = data.organizationId || activeUser!.organizationId;
     if (!targetOrgId) throw new Error("Impossible de déterminer l'établissement cible.");
+
+    // Commander un produit bloqué par le coordinateur est refusé dès la commande, pas seulement à
+    // la réception (cf. assertPharmacyItemsPurchasable).
+    await assertPharmacyItemsPurchasable(data.lines.map((l) => l.pharmacyItemId ?? ""));
 
     const order = await prisma.purchaseOrder.create({
       data: {
@@ -137,6 +142,9 @@ export async function receivePurchaseOrderLines(
           await tx.purchaseOrderLine.update({ where: { id: line.id }, data: { pharmacyItemId } });
         } else {
           const item = await tx.pharmacyItem.findUnique({ where: { id: pharmacyItemId } });
+          // Une commande passée AVANT le blocage ne peut pas non plus être réceptionnée tant que le
+          // produit reste bloqué : la réception fait entrer du stock vendable et enregistre la dépense.
+          assertItemPurchasable(item);
           itemName = item?.name || line.newItemName || "Article";
         }
 
