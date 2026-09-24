@@ -8,6 +8,8 @@ import Link from "next/link";
 import { getSuperAdminOverview } from "@/actions/super-admin";
 import CacheWriter from "@/components/cache-writer";
 import SimpleBarChart from "@/components/dashboard/simple-bar-chart";
+import CountTrendChart from "@/components/dashboard/count-trend-chart";
+import { buildDayBuckets, buildWeekBuckets, countByBucket } from "@/lib/dashboard-stats";
 
 export default async function DashboardPage() {
   const currentUser = await getCurrentUser();
@@ -300,8 +302,41 @@ export default async function DashboardPage() {
     ].sort((a, b) => b.count - a.count);
   }
 
+  // Tendances de la holding (toutes cliniques rattachées) : rendez-vous des 7 prochains jours et
+  // nouveaux patients des 8 dernières semaines. Mêmes règles de périmètre que les compteurs
+  // au-dessus (orgFilter) ; réservé à la holding, les autres profils n'ont pas cette vue.
+  async function fetchHoldingCharts() {
+    if (!isHoldingAdmin) return null;
+
+    const now = new Date();
+    const dayBuckets = buildDayBuckets(now, 7);
+    const weekBuckets = buildWeekBuckets(now, 8);
+
+    const [appointments, newPatients] = await Promise.all([
+      prisma.appointment.findMany({
+        where: {
+          status: { not: "CANCELLED" },
+          scheduledAt: { gte: dayBuckets[0].start, lt: dayBuckets[dayBuckets.length - 1].end },
+          patient: orgFilter,
+        },
+        select: { scheduledAt: true },
+      }),
+      prisma.patient.findMany({
+        where: { ...orgFilter, createdAt: { gte: weekBuckets[0].start } },
+        select: { createdAt: true },
+      }),
+    ]);
+
+    const appointmentsByDay = countByBucket(appointments.map((a) => a.scheduledAt), dayBuckets);
+    const patientsByWeek = countByBucket(newPatients.map((p) => p.createdAt), weekBuckets);
+    return {
+      appointments: dayBuckets.map((b, i) => ({ label: b.label, value: appointmentsByDay[i] })),
+      newPatients: weekBuckets.map((b, i) => ({ label: b.label, value: patientsByWeek[i] })),
+    };
+  }
+
   // Query database for actual stats — toutes ces requêtes sont indépendantes.
-  const [patientsCount, appointmentsCount, openIncidentsCount, activePlansCount, notifications, aiAnalyses, clinicStats] = await Promise.all([
+  const [patientsCount, appointmentsCount, openIncidentsCount, activePlansCount, notifications, aiAnalyses, clinicStats, holdingCharts] = await Promise.all([
     prisma.patient.count({
       where: orgFilter,
     }),
@@ -344,6 +379,7 @@ export default async function DashboardPage() {
       take: 3,
     }),
     fetchClinicStats(),
+    fetchHoldingCharts(),
   ]);
 
   return (
@@ -415,6 +451,30 @@ export default async function DashboardPage() {
         </Card>
 
       </div>
+
+      {isHoldingAdmin && holdingCharts && (
+        <div className="grid gap-4 lg:grid-cols-2 animate-fade-up" style={{ animationDelay: "300ms" } as React.CSSProperties}>
+          <CountTrendChart
+            title="Rendez-vous à venir"
+            description="7 prochains jours, toutes cliniques, annulés exclus."
+            icon={<Calendar className="h-4 w-4 text-blue-500" />}
+            data={holdingCharts.appointments}
+            valueLabel="Rendez-vous"
+            color="var(--chart-1)"
+            emptyText="Aucun rendez-vous prévu cette semaine."
+          />
+          <CountTrendChart
+            title="Nouveaux patients"
+            description="8 dernières semaines, toutes cliniques."
+            icon={<Users className="h-4 w-4 text-emerald-500" />}
+            data={holdingCharts.newPatients}
+            valueLabel="Patients"
+            color="var(--chart-2)"
+            variant="area"
+            emptyText="Aucun nouveau patient sur la période."
+          />
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
 

@@ -8,6 +8,10 @@ import { getOrCreateClinicWards } from "@/actions/wards";
 import CacheWriter from "@/components/cache-writer";
 import FinanceTrendChart, { type FinanceTrendPoint } from "@/components/dashboard/finance-trend-chart";
 import RevenueBreakdownChart, { type RevenueSlice } from "@/components/dashboard/revenue-breakdown-chart";
+import DonutChart from "@/components/dashboard/donut-chart";
+import CountTrendChart from "@/components/dashboard/count-trend-chart";
+import WardOccupancyChart from "@/components/dashboard/ward-occupancy-chart";
+import { buildDayBuckets, buildWeekBuckets, computeStockStatus, countByBucket, startOfDay, sumByBucket } from "@/lib/dashboard-stats";
 
 export const dynamic = "force-dynamic";
 
@@ -103,27 +107,81 @@ async function fetchFinanceCharts(clinicId: string) {
     }),
   ]);
 
-  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  const dayLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric" });
-  const days: (FinanceTrendPoint & { key: string })[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    days.push({ key: dayKey(d), label: dayLabel.format(d), income: 0, expense: 0 });
-  }
-  const dayByKey = new Map(days.map((d) => [d.key, d]));
+  const buckets = buildDayBuckets(weekStart, 7);
+  const incomeByDay = sumByBucket(
+    weekTransactions.filter((t) => t.type === "INCOME").map((t) => ({ date: t.createdAt, value: t.amount })),
+    buckets
+  );
+  const expenseByDay = sumByBucket(
+    weekTransactions.filter((t) => t.type === "EXPENSE" && !t.absorbedByPurchaseId).map((t) => ({ date: t.createdAt, value: t.amount })),
+    buckets
+  );
 
-  for (const t of weekTransactions) {
-    const day = dayByKey.get(dayKey(new Date(t.createdAt)));
-    if (!day) continue;
-    if (t.type === "INCOME") day.income += t.amount;
-    else if (t.type === "EXPENSE" && !t.absorbedByPurchaseId) day.expense += t.amount;
-  }
-
-  const trend: FinanceTrendPoint[] = days.map(({ label, income, expense }) => ({ label, income, expense }));
+  const trend: FinanceTrendPoint[] = buckets.map((b, i) => ({ label: b.label, income: incomeByDay[i], expense: expenseByDay[i] }));
   const breakdown: RevenueSlice[] = revenueByCategory.map((g) => ({ category: g.category, value: g._sum.amount ?? 0 }));
 
   return { trend, breakdown };
+}
+
+// Répartition du catalogue par état de stock (et alertes de péremption) — donnée opérationnelle,
+// donc aussi disponible au pharmacien. Calcul dans computeStockStatus (testé).
+async function fetchStockStatus(clinicId: string) {
+  const items = await prisma.pharmacyItem.findMany({
+    where: { organizationId: clinicId },
+    select: { stockQuantity: true, reorderLevel: true, expiryDate: true },
+  });
+  return computeStockStatus(items);
+}
+
+// Activité de la clinique : rendez-vous des 7 prochains jours, nouveaux patients des 8 dernières
+// semaines, incidents non résolus par priorité. Rendez-vous et incidents n'ont pas d'organisation
+// propre : ils se rattachent à la clinique par leur patient, comme partout ailleurs dans l'app.
+async function fetchOperationsCharts(clinicId: string) {
+  const now = new Date();
+  const dayBuckets = buildDayBuckets(now, 7);
+  const weekBuckets = buildWeekBuckets(now, 8);
+
+  const [appointments, newPatients, incidentsByPriority] = await Promise.all([
+    prisma.appointment.findMany({
+      where: {
+        status: { not: "CANCELLED" },
+        scheduledAt: { gte: dayBuckets[0].start, lt: dayBuckets[dayBuckets.length - 1].end },
+        patient: { organizationId: clinicId },
+      },
+      select: { scheduledAt: true },
+    }),
+    prisma.patient.findMany({
+      where: { organizationId: clinicId, createdAt: { gte: weekBuckets[0].start } },
+      select: { createdAt: true },
+    }),
+    prisma.incident.groupBy({
+      by: ["priority"],
+      where: { status: { not: "RESOLVED" }, patient: { organizationId: clinicId } },
+      _count: true,
+    }),
+  ]);
+
+  const appointmentsByDay = countByBucket(appointments.map((a) => a.scheduledAt), dayBuckets);
+  const patientsByWeek = countByBucket(newPatients.map((p) => p.createdAt), weekBuckets);
+
+  return {
+    appointments: dayBuckets.map((b, i) => ({ label: b.label, value: appointmentsByDay[i] })),
+    newPatients: weekBuckets.map((b, i) => ({ label: b.label, value: patientsByWeek[i] })),
+    incidents: incidentsByPriority.map((g) => ({ priority: g.priority as string, count: g._count })),
+  };
+}
+
+// Tickets remis par jour sur les 7 derniers jours (tendance du comptoir pharmacie).
+async function fetchDispensingTrend(clinicId: string) {
+  const firstDay = startOfDay(new Date());
+  firstDay.setDate(firstDay.getDate() - 6);
+  const buckets = buildDayBuckets(firstDay, 7);
+  const invoices = await prisma.pendingInvoice.findMany({
+    where: { organizationId: clinicId, dispensedAt: { gte: buckets[0].start } },
+    select: { dispensedAt: true },
+  });
+  const counts = countByBucket(invoices.map((inv) => inv.dispensedAt), buckets);
+  return buckets.map((b, i) => ({ label: b.label, value: counts[i] }));
 }
 
 // Le tableau de bord du pharmacien ne doit afficher aucune donnée financière (recettes, solde
@@ -243,6 +301,9 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     openIncidentsCount,
     myAppointmentsTodayCount,
     financeCharts,
+    stockStatus,
+    operationsCharts,
+    dispensingTrend,
   ] = await Promise.all([
     showWardsAndStaff ? fetchWardsAndStaff(clinic.id) : Promise.resolve({ staffMembers: [] as any[], wardsWithOccupancy: [] as any[] }),
     isCoordinator || isCashier ? fetchFinanceSummary(clinic.id) : Promise.resolve({ todayIncome: 0, cashBalance: 0, lowStockCount: 0 }),
@@ -250,7 +311,44 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     isCoordinator || isCaregiver ? prisma.incident.count({ where: { status: "OPEN", patient: { organizationId: clinic.id } } }) : Promise.resolve(0),
     isCaregiver ? fetchMyAppointmentsToday(user.id) : Promise.resolve(0),
     isCoordinator ? fetchFinanceCharts(clinic.id) : Promise.resolve({ trend: [] as FinanceTrendPoint[], breakdown: [] as RevenueSlice[] }),
+    isCoordinator || isPharmacist ? fetchStockStatus(clinic.id) : Promise.resolve(null),
+    isCoordinator || isReadOnlyOverview ? fetchOperationsCharts(clinic.id) : Promise.resolve(null),
+    isPharmacist ? fetchDispensingTrend(clinic.id) : Promise.resolve(null),
   ]);
+
+  // Anneau "état du stock" partagé par le coordinateur et le pharmacien (même donnée, même rendu).
+  const stockDonut = stockStatus ? (
+    <DonutChart
+      title="État du stock"
+      description="Produits du catalogue par niveau de stock."
+      icon={<Package className="h-4 w-4 text-indigo-500" />}
+      slices={[
+        { key: "ok", label: "Suffisant", value: stockStatus.ok, color: "var(--chart-2)" },
+        { key: "low", label: "Stock faible", value: stockStatus.low, color: "var(--chart-4)" },
+        { key: "out", label: "Rupture", value: stockStatus.out, color: "var(--chart-3)" },
+      ]}
+      centerLabel="produits"
+      emptyText="Aucun produit au catalogue."
+      footer={
+        <>
+          <span className={stockStatus.expiringSoon > 0 ? "font-semibold text-amber-600 dark:text-amber-400" : ""}>
+            {stockStatus.expiringSoon} péremption(s) sous 30 jours
+          </span>
+          {" · "}
+          <span className={stockStatus.expired > 0 ? "font-semibold text-rose-600 dark:text-rose-400" : ""}>
+            {stockStatus.expired} périmé(s) en stock
+          </span>
+        </>
+      }
+    />
+  ) : null;
+
+  const incidentPriorityLabels: Record<string, { label: string; color: string }> = {
+    CRITICAL: { label: "Critique", color: "var(--chart-3)" },
+    HIGH: { label: "Haute", color: "var(--chart-4)" },
+    MEDIUM: { label: "Moyenne", color: "var(--chart-1)" },
+    LOW: { label: "Basse", color: "var(--chart-2)" },
+  };
 
   const lowStockCount = isPharmacist ? pharmacyLowStockCount : financeLowStockCount;
 
@@ -363,6 +461,46 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
         </div>
       )}
 
+      {/* Graphiques d'activité : COORDINATOR et vue lecture seule (holding/super admin). L'état du
+          stock reste réservé au coordinateur, comme les alertes stock au-dessus. */}
+      {(isCoordinator || isReadOnlyOverview) && operationsCharts && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6 animate-fade-up">
+          {isCoordinator && stockDonut}
+          <DonutChart
+            title="Incidents non résolus"
+            description="Par niveau de priorité."
+            icon={<AlertTriangle className="h-4 w-4 text-red-500" />}
+            slices={operationsCharts.incidents.map((g) => ({
+              key: g.priority,
+              label: incidentPriorityLabels[g.priority]?.label ?? g.priority,
+              value: g.count,
+              color: incidentPriorityLabels[g.priority]?.color ?? "var(--chart-1)",
+            }))}
+            centerLabel="ouverts"
+            emptyText="Aucun incident en cours."
+          />
+          <CountTrendChart
+            title="Rendez-vous à venir"
+            description="7 prochains jours, annulés exclus."
+            icon={<Calendar className="h-4 w-4 text-blue-500" />}
+            data={operationsCharts.appointments}
+            valueLabel="Rendez-vous"
+            color="var(--chart-1)"
+            emptyText="Aucun rendez-vous prévu cette semaine."
+          />
+          <CountTrendChart
+            title="Nouveaux patients"
+            description="8 dernières semaines."
+            icon={<Users className="h-4 w-4 text-emerald-500" />}
+            data={operationsCharts.newPatients}
+            valueLabel="Patients"
+            color="var(--chart-2)"
+            variant="area"
+            emptyText="Aucun nouveau patient sur la période."
+          />
+        </div>
+      )}
+
       {/* Cartes CAREGIVER */}
       {isCaregiver && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
@@ -446,6 +584,24 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
         </div>
       )}
 
+      {/* Graphiques PHARMACIST — activité du comptoir uniquement, jamais de données financières */}
+      {isPharmacist && dispensingTrend && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 animate-fade-up">
+          <div className="lg:col-span-2">
+            <CountTrendChart
+              title="Tickets remis"
+              description="7 derniers jours."
+              icon={<PackageCheck className="h-4 w-4 text-emerald-500" />}
+              data={dispensingTrend}
+              valueLabel="Tickets remis"
+              color="var(--chart-2)"
+              emptyText="Aucune remise sur les 7 derniers jours."
+            />
+          </div>
+          {stockDonut}
+        </div>
+      )}
+
       {/* Cartes CASHIER */}
       {isCashier && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
@@ -494,35 +650,13 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
                 </Link>
               </div>
             </div>
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">Urgences</span>
-                  <span className="text-slate-500">{emergencyPatientsCount} / {emergencyCapacity} lits ({emergencyPercentage}%)</span>
-                </div>
-                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-red-500 rounded-full" style={{ width: `${emergencyPercentage}%` }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">Soins Intensifs (Réanimation)</span>
-                  <span className="text-slate-500">{icuPatientsCount} / {icuCapacity} lits ({icuPercentage}%)</span>
-                </div>
-                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-amber-500 rounded-full" style={{ width: `${icuPercentage}%` }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">Chirurgie & Ambulatoire</span>
-                  <span className="text-slate-500">{surgeryPatientsCount} / {surgeryCapacity} lits ({surgeryPercentage}%)</span>
-                </div>
-                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full" style={{ width: `${surgeryPercentage}%` }} />
-                </div>
-              </div>
-            </div>
+            <WardOccupancyChart
+              wards={[
+                { name: "Urgences", occupied: emergencyPatientsCount, capacity: emergencyCapacity },
+                { name: "Soins Intensifs", occupied: icuPatientsCount, capacity: icuCapacity },
+                { name: "Chirurgie & Ambulatoire", occupied: surgeryPatientsCount, capacity: surgeryCapacity },
+              ]}
+            />
           </div>
 
           {/* On-Duty Staff Card */}
