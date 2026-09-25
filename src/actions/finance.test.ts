@@ -1498,7 +1498,8 @@ describe("getFinanceSummary — revenueByCategory", () => {
       prisma: {
         financialTransaction: {
           findMany: vi.fn(async (args: any) => (args?.where?.category === "PHARMACY_SALE" ? [] : transactions)),
-          groupBy: vi.fn(async () => []),
+          // Recettes = agrégat par catégorie (tout-temps puis aujourd'hui), plus la liste plafonnée.
+          groupBy: vi.fn(async () => [{ category: "SERVICE_FEE", _sum: { amount: 5000 } }]),
         },
         pharmacyItem: {},
         user: { findMany: vi.fn(async () => []) },
@@ -1733,6 +1734,201 @@ describe("getFinanceSummary — revenueByCategory", () => {
     // Aujourd'hui seulement : 5 x 200 + 2 x 1000 = 3000.
     expect(pharmacyEntry?.todaySoldCost).toBe(3000);
     expect(pharmacyEntry?.todaySoldProfit).toBe(8000 - 3000);
+  });
+});
+
+// Filtre global de période de la page Finance (cf. src/lib/finance-period.ts).
+describe("getFinanceSummary — filtre de période", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
+
+  // Client Prisma factice qui garde le `where` de chaque requête, pour vérifier que la période les
+  // borne TOUTES (aperçu, dépenses, recettes par catégorie, achats de stock, examens labo).
+  function mockDb(overrides: { expenseRows?: any[] } = {}) {
+    const calls = {
+      transactionFindMany: [] as any[],
+      groupBy: [] as any[],
+      stockAggregate: [] as any[],
+      labFindMany: [] as any[],
+    };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          findMany: vi.fn(async (args: any) => {
+            calls.transactionFindMany.push(args);
+            return args?.where?.type === "EXPENSE" ? overrides.expenseRows ?? [] : [];
+          }),
+          groupBy: vi.fn(async (args: any) => {
+            calls.groupBy.push(args);
+            return [{ category: "PHARMACY_SALE", _sum: { amount: 10000 } }];
+          }),
+        },
+        pharmacyItem: {},
+        user: { findMany: vi.fn(async () => []) },
+        cashSession: { findMany: vi.fn(async () => []) },
+        stockPurchase: {
+          aggregate: vi.fn(async (args: any) => {
+            calls.stockAggregate.push(args);
+            return { _sum: { totalCost: 0 } };
+          }),
+        },
+        labOrder: {
+          findMany: vi.fn(async (args: any) => {
+            calls.labFindMany.push(args);
+            return [];
+          }),
+        },
+        $runCommandRaw: vi.fn(async () => ({ cursor: { firstBatch: [] } })),
+      },
+    }));
+    return calls;
+  }
+
+  it("borne par la période l'aperçu, les dépenses, les recettes, les achats de stock et les examens", async () => {
+    const calls = mockDb();
+    const { getFinanceSummary } = await import("./finance");
+
+    const result = await getFinanceSummary("org1", { preset: "custom", from: "2026-01-10", to: "2026-01-12", tzOffsetMinutes: 0 });
+
+    expect(result.success).toBe(true);
+    const bounds = { gte: new Date("2026-01-10T00:00:00.000Z"), lte: new Date("2026-01-12T23:59:59.999Z") };
+    // Aperçu + dépenses.
+    for (const args of calls.transactionFindMany) expect(args.where.createdAt).toEqual(bounds);
+    // Recettes par catégorie : la requête "toute la période" porte exactement les bornes ; celle
+    // d'"aujourd'hui" porte l'intersection (vide ici : la période est déjà terminée).
+    expect(calls.groupBy[0].where.createdAt).toEqual(bounds);
+    expect(calls.stockAggregate[0].where.createdAt).toEqual(bounds);
+    expect(calls.labFindMany[0].where.createdAt).toEqual(bounds);
+    expect(result.data?.period).toMatchObject({ preset: "custom", from: "2026-01-10", to: "2026-01-12" });
+  });
+
+  it("sans période : aucun filtre de date sur les requêtes 'tout-temps' (comportement inchangé)", async () => {
+    const calls = mockDb();
+    const { getFinanceSummary } = await import("./finance");
+
+    await getFinanceSummary("org1");
+
+    for (const args of calls.transactionFindMany) expect(args.where.createdAt).toBeUndefined();
+    expect(calls.groupBy[0].where.createdAt).toBeUndefined();
+    expect(calls.stockAggregate[0].where.createdAt).toBeUndefined();
+    expect(calls.labFindMany[0].where.createdAt).toBeUndefined();
+  });
+
+  it("une période terminée avant aujourd'hui produit un filtre 'aujourd'hui' vide (début > fin)", async () => {
+    const calls = mockDb();
+    const { getFinanceSummary } = await import("./finance");
+
+    await getFinanceSummary("org1", { preset: "custom", from: "2026-01-10", to: "2026-01-12", tzOffsetMinutes: 0 });
+
+    const todayFilter = calls.groupBy[1].where.createdAt;
+    expect(todayFilter.gte.getTime()).toBeGreaterThan(todayFilter.lte.getTime());
+  });
+
+  it("dates futures : la fin est ramenée à aujourd'hui, jamais au-delà", async () => {
+    const calls = mockDb();
+    const { getFinanceSummary } = await import("./finance");
+
+    const result = await getFinanceSummary("org1", { preset: "custom", from: "2026-01-10", to: "2999-12-31", tzOffsetMinutes: 0 });
+
+    expect(result.data?.period.to).toBe(result.data?.period.today);
+    expect(calls.groupBy[0].where.createdAt.lte.getTime()).toBeLessThan(Date.now() + 24 * 3600 * 1000);
+  });
+
+  it("les jours suivent le fuseau de l'utilisateur : UTC+1 décale les bornes d'une heure", async () => {
+    const calls = mockDb();
+    const { getFinanceSummary } = await import("./finance");
+
+    await getFinanceSummary("org1", { preset: "custom", from: "2026-01-10", to: "2026-01-10", tzOffsetMinutes: -60 });
+
+    expect(calls.groupBy[0].where.createdAt).toEqual({
+      gte: new Date("2026-01-09T23:00:00.000Z"),
+      lte: new Date("2026-01-10T22:59:59.999Z"),
+    });
+  });
+
+  it("le total des dépenses couvre TOUTES les lignes de la période, pas seulement les 500 plus récentes", async () => {
+    // 1200 dépenses de 100 : l'ancien calcul, sur la liste plafonnée à 500, aurait donné 50 000.
+    const expenseRows = Array.from({ length: 1200 }, () => ({ type: "EXPENSE", amount: 100, absorbedByPurchaseId: null, createdAt: new Date("2026-01-11") }));
+    mockDb({ expenseRows });
+    const { getFinanceSummary } = await import("./finance");
+
+    const result = await getFinanceSummary("org1", { preset: "custom", from: "2026-01-01", to: "2026-01-31", tzOffsetMinutes: 0 });
+
+    expect(result.data?.totalExpenses).toBe(120000);
+  });
+
+  it("les recettes de la période = somme des agrégats par catégorie", async () => {
+    mockDb();
+    const { getFinanceSummary } = await import("./finance");
+
+    const result = await getFinanceSummary("org1", { preset: "custom", from: "2026-01-01", to: "2026-01-31", tzOffsetMinutes: 0 });
+
+    expect(result.data?.totalIncome).toBe(10000);
+  });
+});
+
+describe("listFinancialTransactions / listCashSessions — filtre de période", () => {
+  it("le journal applique les jours de l'utilisateur (fuseau) et ramène une fin future à aujourd'hui", async () => {
+    const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+    const findMany = vi.fn(async () => []);
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          findMany,
+          count: vi.fn(async () => 0),
+          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
+          groupBy: vi.fn(async () => []),
+        },
+      },
+    }));
+    const { listFinancialTransactions } = await import("./finance");
+
+    await listFinancialTransactions({ organizationId: "org1", dateFrom: "2026-01-10", dateTo: "2999-12-31", tzOffsetMinutes: -60 });
+
+    const and = (findMany.mock.calls as any)[0][0].where.AND;
+    const gte = and.find((c: any) => c.createdAt?.gte)?.createdAt.gte as Date;
+    const lte = and.find((c: any) => c.createdAt?.lte)?.createdAt.lte as Date;
+    expect(gte.toISOString()).toBe("2026-01-09T23:00:00.000Z");
+    // Fin future : ramenée à la fin d'aujourd'hui (heure locale UTC+1), donc dans les 25 prochaines heures.
+    expect(lte.getTime()).toBeLessThan(Date.now() + 25 * 3600 * 1000);
+  });
+
+  it("sans dates, le journal n'ajoute aucun filtre createdAt", async () => {
+    const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+    const findMany = vi.fn(async () => []);
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        financialTransaction: {
+          findMany,
+          count: vi.fn(async () => 0),
+          aggregate: vi.fn(async () => ({ _sum: { amount: 0 } })),
+          groupBy: vi.fn(async () => []),
+        },
+      },
+    }));
+    const { listFinancialTransactions } = await import("./finance");
+
+    await listFinancialTransactions({ organizationId: "org1" });
+
+    const and = (findMany.mock.calls as any)[0][0].where.AND;
+    expect(and.some((c: any) => c.createdAt)).toBe(false);
+  });
+
+  it("les sessions de caisse ne gardent que celles ouvertes pendant la période", async () => {
+    const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+    const findMany = vi.fn(async () => []);
+    vi.doMock("@/lib/db", () => ({ prisma: { cashSession: { findMany } } }));
+    const { listCashSessions } = await import("./registers");
+
+    await listCashSessions("org1", { preset: "custom", from: "2026-01-10", to: "2026-01-12", tzOffsetMinutes: 0 });
+
+    expect((findMany.mock.calls as any)[0][0].where.openedAt).toEqual({
+      gte: new Date("2026-01-10T00:00:00.000Z"),
+      lte: new Date("2026-01-12T23:59:59.999Z"),
+    });
   });
 });
 

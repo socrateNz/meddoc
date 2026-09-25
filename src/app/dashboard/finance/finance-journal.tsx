@@ -28,6 +28,12 @@ type TypeFilter = "" | "INCOME" | "EXPENSE";
 interface FinanceJournalProps {
   organizationId?: string;
   onSelectTransaction: (t: any) => void;
+  // Période du filtre GLOBAL de la page Finance (jours AAAA-MM-JJ du fuseau de l'utilisateur) :
+  // remplace les anciens champs "Du/Au" propres au journal, pour qu'il ne puisse jamais contredire
+  // les KPI affichés au-dessus.
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  tzOffsetMinutes?: number;
 }
 
 function formatFCFA(val: number) {
@@ -45,12 +51,10 @@ function formatDateTime(dateInput: string | Date) {
   }).format(new Date(dateInput));
 }
 
-export default function FinanceJournal({ organizationId, onSelectTransaction }: FinanceJournalProps) {
+export default function FinanceJournal({ organizationId, onSelectTransaction, dateFrom, dateTo, tzOffsetMinutes }: FinanceJournalProps) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("");
   const [category, setCategory] = useState("ALL");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
   const [page, setPage] = useState(1);
@@ -68,7 +72,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
   useEffect(() => {
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, typeFilter, category, dateFrom, dateTo, minAmount, maxAmount]);
+  }, [search, typeFilter, category, dateFrom, dateTo, tzOffsetMinutes, minAmount, maxAmount]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +86,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
         category: category !== "ALL" ? category : undefined,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
+        tzOffsetMinutes,
         minAmount: minAmount ? Number(minAmount) : undefined,
         maxAmount: maxAmount ? Number(maxAmount) : undefined,
         page,
@@ -98,19 +103,17 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [organizationId, search, typeFilter, category, dateFrom, dateTo, minAmount, maxAmount, page]);
+  }, [organizationId, search, typeFilter, category, dateFrom, dateTo, tzOffsetMinutes, minAmount, maxAmount, page]);
 
   const resetFilters = () => {
     setSearch("");
     setTypeFilter("");
     setCategory("ALL");
-    setDateFrom("");
-    setDateTo("");
     setMinAmount("");
     setMaxAmount("");
   };
 
-  const hasActiveFilters = !!(search || typeFilter || category !== "ALL" || dateFrom || dateTo || minAmount || maxAmount);
+  const hasActiveFilters = !!(search || typeFilter || category !== "ALL" || minAmount || maxAmount);
   const netBalance = data.filteredIncome - data.filteredExpenses;
 
   return (
@@ -154,7 +157,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
       </div>
 
       {/* Filtres détaillés */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/40">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/40">
         <div className="space-y-1">
           <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Catégorie</Label>
           <select
@@ -167,14 +170,6 @@ export default function FinanceJournal({ organizationId, onSelectTransaction }: 
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Du</Label>
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 text-xs rounded-xl" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Au</Label>
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 text-xs rounded-xl" />
         </div>
         <div className="space-y-1">
           <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Montant min (FCFA)</Label>

@@ -20,6 +20,13 @@ import { assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { assertPharmacyItemsSellable } from "@/lib/pharmacy-sale-block";
 import { applyLotConsumption, decrementField, groupIdsByValue, planLotConsumption } from "@/lib/stock-batch";
+import {
+  periodCreatedAtFilter,
+  periodRange,
+  resolvePeriod,
+  todayCreatedAtFilter,
+  type PeriodInput,
+} from "@/lib/finance-period";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -1230,7 +1237,12 @@ export async function deletePendingInvoice(data: {
 }
 
 
-export async function getFinanceSummary(organizationId?: string) {
+// `periodInput` = filtre global de période de la page Finance (cf. src/lib/finance-period.ts) : il
+// borne les recettes, dépenses, la répartition des revenus et le bénéfice (coûts compris). Sans
+// période : tout l'historique, comme avant. Le solde de caisse, les alertes de stock et la
+// valorisation sont un ÉTAT ACTUEL et ne dépendent jamais de la période. Les chiffres "du jour"
+// sont l'intersection d'aujourd'hui et de la période (0 si la période s'arrête avant aujourd'hui).
+export async function getFinanceSummary(organizationId?: string, periodInput?: PeriodInput) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
@@ -1238,8 +1250,17 @@ export async function getFinanceSummary(organizationId?: string) {
 
     const targetOrgId = organizationId || activeUser.organizationId;
 
+    const period = resolvePeriod(periodInput);
+    const periodCreatedAt = periodCreatedAtFilter(period);
+    const todayCreatedAt = todayCreatedAtFilter(period);
+    const inToday = (date: Date | string) => {
+      const t = new Date(date);
+      return t >= todayCreatedAt.gte && (!todayCreatedAt.lte || t <= todayCreatedAt.lte);
+    };
+
     let transactions: any[] = [];
     let pharmacyItems: any[] = [];
+    let expenseRows: any[] = [];
 
     if ((prisma as any).financialTransaction && (prisma as any).pharmacyItem) {
       const whereClause: any = {};
@@ -1251,7 +1272,11 @@ export async function getFinanceSummary(organizationId?: string) {
       } else if (targetOrgId) {
         whereClause.organizationId = targetOrgId;
       }
+      if (periodCreatedAt) whereClause.createdAt = periodCreatedAt;
 
+      // Aperçu "Activité récente" : la page n'en affiche que 5, inutile d'en charger 500 à chaque
+      // changement de période. Les TOTAUX ne viennent plus de cette liste plafonnée (cf.
+      // expenseRows et les agrégats par catégorie plus bas), qui les tronquait au-delà de 500.
       transactions = await (prisma as any).financialTransaction.findMany({
         where: whereClause,
         include: {
@@ -1260,7 +1285,16 @@ export async function getFinanceSummary(organizationId?: string) {
           pharmacyItem: { select: { name: true, dosage: true } }
         },
         orderBy: { createdAt: "desc" },
-        take: 500,
+        take: 20,
+      });
+
+      // TOUTES les dépenses de la période (deux champs seulement) pour un total exact, quel que
+      // soit le volume. Sommées en JS plutôt que par agrégat : l'exclusion des retraits absorbés
+      // (absorbedByPurchaseId) exigerait un filtre "champ renseigné" fragile sur MongoDB (un champ
+      // absent n'est pas un champ null, cf. fieldIsEmpty dans stock.ts).
+      expenseRows = await (prisma as any).financialTransaction.findMany({
+        where: { ...whereClause, type: "EXPENSE" },
+        select: { type: true, amount: true, absorbedByPurchaseId: true, createdAt: true },
       });
 
     // Fetch pharmacy items directly via raw MongoDB command to return all custom fields
@@ -1290,36 +1324,20 @@ export async function getFinanceSummary(organizationId?: string) {
       }));
     }
 
-    let totalIncome = 0;
     let totalExpenses = 0;
-    let todayIncome = 0;
     let todayExpenses = 0;
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    for (const t of transactions) {
+    for (const t of expenseRows) {
+      if (t.type !== "EXPENSE") continue;
+      // Un retrait de caisse (OPERATIONAL_EXPENSE) réclamé par un achat pharmacie
+      // (absorbedByPurchaseId posé, cf. recordStockPurchase) n'est plus qu'un transfert vers
+      // cet achat, pas une dépense propre à l'établissement — le coût réel est déjà compté via
+      // la FinancialTransaction PHARMACY_PURCHASE de l'achat lui-même. L'exclure ici évite de
+      // compter deux fois le même argent, cf. échange avec l'utilisateur sur ce point précis.
+      if (t.absorbedByPurchaseId) continue;
       const amt = Number(t.amount || 0);
-      const createdAt = t.createdAt ? new Date(t.createdAt) : new Date();
-
-      if (t.type === "INCOME") {
-        totalIncome += amt;
-        if (createdAt >= startOfToday) {
-          todayIncome += amt;
-        }
-      } else if (t.type === "EXPENSE") {
-        // Un retrait de caisse (OPERATIONAL_EXPENSE) réclamé par un achat pharmacie
-        // (absorbedByPurchaseId posé, cf. recordStockPurchase) n'est plus qu'un transfert vers
-        // cet achat, pas une dépense propre à l'établissement — le coût réel est déjà compté via
-        // la FinancialTransaction PHARMACY_PURCHASE de l'achat lui-même. L'exclure ici évite de
-        // compter deux fois le même argent, cf. échange avec l'utilisateur sur ce point précis.
-        if (!t.absorbedByPurchaseId) {
-          totalExpenses += amt;
-          if (createdAt >= startOfToday) {
-            todayExpenses += amt;
-          }
-        }
-      }
+      totalExpenses += amt;
+      if (t.createdAt && inToday(t.createdAt)) todayExpenses += amt;
     }
 
     // Le solde de caisse = somme, pour chaque session actuellement OUVERTE, de son propre fond de
@@ -1367,6 +1385,7 @@ export async function getFinanceSummary(organizationId?: string) {
     } else if (targetOrgId) {
       categoryWhere.organizationId = targetOrgId;
     }
+    if (periodCreatedAt) categoryWhere.createdAt = periodCreatedAt;
 
     // Périmètre org/holding identique à categoryWhere/sessionWhere, réutilisé pour chiffrer le
     // coût des examens labo (LabOrder n'a pas de champ montant agrégeable : le coût de chaque
@@ -1380,6 +1399,7 @@ export async function getFinanceSummary(organizationId?: string) {
     } else if (targetOrgId) {
       labOrderWhere.organizationId = targetOrgId;
     }
+    if (periodCreatedAt) labOrderWhere.createdAt = periodCreatedAt;
 
     // Même périmètre, pour le coût "Médicament" de la marge simple (cf. Promise.all plus bas) :
     // basé sur les lots StockPurchase eux-mêmes plutôt que sur les seules FinancialTransaction
@@ -1398,6 +1418,7 @@ export async function getFinanceSummary(organizationId?: string) {
     } else if (targetOrgId) {
       stockPurchaseWhere.organizationId = targetOrgId;
     }
+    if (periodCreatedAt) stockPurchaseWhere.createdAt = periodCreatedAt;
 
     const [openSessions, lastClosedSessions, categoryAllTime, categoryToday, pharmacyPurchaseAllTime, pharmacyPurchaseToday, labOrdersForCost, pharmacySaleTransactions] = await Promise.all([
       prisma.cashSession.findMany({
@@ -1416,7 +1437,7 @@ export async function getFinanceSummary(organizationId?: string) {
       }),
       prisma.financialTransaction.groupBy({
         by: ["category"],
-        where: { ...categoryWhere, createdAt: { gte: startOfToday } },
+        where: { ...categoryWhere, createdAt: todayCreatedAt },
         _sum: { amount: true },
       }),
       // Marge simple (approximative) côté Médicament : achats de stock sur la période plutôt que
@@ -1427,7 +1448,7 @@ export async function getFinanceSummary(organizationId?: string) {
         _sum: { totalCost: true },
       }),
       prisma.stockPurchase.aggregate({
-        where: { ...stockPurchaseWhere, createdAt: { gte: startOfToday } },
+        where: { ...stockPurchaseWhere, createdAt: todayCreatedAt },
         _sum: { totalCost: true },
       }),
       prisma.labOrder.findMany({ where: labOrderWhere, select: { testDetails: true, createdAt: true } }),
@@ -1466,7 +1487,7 @@ export async function getFinanceSummary(organizationId?: string) {
         }
       }
       labCostAllTime += orderCost;
-      if (order.createdAt && new Date(order.createdAt) >= startOfToday) labCostToday += orderCost;
+      if (order.createdAt && inToday(order.createdAt)) labCostToday += orderCost;
     }
 
     // Coût des ventes Médicament déjà réalisées : quantités PHARMACY effectivement vendues sur la
@@ -1478,7 +1499,7 @@ export async function getFinanceSummary(organizationId?: string) {
     const soldQtyAllTime = new Map<string, number>();
     const soldQtyToday = new Map<string, number>();
     for (const tx of pharmacySaleTransactions) {
-      const isToday = tx.createdAt && new Date(tx.createdAt) >= startOfToday;
+      const isToday = tx.createdAt && inToday(tx.createdAt);
       for (const it of (tx.items as any[]) || []) {
         if (it.type !== "PHARMACY" || !it.pharmacyItemId) continue;
         const qty = Number(it.quantity) || 0;
@@ -1516,6 +1537,11 @@ export async function getFinanceSummary(organizationId?: string) {
     const closedCarryoverBalance = [...lastClosedBalanceByRegister.values()].reduce((sum, v) => sum + v, 0);
     const cashBalance = openBalance + closedCarryoverBalance;
     const lowStockCount = pharmacyItems.filter((item: any) => Number(item.stockQuantity || 0) <= Number(item.reorderLevel || 10)).length;
+
+    // Recettes = somme des agrégats par catégorie sur TOUTES les transactions de la période (jamais
+    // depuis `transactions`, qui n'est qu'un aperçu).
+    const totalIncome = categoryAllTime.reduce((sum, c) => sum + (c._sum.amount || 0), 0);
+    const todayIncome = categoryToday.reduce((sum, c) => sum + (c._sum.amount || 0), 0);
 
     const todayByCategory = new Map(categoryToday.map((c) => [c.category, c._sum.amount || 0]));
     const revenueByCategory = categoryAllTime
@@ -1583,7 +1609,8 @@ export async function getFinanceSummary(organizationId?: string) {
         transactions,
         pharmacyItems,
         revenueByCategory,
-        profitByCategory
+        profitByCategory,
+        period,
       }
     };
   } catch (error: any) {
@@ -1605,6 +1632,9 @@ export async function listFinancialTransactions(filters: {
   search?: string;
   minAmount?: number;
   maxAmount?: number;
+  // Décalage horaire du navigateur (Date.getTimezoneOffset) : les jours du filtre sont ceux de
+  // l'utilisateur, cf. src/lib/finance-period.ts.
+  tzOffsetMinutes?: number;
   page?: number;
   pageSize?: number;
 } = {}) {
@@ -1632,16 +1662,17 @@ export async function listFinancialTransactions(filters: {
       if (targetOrgId) baseAnd.push({ organizationId: targetOrgId });
     }
 
-    if (filters.dateFrom) {
-      const start = new Date(filters.dateFrom);
-      start.setHours(0, 0, 0, 0);
-      baseAnd.push({ createdAt: { gte: start } });
-    }
-    if (filters.dateTo) {
-      const end = new Date(filters.dateTo);
-      end.setHours(23, 59, 59, 999);
-      baseAnd.push({ createdAt: { lte: end } });
-    }
+    // Même résolution (jours valides, jamais de date future, bornes remises dans l'ordre) que le
+    // résumé de la page : le journal et les KPI parlent forcément de la même période.
+    const journalPeriod = resolvePeriod({
+      preset: "custom",
+      from: filters.dateFrom,
+      to: filters.dateTo,
+      tzOffsetMinutes: filters.tzOffsetMinutes,
+    });
+    const { start: periodStart, end: periodEnd } = periodRange(journalPeriod);
+    if (periodStart) baseAnd.push({ createdAt: { gte: periodStart } });
+    if (periodEnd) baseAnd.push({ createdAt: { lte: periodEnd } });
     if (filters.category && filters.category !== "ALL") {
       baseAnd.push({ category: filters.category });
     }

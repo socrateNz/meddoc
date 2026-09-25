@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,10 +23,13 @@ import {
   Pill,
   FlaskConical,
   Stethoscope,
+  Scale,
 } from "lucide-react";
 import InvoiceModal from "./invoice-modal";
 import ZReportDownloadButton from "./z-report-download-button";
 import FinanceJournal, { TRANSACTION_CATEGORY_LABELS } from "./finance-journal";
+import PeriodFilter from "./period-filter";
+import { formatPeriodLabel, periodIncludesToday, type ResolvedPeriod } from "@/lib/finance-period";
 
 // Icône + couleur par catégorie facturable — utilisées pour les cartes "Répartition des
 // revenus"/"Répartition du bénéfice" (une carte par catégorie, même gabarit que les KPI du
@@ -224,6 +228,9 @@ interface FinanceViewProps {
   organizationName?: string;
   organizationLogoUrl?: string | null;
   currentUserRole?: string;
+  // Période du filtre global (cf. period-filter.tsx) : recettes, dépenses, bénéfice, journal et
+  // sessions de caisse ne montrent que cette période.
+  period: ResolvedPeriod;
   sessions?: CashSessionRow[];
   valuation?: {
     totalCostValue: number;
@@ -240,9 +247,23 @@ const CATEGORY_LABELS: Record<string, string> = {
   EQUIPMENT: "Matériel médical",
 };
 
-export default function FinanceView({ summary, organizationId, organizationName, organizationLogoUrl, currentUserRole, sessions = [], valuation }: FinanceViewProps) {
+export default function FinanceView({ summary, organizationId, organizationName, organizationLogoUrl, currentUserRole, period, sessions = [], valuation }: FinanceViewProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [isPending, startTransition] = useTransition();
   const [selectedInvoiceTransaction, setSelectedInvoiceTransaction] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState("journal");
+
+  // La période vit dans l'URL : la page serveur se recalcule pour la nouvelle période. La transition
+  // garde l'affichage actuel (grisé) pendant le rechargement au lieu de le vider.
+  const changePeriod = (searchString: string) => {
+    startTransition(() => {
+      router.push(searchString ? `${pathname}?${searchString}` : pathname);
+    });
+  };
+  const periodLabel = formatPeriodLabel(period);
+  const includesToday = periodIncludesToday(period);
+  const netResult = summary.totalIncome - summary.totalExpenses;
 
   const formatFCFA = (val: number) => {
     const num = Math.round(Number(val) || 0);
@@ -290,9 +311,12 @@ export default function FinanceView({ summary, organizationId, organizationName,
 
   return (
     <div className="space-y-6">
+      <PeriodFilter period={period} pending={isPending} onChange={changePeriod} />
+
+      <div className={`space-y-6 transition-opacity ${isPending ? "opacity-60 pointer-events-none" : ""}`} aria-busy={isPending}>
       {/* KPI Cards Header */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-up">
-        {/* Solde de Caisse */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 animate-fade-up">
+        {/* Solde de Caisse — état ACTUEL, indépendant de la période */}
         <Card className="rounded-2xl border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-transparent dark:from-emerald-950/40 shadow-xs relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 text-emerald-500/20 pointer-events-none">
             <Wallet className="h-20 w-20 -mr-4 -mt-4" />
@@ -307,43 +331,61 @@ export default function FinanceView({ summary, organizationId, organizationName,
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0 text-xs text-emerald-700/80 dark:text-emerald-400/80 font-medium">
-            Entrées totales : {formatFCFA(summary.totalIncome)}
+            Situation actuelle des caisses (hors période)
           </CardContent>
         </Card>
 
-        {/* Recettes du jour */}
+        {/* Recettes de la période */}
         <Card className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
           <CardHeader className="pb-2">
             <CardDescription className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
               <TrendingUp className="h-4 w-4 text-emerald-500" />
-              Recettes du Jour
+              Recettes de la Période
             </CardDescription>
             <CardTitle className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-              +{formatFCFA(summary.todayIncome)}
+              +{formatFCFA(summary.totalIncome)}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0 text-xs text-slate-500 font-medium">
-            Encaissements enregistrés aujourd&apos;hui
+            {periodLabel}
+            {includesToday && summary.todayIncome > 0 && <> · dont +{formatFCFA(summary.todayIncome)} aujourd&apos;hui</>}
           </CardContent>
         </Card>
 
-        {/* Dépenses du jour */}
+        {/* Dépenses de la période */}
         <Card className="rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
           <CardHeader className="pb-2">
             <CardDescription className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
               <TrendingDown className="h-4 w-4 text-rose-500" />
-              Dépenses / Retraits du Jour
+              Dépenses / Retraits de la Période
             </CardDescription>
             <CardTitle className="text-2xl font-bold text-rose-600 dark:text-rose-400 mt-1">
-              -{formatFCFA(summary.todayExpenses)}
+              -{formatFCFA(summary.totalExpenses)}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0 text-xs text-slate-500 font-medium">
-            Sorties de caisse aujourd&apos;hui
+            {periodLabel}
+            {includesToday && summary.todayExpenses > 0 && <> · dont -{formatFCFA(summary.todayExpenses)} aujourd&apos;hui</>}
           </CardContent>
         </Card>
 
-        {/* Alertes Stock Pharmacie */}
+        {/* Résultat net de la période : ce qui reste une fois toutes les dépenses déduites */}
+        <Card className={`rounded-2xl border ${netResult < 0 ? "border-rose-500/30 bg-rose-500/5 dark:bg-rose-950/20" : "border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20"} backdrop-blur-md shadow-xs`}>
+          <CardHeader className="pb-2">
+            <CardDescription className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <Scale className="h-4 w-4 text-slate-500" />
+              Résultat Net de la Période
+            </CardDescription>
+            <CardTitle className={`text-2xl font-bold mt-1 ${netResult < 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+              {netResult > 0 ? "+" : ""}{formatFCFA(netResult)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 text-xs text-slate-500 font-medium">
+            Recettes − dépenses (achats de stock compris)
+          </CardContent>
+        </Card>
+
+        {/* Alertes Stock Pharmacie — état ACTUEL */}
         <Card className={`rounded-2xl border ${summary.lowStockCount > 0 ? "border-amber-500/40 bg-amber-500/5 dark:bg-amber-950/20" : "border-slate-200/60 dark:border-slate-800/60 bg-white/60 dark:bg-slate-900/60"} backdrop-blur-md shadow-xs`}>
           <CardHeader className="pb-2">
             <CardDescription className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
@@ -381,7 +423,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
                   amount={formatFCFA(c.totalIncome)}
                   subtitle={
                     <>
-                      {pct}% du chiffre d&apos;affaires
+                      {pct}% des recettes de la période
                       {c.todayIncome > 0 && <> · +{formatFCFA(c.todayIncome)} aujourd&apos;hui</>}
                     </>
                   }
@@ -500,7 +542,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
                 <Activity className="h-4 w-4 text-blue-500" />
                 Activité récente
               </CardTitle>
-              <CardDescription className="text-xs">Derniers mouvements de caisse enregistrés.</CardDescription>
+              <CardDescription className="text-xs">Derniers mouvements de caisse de la période.</CardDescription>
             </div>
             <button
               type="button"
@@ -512,7 +554,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
           </CardHeader>
           <CardContent className="pt-2">
             {recentTransactions.length === 0 ? (
-              <p className="text-sm text-slate-500 py-6 text-center">Aucun mouvement enregistré pour le moment.</p>
+              <p className="text-sm text-slate-500 py-6 text-center">Aucun mouvement enregistré sur cette période.</p>
             ) : (
               <div className="space-y-3">
                 {recentTransactions.map((t) => {
@@ -594,7 +636,13 @@ export default function FinanceView({ summary, organizationId, organizationName,
         {/* TAB: Journal de Caisse — recherche, filtres et pagination gérés côté serveur pour ne
             jamais masquer de mouvements au-delà d'un plafond (cf. finance-journal.tsx). */}
         <TabsContent value="journal" className="pt-6">
-          <FinanceJournal organizationId={organizationId} onSelectTransaction={setSelectedInvoiceTransaction} />
+          <FinanceJournal
+            organizationId={organizationId}
+            onSelectTransaction={setSelectedInvoiceTransaction}
+            dateFrom={period.from}
+            dateTo={period.to}
+            tzOffsetMinutes={period.tzOffsetMinutes}
+          />
         </TabsContent>
 
         {/* TAB: Rapport de Caisse (ouvertures/fermetures de session) */}
@@ -618,7 +666,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
                 {sessions.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="h-32 text-center text-slate-500 font-medium">
-                      Aucune session de caisse enregistrée pour le moment.
+                      Aucune session de caisse ouverte sur cette période.
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -754,6 +802,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
           )}
         </TabsContent>
       </Tabs>
+      </div>
 
       <InvoiceModal
         transaction={selectedInvoiceTransaction}

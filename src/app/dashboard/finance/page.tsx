@@ -4,12 +4,22 @@ import { getStockValuation } from "@/actions/stock";
 import { listCashSessions } from "@/actions/registers";
 import FinanceView from "./finance-view";
 import { redirect } from "next/navigation";
+import { parsePeriodSearchParams, resolvePeriod } from "@/lib/finance-period";
 
 export const metadata = {
   title: "Finance | MedDoc",
 };
 
-export default async function FinancePage() {
+interface FinancePageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function FinancePage({ searchParams }: FinancePageProps) {
+  // Filtre global de période (?p=7d, ?p=custom&from=...&to=...&tz=...) : validé et plafonné à
+  // aujourd'hui par resolvePeriod, jamais utilisé tel quel.
+  const periodInput = parsePeriodSearchParams(await searchParams);
+  const period = resolvePeriod(periodInput);
+
   const activeUser = await getCurrentUser();
   if (!activeUser) {
     redirect("/login");
@@ -17,9 +27,9 @@ export default async function FinancePage() {
 
   // Les 3 requêtes ci-dessous sont indépendantes entre elles, on les lance en parallèle.
   const [financeRes, valuationRes, sessionsRes] = await Promise.all([
-    getFinanceSummary(),
+    getFinanceSummary(undefined, periodInput),
     getStockValuation(),
-    listCashSessions(),
+    listCashSessions(undefined, periodInput),
   ]);
 
   const summary = financeRes.success && financeRes.data ? financeRes.data : {
@@ -57,6 +67,7 @@ export default async function FinancePage() {
         organizationName={orgName}
         organizationLogoUrl={orgLogoUrl}
         currentUserRole={activeUser.role}
+        period={period}
         sessions={sessions as any}
         valuation={valuation}
       />

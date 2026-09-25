@@ -12,6 +12,7 @@ import {
 } from "@/validators/registers";
 import { revalidatePath } from "next/cache";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
+import { periodCreatedAtFilter, resolvePeriod, type PeriodInput } from "@/lib/finance-period";
 
 // Créer/désactiver une caisse physique est une opération structurelle réservée au coordinateur
 // (même périmètre que src/actions/wards.ts). Ouvrir/fermer une session et encaisser reste
@@ -276,7 +277,9 @@ export async function getSessionSummary(sessionId: string) {
 // Historique des sessions de caisse (ouvertures/fermetures) — alimente le tableau « Rapport de
 // caisse » de la page Finance. Les totaux sont recalculés à la lecture à partir des transactions
 // liées (jamais persistés), comme getSessionSummary/closeRegisterSession.
-export async function listCashSessions(organizationId?: string) {
+// `periodInput` = filtre global de période de la page Finance : ne garde que les sessions OUVERTES
+// pendant la période (cf. src/lib/finance-period.ts). Sans période : les 200 dernières, comme avant.
+export async function listCashSessions(organizationId?: string, periodInput?: PeriodInput) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
@@ -292,6 +295,8 @@ export async function listCashSessions(organizationId?: string) {
       const targetOrgId = organizationId || activeUser.organizationId;
       if (targetOrgId) where.organizationId = targetOrgId;
     }
+    const openedAt = periodCreatedAtFilter(resolvePeriod(periodInput));
+    if (openedAt) where.openedAt = openedAt;
 
     const sessions = await prisma.cashSession.findMany({
       where,

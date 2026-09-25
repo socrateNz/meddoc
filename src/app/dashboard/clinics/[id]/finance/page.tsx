@@ -5,6 +5,7 @@ import { getStockValuation } from "@/actions/stock";
 import { listCashSessions } from "@/actions/registers";
 import FinanceView from "@/app/dashboard/finance/finance-view";
 import { redirect } from "next/navigation";
+import { parsePeriodSearchParams, resolvePeriod } from "@/lib/finance-period";
 
 export const metadata = {
   title: "Finance Clinique | MedDoc",
@@ -12,11 +13,15 @@ export const metadata = {
 
 interface ClinicFinancePageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function ClinicFinancePage({ params }: ClinicFinancePageProps) {
+export default async function ClinicFinancePage({ params, searchParams }: ClinicFinancePageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
+  // Filtre global de période : validé et plafonné à aujourd'hui par resolvePeriod.
+  const periodInput = parsePeriodSearchParams(await searchParams);
+  const period = resolvePeriod(periodInput);
 
   const activeUser = await getCurrentUser();
   if (!activeUser) {
@@ -26,13 +31,13 @@ export default async function ClinicFinancePage({ params }: ClinicFinancePagePro
   // Les 4 requêtes ci-dessous ne dépendent que de clinicId / activeUser (déjà résolus),
   // elles sont indépendantes entre elles et peuvent donc partir en parallèle.
   const [financeRes, clinicOrg, valuationRes, sessionsRes] = await Promise.all([
-    getFinanceSummary(clinicId),
+    getFinanceSummary(clinicId, periodInput),
     prisma.organization.findUnique({
       where: { id: clinicId },
       select: { name: true, logoUrl: true }
     }),
     getStockValuation(clinicId),
-    listCashSessions(clinicId),
+    listCashSessions(clinicId, periodInput),
   ]);
 
   const summary = financeRes.success && financeRes.data ? financeRes.data : {
@@ -70,6 +75,7 @@ export default async function ClinicFinancePage({ params }: ClinicFinancePagePro
         organizationName={orgName}
         organizationLogoUrl={clinicOrg?.logoUrl}
         currentUserRole={activeUser.role}
+        period={period}
         sessions={sessions as any}
         valuation={valuation}
       />
