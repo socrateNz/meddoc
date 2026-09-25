@@ -6,6 +6,8 @@ import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { requirePermission } from "@/lib/permissions";
 import { assertItemPurchasable } from "@/lib/pharmacy-sale-block";
+import { applyLotConsumption, groupIdsByValue, planLotConsumption, setField } from "@/lib/stock-batch";
+import { buildInventoryReport } from "@/lib/inventory-report";
 import { recordStockPurchaseSchema, saveInventoryCountsSchema, setPharmacyItemSaleBlockSchema } from "@/validators/stock";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -80,19 +82,10 @@ export async function consumeStockLots(tx: any, pharmacyItemId: string, quantity
   return { consumedCost, unmatchedQuantity: remaining };
 }
 
-async function getItemUnitCost(pharmacyItemId: string, client: any = prisma): Promise<number | null> {
-  const lots = await client.stockPurchase.findMany({
-    where: { pharmacyItemId, remainingQuantity: { gt: 0 } },
-  });
-  const totalQty = lots.reduce((sum: number, l: any) => sum + l.remainingQuantity, 0);
-  if (totalQty === 0) return null;
-  const totalCost = lots.reduce((sum: number, l: any) => sum + l.remainingQuantity * l.purchasePrice, 0);
-  return totalCost / totalQty;
-}
-
-// Même calcul que getItemUnitCost (coût moyen pondéré des lots restants), mais pour plusieurs
-// produits en un seul aller-retour — utilisée par getFinanceSummary pour valoriser les
-// consommables labo d'un lot de LabOrder sans une requête par produit distinct.
+// Coût moyen pondéré des lots restants de plusieurs produits en UN seul aller-retour (pas de
+// requête par produit) — utilisée par getFinanceSummary pour valoriser les consommables labo d'un
+// lot de LabOrder, et par l'inventaire (démarrage, rattrapage, surplus à la clôture). Un produit
+// sans aucun lot restant est absent de la map.
 export async function getItemUnitCostMap(pharmacyItemIds: string[], client: any = prisma): Promise<Map<string, number>> {
   if (pharmacyItemIds.length === 0) return new Map();
   const lots = await client.stockPurchase.findMany({
@@ -745,31 +738,39 @@ async function syncInventoryCountLines(inventoryCountId: string, organizationId:
   if (!count) return false;
   const existingIds = new Set(count.lines.map((l) => l.pharmacyItemId));
 
-  const allItems = await prisma.pharmacyItem.findMany({ where: { organizationId } });
+  const allItems = await prisma.pharmacyItem.findMany({
+    where: { organizationId },
+    select: { id: true, stockQuantity: true },
+  });
   let changed = false;
 
+  // Écritures groupées (cf. src/lib/stock-batch.ts) : une requête par produit manquant / par ligne
+  // périmée dépassait la durée maximale de la fonction sur un catalogue de plusieurs centaines de
+  // produits, à ~330ms l'aller-retour vers la base depuis Vercel.
   const missingItems = allItems.filter((item) => !existingIds.has(item.id));
   if (missingItems.length > 0) {
-    const newLines = await Promise.all(
-      missingItems.map(async (item) => ({
+    const costByItem = await getItemUnitCostMap(missingItems.map((item) => item.id));
+    await prisma.inventoryCountLine.createMany({
+      data: missingItems.map((item) => ({
         inventoryCountId,
         pharmacyItemId: item.id,
         systemQuantity: item.stockQuantity,
-        unitCost: await getItemUnitCost(item.id),
-      }))
-    );
-    await prisma.inventoryCountLine.createMany({ data: newLines });
+        unitCost: costByItem.get(item.id) ?? null,
+      })),
+    });
     changed = true;
   }
 
   const itemById = new Map(allItems.map((item) => [item.id, item]));
+  const staleLines: Array<[string, number]> = [];
   for (const line of count.lines) {
     if (line.countedQuantity !== null) continue;
     const item = itemById.get(line.pharmacyItemId);
-    if (item && item.stockQuantity !== line.systemQuantity) {
-      await prisma.inventoryCountLine.update({ where: { id: line.id }, data: { systemQuantity: item.stockQuantity } });
-      changed = true;
-    }
+    if (item && item.stockQuantity !== line.systemQuantity) staleLines.push([line.id, item.stockQuantity]);
+  }
+  for (const [systemQuantity, lineIds] of groupIdsByValue(staleLines)) {
+    await setField(prisma.inventoryCountLine, lineIds, "systemQuantity", systemQuantity);
+    changed = true;
   }
 
   return changed;
@@ -790,13 +791,13 @@ export async function startInventoryCount(organizationId: string) {
 
     const items = await prisma.pharmacyItem.findMany({ where: { organizationId } });
 
-    const lines = await Promise.all(
-      items.map(async (item) => ({
-        pharmacyItemId: item.id,
-        systemQuantity: item.stockQuantity,
-        unitCost: await getItemUnitCost(item.id),
-      }))
-    );
+    // Un seul aller-retour pour les coûts de tout le catalogue (au lieu d'une requête par produit).
+    const costByItem = await getItemUnitCostMap(items.map((item) => item.id));
+    const lines = items.map((item) => ({
+      pharmacyItemId: item.id,
+      systemQuantity: item.stockQuantity,
+      unitCost: costByItem.get(item.id) ?? null,
+    }));
 
     const inventoryCount = await prisma.inventoryCount.create({
       data: {
@@ -879,18 +880,34 @@ export async function saveInventoryCounts(
       : [];
     const liveStockByItem = new Map(currentItems.map((i) => [i.id, i.stockQuantity]));
 
+    // Écritures groupées : les lignes qui reçoivent exactement les mêmes valeurs (quantité comptée +
+    // stock réel figé — la grande majorité tombe sur quelques couples fréquents comme 0/0, 5/5...)
+    // partent en un seul updateMany au lieu d'un update chacune, à ~330ms l'aller-retour. Une ligne
+    // qui n'appartient pas à CET inventaire est refusée (l'ancienne boucle mettait à jour
+    // n'importe quel id fourni par le client).
+    const valuesByLine = new Map<string, { countedQuantity: number; systemQuantity?: number }>();
+    for (const line of lines) {
+      const existing = lineById.get(line.lineId);
+      if (!existing) throw new Error("Ligne d'inventaire introuvable pour cet inventaire.");
+      const liveStock = liveStockByItem.get(existing.pharmacyItemId);
+      valuesByLine.set(line.lineId, {
+        countedQuantity: Math.round(line.countedQuantity),
+        ...(liveStock !== undefined ? { systemQuantity: liveStock } : {}),
+      });
+    }
+    const groups = new Map<string, { ids: string[]; data: { countedQuantity: number; systemQuantity?: number } }>();
+    for (const [lineId, data] of valuesByLine) {
+      const key = `${data.countedQuantity}|${data.systemQuantity ?? ""}`;
+      const group = groups.get(key);
+      if (group) group.ids.push(lineId);
+      else groups.set(key, { ids: [lineId], data });
+    }
+
     await prisma.$transaction(
       async (tx) => {
-        for (const line of lines) {
-          const pharmacyItemId = lineById.get(line.lineId)?.pharmacyItemId;
-          const liveStock = pharmacyItemId ? liveStockByItem.get(pharmacyItemId) : undefined;
-          await tx.inventoryCountLine.update({
-            where: { id: line.lineId },
-            data: {
-              countedQuantity: Math.round(line.countedQuantity),
-              ...(liveStock !== undefined ? { systemQuantity: liveStock } : {}),
-            },
-          });
+        for (const { ids, data } of groups.values()) {
+          if (ids.length === 1) await tx.inventoryCountLine.update({ where: { id: ids[0] }, data });
+          else await tx.inventoryCountLine.updateMany({ where: { id: { in: ids } }, data });
         }
       },
       // La forme tableau de $transaction ne prend pas d'option timeout (seule la forme callback
@@ -939,65 +956,92 @@ export async function completeInventoryCount(inventoryCountId: string) {
     // l'enregistrement de leur comptage — cf. vérification ci-dessous.
     const staleProducts: string[] = [];
 
+    // Toute la clôture tient en un nombre de requêtes quasi constant (lectures groupées, calcul en
+    // mémoire, créations en createMany, mises à jour groupées par valeur identique) au lieu de ~6
+    // requêtes séquentielles PAR ligne comptée : sur 276 produits comptés, la seule relecture
+    // "stock réel" ligne par ligne dépassait la durée maximale de la fonction Vercel (504
+    // FUNCTION_INVOCATION_TIMEOUT) à ~330ms l'aller-retour vers la base.
     await prisma.$transaction(async (tx) => {
-      for (const line of count.lines) {
-        if (line.countedQuantity === null) continue;
+      const counted = count.lines.filter((line) => line.countedQuantity !== null);
+      const liveItems: any[] = counted.length
+        ? await tx.pharmacyItem.findMany({ where: { id: { in: counted.map((line) => line.pharmacyItemId) } } })
+        : [];
+      const liveById = new Map(liveItems.map((item) => [item.id, item]));
 
-        // saveInventoryCounts fige systemQuantity à l'instant précis où CE comptage a été
-        // enregistré. Si le stock réel a bougé depuis (un ravitaillement reçu entretemps, par
-        // exemple, en laissant l'inventaire ouvert plusieurs jours), l'écart ci-dessous serait
-        // faux dans un sens ou dans l'autre — on ignore alors la ligne plutôt que d'appliquer un
-        // ajustement erroné : elle devra être recomptée puis réenregistrée avant de pouvoir être
-        // clôturée correctement.
-        const liveItem = await tx.pharmacyItem.findUnique({ where: { id: line.pharmacyItemId } });
+      // saveInventoryCounts fige systemQuantity à l'instant précis où CE comptage a été
+      // enregistré. Si le stock réel a bougé depuis (un ravitaillement reçu entretemps, par
+      // exemple, en laissant l'inventaire ouvert plusieurs jours), l'écart serait faux dans un sens
+      // ou dans l'autre — on ignore alors la ligne plutôt que d'appliquer un ajustement erroné :
+      // elle devra être recomptée puis réenregistrée avant de pouvoir être clôturée correctement.
+      const losses: { line: (typeof counted)[number]; item: any; delta: number }[] = [];
+      const surpluses: { line: (typeof counted)[number]; delta: number }[] = [];
+      const seen = new Set<string>();
+      for (const line of counted) {
+        if (seen.has(line.pharmacyItemId)) continue;
+        seen.add(line.pharmacyItemId);
+
+        const liveItem = liveById.get(line.pharmacyItemId);
         if (!liveItem || liveItem.stockQuantity !== line.systemQuantity) {
           if (liveItem) staleProducts.push(liveItem.name);
           continue;
         }
+        if (line.countedQuantity === line.systemQuantity) continue;
 
-        if (line.countedQuantity === line.systemQuantity) {
-          continue;
-        }
+        const delta = line.countedQuantity! - line.systemQuantity;
+        if (delta < 0) losses.push({ line, item: liveItem, delta });
+        else surpluses.push({ line, delta });
+      }
 
-        const delta = line.countedQuantity - line.systemQuantity;
+      if (losses.length > 0) {
+        // Perte constatée : on retire les unités manquantes des lots réellement en stock (FEFO),
+        // ce qui valorise la perte aux prix d'achat réels consommés.
+        const lots: any[] = await tx.stockPurchase.findMany({
+          where: { pharmacyItemId: { in: losses.map(({ line }) => line.pharmacyItemId) }, remainingQuantity: { gt: 0 } },
+          orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
+        });
+        const plan = planLotConsumption(lots, new Map(losses.map(({ line, delta }) => [line.pharmacyItemId, -delta])));
+        await applyLotConsumption(tx, plan);
 
-        if (delta < 0) {
-          // Perte constatée : on retire les unités manquantes des lots réellement en
-          // stock (FEFO), ce qui valorise la perte aux prix d'achat réels consommés.
-          const { consumedCost } = await consumeStockLots(tx, line.pharmacyItemId, -delta);
-          totalLossValue += consumedCost;
+        await tx.stockAdjustment.createMany({
+          data: losses.map(({ line, delta }) => ({
+            pharmacyItemId: line.pharmacyItemId,
+            inventoryCountLineId: line.id,
+            quantityDelta: delta,
+            valuationAmount: plan.costByItem.get(line.pharmacyItemId) ?? 0,
+            reason: "INVENTORY",
+            createdById: activeUser!.id,
+          })),
+        });
 
-          await tx.stockAdjustment.create({
-            data: {
+        // Une perte non valorisée (aucun lot) n'ajoute rien à la comptabilité.
+        const expenses = losses
+          .map(({ line, delta }) => ({ line, delta, cost: plan.costByItem.get(line.pharmacyItemId) ?? 0 }))
+          .filter(({ cost }) => cost > 0);
+        if (expenses.length > 0) {
+          await tx.financialTransaction.createMany({
+            data: expenses.map(({ line, delta, cost }) => ({
+              type: "EXPENSE",
+              category: "STOCK_ADJUSTMENT",
+              amount: cost,
+              description: `Perte constatée à l'inventaire (${-delta} unité(s))`,
               pharmacyItemId: line.pharmacyItemId,
-              inventoryCountLineId: line.id,
-              quantityDelta: delta,
-              valuationAmount: consumedCost,
-              reason: "INVENTORY",
-              createdById: activeUser!.id,
-            },
+              quantity: -delta,
+              recordedById: activeUser!.id,
+              organizationId: count.organizationId,
+            })),
           });
+        }
+        totalLossValue += Array.from(plan.costByItem.values()).reduce((sum, cost) => sum + cost, 0);
+      }
 
-          if (consumedCost > 0) {
-            await tx.financialTransaction.create({
-              data: {
-                type: "EXPENSE",
-                category: "STOCK_ADJUSTMENT",
-                amount: consumedCost,
-                description: `Perte constatée à l'inventaire (${-delta} unité(s))`,
-                pharmacyItemId: line.pharmacyItemId,
-                quantity: -delta,
-                recordedById: activeUser!.id,
-                organizationId: count.organizationId,
-              },
-            });
-          }
-        } else {
-          // Surplus retrouvé : on recrée un lot pour resynchroniser le stock, sans
-          // écriture de revenu automatique (un surplus n'est pas un chiffre d'affaires).
-          const avgCost = (await getItemUnitCost(line.pharmacyItemId, tx)) ?? 0;
-          await tx.stockPurchase.create({
-            data: {
+      if (surpluses.length > 0) {
+        // Surplus retrouvé : on recrée un lot pour resynchroniser le stock, sans écriture de
+        // revenu automatique (un surplus n'est pas un chiffre d'affaires).
+        const avgCostByItem = await getItemUnitCostMap(surpluses.map(({ line }) => line.pharmacyItemId), tx);
+        await tx.stockPurchase.createMany({
+          data: surpluses.map(({ line, delta }) => {
+            const avgCost = avgCostByItem.get(line.pharmacyItemId) ?? 0;
+            return {
               pharmacyItemId: line.pharmacyItemId,
               quantity: delta,
               remainingQuantity: delta,
@@ -1006,33 +1050,36 @@ export async function completeInventoryCount(inventoryCountId: string) {
               organizationId: count.organizationId,
               purchasedById: activeUser!.id,
               batchNumber: "AJUSTEMENT-INVENTAIRE",
-            },
-          });
-
-          await tx.stockAdjustment.create({
-            data: {
-              pharmacyItemId: line.pharmacyItemId,
-              inventoryCountLineId: line.id,
-              quantityDelta: delta,
-              valuationAmount: avgCost * delta,
-              reason: "INVENTORY",
-              createdById: activeUser!.id,
-            },
-          });
-        }
-
-        const updatedItem = await tx.pharmacyItem.update({
-          where: { id: line.pharmacyItemId },
-          data: { stockQuantity: line.countedQuantity },
+            };
+          }),
         });
+        await tx.stockAdjustment.createMany({
+          data: surpluses.map(({ line, delta }) => ({
+            pharmacyItemId: line.pharmacyItemId,
+            inventoryCountLineId: line.id,
+            quantityDelta: delta,
+            valuationAmount: (avgCostByItem.get(line.pharmacyItemId) ?? 0) * delta,
+            reason: "INVENTORY",
+            createdById: activeUser!.id,
+          })),
+        });
+      }
 
-        // Alerte de rupture uniquement au franchissement du seuil (pas à chaque perte sous le seuil).
-        if (delta < 0 && line.systemQuantity > updatedItem.reorderLevel && updatedItem.stockQuantity <= updatedItem.reorderLevel) {
+      // Nouveau stock = quantité comptée ; mises à jour groupées par valeur identique.
+      const changedLines = [...losses.map(({ line }) => line), ...surpluses.map(({ line }) => line)];
+      const newStocks = changedLines.map((line) => [line.pharmacyItemId, line.countedQuantity!] as [string, number]);
+      for (const [quantity, ids] of groupIdsByValue(newStocks)) {
+        await setField(tx.pharmacyItem, ids, "stockQuantity", quantity);
+      }
+
+      // Alerte de rupture uniquement au franchissement du seuil (pas à chaque perte sous le seuil).
+      for (const { line, item } of losses) {
+        if (line.systemQuantity > item.reorderLevel && line.countedQuantity! <= item.reorderLevel) {
           lowStockAlerts.push({
-            pharmacyItemId: updatedItem.id,
-            itemName: updatedItem.name,
-            stockQuantity: updatedItem.stockQuantity,
-            reorderLevel: updatedItem.reorderLevel,
+            pharmacyItemId: item.id,
+            itemName: item.name,
+            stockQuantity: line.countedQuantity!,
+            reorderLevel: item.reorderLevel,
             organizationId: count.organizationId,
           });
         }
@@ -1057,7 +1104,7 @@ export async function completeInventoryCount(inventoryCountId: string) {
     revalidatePath("/dashboard/finance");
     revalidatePath("/dashboard", "layout");
 
-    return { success: true, data: { totalLossValue, staleProducts } };
+    return { success: true, data: { inventoryCountId, totalLossValue, staleProducts } };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la clôture de l'inventaire.") };
   }
@@ -1115,5 +1162,63 @@ export async function getInventoryHistory(organizationId: string) {
     return { success: true, data: counts };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de l'historique des inventaires.") };
+  }
+}
+
+// Données du rapport PDF d'un inventaire CLÔTURÉ : lignes de comptage avec leur produit, et les
+// ajustements réellement appliqués (StockAdjustment rattachés aux lignes) — c'est eux, et non la
+// simple comparaison compté/système, qui disent quels produits ont vu leur stock modifié (cf.
+// buildInventoryReport). Accessible à l'établissement de l'inventaire, ou à la holding parente
+// (lecture seule, comme le reste du stock pour ADMIN).
+export async function getInventoryReport(inventoryCountId: string) {
+  try {
+    z.string().min(1).parse(inventoryCountId);
+    const activeUser = await getCurrentUser();
+    await assertStockRead(activeUser);
+
+    const count = await prisma.inventoryCount.findUnique({
+      where: { id: inventoryCountId },
+      include: {
+        organization: { select: { name: true, logoUrl: true, parentId: true } },
+        startedBy: { select: { firstName: true, lastName: true } },
+        lines: {
+          include: { pharmacyItem: { select: { name: true, dosage: true, category: true } } },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+    if (!count) throw new Error("Inventaire introuvable.");
+
+    const sameOrg = count.organizationId === activeUser!.organizationId;
+    const parentHolding =
+      activeUser!.organization?.type === "HOLDING" && count.organization?.parentId === activeUser!.organizationId;
+    if (!sameOrg && !parentHolding) {
+      throw new Error("Non autorisé. Cet inventaire n'appartient pas à votre établissement.");
+    }
+    if (count.status !== "COMPLETED") {
+      throw new Error("Le rapport n'est disponible que pour un inventaire clôturé.");
+    }
+
+    const adjustments = await prisma.stockAdjustment.findMany({
+      where: { inventoryCountLineId: { in: count.lines.map((line) => line.id) } },
+      select: { inventoryCountLineId: true, quantityDelta: true, valuationAmount: true },
+    });
+
+    return {
+      success: true,
+      data: {
+        inventory: {
+          id: count.id,
+          status: count.status,
+          createdAt: count.createdAt,
+          completedAt: count.completedAt,
+          startedBy: count.startedBy,
+        },
+        organization: { name: count.organization?.name ?? null, logoUrl: count.organization?.logoUrl ?? null },
+        report: buildInventoryReport(count.lines, adjustments),
+      },
+    };
+  } catch (error: any) {
+    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement du rapport d'inventaire.") };
   }
 }

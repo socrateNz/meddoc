@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import InventoryReportDownloadButton from "./inventory-report-download-button";
 import { ClipboardList, PlayCircle, Save, CheckCircle2, Loader2, AlertTriangle, History, XCircle, Search } from "lucide-react";
 import {
   startInventoryCount,
@@ -40,7 +41,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
   const [cancelling, setCancelling] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [lastClosure, setLastClosure] = useState<{ totalLossValue: number; staleProducts?: string[] } | null>(null);
+  const [lastClosure, setLastClosure] = useState<{ inventoryCountId?: string; totalLossValue: number; staleProducts?: string[] } | null>(null);
   const [inventorySearch, setInventorySearch] = useState("");
 
   const countQueryKey = ["activeInventoryCount", organizationId];
@@ -249,6 +250,11 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
             <span className="font-bold text-rose-600">{formatFCFA(lastClosure.totalLossValue)}</span> — enregistrées
             comme dépense dans le journal de caisse.
           </p>
+          {lastClosure.inventoryCountId && (
+            <div className="mt-2">
+              <InventoryReportDownloadButton inventoryCountId={lastClosure.inventoryCountId} label="Télécharger le rapport PDF" />
+            </div>
+          )}
           {!!lastClosure.staleProducts?.length && (
             <p className="mt-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 text-xs">
               <span className="font-bold">{lastClosure.staleProducts.length} produit(s) non pris en compte</span> —
@@ -481,6 +487,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                   <TableHead className="text-xs uppercase font-bold">Réalisé par</TableHead>
                   <TableHead className="text-xs uppercase font-bold">Produits comptés</TableHead>
                   <TableHead className="text-xs uppercase font-bold">Écarts</TableHead>
+                  <TableHead className="text-xs uppercase font-bold text-right">Rapport</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -503,6 +510,9 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                         ) : (
                           <span className="text-amber-600 font-semibold">{variances} écart(s)</span>
                         )}
+                      </TableCell>
+                      <TableCell className="py-1.5 text-right">
+                        <InventoryReportDownloadButton inventoryCountId={h.id} label="PDF" />
                       </TableCell>
                     </TableRow>
                   );

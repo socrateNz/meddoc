@@ -19,6 +19,7 @@ import {
 import { assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { assertPharmacyItemsSellable } from "@/lib/pharmacy-sale-block";
+import { applyLotConsumption, decrementField, groupIdsByValue, planLotConsumption } from "@/lib/stock-batch";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -362,26 +363,6 @@ export async function recordExpense(data: { cashSessionId: string; description: 
   }
 }
 
-// Regroupe des ids par valeur identique pour les écrire d'un seul updateMany plutôt que d'un
-// update par id (ex: dix produits remis chacun en quantité 6 = une seule écriture).
-function groupIdsByValue(entries: Array<[string, number]>): Map<number, string[]> {
-  const groups = new Map<number, string[]>();
-  for (const [id, value] of entries) {
-    const ids = groups.get(value);
-    if (ids) ids.push(id);
-    else groups.set(value, [id]);
-  }
-  return groups;
-}
-
-async function decrementField(model: any, ids: string[], field: string, amount: number) {
-  if (ids.length === 1) {
-    await model.update({ where: { id: ids[0] }, data: { [field]: { decrement: amount } } });
-  } else {
-    await model.updateMany({ where: { id: { in: ids } }, data: { [field]: { decrement: amount } } });
-  }
-}
-
 // Décrémente le stock (agrégé + lots FEFO) de tous les produits d'un ticket avec un nombre de
 // requêtes proche de constant plutôt que proportionnel au nombre de lignes : 2 lectures groupées
 // (produits, lots), puis des écritures groupées par valeur identique. L'ancienne version enchaînait
@@ -419,40 +400,12 @@ async function decrementStockForItems(
     stockSnapshots.set(pharmacyItemId, { name: pItem.name, stockQuantity: pItem.stockQuantity, reorderLevel: pItem.reorderLevel });
   }
 
-  // Consommation FEFO calculée en mémoire (même ordre que consumeStockLots : péremption la plus
-  // proche d'abord, puis achat le plus ancien). Si les lots ne couvrent pas toute la quantité
-  // (stock hérité d'avant le suivi par lot), la part non couverte n'est simplement pas valorisée
-  // par lot — on ne bloque pas l'opération, comme consumeStockLots.
+  // Consommation FEFO calculée en mémoire (cf. planLotConsumption).
   const lots: any[] = await tx.stockPurchase.findMany({
     where: { pharmacyItemId: { in: itemIds }, remainingQuantity: { gt: 0 } },
     orderBy: [{ expiryDate: "asc" }, { createdAt: "asc" }],
   });
-  const lotsByItem = new Map<string, any[]>();
-  for (const lot of lots) {
-    const list = lotsByItem.get(lot.pharmacyItemId);
-    if (list) list.push(lot);
-    else lotsByItem.set(lot.pharmacyItemId, [lot]);
-  }
-
-  const fullyConsumedLotIds: string[] = [];
-  const partialTakes: Array<[string, number]> = [];
-  for (const [pharmacyItemId, { quantity }] of wanted) {
-    let remaining = quantity;
-    for (const lot of lotsByItem.get(pharmacyItemId) || []) {
-      if (remaining <= 0) break;
-      const take = Math.min(lot.remainingQuantity, remaining);
-      if (take === lot.remainingQuantity) fullyConsumedLotIds.push(lot.id);
-      else partialTakes.push([lot.id, take]);
-      remaining -= take;
-    }
-  }
-
-  if (fullyConsumedLotIds.length > 0) {
-    await tx.stockPurchase.updateMany({ where: { id: { in: fullyConsumedLotIds } }, data: { remainingQuantity: 0 } });
-  }
-  for (const [take, lotIds] of groupIdsByValue(partialTakes)) {
-    await decrementField(tx.stockPurchase, lotIds, "remainingQuantity", take);
-  }
+  await applyLotConsumption(tx, planLotConsumption(lots, new Map(Array.from(wanted, ([id, v]) => [id, v.quantity]))));
   for (const [quantity, ids] of groupIdsByValue(Array.from(wanted, ([id, v]) => [id, v.quantity] as [string, number]))) {
     await decrementField(tx.pharmacyItem, ids, "stockQuantity", quantity);
   }

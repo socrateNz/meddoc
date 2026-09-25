@@ -671,6 +671,71 @@ describe("saveInventoryCounts — rafraîchit systemQuantity au moment du compta
     // (5s) — cf. bug signalé en production sur un inventaire de 276 produits.
     expect(transactionCall.mock.calls[0][1]).toEqual({ timeout: 60000, maxWait: 15000 });
   });
+
+  function mockBulkDb(itemStock: Record<string, number>) {
+    const update = vi.fn(async () => ({}));
+    const updateMany = vi.fn(async () => ({}));
+    const lines = Object.keys(itemStock).map((itemId, i) => ({ id: `line${i}`, pharmacyItemId: itemId, systemQuantity: 0, countedQuantity: null }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        inventoryCount: { findUnique: vi.fn(async () => ({ id: "inv1", status: "IN_PROGRESS", lines })) },
+        pharmacyItem: { findMany: vi.fn(async () => Object.entries(itemStock).map(([id, stockQuantity]) => ({ id, stockQuantity }))) },
+        $transaction: vi.fn(async (fn: any) => fn({ inventoryCountLine: { update, updateMany } })),
+      },
+    }));
+    return { update, updateMany, lines };
+  }
+
+  it("groupe en un seul updateMany les lignes qui reçoivent exactement les mêmes valeurs", async () => {
+    // 4 produits : 3 comptés 5 avec un stock réel de 5 (même couple), 1 compté 2 avec un stock de 9.
+    const { update, updateMany } = mockBulkDb({ a: 5, b: 5, c: 5, d: 9 });
+    const { saveInventoryCounts } = await import("./stock");
+
+    const result = await saveInventoryCounts("inv1", [
+      { lineId: "line0", countedQuantity: 5 },
+      { lineId: "line1", countedQuantity: 5 },
+      { lineId: "line2", countedQuantity: 5 },
+      { lineId: "line3", countedQuantity: 2 },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["line0", "line1", "line2"] } },
+      data: { countedQuantity: 5, systemQuantity: 5 },
+    });
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({ where: { id: "line3" }, data: { countedQuantity: 2, systemQuantity: 9 } });
+  });
+
+  it("refuse une ligne qui n'appartient pas à cet inventaire, sans rien écrire", async () => {
+    const { update, updateMany } = mockBulkDb({ a: 5 });
+    const { saveInventoryCounts } = await import("./stock");
+
+    const result = await saveInventoryCounts("inv1", [
+      { lineId: "line0", countedQuantity: 5 },
+      { lineId: "ligne-d-un-autre-inventaire", countedQuantity: 1 },
+    ]);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/introuvable/);
+    expect(update).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("garde le dernier comptage envoyé quand une même ligne est présente deux fois", async () => {
+    const { update } = mockBulkDb({ a: 5 });
+    const { saveInventoryCounts } = await import("./stock");
+
+    const result = await saveInventoryCounts("inv1", [
+      { lineId: "line0", countedQuantity: 3 },
+      { lineId: "line0", countedQuantity: 4 },
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({ where: { id: "line0" }, data: { countedQuantity: 4, systemQuantity: 5 } });
+  });
 });
 
 describe("getActiveInventoryCount — rattrapage des produits ajoutés après le démarrage", () => {
@@ -817,7 +882,7 @@ describe("completeInventoryCount — rattrapage de sécurité avant clôture", (
       pharmacyItem: {
         // item1 : stock réel (5) toujours identique à systemQuantity (5) — pas de mouvement
         // depuis l'enregistrement du comptage, donc pas "périmée".
-        findUnique: vi.fn(async () => ({ id: "item1", name: "Paracétamol", stockQuantity: 5, reorderLevel: 5 })),
+        findMany: vi.fn(async () => [{ id: "item1", name: "Paracétamol", stockQuantity: 5, reorderLevel: 5 }]),
         update: txPharmacyItemUpdate,
       },
       stockAdjustment: { create: txStockAdjustmentCreate },
@@ -865,7 +930,7 @@ describe("completeInventoryCount — rattrapage de sécurité avant clôture", (
     const txStockAdjustmentCreate = vi.fn(async () => ({}));
     const tx = {
       pharmacyItem: {
-        findUnique: vi.fn(async () => ({ id: "item1", name: "Fluclox", stockQuantity: 16, reorderLevel: 5 })),
+        findMany: vi.fn(async () => [{ id: "item1", name: "Fluclox", stockQuantity: 16, reorderLevel: 5 }]),
         update: txPharmacyItemUpdate,
       },
       stockAdjustment: { create: txStockAdjustmentCreate },
@@ -895,6 +960,267 @@ describe("completeInventoryCount — rattrapage de sécurité avant clôture", (
     // l'autre, l'écart calculé serait faux).
     expect(txPharmacyItemUpdate).not.toHaveBeenCalled();
     expect(txStockAdjustmentCreate).not.toHaveBeenCalled();
+  });
+});
+
+// Régression : la clôture d'un inventaire de plusieurs centaines de produits dépassait la durée
+// maximale de la fonction Vercel (504 FUNCTION_INVOCATION_TIMEOUT) parce qu'elle faisait une (puis
+// ~6) requête(s) par ligne, à ~330ms l'aller-retour. Elle doit tenir en un nombre de requêtes
+// indépendant du nombre de lignes.
+describe("completeInventoryCount — requêtes groupées (pas une par ligne)", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+  });
+
+  // Client Prisma factice qui compte chaque appel de méthode (= chaque aller-retour réseau).
+  function setup(lines: any[], liveItems: any[], lots: any[] = []) {
+    const count = { id: "inv1", organizationId: "org1", status: "IN_PROGRESS", lines };
+    const calls: string[] = [];
+    const track = <T extends (...args: any[]) => any>(name: string, fn: T) =>
+      vi.fn(async (...args: any[]) => {
+        calls.push(name);
+        return fn(...args);
+      });
+    const tx = {
+      pharmacyItem: {
+        findMany: track("item.findMany", async () => liveItems),
+        update: track("item.update", async () => ({})),
+        updateMany: track("item.updateMany", async () => ({})),
+      },
+      stockPurchase: {
+        findMany: track("lot.findMany", async () => lots),
+        updateMany: track("lot.updateMany", async () => ({})),
+        update: track("lot.update", async () => ({})),
+        createMany: track("lot.createMany", async () => ({})),
+      },
+      stockAdjustment: { createMany: track("adjustment.createMany", async () => ({})) },
+      financialTransaction: { createMany: track("expense.createMany", async () => ({})) },
+      inventoryCount: { update: track("count.update", async () => ({})) },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        inventoryCount: {
+          findUnique: vi.fn(async (args: any) =>
+            args.select
+              ? { lines: lines.map((l) => ({ id: l.id, pharmacyItemId: l.pharmacyItemId, countedQuantity: l.countedQuantity, systemQuantity: l.systemQuantity })) }
+              : count
+          ),
+        },
+        pharmacyItem: { findMany: vi.fn(async () => liveItems.map((i) => ({ id: i.id, stockQuantity: i.stockQuantity }))) },
+        inventoryCountLine: { createMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    return { tx, calls };
+  }
+
+  it("applique perte (lots FEFO, dépense) et surplus (nouveau lot au coût moyen) en une poignée de requêtes", async () => {
+    const lines = [
+      { id: "l1", pharmacyItemId: "loss", systemQuantity: 10, countedQuantity: 7 }, // perte de 3
+      { id: "l2", pharmacyItemId: "gain", systemQuantity: 4, countedQuantity: 6 }, // surplus de 2
+      { id: "l3", pharmacyItemId: "ok", systemQuantity: 5, countedQuantity: 5 }, // conforme
+      { id: "l4", pharmacyItemId: "skipped", systemQuantity: 8, countedQuantity: null }, // jamais comptée
+    ];
+    const liveItems = [
+      { id: "loss", name: "Amox", stockQuantity: 10, reorderLevel: 8 },
+      { id: "gain", name: "Para", stockQuantity: 4, reorderLevel: 2 },
+      { id: "ok", name: "Vitamine", stockQuantity: 5, reorderLevel: 2 },
+    ];
+    // "loss" : deux lots, le plus proche de la péremption d'abord ; le 1er (2 u. à 100) est vidé,
+    // le 2e (8 u. à 200) est entamé d'1 unité. "gain" : un lot restant à 50.
+    const lots = [
+      { id: "lotA", pharmacyItemId: "loss", remainingQuantity: 2, purchasePrice: 100 },
+      { id: "lotB", pharmacyItemId: "loss", remainingQuantity: 8, purchasePrice: 200 },
+      { id: "lotC", pharmacyItemId: "gain", remainingQuantity: 4, purchasePrice: 50 },
+    ];
+    const { tx, calls } = setup(lines, liveItems, lots);
+    const { completeInventoryCount } = await import("./stock");
+
+    const result = await completeInventoryCount("inv1");
+
+    expect(result.success).toBe(true);
+    // 2 u. × 100 + 1 u. × 200 = 400 de perte valorisée aux prix d'achat réels.
+    expect((result.data as any).totalLossValue).toBe(400);
+
+    expect(tx.stockPurchase.updateMany).toHaveBeenCalledWith({ where: { id: { in: ["lotA"] } }, data: { remainingQuantity: 0 } });
+    expect(tx.stockPurchase.update).toHaveBeenCalledWith({ where: { id: "lotB" }, data: { remainingQuantity: { decrement: 1 } } });
+
+    expect(tx.financialTransaction.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ type: "EXPENSE", category: "STOCK_ADJUSTMENT", amount: 400, pharmacyItemId: "loss", quantity: 3 })],
+    });
+    expect(tx.stockPurchase.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({ pharmacyItemId: "gain", quantity: 2, remainingQuantity: 2, purchasePrice: 50, totalCost: 100, batchNumber: "AJUSTEMENT-INVENTAIRE" }),
+      ],
+    });
+
+    // Un ajustement par écart (perte + surplus), rattaché à sa ligne de comptage ; ni la ligne
+    // conforme ni celle jamais comptée n'en produisent.
+    const adjustments = vi.mocked(tx.stockAdjustment.createMany).mock.calls.flatMap((c: any) => c[0].data);
+    expect(adjustments).toEqual([
+      expect.objectContaining({ pharmacyItemId: "loss", inventoryCountLineId: "l1", quantityDelta: -3, valuationAmount: 400 }),
+      expect.objectContaining({ pharmacyItemId: "gain", inventoryCountLineId: "l2", quantityDelta: 2, valuationAmount: 100 }),
+    ]);
+
+    // Nouveau stock = quantité comptée, uniquement pour les produits en écart.
+    expect(tx.pharmacyItem.update).toHaveBeenCalledWith({ where: { id: "loss" }, data: { stockQuantity: 7 } });
+    expect(tx.pharmacyItem.update).toHaveBeenCalledWith({ where: { id: "gain" }, data: { stockQuantity: 6 } });
+    expect(tx.pharmacyItem.update).toHaveBeenCalledTimes(2);
+
+    expect(calls).toContain("count.update");
+  });
+
+  it("signale la rupture de stock franchie par une perte via l'événement stock.low", async () => {
+    const lines = [{ id: "l1", pharmacyItemId: "loss", systemQuantity: 10, countedQuantity: 3 }];
+    const liveItems = [{ id: "loss", name: "Amox", stockQuantity: 10, reorderLevel: 5 }];
+    setup(lines, liveItems, [{ id: "lotA", pharmacyItemId: "loss", remainingQuantity: 10, purchasePrice: 100 }]);
+    const emit = vi.fn();
+    vi.doMock("@/lib/events", () => ({ appEvents: { emit } }));
+    const { completeInventoryCount } = await import("./stock");
+
+    const result = await completeInventoryCount("inv1");
+
+    expect(result.success).toBe(true);
+    expect(emit).toHaveBeenCalledWith(
+      "stock.low",
+      expect.objectContaining({ pharmacyItemId: "loss", itemName: "Amox", stockQuantity: 3, reorderLevel: 5 })
+    );
+  });
+
+  it("garde un nombre de requêtes constant quel que soit le nombre de lignes (276 lignes conformes)", async () => {
+    const lines = Array.from({ length: 276 }, (_, i) => ({ id: `l${i}`, pharmacyItemId: `p${i}`, systemQuantity: 5, countedQuantity: 5 }));
+    const liveItems = lines.map((l) => ({ id: l.pharmacyItemId, name: `P${l.pharmacyItemId}`, stockQuantity: 5, reorderLevel: 1 }));
+    const { calls } = setup(lines, liveItems);
+    const { completeInventoryCount } = await import("./stock");
+
+    const result = await completeInventoryCount("inv1");
+
+    expect(result.success).toBe(true);
+    // 1 lecture groupée des produits + la mise à jour du statut : rien par ligne.
+    expect(calls).toEqual(["item.findMany", "count.update"]);
+  });
+
+  it("groupe les mises à jour de stock par quantité comptée identique (une écriture pour 30 produits à 0)", async () => {
+    const lines = Array.from({ length: 30 }, (_, i) => ({ id: `l${i}`, pharmacyItemId: `p${i}`, systemQuantity: 4, countedQuantity: 0 }));
+    const liveItems = lines.map((l) => ({ id: l.pharmacyItemId, name: `P${l.pharmacyItemId}`, stockQuantity: 4, reorderLevel: 0 }));
+    const lots = lines.map((l) => ({ id: `lot-${l.pharmacyItemId}`, pharmacyItemId: l.pharmacyItemId, remainingQuantity: 4, purchasePrice: 10 }));
+    const { tx, calls } = setup(lines, liveItems, lots);
+    const { completeInventoryCount } = await import("./stock");
+
+    const result = await completeInventoryCount("inv1");
+
+    expect(result.success).toBe(true);
+    expect((result.data as any).totalLossValue).toBe(30 * 4 * 10);
+    expect(tx.pharmacyItem.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.pharmacyItem.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: lines.map((l) => l.pharmacyItemId) } },
+      data: { stockQuantity: 0 },
+    });
+    // Tous les lots vidés d'un coup, un seul ajustement groupé, une seule dépense groupée.
+    expect(tx.stockPurchase.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.stockAdjustment.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.financialTransaction.createMany).toHaveBeenCalledTimes(1);
+    expect(calls.length).toBeLessThan(10);
+  });
+});
+
+describe("getInventoryReport — rapport PDF d'un inventaire clôturé", () => {
+  const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
+    vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
+    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
+  });
+
+  const completedCount = (overrides: any = {}) => ({
+    id: "inv1",
+    organizationId: "org1",
+    status: "COMPLETED",
+    createdAt: new Date("2026-09-01"),
+    completedAt: new Date("2026-09-02"),
+    startedBy: { firstName: "Awa", lastName: "Ndiaye" },
+    organization: { name: "Clinique Bien-être", logoUrl: null, parentId: "holding1" },
+    lines: [
+      { id: "l1", pharmacyItemId: "p1", systemQuantity: 10, countedQuantity: 7, pharmacyItem: { name: "Amoxicilline", dosage: "500mg", category: "MEDICATION" } },
+      { id: "l2", pharmacyItemId: "p2", systemQuantity: 5, countedQuantity: 5, pharmacyItem: { name: "Vitamine C", dosage: null, category: "MEDICATION" } },
+    ],
+    ...overrides,
+  });
+
+  function mockDb(user: any, count: any) {
+    const adjustmentFindMany = vi.fn(async () => [{ inventoryCountLineId: "l1", quantityDelta: -3, valuationAmount: 400 }]);
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => user) }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        inventoryCount: { findUnique: vi.fn(async () => count) },
+        stockAdjustment: { findMany: adjustmentFindMany },
+      },
+    }));
+    return { adjustmentFindMany };
+  }
+
+  it("retourne le rapport avec les produits dont le stock a été modifié (ajustements rattachés aux lignes)", async () => {
+    const { adjustmentFindMany } = mockDb(coordinatorUser, completedCount());
+    const { getInventoryReport } = await import("./stock");
+
+    const result = await getInventoryReport("inv1");
+
+    expect(result.success).toBe(true);
+    expect(adjustmentFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { inventoryCountLineId: { in: ["l1", "l2"] } } })
+    );
+    const data = (result as any).data;
+    expect(data.organization.name).toBe("Clinique Bien-être");
+    expect(data.report.modified).toHaveLength(1);
+    expect(data.report.modified[0]).toMatchObject({ name: "Amoxicilline", stockBefore: 10, stockAfter: 7, delta: -3, valuation: 400 });
+    expect(data.report.totals).toMatchObject({ modified: 1, conform: 1, lossUnits: 3, lossValue: 400 });
+  });
+
+  it("refuse un inventaire d'un autre établissement", async () => {
+    mockDb(coordinatorUser, completedCount({ organizationId: "org2", organization: { name: "Autre", logoUrl: null, parentId: "autre-holding" } }));
+    const { getInventoryReport } = await import("./stock");
+
+    const result = await getInventoryReport("inv1");
+
+    expect(result.success).toBe(false);
+    expect((result as any).error).toMatch(/n'appartient pas à votre établissement/);
+  });
+
+  it("autorise la holding parente à lire le rapport d'une de ses cliniques", async () => {
+    const holdingAdmin = { id: "admin1", role: "ADMIN", organizationId: "holding1", organization: { type: "HOLDING" } };
+    mockDb(holdingAdmin, completedCount({ organizationId: "org2" }));
+    const { getInventoryReport } = await import("./stock");
+
+    const result = await getInventoryReport("inv1");
+
+    expect(result.success).toBe(true);
+  });
+
+  it("refuse un inventaire encore en cours (pas de rapport avant la clôture)", async () => {
+    mockDb(coordinatorUser, completedCount({ status: "IN_PROGRESS" }));
+    const { getInventoryReport } = await import("./stock");
+
+    const result = await getInventoryReport("inv1");
+
+    expect(result.success).toBe(false);
+    expect((result as any).error).toMatch(/inventaire clôturé/);
+  });
+
+  it("refuse un rôle sans accès au stock", async () => {
+    mockDb({ id: "u1", role: "CASHIER", organizationId: "org1", organization: { type: "CLINIC" } }, completedCount());
+    const { getInventoryReport } = await import("./stock");
+
+    const result = await getInventoryReport("inv1");
+
+    expect(result.success).toBe(false);
   });
 });
 
