@@ -35,7 +35,7 @@ describe("InventoryReportPDFDocument", () => {
       }) as unknown as ReactElement<DocumentProps>
     );
 
-  it("génère un PDF valide pour un inventaire de plusieurs pages", async () => {
+  it("génère un PDF valide pour un inventaire avec quelques produits modifiés", async () => {
     const buffer = await render(buildInventoryReport(lines, adjustments));
 
     expect(buffer.subarray(0, 5).toString()).toBe("%PDF-");
@@ -45,18 +45,24 @@ describe("InventoryReportPDFDocument", () => {
 
   // Régression : avec le logo répété dans un en-tête `fixed`, react-pdf plantait ("unsupported
   // number: -1.8e+22") dès que le document dépassait une page — constaté en production sur un
-  // inventaire de 276 produits dont 7 modifiés.
+  // inventaire de 276 produits dont 7 modifiés (à l'époque, le PDF listait aussi tout le comptage).
+  // Le rapport ne liste plus que les produits modifiés : on force ici plusieurs pages avec un grand
+  // nombre de produits modifiés, écarts non appliqués compris.
   it("génère un PDF valide avec le logo de l'établissement sur un document de plusieurs pages", async () => {
-    const many = Array.from({ length: 276 }, (_, i) => ({
+    const many = Array.from({ length: 300 }, (_, i) => ({
       id: `m${i}`,
       pharmacyItemId: `pm${i}`,
       systemQuantity: 10,
-      countedQuantity: i < 7 ? 7 : null,
+      countedQuantity: i < 250 ? 7 : 12,
       pharmacyItem: { name: `Produit ${String(i).padStart(3, "0")}`, dosage: "500mg, Comprime", category: "MEDICATION" },
     }));
-    const adj = many.slice(0, 7).map((l) => ({ inventoryCountLineId: l.id, quantityDelta: -3, valuationAmount: 300 }));
+    // 250 lignes ajustées ; les 50 dernières ont un écart mais aucun ajustement (stock périmé).
+    const adj = many.slice(0, 250).map((l) => ({ inventoryCountLineId: l.id, quantityDelta: -3, valuationAmount: 300 }));
+    const report = buildInventoryReport(many, adj);
+    expect(report.modified).toHaveLength(250);
+    expect(report.notApplied).toHaveLength(50);
 
-    const buffer = await render(buildInventoryReport(many, adj), LOGO);
+    const buffer = await render(report, LOGO);
 
     expect(buffer.subarray(0, 5).toString()).toBe("%PDF-");
   });

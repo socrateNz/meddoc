@@ -90,12 +90,6 @@ const styles = StyleSheet.create({
   mAfter: { width: "14%", textAlign: "right" },
   mDelta: { width: "12%", textAlign: "right" },
   mValue: { width: "22%", textAlign: "right" },
-  // Colonnes du détail complet
-  dName: { width: "44%" },
-  dSystem: { width: "14%", textAlign: "right" },
-  dCounted: { width: "14%", textAlign: "right" },
-  dDelta: { width: "10%", textAlign: "right" },
-  dStatus: { width: "18%", textAlign: "right" },
   notesBox: {
     borderWidth: 1,
     borderColor: "#e2e8f0",
@@ -156,14 +150,8 @@ const signed = (n: number) => `${n > 0 ? "+" : ""}${n}`;
 
 const productLabel = (row: InventoryReportRow) => (row.dosage ? `${row.name} (${row.dosage})` : row.name);
 
-const STATUS_LABEL: Record<InventoryReportRow["status"], string> = {
-  MODIFIED: "Stock modifié",
-  NOT_APPLIED: "Non appliqué",
-  CONFORM: "Conforme",
-};
-
 export default function InventoryReportPDFDocument({ inventory, report, organizationName, organizationLogoUrl }: InventoryReportPDFProps) {
-  const { totals, modified, notApplied, rows } = report;
+  const { totals, modified, notApplied } = report;
   const reportRef = `INV-${(inventory.id || "000000").slice(-6).toUpperCase()}`;
   const startedBy = inventory.startedBy ? `${inventory.startedBy.firstName ?? ""} ${inventory.startedBy.lastName ?? ""}`.trim() : "";
 
@@ -299,53 +287,6 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
             </Text>
           </View>
         )}
-
-        {/* Détail complet du comptage */}
-        <Text style={styles.sectionTitle}>Détail du comptage ({rows.length} produits)</Text>
-        <Text style={styles.sectionHint}>
-          Un produit laissé à sa quantité système lors de la clôture est considéré conforme.
-        </Text>
-        <View style={styles.table}>
-          <View style={styles.tableHeader}>
-            <Text style={[styles.dName, styles.tableHeaderText]}>Produit</Text>
-            <Text style={[styles.dSystem, styles.tableHeaderText]}>Système</Text>
-            <Text style={[styles.dCounted, styles.tableHeaderText]}>Compté</Text>
-            <Text style={[styles.dDelta, styles.tableHeaderText]}>Écart</Text>
-            <Text style={[styles.dStatus, styles.tableHeaderText]}>Statut</Text>
-          </View>
-          {rows.map((row) => {
-            const delta = row.delta;
-            return (
-              <View key={row.lineId} style={styles.tableRow} wrap={false}>
-                <Text style={[styles.dName, styles.tableText]}>{productLabel(row)}</Text>
-                <Text style={[styles.dSystem, styles.tableText]}>{row.systemQuantity}</Text>
-                <Text style={[styles.dCounted, styles.tableText]}>{row.countedQuantity}</Text>
-                <Text
-                  style={[
-                    styles.dDelta,
-                    styles.tableText,
-                    delta === null ? styles.mutedText : delta < 0 ? styles.badText : styles.okText,
-                  ]}
-                >
-                  {delta === null ? "-" : signed(delta)}
-                </Text>
-                <Text
-                  style={[
-                    styles.dStatus,
-                    styles.tableText,
-                    row.status === "MODIFIED"
-                      ? (row.delta ?? 0) < 0 ? styles.badText : styles.okText
-                      : row.status === "NOT_APPLIED"
-                        ? styles.warnText
-                        : styles.mutedText,
-                  ]}
-                >
-                  {STATUS_LABEL[row.status]}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
 
         <View style={styles.footer} wrap={false}>
           <View style={styles.signatureBox}>
