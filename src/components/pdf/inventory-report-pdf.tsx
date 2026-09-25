@@ -28,6 +28,7 @@ const styles = StyleSheet.create({
   logoImage: { width: 42, height: 42, objectFit: "contain", marginBottom: 4 },
   companyName: { fontSize: 16, fontWeight: "bold", color: "#1e293b" },
   companySub: { fontSize: 8, color: "#64748b", marginTop: 2 },
+  runningHeader: { position: "absolute", top: 18, left: 40, fontSize: 8, color: "#64748b" },
   reportMeta: { textAlign: "right" },
   reportTitle: { fontSize: 14, fontWeight: "bold", color: "#7c3aed", textTransform: "uppercase" },
   reportRef: { fontSize: 10, fontWeight: "bold", color: "#1e293b", marginTop: 2 },
@@ -129,8 +130,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5,
     borderTopColor: "#e2e8f0",
     paddingTop: 6,
-    flexDirection: "row",
-    justifyContent: "space-between",
     fontSize: 7,
     color: "#94a3b8",
   },
@@ -161,7 +160,6 @@ const STATUS_LABEL: Record<InventoryReportRow["status"], string> = {
   MODIFIED: "Stock modifié",
   NOT_APPLIED: "Non appliqué",
   CONFORM: "Conforme",
-  NOT_COUNTED: "Non compté",
 };
 
 export default function InventoryReportPDFDocument({ inventory, report, organizationName, organizationLogoUrl }: InventoryReportPDFProps) {
@@ -172,8 +170,27 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {/* fixed : répété identique sur chaque page */}
-        <View style={styles.header} fixed>
+        {/* Éléments répétés sur chaque page : posés en absolu, directement au niveau de la Page (un
+            `render` imbriqué dans un conteneur `fixed`, ou un second `render` de pied de page, ne
+            s'affichait pas). Le numéro de page est donc porté par le bandeau du haut. */}
+        <Text
+          fixed
+          style={styles.runningHeader}
+          render={({ pageNumber, totalPages }) =>
+            pageNumber > 1
+              ? `${organizationName || "MEDDOC"} • Rapport d'inventaire N° ${reportRef} • Page ${pageNumber} / ${totalPages}`
+              : `Page ${pageNumber} / ${totalPages}`
+          }
+        />
+        <View fixed style={styles.pageFooter}>
+          <Text>Document généré via MedDoc • Rapport d&apos;inventaire • {reportRef}</Text>
+        </View>
+
+        {/* Le logo ne doit apparaître QUE sur la première page : répété dans un en-tête `fixed`, il fait
+            échouer le rendu de react-pdf dès que le document compte plusieurs pages ("unsupported
+            number: -1.8e+22", constaté sur un inventaire de 276 produits avec le logo de la clinique).
+            Les pages suivantes n'ont donc qu'un bandeau texte, répété via `fixed`. */}
+        <View style={styles.header}>
           <View style={styles.clinicInfo}>
             {organizationLogoUrl && <Image src={organizationLogoUrl} style={styles.logoImage} />}
             <Text style={styles.companyName}>{organizationName || "MEDDOC - CENTRE MÉDICAL"}</Text>
@@ -185,7 +202,6 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
             <Text style={styles.reportStatus}>Inventaire clôturé</Text>
           </View>
         </View>
-
         <View style={styles.infoSection}>
           <View style={styles.infoBox}>
             <Text style={styles.infoTitle}>Démarrage</Text>
@@ -195,9 +211,7 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
           <View style={styles.infoBox}>
             <Text style={styles.infoTitle}>Clôture</Text>
             <Text style={styles.infoText}>Le : {formatDateTime(inventory.completedAt)}</Text>
-            <Text style={styles.infoText}>
-              Produits comptés : {totals.countedLines} / {totals.totalLines}
-            </Text>
+            <Text style={styles.infoText}>Produits inventoriés : {totals.totalLines}</Text>
           </View>
         </View>
 
@@ -207,12 +221,12 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
             <Text style={styles.summaryValue}>{totals.modified}</Text>
           </View>
           <View style={styles.summaryBox}>
-            <Text style={styles.summaryLabel}>Conformes</Text>
+            <Text style={styles.summaryLabel}>Conformes (sans écart)</Text>
             <Text style={[styles.summaryValue, styles.okText]}>{totals.conform}</Text>
           </View>
           <View style={styles.summaryBox}>
-            <Text style={styles.summaryLabel}>Non comptés</Text>
-            <Text style={styles.summaryValue}>{totals.notCounted}</Text>
+            <Text style={styles.summaryLabel}>Écarts non appliqués</Text>
+            <Text style={[styles.summaryValue, totals.notApplied > 0 ? styles.warnText : styles.summaryValue]}>{totals.notApplied}</Text>
           </View>
           <View style={styles.summaryBox}>
             <Text style={styles.summaryLabel}>Pertes (unités)</Text>
@@ -263,9 +277,9 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
                   <Text style={[styles.mDelta, styles.tableText, loss ? styles.badText : styles.okText, { fontWeight: "bold" }]}>
                     {signed(row.delta ?? 0)}
                   </Text>
-                  <Text style={[styles.mValue, styles.tableText, loss ? styles.badText : styles.okText]}>
-                    {loss ? "-" : "+"}
-                    {formatFCFA(row.valuation)}
+                  {/* Une perte sans lot d'achat (stock hérité d'avant le suivi par lot) vaut 0 : pas de "-0 FCFA". */}
+                  <Text style={[styles.mValue, styles.tableText, !row.valuation ? styles.mutedText : loss ? styles.badText : styles.okText]}>
+                    {!row.valuation ? "0 FCFA" : `${loss ? "-" : "+"}${formatFCFA(row.valuation)}`}
                   </Text>
                 </View>
               );
@@ -288,6 +302,9 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
 
         {/* Détail complet du comptage */}
         <Text style={styles.sectionTitle}>Détail du comptage ({rows.length} produits)</Text>
+        <Text style={styles.sectionHint}>
+          Un produit laissé à sa quantité système lors de la clôture est considéré conforme.
+        </Text>
         <View style={styles.table}>
           <View style={styles.tableHeader}>
             <Text style={[styles.dName, styles.tableHeaderText]}>Produit</Text>
@@ -302,9 +319,7 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
               <View key={row.lineId} style={styles.tableRow} wrap={false}>
                 <Text style={[styles.dName, styles.tableText]}>{productLabel(row)}</Text>
                 <Text style={[styles.dSystem, styles.tableText]}>{row.systemQuantity}</Text>
-                <Text style={[styles.dCounted, styles.tableText, row.countedQuantity === null ? styles.mutedText : styles.tableText]}>
-                  {row.countedQuantity ?? "-"}
-                </Text>
+                <Text style={[styles.dCounted, styles.tableText]}>{row.countedQuantity}</Text>
                 <Text
                   style={[
                     styles.dDelta,
@@ -341,10 +356,6 @@ export default function InventoryReportPDFDocument({ inventory, report, organiza
           </View>
         </View>
 
-        <View style={styles.pageFooter} fixed>
-          <Text>Document généré via MedDoc • Rapport d&apos;inventaire • {reportRef}</Text>
-          <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
-        </View>
       </Page>
     </Document>
   );

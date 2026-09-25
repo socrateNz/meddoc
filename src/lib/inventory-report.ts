@@ -6,11 +6,14 @@
 // appliqué", pas la seule comparaison compté/système : une ligne dont le stock avait bougé depuis
 // son comptage est ignorée à la clôture (cf. staleProducts) et n'a donc aucun ajustement.
 
+// Une ligne jamais saisie (countedQuantity null) n'est PAS un produit oublié : l'écran de comptage
+// préremplit chaque ligne avec le stock système et n'envoie à l'enregistrement que les lignes
+// modifiées (cf. buildLinesPayload). Une ligne laissée telle quelle est donc confirmée conforme, et
+// la clôture la traite ainsi — le rapport la range avec les conformes.
 export type InventoryLineStatus =
   | "MODIFIED" // écart appliqué : le stock du produit a été modifié
   | "NOT_APPLIED" // écart constaté mais NON appliqué (stock modifié entre-temps, à recompter)
-  | "CONFORM" // compté = stock système
-  | "NOT_COUNTED"; // jamais compté
+  | "CONFORM"; // quantité = stock système (saisie identique, ou ligne laissée à sa valeur par défaut)
 
 export interface InventoryReportLineInput {
   id: string;
@@ -33,7 +36,8 @@ export interface InventoryReportRow {
   dosage: string | null;
   category: string | null;
   systemQuantity: number;
-  countedQuantity: number | null;
+  // Quantité saisie ; pour une ligne laissée à sa valeur par défaut, le stock système.
+  countedQuantity: number;
   // Stock réellement appliqué : avant = ce que le système disait au moment du comptage, après = la
   // quantité comptée. Nuls hors statut MODIFIED.
   stockBefore: number | null;
@@ -47,8 +51,6 @@ export interface InventoryReportRow {
 
 export interface InventoryReportTotals {
   totalLines: number;
-  countedLines: number;
-  notCounted: number;
   conform: number;
   modified: number;
   notApplied: number;
@@ -84,8 +86,6 @@ export function buildInventoryReport(
 
   const totals: InventoryReportTotals = {
     totalLines: lines.length,
-    countedLines: 0,
-    notCounted: 0,
     conform: 0,
     modified: 0,
     notApplied: 0,
@@ -96,6 +96,7 @@ export function buildInventoryReport(
   };
 
   const rows: InventoryReportRow[] = lines.map((line) => {
+    const countedQuantity = line.countedQuantity ?? line.systemQuantity;
     const base = {
       lineId: line.id,
       pharmacyItemId: line.pharmacyItemId,
@@ -103,14 +104,8 @@ export function buildInventoryReport(
       dosage: line.pharmacyItem?.dosage ?? null,
       category: line.pharmacyItem?.category ?? null,
       systemQuantity: line.systemQuantity,
-      countedQuantity: line.countedQuantity,
+      countedQuantity,
     };
-
-    if (line.countedQuantity === null) {
-      totals.notCounted++;
-      return { ...base, stockBefore: null, stockAfter: null, delta: null, valuation: null, status: "NOT_COUNTED" as const };
-    }
-    totals.countedLines++;
 
     const adjustment = adjustmentByLine.get(line.id);
     if (adjustment) {
@@ -125,14 +120,14 @@ export function buildInventoryReport(
       return {
         ...base,
         stockBefore: line.systemQuantity,
-        stockAfter: line.countedQuantity,
+        stockAfter: countedQuantity,
         delta: adjustment.delta,
         valuation: adjustment.valuation,
         status: "MODIFIED" as const,
       };
     }
 
-    if (line.countedQuantity === line.systemQuantity) {
+    if (countedQuantity === line.systemQuantity) {
       totals.conform++;
       return { ...base, stockBefore: null, stockAfter: null, delta: null, valuation: null, status: "CONFORM" as const };
     }
@@ -142,7 +137,7 @@ export function buildInventoryReport(
       ...base,
       stockBefore: null,
       stockAfter: null,
-      delta: line.countedQuantity - line.systemQuantity,
+      delta: countedQuantity - line.systemQuantity,
       valuation: null,
       status: "NOT_APPLIED" as const,
     };

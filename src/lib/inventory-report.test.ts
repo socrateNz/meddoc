@@ -10,7 +10,7 @@ const line = (id: string, name: string, systemQuantity: number, countedQuantity:
 });
 
 describe("buildInventoryReport", () => {
-  it("classe chaque ligne : modifiée (ajustement appliqué), conforme, non comptée, écart non appliqué", () => {
+  it("classe chaque ligne : modifiée (ajustement appliqué), conforme (dont ligne jamais saisie), écart non appliqué", () => {
     const report = buildInventoryReport(
       [
         line("l1", "Amoxicilline", 10, 7, "500mg"), // perte de 3, appliquée
@@ -30,14 +30,12 @@ describe("buildInventoryReport", () => {
       Amoxicilline: "MODIFIED",
       Paracétamol: "MODIFIED",
       "Vitamine C": "CONFORM",
-      Ibuprofène: "NOT_COUNTED",
+      Ibuprofène: "CONFORM", // ligne laissée à sa valeur par défaut = confirmée conforme
       Fluclox: "NOT_APPLIED",
     });
     expect(report.totals).toEqual({
       totalLines: 5,
-      countedLines: 4,
-      notCounted: 1,
-      conform: 1,
+      conform: 2,
       modified: 2,
       notApplied: 1,
       lossUnits: 3,
@@ -45,6 +43,13 @@ describe("buildInventoryReport", () => {
       surplusUnits: 2,
       surplusValue: 100,
     });
+  });
+
+  it("range une ligne jamais saisie avec les conformes, en affichant le stock système comme quantité confirmée", () => {
+    const report = buildInventoryReport([line("l1", "Ibuprofène", 8, null)], []);
+
+    expect(report.rows[0]).toMatchObject({ status: "CONFORM", systemQuantity: 8, countedQuantity: 8, delta: null });
+    expect(report.totals).toMatchObject({ conform: 1, modified: 0, notApplied: 0 });
   });
 
   it("donne, pour un produit modifié, le stock avant (système au comptage), après (compté), l'écart et la valeur", () => {
