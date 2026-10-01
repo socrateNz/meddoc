@@ -318,7 +318,7 @@ export default async function PatientDetailPage({ params }: PageProps) {
                 {patient.bed && (
                   <Badge variant="outline" className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/40 text-xs font-medium gap-1">
                     <BedIcon className="h-3 w-3 text-blue-500" />
-                    Chambre {patient.bed.room?.number || ""} - Lit {patient.bed.name || ""} ({patient.bed.room?.ward?.name || ""})
+                    {patient.bed.room?.name || "Chambre"} • Lit {patient.bed.label} ({patient.bed.room?.ward?.name || ""})
                   </Badge>
                 )}
               </div>
