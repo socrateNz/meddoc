@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, User as UserIcon, Calendar, Clock, AlertTriangle, FileText, Activity, ShieldAlert, BrainCircuit, HeartPulse, Stethoscope, FlaskConical, ChevronRight } from "lucide-react";
+import { ArrowLeft, User as UserIcon, Calendar, Clock, AlertTriangle, FileText, Activity, ShieldAlert, BrainCircuit, HeartPulse, Stethoscope, FlaskConical, ChevronRight, Droplet, Bed as BedIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -102,6 +102,9 @@ export default async function PatientDetailPage({ params }: PageProps) {
       },
       aiAnalyses: {
         orderBy: { createdAt: "desc" }
+      },
+      bed: {
+        include: { room: { include: { ward: true } } }
       },
       organization: { select: { name: true, logoUrl: true } }
     }
@@ -306,6 +309,18 @@ export default async function PatientDetailPage({ params }: PageProps) {
                 <Badge variant={patient.dependencyLevel > 3 ? "destructive" : "secondary"} className="h-5">
                   GIR {patient.dependencyLevel}
                 </Badge>
+                {patient.bloodType && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/25 text-xs font-bold">
+                    <Droplet className="h-3 w-3 fill-rose-500 text-rose-500" />
+                    {patient.bloodType}
+                  </span>
+                )}
+                {patient.bed && (
+                  <Badge variant="outline" className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/40 text-xs font-medium gap-1">
+                    <BedIcon className="h-3 w-3 text-blue-500" />
+                    Chambre {patient.bed.room?.number || ""} - Lit {patient.bed.name || ""} ({patient.bed.room?.ward?.name || ""})
+                  </Badge>
+                )}
               </div>
               <p className="text-muted-foreground mt-1">
                 {calculateAge(patient.dateOfBirth)} ans • {patient.sex === "M" ? "Homme" : patient.sex === "F" ? "Femme" : patient.sex || "Sexe non renseigné"} • Né(e) le {formatDate(patient.dateOfBirth)}
@@ -335,6 +350,27 @@ export default async function PatientDetailPage({ params }: PageProps) {
           </div>
         </div>
       </div>
+
+      {/* Allergies & Medical Alert Banner */}
+      {patient.allergies && patient.allergies.length > 0 && (
+        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-900 dark:text-rose-200 flex items-start gap-3.5 animate-fade-up">
+          <div className="h-10 w-10 rounded-xl bg-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+            <ShieldAlert className="h-5 w-5" />
+          </div>
+          <div className="space-y-1.5 flex-1 min-w-0">
+            <h4 className="font-bold text-sm tracking-tight text-rose-800 dark:text-rose-300 uppercase">
+              Alerte Médicale — Allergies signalées ({patient.allergies.length})
+            </h4>
+            <div className="flex flex-wrap gap-1.5">
+              {patient.allergies.map((allergy: string, i: number) => (
+                <Badge key={i} variant="outline" className="bg-rose-500/20 text-rose-900 dark:text-rose-200 border-rose-500/40 text-xs font-bold">
+                  {allergy}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs Menu */}
       <Tabs defaultValue="records" className="w-full">

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
-import { createAppointmentSchema, completeConsultationSchema, saveConsultationDraftSchema } from "@/validators/appointments";
+import { createAppointmentSchema, updateAppointmentSchema, completeConsultationSchema, saveConsultationDraftSchema } from "@/validators/appointments";
 import { revalidatePath } from "next/cache";
 import { runInteractionCheck } from "@/actions/prescriptions";
 
@@ -365,5 +365,190 @@ export async function getConsultationDraft(options: { appointmentId?: string; pa
     return { success: true, data: draft };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors du chargement du brouillon.") };
+  }
+}
+
+export async function updateAppointment(data: {
+  id: string;
+  patientId?: string;
+  caregiverId?: string | null;
+  title?: string;
+  scheduledAt?: string;
+  durationMinutes?: number;
+  type?: string;
+  status?: string;
+}) {
+  try {
+    updateAppointmentSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) {
+      throw new Error("Non authentifié.");
+    }
+    assertScheduleAccess(activeUser.role);
+
+    const existing = await prisma.appointment.findUnique({
+      where: { id: data.id },
+      include: { patient: true },
+    });
+
+    if (!existing) {
+      throw new Error("Rendez-vous introuvable.");
+    }
+
+    const hasAccess = await verifyPatientAccess(existing.patientId, activeUser);
+    if (!hasAccess) {
+      throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+    }
+
+    const updatePayload: any = {};
+    if (data.title !== undefined) updatePayload.title = data.title;
+    if (data.type !== undefined) updatePayload.type = data.type;
+    if (data.status !== undefined) updatePayload.status = data.status;
+    if (data.durationMinutes !== undefined) updatePayload.durationMinutes = Number(data.durationMinutes);
+    if (data.scheduledAt !== undefined) updatePayload.scheduledAt = new Date(data.scheduledAt);
+    if (data.caregiverId !== undefined) {
+      updatePayload.caregiverId = data.caregiverId === "unassigned" || !data.caregiverId ? null : data.caregiverId;
+    }
+    if (data.patientId !== undefined) {
+      const patientAccess = await verifyPatientAccess(data.patientId, activeUser);
+      if (!patientAccess) {
+        throw new Error("Patient cible non autorisé.");
+      }
+      updatePayload.patientId = data.patientId;
+    }
+
+    const updated = await prisma.appointment.update({
+      where: { id: data.id },
+      data: updatePayload,
+      include: {
+        patient: { include: { user: true } },
+        caregiver: { include: { user: true } },
+      },
+    });
+
+    await logAuditAction(
+      activeUser.id,
+      "UPDATE_APPOINTMENT",
+      "Appointment",
+      updated.id,
+      { changes: updatePayload }
+    );
+
+    revalidatePath("/dashboard/appointments");
+    revalidatePath(`/dashboard/patients/${existing.patientId}`);
+    if (data.patientId && data.patientId !== existing.patientId) {
+      revalidatePath(`/dashboard/patients/${data.patientId}`);
+    }
+
+    return { success: true, data: updated };
+  } catch (error: any) {
+    console.error("Error updating appointment:", error);
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la modification du rendez-vous") };
+  }
+}
+
+export async function updateAppointmentStatus(appointmentId: string, status: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) {
+      throw new Error("Non authentifié.");
+    }
+    assertScheduleAccess(activeUser.role);
+
+    const existing = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+    });
+
+    if (!existing) {
+      throw new Error("Rendez-vous introuvable.");
+    }
+
+    const hasAccess = await verifyPatientAccess(existing.patientId, activeUser);
+    if (!hasAccess) {
+      throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+    }
+
+    const updated = await prisma.appointment.update({
+      where: { id: appointmentId },
+      data: { status },
+      include: {
+        patient: { include: { user: true } },
+        caregiver: { include: { user: true } },
+      },
+    });
+
+    await logAuditAction(
+      activeUser.id,
+      "UPDATE_APPOINTMENT_STATUS",
+      "Appointment",
+      updated.id,
+      { oldStatus: existing.status, newStatus: status }
+    );
+
+    revalidatePath("/dashboard/appointments");
+    revalidatePath(`/dashboard/patients/${existing.patientId}`);
+
+    return { success: true, data: updated };
+  } catch (error: any) {
+    console.error("Error updating appointment status:", error);
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la mise à jour du statut") };
+  }
+}
+
+export async function deleteAppointment(appointmentId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) {
+      throw new Error("Non authentifié.");
+    }
+    assertScheduleAccess(activeUser.role);
+
+    const existing = await prisma.appointment.findUnique({
+      where: { id: appointmentId },
+      include: {
+        prescriptions: { select: { id: true }, take: 1 },
+        labOrders: { select: { id: true }, take: 1 },
+        medicalRecords: { select: { id: true }, take: 1 },
+      },
+    });
+
+    if (!existing) {
+      throw new Error("Rendez-vous introuvable.");
+    }
+
+    const hasAccess = await verifyPatientAccess(existing.patientId, activeUser);
+    if (!hasAccess) {
+      throw new Error("Non autorisé.");
+    }
+
+    // Si le rendez-vous a déjà des ordonnances ou dossiers liés, on refuse la suppression dure
+    if (existing.prescriptions.length > 0 || existing.labOrders.length > 0 || existing.medicalRecords.length > 0) {
+      throw new Error("Ce rendez-vous a des actes médicaux ou ordonnances associés. Veuillez plutôt changer son statut en « Annulé ».");
+    }
+
+    // Supprimer d'abord les éventuels brouillons orphelins liés
+    await prisma.consultationDraft.deleteMany({
+      where: { appointmentId: appointmentId },
+    });
+
+    await prisma.appointment.delete({
+      where: { id: appointmentId },
+    });
+
+    await logAuditAction(
+      activeUser.id,
+      "DELETE_APPOINTMENT",
+      "Appointment",
+      appointmentId,
+      { patientId: existing.patientId, title: existing.title }
+    );
+
+    revalidatePath("/dashboard/appointments");
+    revalidatePath(`/dashboard/patients/${existing.patientId}`);
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error deleting appointment:", error);
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la suppression du rendez-vous") };
   }
 }

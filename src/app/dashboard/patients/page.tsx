@@ -51,6 +51,15 @@ export default async function PatientsPage() {
             id: true,
             status: true,
           }
+        },
+        vitalSigns: {
+          take: 1,
+          orderBy: { createdAt: "desc" }
+        },
+        appointments: {
+          take: 1,
+          where: { scheduledAt: { gte: new Date() } },
+          orderBy: { scheduledAt: "asc" }
         }
       },
       orderBy: {
@@ -58,9 +67,6 @@ export default async function PatientsPage() {
           lastName: "asc"
         }
       },
-      // Garde-fou : la recherche/filtrage de PatientTable est client-side sur cette liste,
-      // donc pas de vraie pagination ici — juste une limite haute pour éviter de ramener une
-      // collection entière si l'organisation grossit fortement.
       take: 500,
     }),
   ]);

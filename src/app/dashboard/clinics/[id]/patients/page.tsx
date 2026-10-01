@@ -46,6 +46,15 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
             id: true,
             status: true,
           }
+        },
+        vitalSigns: {
+          take: 1,
+          orderBy: { createdAt: "desc" }
+        },
+        appointments: {
+          take: 1,
+          where: { scheduledAt: { gte: new Date() } },
+          orderBy: { scheduledAt: "asc" }
         }
       },
       orderBy: {
@@ -53,9 +62,6 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
           lastName: "asc"
         }
       },
-      // Garde-fou : la recherche/filtrage de PatientTable est client-side sur cette liste,
-      // donc pas de vraie pagination ici — juste une limite haute pour éviter de ramener une
-      // collection entière si la clinique grossit fortement.
       take: 500,
     }),
   ]);

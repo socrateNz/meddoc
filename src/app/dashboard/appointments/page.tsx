@@ -1,21 +1,17 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, Clock, User as UserIcon } from "lucide-react";
-import NewAppointmentDialog from "./new-appointment-dialog";
 import { Prisma } from "@prisma/client";
-import Link from "next/link";
 import CacheWriter from "@/components/cache-writer";
+import OutlookCalendar from "@/components/calendar/outlook-calendar";
 
 type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
   include: {
     patient: {
-      include: { user: true }
+      include: { user: true };
     };
     caregiver: {
-      include: { user: true }
+      include: { user: true };
     };
   };
 }>;
@@ -36,7 +32,7 @@ export default async function AppointmentsPage() {
   if (currentUser.organization?.type === "HOLDING") {
     orgFilter.OR = [
       { organizationId: currentUser.organizationId },
-      { organization: { parentId: currentUser.organizationId } }
+      { organization: { parentId: currentUser.organizationId } },
     ];
   } else if (currentUser.organization?.type === "CLINIC") {
     orgFilter.organizationId = currentUser.organizationId;
@@ -50,14 +46,14 @@ export default async function AppointmentsPage() {
       where: { patient: orgFilter },
       include: {
         patient: {
-          include: { user: true }
+          include: { user: true },
         },
         caregiver: {
-          include: { user: true }
-        }
+          include: { user: true },
+        },
       },
       orderBy: {
-        scheduledAt: "asc"
+        scheduledAt: "asc",
       },
       take: 500,
     }),
@@ -66,115 +62,35 @@ export default async function AppointmentsPage() {
       include: { user: true },
       orderBy: {
         user: {
-          lastName: "asc"
-        }
-      }
+          lastName: "asc",
+        },
+      },
     }),
     prisma.caregiver.findMany({
       where: { user: orgFilter },
       include: { user: true },
       orderBy: {
         user: {
-          lastName: "asc"
-        }
-      }
+          lastName: "asc",
+        },
+      },
     }),
   ]);
 
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('fr-FR', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    }).format(new Date(date));
-  };
-
-  const formatTime = (date: Date) => {
-    return new Intl.DateTimeFormat('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(new Date(date));
-  };
-
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
-          <p className="text-muted-foreground">
-            Visualisez et planifiez les rendez-vous et consultations médicales.
-          </p>
-        </div>
-        <NewAppointmentDialog patients={patients} caregivers={caregivers} />
+    <div className="space-y-5">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
+        <p className="text-muted-foreground text-sm">
+          Planifiez, organisez et suivez les consultations et interventions médicales en vue calendrier Outlook.
+        </p>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        {appointments.length === 0 ? (
-          <div className="col-span-full flex flex-col items-center justify-center p-12 text-center border rounded-xl bg-card border-dashed">
-            <CalendarIcon className="h-10 w-10 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium">Aucun rendez-vous</h3>
-            <p className="text-sm text-muted-foreground mt-1">Vous n&apos;avez aucun rendez-vous planifié.</p>
-            <div className="mt-4">
-              <NewAppointmentDialog patients={patients} caregivers={caregivers} />
-            </div>
-          </div>
-        ) : (
-          appointments.map((apt: AppointmentWithRelations) => (
-            <div key={apt.id} className="flex flex-col rounded-xl border bg-card p-5 shadow-sm transition-all hover:shadow-md">
-              <div className="flex items-center justify-between mb-4">
-                <Badge variant={apt.status === "SCHEDULED" ? "default" : "secondary"}>
-                  {apt.status === "SCHEDULED" ? "Planifié" : apt.status}
-                </Badge>
-                <Badge variant="outline">{apt.type}</Badge>
-              </div>
-
-              <h3 className="font-semibold text-lg mb-2">{apt.title}</h3>
-
-              <div className="space-y-3 mt-auto">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CalendarIcon className="h-4 w-4 text-primary" />
-                  <span className="capitalize">{formatDate(apt.scheduledAt)}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4 text-primary" />
-                  <span>{formatTime(apt.scheduledAt)} - {apt.durationMinutes} min</span>
-                </div>
-
-                <div className="pt-4 mt-4 border-t flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center">
-                      <UserIcon className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <div className="text-sm">
-                      <p className="font-medium">{apt.patient.user.lastName} {apt.patient.user.firstName}</p>
-                      <p className="text-xs text-muted-foreground">Patient</p>
-                    </div>
-                  </div>
-                  {apt.caregiver ? (
-                    <div className="text-right">
-                      <p className="text-xs font-medium text-muted-foreground">Soignant</p>
-                      <p className="text-sm font-semibold">{apt.caregiver.user.lastName}</p>
-                    </div>
-                  ) : (
-                    <div className="text-right">
-                      <span className="text-xs text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full font-medium">Non assigné</span>
-                    </div>
-                  )}
-                </div>
-
-                {apt.status !== "COMPLETED" && (
-                  <Button asChild variant="outline" size="sm" className="flex flex-row gap-2 w-full mt-4 bg-primary/5 hover:bg-primary/10 text-primary border-primary/20">
-                    <Link href={`/dashboard/appointments/${apt.id}/consultation`}>
-                      <CalendarIcon className="h-4 w-4" />
-                      Ouvrir l'espace consultation
-                    </Link>
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+      <OutlookCalendar
+        initialAppointments={appointments as any}
+        patients={patients as any}
+        caregivers={caregivers as any}
+      />
 
       <CacheWriter
         cacheKey={`appointments:${currentUser.organizationId ?? "none"}`}

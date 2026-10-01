@@ -10,6 +10,17 @@ export const createAppointmentSchema = z.object({
   status: z.string().optional(),
 });
 
+export const updateAppointmentSchema = z.object({
+  id: z.string().min(1, "ID requis"),
+  patientId: z.string().optional(),
+  caregiverId: z.string().optional().nullable(),
+  title: z.string().min(3, "Titre requis (3 caractères min.)").optional(),
+  scheduledAt: z.string().min(1, "Date/heure requise").optional(),
+  durationMinutes: z.number().min(5, "Durée minimale de 5 minutes").optional(),
+  type: z.string().min(1, "Type de rendez-vous requis").optional(),
+  status: z.string().optional(),
+});
+
 export const completeConsultationSchema = z.object({
   appointmentId: z.string().optional(),
   patientId: z.string().min(1, "Patient requis"),
