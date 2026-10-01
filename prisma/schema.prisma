@@ -120,6 +120,9 @@ model Organization {
   purchaseOrders        PurchaseOrder[]
   cashRegisters         CashRegister[]
   cashSessions          CashSession[]
+  // Canaux de messagerie par service (#urgences, #garde-nuit...) de cet établissement — jamais
+  // les conversations privées (DM), qui ne portent pas d'organizationId (cf. Conversation.type).
+  conversations         Conversation[]
 
   plan               SubscriptionPlan   @default(TRIAL)
   subscriptionStatus SubscriptionStatus @default(TRIALING)
@@ -157,6 +160,14 @@ model User {
   avatarUrl              String?
   isActive               Boolean  @default(true)
   requiresPasswordChange Boolean  @default(false)
+  // Horodatage du dernier "battement" envoyé par le navigateur (cf. heartbeat(), appelée toutes
+  // les ~45s par PresenceHeartbeat tant qu'un onglet du dashboard reste ouvert) — sert à dériver
+  // un statut "En ligne / Récemment / Hors ligne" pour les indicateurs de présence de la
+  // messagerie (cf. presenceStatus, messages-data.ts). Volontairement PAS mis à jour par
+  // getCurrentUser() lui-même (mémoïsé par requête, cf. src/lib/auth.ts, et appelé en interne
+  // par de nombreuses actions sur une même page — y écrire multiplierait les écritures Mongo par
+  // requête) : seul un battement explicite et peu fréquent le fait.
+  lastActiveAt           DateTime?
   // Types de Notification (ex: "INCIDENT", "APPOINTMENT") que l'utilisateur a
   // désactivés depuis Paramètres > Notifications. Vide = tout est affiché.
   mutedNotificationTypes String[] @default([])
@@ -171,6 +182,7 @@ model User {
   auditLogs                    AuditLog[]
   messagesSent                 Message[]                 @relation("Sender")
   conversations                ConversationParticipant[]
+  channelsCreated               Conversation[]            @relation("ConversationCreatedBy")
   notifications                Notification[]
   pushSubscriptions             PushSubscription[]
   aiConversations              AIConversation[]
@@ -252,6 +264,9 @@ model Patient {
 
   consultationDrafts ConsultationDraft[]
   pregnancies        Pregnancy[]
+  // Dossier partagé dans un fil de messagerie (cf. Message.sharedPatientId) — jamais inclus par
+  // défaut nulle part, uniquement rattaché pour que Prisma connaisse l'inverse de la relation.
+  sharedInMessages   Message[]
 
   @@index([organizationId])
   @@index([organizationId, updatedAt])
@@ -569,19 +584,44 @@ model Message {
   sender         User         @relation("Sender", fields: [senderId], references: [id])
 
   content       String
+  // Vestige d'avant la refonte de la messagerie — jamais réécrit nulle part (le partage de
+  // pièces jointes a été retiré au profit du seul partage de dossier patient, cf.
+  // sharedPatientId). Gardé pour ne rien casser sur d'éventuels documents existants qui le
+  // porteraient déjà, pas pour un usage actif.
   attachmentUrl String?
-  createdAt     DateTime @default(now())
+
+  // Partage d'un dossier patient directement dans le fil — rendu comme une carte cliquable
+  // (nom, âge, lien vers le dossier) plutôt qu'un simple lien texte. Jamais de backfill : les
+  // messages existants n'en ont pas besoin, un champ optionnel absent se lit simplement null.
+  sharedPatientId String?  @db.ObjectId
+  sharedPatient   Patient? @relation(fields: [sharedPatientId], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@index([conversationId, createdAt])
 }
 
 model Conversation {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  title     String?
+  id    String  @id @default(auto()) @map("_id") @db.ObjectId
+  title String?
+
+  // "DM" (un-à-un, via ConversationParticipant comme avant) ou "CHANNEL" (par service, ex:
+  // #urgences — ouvert à tout le personnel actif de organizationId, sans ligne
+  // ConversationParticipant par membre : un canal ne doit pas avoir besoin d'être "backfillé"
+  // à chaque embauche. sendMessage/listMessagingData appliquent cette distinction pour
+  // l'autorisation de lecture/écriture (cf. src/actions/messages.ts).
+  type           String        @default("DM")
+  organizationId String?       @db.ObjectId
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  createdById    String?       @db.ObjectId
+  createdBy      User?         @relation("ConversationCreatedBy", fields: [createdById], references: [id])
+
   createdAt DateTime @default(now())
 
   participants ConversationParticipant[]
   messages     Message[]
+
+  @@index([organizationId, type])
 }
 
 model ConversationParticipant {

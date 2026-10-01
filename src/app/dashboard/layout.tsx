@@ -16,6 +16,7 @@ export const maxDuration = 60;
 
 import { OfflineBanner } from "@/components/ui/offline-banner";
 import PushNotificationsInit from "@/components/push-notifications-init";
+import PresenceHeartbeat from "@/components/presence-heartbeat";
 
 export default async function DashboardLayout({
   children,
@@ -43,6 +44,7 @@ export default async function DashboardLayout({
       {/* Main Content */}
       <main className="flex flex-1 flex-col h-full min-h-0 overflow-hidden relative z-10">
         <PushNotificationsInit />
+        {currentUser && <PresenceHeartbeat />}
         <OfflineBanner />
         <div className="flex-1 p-6 lg:p-8 flex flex-col overflow-y-auto min-h-0">
           {children}

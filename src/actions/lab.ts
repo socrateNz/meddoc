@@ -52,6 +52,12 @@ const ORDER_INCLUDE = {
   patient: { include: { user: { select: { firstName: true, lastName: true } } } },
   orderedBy: { select: { firstName: true, lastName: true } },
   sampleCollectedBy: { select: { firstName: true, lastName: true } },
+  // Rendez-vous/consultation d'origine, quand connu — permet à la liste (listLabOrders, onglet
+  // Laboratoire du dossier patient) de renvoyer vers cette consultation, comme le fait déjà le
+  // dossier médical et l'ordonnance qui en sont issus (cf. patient-detail-view.tsx). getLabOrder
+  // (détail d'une demande) le redemande avec un select plus riche, qui remplace celui-ci sans
+  // conflit (spread puis override).
+  appointment: { select: { id: true, title: true, scheduledAt: true } },
   // Statut de règlement réel (PENDING/PARTIAL/PAID) — seule source de vérité désormais pour
   // l'affichage (badge PaymentStatusBadge), plus de champ dédié sur LabOrder lui-même.
   pendingInvoice: { select: { status: true } },

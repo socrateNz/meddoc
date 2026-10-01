@@ -302,9 +302,19 @@ function SuperAdminPreview({ data }: { data: SuperAdminDashboardPreview }) {
 function RegularPreview({ data }: { data: DashboardPreview }) {
   return (
     <div className="space-y-6 pointer-events-none select-none" aria-hidden="true" inert>
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Vue d&apos;ensemble</h1>
-        <UpdatingBadge />
+      {/* Hero greeting skeleton */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 dark:border-primary/10 p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-32" />
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Vue d&apos;ensemble</h1>
+            <UpdatingBadge />
+          </div>
+          <div className="flex gap-3 shrink-0">
+            <Skeleton className="h-8 w-28 rounded-xl" />
+            <Skeleton className="h-8 w-24 rounded-xl" />
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -398,38 +408,20 @@ function RegularPreview({ data }: { data: DashboardPreview }) {
           </CardContent>
         </Card>
 
-        <Card className="col-span-3 rounded-2xl border border-violet-200/50 dark:border-violet-850/50 bg-gradient-to-b from-white/70 to-violet-50/10 dark:from-slate-900/70 dark:to-violet-950/5 backdrop-blur-md shadow-xs">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-violet-100/60 dark:border-violet-900/30 pb-4">
-            <div>
-              <CardTitle className="text-lg font-bold bg-gradient-to-r from-violet-600 to-indigo-600 dark:from-violet-400 dark:to-indigo-400 bg-clip-text text-transparent">Vigilance IA Clinique</CardTitle>
-              <CardDescription className="text-xs text-slate-500 dark:text-slate-400 mt-1">Derniers rapports préventifs Gemini.</CardDescription>
-            </div>
+        <Card className="col-span-3 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-md shadow-xs">
+          <CardHeader className="border-b border-slate-100 dark:border-slate-800/60 pb-4">
+            <CardTitle className="text-base font-bold text-slate-800 dark:text-slate-200">Accès Rapide</CardTitle>
+            <CardDescription className="text-xs mt-0.5">Raccourcis vers les fonctionnalités clés</CardDescription>
           </CardHeader>
-          <CardContent className="pt-5 space-y-4">
-            {data.aiAnalyses.length === 0 ? (
-              <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400 font-medium">
-                Aucune analyse IA générée. Lancez une analyse depuis le profil d&apos;un patient.
-              </div>
-            ) : (
-              data.aiAnalyses.map((a) => (
-                <div key={a.id} className="flex flex-col gap-2 rounded-xl border border-violet-100/40 dark:border-violet-950 bg-gradient-to-r from-violet-500/5 to-indigo-500/5 dark:from-violet-950/10 dark:to-indigo-950/10 p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-violet-850 dark:text-violet-300">
-                      {a.patient.lastName} {a.patient.firstName}
-                    </span>
-                    <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${a.riskScore > 70
-                        ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
-                        : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
-                      }`}>
-                      Risque {a.riskScore}%
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed line-clamp-3">
-                    {a.summary}
-                  </p>
+          <CardContent className="pt-4">
+            <div className="grid grid-cols-2 gap-2.5">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-xl border border-border/60 bg-card">
+                  <Skeleton className="h-9 w-9 rounded-xl" />
+                  <Skeleton className="h-3 w-16" />
                 </div>
-              ))
-            )}
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
