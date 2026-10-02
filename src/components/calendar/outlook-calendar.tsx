@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
@@ -63,6 +63,29 @@ const KIND_FILTER_GROUPS: { label: string; kinds: CalendarItemKind[]; icon: type
   { label: "Événements", kinds: ["EVENT"], icon: CalendarClock },
 ];
 
+// Les vues Jour/Semaine/Mois affichent des colonnes à largeur minimale fixe (cf.
+// calendar-time-grid.tsx) qui débordent sur un écran de téléphone étroit — la vue Agenda, en
+// cartes empilées, n'a aucune largeur fixe et reste toujours lisible. Plutôt que de risquer de
+// casser le défilement horizontal/sticky de la grille horaire sans pouvoir le vérifier dans un
+// vrai navigateur, on bascule simplement la vue par défaut sur Agenda en-dessous de 640px (seuil
+// `sm` de Tailwind) — l'utilisateur reste entièrement libre de choisir Jour/Semaine/Mois ensuite,
+// ce choix explicite n'est alors plus jamais remplacé automatiquement.
+//
+// useSyncExternalStore (plutôt qu'un useState+useEffect lisant window.innerWidth) pour la même
+// raison que useIsOffline.ts : évite un setState synchrone dans un effet juste pour lire une
+// valeur absente côté serveur (react-hooks/set-state-in-effect) — l'instantané serveur vaut
+// "large écran", jusqu'à ce que l'hydratation resynchronise sur la vraie largeur.
+function subscribeNarrowScreen(callback: () => void) {
+  window.addEventListener("resize", callback);
+  return () => window.removeEventListener("resize", callback);
+}
+function getNarrowScreenSnapshot() {
+  return window.innerWidth < 640;
+}
+function getNarrowScreenServerSnapshot() {
+  return false;
+}
+
 export default function OutlookCalendar({
   initialItems,
   patients,
@@ -70,11 +93,17 @@ export default function OutlookCalendar({
   staffUsers,
 }: OutlookCalendarProps) {
   const router = useRouter();
+  const isNarrowScreen = useSyncExternalStore(subscribeNarrowScreen, getNarrowScreenSnapshot, getNarrowScreenServerSnapshot);
 
   // Navigation & View state
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [viewMode, setViewMode] = useState<CalendarViewMode>("week");
+  // null = pas encore de choix explicite de l'utilisateur : la vue effective suit alors
+  // isNarrowScreen (Agenda sur téléphone, Semaine sinon) — cf. commentaire sur
+  // getNarrowScreenSnapshot plus haut. Dès qu'il clique un onglet de vue, ce choix devient fixe.
+  const [manualViewMode, setManualViewMode] = useState<CalendarViewMode | null>(null);
+  const viewMode = manualViewMode ?? (isNarrowScreen ? "agenda" : "week");
+  const setViewMode = setManualViewMode;
 
   // Filtering & Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -429,12 +458,14 @@ export default function OutlookCalendar({
             )}
           </Button>
 
-          {/* Outlook View Switcher Pills */}
-          <div className="flex items-center p-1 rounded-xl bg-muted/40 border border-border/60">
+          {/* Outlook View Switcher Pills — overflow-x-auto (pas de sticky/scroll imbriqué ici,
+              contrairement à la grille horaire : aucun risque à faire défiler ce petit groupe de
+              boutons si les 5 libellés français ne tiennent pas sur un très petit écran). */}
+          <div className="flex items-center p-1 rounded-xl bg-muted/40 border border-border/60 overflow-x-auto max-w-full">
             <button
               type="button"
               onClick={() => setViewMode("day")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+              className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                 viewMode === "day"
                   ? "bg-background text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -445,7 +476,7 @@ export default function OutlookCalendar({
             <button
               type="button"
               onClick={() => setViewMode("workWeek")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+              className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                 viewMode === "workWeek"
                   ? "bg-background text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -456,7 +487,7 @@ export default function OutlookCalendar({
             <button
               type="button"
               onClick={() => setViewMode("week")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+              className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                 viewMode === "week"
                   ? "bg-background text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -467,7 +498,7 @@ export default function OutlookCalendar({
             <button
               type="button"
               onClick={() => setViewMode("month")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+              className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                 viewMode === "month"
                   ? "bg-background text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
@@ -478,7 +509,7 @@ export default function OutlookCalendar({
             <button
               type="button"
               onClick={() => setViewMode("agenda")}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+              className={`shrink-0 whitespace-nowrap px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                 viewMode === "agenda"
                   ? "bg-background text-foreground shadow-xs font-semibold"
                   : "text-muted-foreground hover:text-foreground"
