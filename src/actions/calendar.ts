@@ -36,34 +36,42 @@ const SHIFT_MANAGE_ROLES = ["COORDINATOR"];
 // l'exploration : getOrgScopeWhere (src/lib/org-scope.ts) est typé Prisma.PatientWhereInput et
 // quasi jamais réutilisé ailleurs ; la convention établie dans ce code est de dupliquer ce filtre
 // par fichier plutôt que de forcer un type générique commun entre modèles différents.
-function patientOrgFilter(user: CurrentUser): Prisma.PatientWhereInput {
-  if (user.organization?.type === "HOLDING") {
-    return { OR: [{ organizationId: user.organizationId }, { organization: { parentId: user.organizationId } }] };
-  }
-  if (user.organization?.type === "CLINIC") {
-    return { organizationId: user.organizationId };
-  }
-  return { organizationId: { in: [] } };
+//
+// `clinicId` (passé par la page clinics/[id]/appointments) RESTREINT la requête à cette seule
+// clinique PLUTÔT que de se contenter de construire des liens avec — sans lui, un ADMIN/
+// COORDINATOR de holding verrait l'agrégat de TOUTES ses cliniques même sur la page d'une
+// clinique précise (bug de périmètre, pas de sécurité : src/app/dashboard/clinics/[id]/layout.tsx
+// vérifie déjà que ce clinicId appartient bien à l'utilisateur avant que la page ne s'exécute).
+// Intersecté (AND) avec le périmètre normal de l'utilisateur plutôt qu'appliqué seul, pour ne
+// jamais élargir l'accès au-delà de ce périmètre.
+function patientOrgFilter(user: CurrentUser, clinicId?: string): Prisma.PatientWhereInput {
+  const base: Prisma.PatientWhereInput =
+    user.organization?.type === "HOLDING"
+      ? { OR: [{ organizationId: user.organizationId }, { organization: { parentId: user.organizationId } }] }
+      : user.organization?.type === "CLINIC"
+        ? { organizationId: user.organizationId }
+        : { organizationId: { in: [] } };
+  return clinicId ? { AND: [base, { organizationId: clinicId }] } : base;
 }
 
-function userOrgFilter(user: CurrentUser): Prisma.UserWhereInput {
-  if (user.organization?.type === "HOLDING") {
-    return { OR: [{ organizationId: user.organizationId }, { organization: { parentId: user.organizationId } }] };
-  }
-  if (user.organization?.type === "CLINIC") {
-    return { organizationId: user.organizationId };
-  }
-  return { organizationId: { in: [] } };
+function userOrgFilter(user: CurrentUser, clinicId?: string): Prisma.UserWhereInput {
+  const base: Prisma.UserWhereInput =
+    user.organization?.type === "HOLDING"
+      ? { OR: [{ organizationId: user.organizationId }, { organization: { parentId: user.organizationId } }] }
+      : user.organization?.type === "CLINIC"
+        ? { organizationId: user.organizationId }
+        : { organizationId: { in: [] } };
+  return clinicId ? { AND: [base, { organizationId: clinicId }] } : base;
 }
 
-function stockPurchaseOrgFilter(user: CurrentUser): Prisma.StockPurchaseWhereInput {
-  if (user.organization?.type === "HOLDING") {
-    return { OR: [{ organizationId: user.organizationId }, { organization: { parentId: user.organizationId } }] };
-  }
-  if (user.organization?.type === "CLINIC") {
-    return { organizationId: user.organizationId };
-  }
-  return { organizationId: { in: [] } };
+function stockPurchaseOrgFilter(user: CurrentUser, clinicId?: string): Prisma.StockPurchaseWhereInput {
+  const base: Prisma.StockPurchaseWhereInput =
+    user.organization?.type === "HOLDING"
+      ? { OR: [{ organizationId: user.organizationId }, { organization: { parentId: user.organizationId } }] }
+      : user.organization?.type === "CLINIC"
+        ? { organizationId: user.organizationId }
+        : { organizationId: { in: [] } };
+  return clinicId ? { AND: [base, { organizationId: clinicId }] } : base;
 }
 
 function clinicPath(clinicId: string | undefined, suffix: string) {
@@ -216,7 +224,7 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
     const [appointments, shifts, events, careTasks, contracts, stockLots] = await Promise.all([
       canSeeAppointmentsAndTasks
         ? prisma.appointment.findMany({
-            where: { patient: patientOrgFilter(user), ...(isOrgWideReader ? {} : mineOrUnassignedAppointment) },
+            where: { patient: patientOrgFilter(user, clinicId), ...(isOrgWideReader ? {} : mineOrUnassignedAppointment) },
             include: { patient: { include: { user: true } }, caregiver: { include: { user: true } } },
             orderBy: { scheduledAt: "asc" },
             take: 500,
@@ -224,13 +232,15 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
         : Promise.resolve([] as AppointmentRow[]),
 
       prisma.shift.findMany({
-        where: isOrgWideReader ? { user: userOrgFilter(user) } : { userId: user.id },
+        where: { user: userOrgFilter(user, clinicId), ...(isOrgWideReader ? {} : { userId: user.id }) },
         include: { user: true },
         orderBy: { startAt: "asc" },
         take: 500,
       }),
 
       // Toujours restreint au créateur, quel que soit le rôle — jamais d'exception COORDINATOR.
+      // Pas de filtre clinicId ici non plus : un événement personnel n'appartient à aucune
+      // clinique en particulier, il suit son créateur partout où il navigue.
       prisma.calendarEvent.findMany({
         where: { userId: user.id },
         orderBy: { startAt: "asc" },
@@ -241,7 +251,7 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
         ? prisma.careTask.findMany({
             where: {
               status: "PENDING",
-              carePlan: { patient: patientOrgFilter(user) },
+              carePlan: { patient: patientOrgFilter(user, clinicId) },
               ...(isOrgWideReader ? {} : mineOrUnassignedCareTask),
             },
             include: {
@@ -255,7 +265,7 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
 
       CONTRACT_DEADLINE_ROLES.includes(user.role)
         ? prisma.contract.findMany({
-            where: { patient: patientOrgFilter(user), endDate: { not: null } },
+            where: { patient: patientOrgFilter(user, clinicId), endDate: { not: null } },
             include: { patient: { include: { user: true } }, caregiver: { include: { user: true } } },
             orderBy: { endDate: "asc" },
             take: 300,
@@ -267,7 +277,7 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
       // lot avec une échéance distincte est une ligne de calendrier séparée (cf. plan).
       STOCK_EXPIRY_ROLES.includes(user.role)
         ? prisma.stockPurchase.findMany({
-            where: { ...stockPurchaseOrgFilter(user), remainingQuantity: { gt: 0 }, expiryDate: { gte: now, lte: in90Days } },
+            where: { ...stockPurchaseOrgFilter(user, clinicId), remainingQuantity: { gt: 0 }, expiryDate: { gte: now, lte: in90Days } },
             include: { pharmacyItem: true },
             orderBy: { expiryDate: "asc" },
             take: 300,

@@ -96,8 +96,10 @@ describe("getCalendarItems — routage par rôle", () => {
     // Hors de CONTRACT_DEADLINE_ROLES / STOCK_EXPIRY_ROLES : jamais interrogés du tout.
     expect(mocks.contractFindMany).not.toHaveBeenCalled();
     expect(mocks.stockPurchaseFindMany).not.toHaveBeenCalled();
-    // Gardes/événements : toujours scopés à soi-même pour un rôle non org-wide.
-    expect(mocks.shiftFindMany.mock.calls[0][0].where).toEqual({ userId: "user1" });
+    // Gardes/événements : toujours scopés à soi-même pour un rôle non org-wide (le filtre `user`
+    // reste présent même sans clinicId — c'est l'intersection avec celui-ci qui, elle, s'ajoute
+    // uniquement quand clinicId est fourni, cf. userOrgFilter dans calendar.ts).
+    expect(mocks.shiftFindMany.mock.calls[0][0].where).toEqual({ user: { organizationId: "org1" }, userId: "user1" });
     expect(mocks.calendarEventFindMany.mock.calls[0][0].where).toEqual({ userId: "user1" });
   });
 
@@ -112,7 +114,7 @@ describe("getCalendarItems — routage par rôle", () => {
     expect(mocks.careTaskFindMany).not.toHaveBeenCalled();
     expect(mocks.contractFindMany).not.toHaveBeenCalled();
     expect(mocks.stockPurchaseFindMany).toHaveBeenCalled();
-    expect(mocks.shiftFindMany.mock.calls[0][0].where).toEqual({ userId: "user1" });
+    expect(mocks.shiftFindMany.mock.calls[0][0].where).toEqual({ user: { organizationId: "org1" }, userId: "user1" });
   });
 
   it("CASHIER : uniquement ses propres gardes/événements, aucune des 4 autres sources interrogée", async () => {
@@ -141,6 +143,25 @@ describe("getCalendarItems — routage par rôle", () => {
     expect(mocks.appointmentFindMany).not.toHaveBeenCalled();
     expect(mocks.shiftFindMany).not.toHaveBeenCalled();
     expect(mocks.calendarEventFindMany).not.toHaveBeenCalled();
+  });
+
+  it("clinicId restreint la vue org-wide d'un COORDINATOR/ADMIN de holding à cette seule clinique (intersection, pas juste un lien)", async () => {
+    const mocks = mockDb();
+    mockAuth(baseUser({ role: "COORDINATOR", organization: { type: "HOLDING" } }));
+
+    const { getCalendarItems } = await import("./calendar");
+    await getCalendarItems({ clinicId: "clinicB" });
+
+    const apptWhere = mocks.appointmentFindMany.mock.calls[0][0].where as { patient: { AND: unknown[] } };
+    expect(apptWhere.patient.AND).toEqual([
+      { OR: [{ organizationId: "org1" }, { organization: { parentId: "org1" } }] },
+      { organizationId: "clinicB" },
+    ]);
+    const shiftWhere = mocks.shiftFindMany.mock.calls[0][0].where as { user: { AND: unknown[] } };
+    expect(shiftWhere.user.AND).toEqual([
+      { OR: [{ organizationId: "org1" }, { organization: { parentId: "org1" } }] },
+      { organizationId: "clinicB" },
+    ]);
   });
 
   it("une garde n'est éditable que pour COORDINATOR, jamais pour son simple affecté", async () => {

@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import CacheWriter from "@/components/cache-writer";
 import OutlookCalendar from "@/components/calendar/outlook-calendar";
+import { getCalendarItems } from "@/actions/calendar";
 
 type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
   include: {
@@ -22,30 +25,21 @@ export default async function ClinicAppointmentsPage({ params }: PageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
 
+  // clinics/[id]/layout.tsx a déjà vérifié que clinicId appartient bien à l'utilisateur courant
+  // avant que cette page ne s'exécute — ce qui suit n'est donc pas un contrôle d'accès, juste la
+  // résolution de l'utilisateur nécessaire à getCalendarItems() pour appliquer sa matrice de
+  // visibilité par rôle (mien ou non affecté / org-wide).
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    redirect("/login");
+  }
+
   // Utilisé par CacheWriter/loading.tsx pour l'aperçu instantané au prochain chargement —
   // cf. plan « Affichage instantané depuis un cache local ».
   const cachedAt = new Date().toISOString();
 
-  const [appointments, patients, caregivers] = await Promise.all([
-    prisma.appointment.findMany({
-      where: {
-        patient: {
-          organizationId: clinicId,
-        },
-      },
-      include: {
-        patient: {
-          include: { user: true },
-        },
-        caregiver: {
-          include: { user: true },
-        },
-      },
-      orderBy: {
-        scheduledAt: "asc",
-      },
-      take: 500,
-    }),
+  const [calendarRes, patients, caregivers, staffUsers] = await Promise.all([
+    getCalendarItems({ clinicId }),
     prisma.patient.findMany({
       where: {
         organizationId: clinicId,
@@ -70,21 +64,34 @@ export default async function ClinicAppointmentsPage({ params }: PageProps) {
         },
       },
     }),
+    prisma.user.findMany({
+      where: { organizationId: clinicId, isActive: true, role: { in: ["COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"] } },
+      select: { id: true, firstName: true, lastName: true, role: true },
+      orderBy: { lastName: "asc" },
+    }),
   ]);
+
+  const items = calendarRes.success ? calendarRes.data! : [];
+  // Conservé pour CacheWriter ci-dessous (aperçu instantané), dérivé depuis item.raw plutôt que
+  // de refaire une requête Appointment séparée (cf. src/actions/calendar.ts).
+  const appointments = items
+    .filter((i) => i.kind === "APPOINTMENT")
+    .map((i) => i.raw as AppointmentWithRelations);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Calendrier</h1>
         <p className="text-muted-foreground text-sm">
-          Calendrier et gestion des consultations cliniques pour cet établissement.
+          Rendez-vous, gardes, tâches de soins et échéances pour cet établissement.
         </p>
       </div>
 
       <OutlookCalendar
-        initialAppointments={appointments as any}
-        patients={patients as any}
-        caregivers={caregivers as any}
+        initialItems={items}
+        patients={patients}
+        caregivers={caregivers}
+        staffUsers={staffUsers}
       />
 
       <CacheWriter

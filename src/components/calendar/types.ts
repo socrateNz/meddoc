@@ -19,6 +19,16 @@ export interface AppointmentCaregiver {
   };
 }
 
+// Pour le sélecteur d'affecté du dialogue de garde (new-shift-dialog.tsx) : Shift.userId pointe
+// vers n'importe quel rôle de staff (pas seulement Caregiver), donc un User directement plutôt
+// qu'un AppointmentCaregiver.
+export interface StaffUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
 export interface CalendarAppointment {
   id: string;
   patientId: string;

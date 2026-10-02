@@ -5,7 +5,6 @@ import { Prisma } from "@prisma/client";
 import CacheWriter from "@/components/cache-writer";
 import OutlookCalendar from "@/components/calendar/outlook-calendar";
 import { getCalendarItems } from "@/actions/calendar";
-import type { CalendarAppointment } from "@/components/calendar/types";
 
 type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
   include: {
@@ -57,7 +56,7 @@ export default async function AppointmentsPage() {
     userOrgFilter.organizationId = { in: [] };
   }
 
-  const [calendarRes, patients, caregivers] = await Promise.all([
+  const [calendarRes, patients, caregivers, staffUsers] = await Promise.all([
     getCalendarItems(),
     prisma.patient.findMany({
       where: patientOrgFilter,
@@ -77,12 +76,18 @@ export default async function AppointmentsPage() {
         },
       },
     }),
+    // Plus large que `caregivers` : le sélecteur d'affecté du dialogue de garde (Shift.userId)
+    // couvre n'importe quel rôle de staff, pas seulement MEDECIN/CAREGIVER.
+    prisma.user.findMany({
+      where: { ...userOrgFilter, isActive: true, role: { in: ["COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"] } },
+      select: { id: true, firstName: true, lastName: true, role: true },
+      orderBy: { lastName: "asc" },
+    }),
   ]);
 
   const items = calendarRes.success ? calendarRes.data! : [];
-  // Étape transitoire (cf. plan « Calendrier unifié ») : OutlookCalendar ne comprend encore que
-  // CalendarAppointment — on dérive la liste d'origine depuis item.raw plutôt que de refaire une
-  // requête Appointment séparée. La vue se généralisera à CalendarItem[] à l'étape suivante.
+  // Conservé pour CacheWriter ci-dessous (aperçu instantané), dérivé depuis item.raw plutôt que
+  // de refaire une requête Appointment séparée (cf. src/actions/calendar.ts).
   const appointments = items
     .filter((i) => i.kind === "APPOINTMENT")
     .map((i) => i.raw as AppointmentWithRelations);
@@ -92,14 +97,15 @@ export default async function AppointmentsPage() {
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-bold tracking-tight">Calendrier</h1>
         <p className="text-muted-foreground text-sm">
-          Planifiez, organisez et suivez les consultations et interventions médicales en vue calendrier Outlook.
+          Rendez-vous, gardes, tâches de soins et échéances en un seul calendrier.
         </p>
       </div>
 
       <OutlookCalendar
-        initialAppointments={appointments as unknown as CalendarAppointment[]}
+        initialItems={items}
         patients={patients}
         caregivers={caregivers}
+        staffUsers={staffUsers}
       />
 
       <CacheWriter

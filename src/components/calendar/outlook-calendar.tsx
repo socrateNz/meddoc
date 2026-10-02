@@ -3,29 +3,31 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Calendar as CalendarIcon,
-  CalendarRange,
   ChevronLeft,
   ChevronRight,
   Plus,
+  ChevronDown,
   Search,
   SlidersHorizontal,
-  Briefcase,
-  ListFilter,
   X,
-  Stethoscope,
-  Filter,
   Check,
+  Briefcase,
+  CalendarClock,
+  ClipboardList,
+  FileWarning,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   CalendarAppointment,
+  CalendarItem,
+  CalendarItemKind,
   CalendarViewMode,
   AppointmentCaregiver,
   AppointmentPatient,
+  StaffUser,
   getCaregiverColor,
 } from "./types";
 import {
@@ -33,7 +35,6 @@ import {
   startOfWeek,
   endOfWeek,
   formatMonthYear,
-  isSameDay,
 } from "./date-utils";
 import MiniCalendar from "./mini-calendar";
 import CalendarTimeGrid from "./calendar-time-grid";
@@ -41,17 +42,32 @@ import CalendarMonthGrid from "./calendar-month-grid";
 import CalendarAgendaView from "./calendar-agenda-view";
 import NewAppointmentModal from "./new-appointment-modal";
 import AppointmentDetailDialog from "./appointment-detail-dialog";
+import NewShiftDialog, { ShiftRecord } from "./new-shift-dialog";
+import NewEventDialog, { CalendarEventRecord } from "./new-event-dialog";
 
 interface OutlookCalendarProps {
-  initialAppointments: CalendarAppointment[];
+  initialItems: CalendarItem[];
   patients: AppointmentPatient[];
   caregivers: AppointmentCaregiver[];
+  staffUsers: StaffUser[];
 }
 
+// Un groupe par case à cocher plutôt qu'un kind par case : "Échéances" couvre à la fois
+// CONTRACT_DEADLINE et STOCK_EXPIRY (deux lectures en lecture seule, jamais créées depuis ce
+// calendrier) sous un seul intitulé, cf. plan « Calendrier unifié ».
+const KIND_FILTER_GROUPS: { label: string; kinds: CalendarItemKind[]; icon: typeof Briefcase }[] = [
+  { label: "Rendez-vous", kinds: ["APPOINTMENT"], icon: ClipboardList },
+  { label: "Gardes", kinds: ["SHIFT"], icon: Briefcase },
+  { label: "Tâches de soins", kinds: ["CARE_TASK"], icon: ClipboardList },
+  { label: "Échéances", kinds: ["CONTRACT_DEADLINE", "STOCK_EXPIRY"], icon: FileWarning },
+  { label: "Événements", kinds: ["EVENT"], icon: CalendarClock },
+];
+
 export default function OutlookCalendar({
-  initialAppointments,
+  initialItems,
   patients,
   caregivers,
+  staffUsers,
 }: OutlookCalendarProps) {
   const router = useRouter();
 
@@ -65,15 +81,21 @@ export default function OutlookCalendar({
   const [selectedCaregiverIds, setSelectedCaregiverIds] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedType, setSelectedType] = useState<string>("");
+  const [selectedKinds, setSelectedKinds] = useState<CalendarItemKind[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Modals state
+  // Modals state — rendez-vous
   const [newModalOpen, setNewModalOpen] = useState(false);
-  const [newModalPrefill, setNewModalPrefill] = useState<{
-    date?: string;
-    time?: string;
-  }>({});
+  const [newModalPrefill, setNewModalPrefill] = useState<{ date?: string; time?: string }>({});
   const [selectedAppointment, setSelectedAppointment] = useState<CalendarAppointment | null>(null);
+
+  // Modals state — gardes
+  const [shiftModalOpen, setShiftModalOpen] = useState(false);
+  const [editingShift, setEditingShift] = useState<ShiftRecord | null>(null);
+
+  // Modals state — événements libres
+  const [eventModalOpen, setEventModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEventRecord | null>(null);
 
   // Date Navigation handlers
   const handleToday = () => {
@@ -165,46 +187,57 @@ export default function OutlookCalendar({
     );
   };
 
-  // Filtered Appointments
-  const filteredAppointments = useMemo(() => {
-    return initialAppointments.filter((apt) => {
-      // Search text query
+  // Kind group toggle — ajoute/retire TOUS les kinds du groupe ensemble (cf. KIND_FILTER_GROUPS).
+  const toggleKindGroup = (kinds: CalendarItemKind[]) => {
+    setSelectedKinds((prev) => {
+      const allActive = kinds.every((k) => prev.includes(k));
+      if (allActive) return prev.filter((k) => !kinds.includes(k));
+      return [...new Set([...prev, ...kinds])];
+    });
+  };
+
+  // Filtered Items
+  const filteredItems = useMemo(() => {
+    return initialItems.filter((item) => {
+      // Filtre par type d'élément (Rendez-vous/Gardes/Tâches/Échéances/Événements)
+      if (selectedKinds.length > 0 && !selectedKinds.includes(item.kind)) {
+        return false;
+      }
+
+      // Recherche texte — titre/sous-titre pour tous les types, + le type d'acte pour un rendez-vous
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const patientName = `${apt.patient.user.lastName} ${apt.patient.user.firstName}`.toLowerCase();
-        const caregiverName = apt.caregiver ? `${apt.caregiver.user.lastName} ${apt.caregiver.user.firstName}`.toLowerCase() : "";
-        const title = (apt.title || "").toLowerCase();
-        const type = (apt.type || "").toLowerCase();
-
-        if (!patientName.includes(q) && !caregiverName.includes(q) && !title.includes(q) && !type.includes(q)) {
+        const title = item.title.toLowerCase();
+        const subtitle = (item.subtitle || "").toLowerCase();
+        const aptType = item.kind === "APPOINTMENT" ? ((item.raw as CalendarAppointment).type || "").toLowerCase() : "";
+        if (!title.includes(q) && !subtitle.includes(q) && !aptType.includes(q)) {
           return false;
         }
       }
 
-      // Caregiver filter
-      if (selectedCaregiverIds.length > 0) {
-        if (!apt.caregiverId || !selectedCaregiverIds.includes(apt.caregiverId)) {
+      // Les filtres soignant/statut/type ne s'appliquent qu'aux rendez-vous — les autres types
+      // n'ont pas d'équivalent et restent toujours visibles indépendamment de ces filtres.
+      if (item.kind === "APPOINTMENT") {
+        const apt = item.raw as CalendarAppointment;
+        if (selectedCaregiverIds.length > 0) {
+          if (!apt.caregiverId || !selectedCaregiverIds.includes(apt.caregiverId)) {
+            return false;
+          }
+        }
+        if (selectedStatuses.length > 0 && !selectedStatuses.includes(apt.status)) {
           return false;
         }
-      }
-
-      // Status filter
-      if (selectedStatuses.length > 0) {
-        if (!selectedStatuses.includes(apt.status)) {
+        if (selectedType && apt.type !== selectedType) {
           return false;
         }
-      }
-
-      // Type filter
-      if (selectedType && apt.type !== selectedType) {
-        return false;
       }
 
       return true;
     });
-  }, [initialAppointments, searchQuery, selectedCaregiverIds, selectedStatuses, selectedType]);
+  }, [initialItems, searchQuery, selectedCaregiverIds, selectedStatuses, selectedType, selectedKinds]);
 
-  // Handle Slot Click -> Pre-fill modal
+  // Handle Slot Click -> Pre-fill rendez-vous (action par défaut d'un clic sur un créneau vide ;
+  // les gardes/événements se créent via le bouton "+ Nouveau", qui laisse choisir le type).
   const handleSlotClick = (date: Date, hour: number) => {
     const dateStr = date.toISOString().split("T")[0];
     const timeStr = `${String(hour).padStart(2, "0")}:00`;
@@ -230,27 +263,91 @@ export default function OutlookCalendar({
     router.refresh();
   };
 
+  // Dispatch du clic selon le type d'élément — seuls rendez-vous/gardes/événements ouvrent un
+  // dialogue ici (modifiables depuis ce calendrier) ; les échéances en lecture seule
+  // (tâches/contrats/stock) renvoient vers la page où elles sont réellement gérées.
+  const handleSelectItem = (item: CalendarItem) => {
+    if (item.kind === "APPOINTMENT") {
+      setSelectedAppointment(item.raw as CalendarAppointment);
+    } else if (item.kind === "SHIFT") {
+      setEditingShift(item.raw as ShiftRecord);
+      setShiftModalOpen(true);
+    } else if (item.kind === "EVENT") {
+      setEditingEvent(item.raw as CalendarEventRecord);
+      setEventModalOpen(true);
+    } else if (item.href) {
+      router.push(item.href);
+    }
+  };
+
   const hasActiveFilters =
     searchQuery.trim() !== "" ||
     selectedCaregiverIds.length > 0 ||
     selectedStatuses.length > 0 ||
-    selectedType !== "";
+    selectedType !== "" ||
+    selectedKinds.length > 0;
 
   const clearFilters = () => {
     setSearchQuery("");
     setSelectedCaregiverIds([]);
     setSelectedStatuses([]);
     setSelectedType("");
+    setSelectedKinds([]);
   };
 
   // Unique types from all appointments
   const allTypes = useMemo(() => {
     const typesSet = new Set<string>();
-    initialAppointments.forEach((a) => {
-      if (a.type) typesSet.add(a.type);
+    initialItems.forEach((i) => {
+      if (i.kind === "APPOINTMENT") {
+        const type = (i.raw as CalendarAppointment).type;
+        if (type) typesSet.add(type);
+      }
     });
     return Array.from(typesSet);
-  }, [initialAppointments]);
+  }, [initialItems]);
+
+  // Menu "+ Nouveau" partagé par les deux emplacements (barre du haut + panneau latéral) — un
+  // seul point d'entrée pour choisir entre rendez-vous/garde/événement, plutôt qu'un choix
+  // déclenché par le clic sur un créneau (plus simple à câbler sur les 3 vues de grille).
+  const newItemMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button className="h-9 gap-1.5 text-xs font-semibold shadow-sm" />}>
+        <Plus className="h-4 w-4" />
+        <span className="hidden sm:inline">Nouveau</span>
+        <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => {
+            setNewModalPrefill({});
+            setNewModalOpen(true);
+          }}
+        >
+          <ClipboardList className="h-4 w-4" />
+          Rendez-vous
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            setEditingShift(null);
+            setShiftModalOpen(true);
+          }}
+        >
+          <Briefcase className="h-4 w-4" />
+          Garde
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            setEditingEvent(null);
+            setEventModalOpen(true);
+          }}
+        >
+          <CalendarClock className="h-4 w-4" />
+          Événement
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -265,7 +362,7 @@ export default function OutlookCalendar({
             onClick={handleToday}
             className="font-semibold text-xs h-9 px-3 hover:bg-muted/80"
           >
-            Aujourd'hui
+            Aujourd&apos;hui
           </Button>
 
           {/* Chevrons */}
@@ -391,18 +488,7 @@ export default function OutlookCalendar({
             </button>
           </div>
 
-          {/* + Nouveau rendez-vous Button */}
-          <Button
-            onClick={() => {
-              setNewModalPrefill({});
-              setNewModalOpen(true);
-            }}
-            className="h-9 gap-1.5 text-xs font-semibold shadow-sm"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Nouveau rendez-vous</span>
-            <span className="sm:hidden">Nouveau</span>
-          </Button>
+          {newItemMenu}
         </div>
       </div>
 
@@ -415,26 +501,38 @@ export default function OutlookCalendar({
             ${sidebarOpen ? "block" : "hidden lg:block"}
           `}
         >
-          {/* Quick Plan Button */}
-          <Button
-            onClick={() => {
-              setNewModalPrefill({});
-              setNewModalOpen(true);
-            }}
-            variant="default"
-            className="w-full gap-2 font-semibold shadow-xs"
-          >
-            <Plus className="h-4 w-4" />
-            Nouveau rendez-vous
-          </Button>
+          {/* Quick Plan Menu */}
+          <div className="[&>button]:w-full">{newItemMenu}</div>
 
           {/* Outlook Mini Calendar */}
           <div className="pt-2 border-t border-border/60">
             <MiniCalendar
               selectedDate={selectedDate}
               onSelectDate={handleSelectMiniDate}
-              appointments={initialAppointments}
+              items={initialItems}
             />
+          </div>
+
+          {/* Type d'élément (Rendez-vous/Gardes/Tâches/Échéances/Événements) */}
+          <div className="space-y-2 pt-3 border-t border-border/60">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Afficher
+            </span>
+            <div className="space-y-1">
+              {KIND_FILTER_GROUPS.map(({ label, kinds, icon: Icon }) => {
+                const active = selectedKinds.length === 0 || kinds.some((k) => selectedKinds.includes(k));
+                return (
+                  <label
+                    key={label}
+                    className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted/40 cursor-pointer select-none text-xs transition-colors"
+                  >
+                    <Checkbox checked={active} onCheckedChange={() => toggleKindGroup(kinds)} className="rounded" />
+                    <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <span className="truncate text-foreground font-medium flex-1">{label}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
           {/* Praticiens / Soignants Checkboxes (Outlook Calendars style) */}
@@ -516,7 +614,7 @@ export default function OutlookCalendar({
           {allTypes.length > 0 && (
             <div className="space-y-2 pt-3 border-t border-border/60">
               <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                Type d'intervention
+                Type d&apos;intervention
               </span>
               <div className="flex flex-wrap gap-1">
                 {allTypes.map((t) => (
@@ -558,8 +656,8 @@ export default function OutlookCalendar({
           {viewMode === "day" && (
             <CalendarTimeGrid
               days={[selectedDate]}
-              appointments={filteredAppointments}
-              onSelectAppointment={(apt) => setSelectedAppointment(apt)}
+              items={filteredItems}
+              onSelectItem={handleSelectItem}
               onSlotClick={handleSlotClick}
               selectedDate={selectedDate}
               onSelectDate={setSelectedDate}
@@ -569,8 +667,8 @@ export default function OutlookCalendar({
           {viewMode === "workWeek" && (
             <CalendarTimeGrid
               days={getDaysInWeek(currentDate, true)}
-              appointments={filteredAppointments}
-              onSelectAppointment={(apt) => setSelectedAppointment(apt)}
+              items={filteredItems}
+              onSelectItem={handleSelectItem}
               onSlotClick={handleSlotClick}
               selectedDate={selectedDate}
               onSelectDate={setSelectedDate}
@@ -580,8 +678,8 @@ export default function OutlookCalendar({
           {viewMode === "week" && (
             <CalendarTimeGrid
               days={getDaysInWeek(currentDate, false)}
-              appointments={filteredAppointments}
-              onSelectAppointment={(apt) => setSelectedAppointment(apt)}
+              items={filteredItems}
+              onSelectItem={handleSelectItem}
               onSlotClick={handleSlotClick}
               selectedDate={selectedDate}
               onSelectDate={setSelectedDate}
@@ -591,8 +689,8 @@ export default function OutlookCalendar({
           {viewMode === "month" && (
             <CalendarMonthGrid
               currentDate={currentDate}
-              appointments={filteredAppointments}
-              onSelectAppointment={(apt) => setSelectedAppointment(apt)}
+              items={filteredItems}
+              onSelectItem={handleSelectItem}
               onDayClick={handleDayClick}
               selectedDate={selectedDate}
             />
@@ -600,8 +698,8 @@ export default function OutlookCalendar({
 
           {viewMode === "agenda" && (
             <CalendarAgendaView
-              appointments={filteredAppointments}
-              onSelectAppointment={(apt) => setSelectedAppointment(apt)}
+              items={filteredItems}
+              onSelectItem={handleSelectItem}
               selectedDate={selectedDate}
             />
           )}
@@ -625,6 +723,29 @@ export default function OutlookCalendar({
         open={!!selectedAppointment}
         onOpenChange={(open) => !open && setSelectedAppointment(null)}
         caregivers={caregivers}
+        onSuccess={handleRefresh}
+      />
+
+      {/* 5. Shift Dialog (création + édition) */}
+      <NewShiftDialog
+        open={shiftModalOpen}
+        onOpenChange={(open) => {
+          setShiftModalOpen(open);
+          if (!open) setEditingShift(null);
+        }}
+        staffUsers={staffUsers}
+        shift={editingShift}
+        onSuccess={handleRefresh}
+      />
+
+      {/* 6. Événement libre (création + édition) */}
+      <NewEventDialog
+        open={eventModalOpen}
+        onOpenChange={(open) => {
+          setEventModalOpen(open);
+          if (!open) setEditingEvent(null);
+        }}
+        event={editingEvent}
         onSuccess={handleRefresh}
       />
     </div>

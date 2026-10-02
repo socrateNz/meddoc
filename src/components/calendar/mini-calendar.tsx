@@ -4,18 +4,18 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getMonthDays, isSameDay, isToday, isSameMonth } from "./date-utils";
-import { CalendarAppointment } from "./types";
+import { CalendarItem } from "./types";
 
 interface MiniCalendarProps {
   selectedDate: Date;
   onSelectDate: (date: Date) => void;
-  appointments: CalendarAppointment[];
+  items: CalendarItem[];
 }
 
 export default function MiniCalendar({
   selectedDate,
   onSelectDate,
-  appointments,
+  items,
 }: MiniCalendarProps) {
   // Current view month in the mini calendar (can navigate separately from selectedDate)
   const [viewDate, setViewDate] = useState<Date>(new Date(selectedDate));
@@ -90,7 +90,7 @@ export default function MiniCalendar({
           const isCurrentToday = isToday(day);
           const inCurrentMonth = isSameMonth(day, viewDate);
 
-          const hasApt = appointments.some((a) => isSameDay(a.scheduledAt, day));
+          const hasItem = items.some((i) => isSameDay(i.start, day));
 
           return (
             <button
@@ -110,7 +110,7 @@ export default function MiniCalendar({
               `}
             >
               <span>{day.getDate()}</span>
-              {hasApt && !isSelected && (
+              {hasItem && !isSelected && (
                 <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-primary/70" />
               )}
             </button>
