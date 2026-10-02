@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import CacheWriter from "@/components/cache-writer";
 import OutlookCalendar from "@/components/calendar/outlook-calendar";
+import { getCalendarItems } from "@/actions/calendar";
+import type { CalendarAppointment } from "@/components/calendar/types";
 
 type AppointmentWithRelations = Prisma.AppointmentGetPayload<{
   include: {
@@ -27,38 +29,38 @@ export default async function AppointmentsPage() {
   const cachedAt = new Date().toISOString();
 
   // Filtrage par organisation : une holding voit ses cliniques, une clinique
-  // ne voit que ses propres données (cf. src/app/dashboard/page.tsx:82-91).
-  const orgFilter: any = {};
+  // ne voit que ses propres données (cf. src/app/dashboard/page.tsx:82-91). Ne sert plus qu'aux
+  // listes patients/soignants des dialogues (rendez-vous/garde) — les rendez-vous eux-mêmes
+  // viennent maintenant de getCalendarItems (cf. src/actions/calendar.ts), qui applique sa
+  // propre matrice de visibilité par rôle (mien ou non affecté / org-wide selon le rôle).
+  // Deux variables distinctes (plutôt qu'un seul `any` partagé comme avant) : le même filtre
+  // HOLDING/CLINIC/autre s'applique directement sur Patient, mais sur Caregiver il doit être
+  // imbriqué sous `user` — deux types Prisma différents (cf. même correctif dans
+  // src/actions/calendar.ts).
+  const patientOrgFilter: Prisma.PatientWhereInput = {};
+  const userOrgFilter: Prisma.UserWhereInput = {};
   if (currentUser.organization?.type === "HOLDING") {
-    orgFilter.OR = [
+    patientOrgFilter.OR = [
+      { organizationId: currentUser.organizationId },
+      { organization: { parentId: currentUser.organizationId } },
+    ];
+    userOrgFilter.OR = [
       { organizationId: currentUser.organizationId },
       { organization: { parentId: currentUser.organizationId } },
     ];
   } else if (currentUser.organization?.type === "CLINIC") {
-    orgFilter.organizationId = currentUser.organizationId;
+    patientOrgFilter.organizationId = currentUser.organizationId;
+    userOrgFilter.organizationId = currentUser.organizationId;
   } else {
     // Tableau `in` vide : ne matche jamais, sans faire planter Prisma sur un ObjectId invalide.
-    orgFilter.organizationId = { in: [] };
+    patientOrgFilter.organizationId = { in: [] };
+    userOrgFilter.organizationId = { in: [] };
   }
 
-  const [appointments, patients, caregivers] = await Promise.all([
-    prisma.appointment.findMany({
-      where: { patient: orgFilter },
-      include: {
-        patient: {
-          include: { user: true },
-        },
-        caregiver: {
-          include: { user: true },
-        },
-      },
-      orderBy: {
-        scheduledAt: "asc",
-      },
-      take: 500,
-    }),
+  const [calendarRes, patients, caregivers] = await Promise.all([
+    getCalendarItems(),
     prisma.patient.findMany({
-      where: orgFilter,
+      where: patientOrgFilter,
       include: { user: true },
       orderBy: {
         user: {
@@ -67,7 +69,7 @@ export default async function AppointmentsPage() {
       },
     }),
     prisma.caregiver.findMany({
-      where: { user: orgFilter },
+      where: { user: userOrgFilter },
       include: { user: true },
       orderBy: {
         user: {
@@ -77,19 +79,27 @@ export default async function AppointmentsPage() {
     }),
   ]);
 
+  const items = calendarRes.success ? calendarRes.data! : [];
+  // Étape transitoire (cf. plan « Calendrier unifié ») : OutlookCalendar ne comprend encore que
+  // CalendarAppointment — on dérive la liste d'origine depuis item.raw plutôt que de refaire une
+  // requête Appointment séparée. La vue se généralisera à CalendarItem[] à l'étape suivante.
+  const appointments = items
+    .filter((i) => i.kind === "APPOINTMENT")
+    .map((i) => i.raw as AppointmentWithRelations);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-1">
-        <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Calendrier</h1>
         <p className="text-muted-foreground text-sm">
           Planifiez, organisez et suivez les consultations et interventions médicales en vue calendrier Outlook.
         </p>
       </div>
 
       <OutlookCalendar
-        initialAppointments={appointments as any}
-        patients={patients as any}
-        caregivers={caregivers as any}
+        initialAppointments={appointments as unknown as CalendarAppointment[]}
+        patients={patients}
+        caregivers={caregivers}
       />
 
       <CacheWriter

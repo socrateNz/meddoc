@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarAppointment, getCaregiverColor } from "./types";
-import { getMonthDays, isToday, isSameDay, isSameMonth, formatTime, formatDateTime } from "./date-utils";
+import { CalendarAppointment, CalendarItem, getCaregiverColor, getKindColor } from "./types";
+import { getMonthDays, isToday, isSameDay, isSameMonth, formatTime } from "./date-utils";
 import {
   Dialog,
   DialogContent,
@@ -14,22 +14,22 @@ import { Clock, User } from "lucide-react";
 
 interface CalendarMonthGridProps {
   currentDate: Date;
-  appointments: CalendarAppointment[];
-  onSelectAppointment: (appointment: CalendarAppointment) => void;
+  items: CalendarItem[];
+  onSelectItem: (item: CalendarItem) => void;
   onDayClick: (date: Date) => void;
   selectedDate: Date;
 }
 
 export default function CalendarMonthGrid({
   currentDate,
-  appointments,
-  onSelectAppointment,
+  items,
+  onSelectItem,
   onDayClick,
   selectedDate,
 }: CalendarMonthGridProps) {
   const [dayDetailsModal, setDayDetailsModal] = useState<{
     date: Date;
-    apts: CalendarAppointment[];
+    items: CalendarItem[];
   } | null>(null);
 
   const monthDays = getMonthDays(currentDate);
@@ -58,10 +58,12 @@ export default function CalendarMonthGrid({
             const currentIsToday = isToday(day);
             const isSelected = isSameDay(day, selectedDate);
 
-            const dayApts = appointments.filter((a) => isSameDay(a.scheduledAt, day));
+            const dayItems = items
+              .filter((i) => isSameDay(i.start, day))
+              .sort((a, b) => a.start.getTime() - b.start.getTime());
             const maxVisible = 3;
-            const visibleApts = dayApts.slice(0, maxVisible);
-            const extraCount = dayApts.length - maxVisible;
+            const visibleItems = dayItems.slice(0, maxVisible);
+            const extraCount = dayItems.length - maxVisible;
 
             return (
               <div
@@ -90,39 +92,44 @@ export default function CalendarMonthGrid({
                     {day.getDate()}
                   </span>
 
-                  {dayApts.length > 0 && (
+                  {dayItems.length > 0 && (
                     <span className="text-[10px] text-muted-foreground font-medium hidden sm:inline">
-                      {dayApts.length} RDV
+                      {dayItems.length}
                     </span>
                   )}
                 </div>
 
-                {/* List of Appointment chips */}
+                {/* List of chips, tous types confondus */}
                 <div className="space-y-1 flex-1 overflow-hidden">
-                  {visibleApts.map((apt) => {
-                    const colorMeta = getCaregiverColor(apt.caregiverId);
-                    const isCancelled = apt.status === "CANCELLED";
+                  {visibleItems.map((item) => {
+                    const isAppointment = item.kind === "APPOINTMENT";
+                    const colorMeta = isAppointment
+                      ? getCaregiverColor((item.raw as CalendarAppointment).caregiverId)
+                      : getKindColor(item.kind)!;
+                    const isCancelled = isAppointment && item.status === "CANCELLED";
 
                     return (
                       <div
-                        key={apt.id}
+                        key={item.id}
                         onClick={(e) => {
                           e.stopPropagation();
-                          onSelectAppointment(apt);
+                          onSelectItem(item);
                         }}
                         className={`
                           group/apt px-1.5 py-0.5 rounded text-[11px] truncate flex items-center gap-1.5 cursor-pointer transition-all border
                           ${colorMeta.pill}
                           ${isCancelled ? "opacity-50 line-through" : "hover:brightness-95 hover:shadow-xs"}
                         `}
-                        title={`${formatTime(apt.scheduledAt)} - ${apt.title} (${apt.patient.user.lastName} ${apt.patient.user.firstName})`}
+                        title={`${item.allDay ? "" : formatTime(item.start) + " - "}${item.title}${item.subtitle ? ` (${item.subtitle})` : ""}`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${colorMeta.dot}`} />
-                        <span className="font-mono text-[10px] font-medium shrink-0 opacity-80">
-                          {formatTime(apt.scheduledAt)}
-                        </span>
+                        {!item.allDay && (
+                          <span className="font-mono text-[10px] font-medium shrink-0 opacity-80">
+                            {formatTime(item.start)}
+                          </span>
+                        )}
                         <span className="truncate font-medium">
-                          {apt.patient.user.lastName}
+                          {item.subtitle || item.title}
                         </span>
                       </div>
                     );
@@ -133,7 +140,7 @@ export default function CalendarMonthGrid({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setDayDetailsModal({ date: day, apts: dayApts });
+                        setDayDetailsModal({ date: day, items: dayItems });
                       }}
                       className="text-[10px] font-semibold text-primary hover:underline px-1 py-0.5 block w-full text-left"
                     >
@@ -166,15 +173,18 @@ export default function CalendarMonthGrid({
           </DialogHeader>
 
           <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1 pt-2">
-            {dayDetailsModal?.apts.map((apt) => {
-              const colorMeta = getCaregiverColor(apt.caregiverId);
+            {dayDetailsModal?.items.map((item) => {
+              const isAppointment = item.kind === "APPOINTMENT";
+              const colorMeta = isAppointment
+                ? getCaregiverColor((item.raw as CalendarAppointment).caregiverId)
+                : getKindColor(item.kind)!;
 
               return (
                 <div
-                  key={apt.id}
+                  key={item.id}
                   onClick={() => {
                     setDayDetailsModal(null);
-                    onSelectAppointment(apt);
+                    onSelectItem(item);
                   }}
                   className={`
                     p-3 rounded-xl border cursor-pointer transition-all hover:shadow-md flex items-center justify-between gap-3
@@ -182,22 +192,30 @@ export default function CalendarMonthGrid({
                   `}
                 >
                   <div className="space-y-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">{apt.title}</p>
+                    <p className="font-semibold text-sm truncate">{item.title}</p>
                     <div className="flex items-center gap-2 text-xs opacity-80">
-                      <span className="flex items-center gap-1 font-mono">
-                        <Clock className="h-3 w-3" />
-                        {formatTime(apt.scheduledAt)} ({apt.durationMinutes} min)
-                      </span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1 truncate">
-                        <User className="h-3 w-3" />
-                        {apt.patient.user.lastName} {apt.patient.user.firstName}
-                      </span>
+                      {!item.allDay && (
+                        <span className="flex items-center gap-1 font-mono">
+                          <Clock className="h-3 w-3" />
+                          {formatTime(item.start)}
+                        </span>
+                      )}
+                      {item.subtitle && (
+                        <>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 truncate">
+                            <User className="h-3 w-3" />
+                            {item.subtitle}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <Badge variant="outline" className="text-xs shrink-0">
-                    {apt.status === "SCHEDULED" ? "Planifié" : apt.status}
-                  </Badge>
+                  {item.status && (
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {item.status === "SCHEDULED" ? "Planifié" : item.status === "PENDING" ? "En attente" : item.status}
+                    </Badge>
+                  )}
                 </div>
               );
             })}

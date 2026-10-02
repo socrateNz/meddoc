@@ -71,3 +71,75 @@ describe("incident.created — isolation multi-tenant", () => {
     expect(notificationCreateMany).not.toHaveBeenCalled();
   });
 });
+
+describe("appointment.scheduled — notifie aussi le patient, pas seulement le soignant", () => {
+  it("notifie le patient ET le soignant assigné", async () => {
+    let notifiedIds: string[] = [];
+    const notificationCreateMany = vi.fn(async ({ data }: { data: { userId: string }[] }) => {
+      notifiedIds = data.map((n) => n.userId);
+      return { count: data.length };
+    });
+
+    vi.doMock("./db", () => ({
+      prisma: {
+        patient: {
+          findUnique: vi.fn(async () => ({ userId: "userPatient1", user: { firstName: "Awa", lastName: "Mballa" } })),
+        },
+        caregiver: {
+          findUnique: vi.fn(async () => ({ userId: "userCaregiver1", user: { firstName: "Jean", lastName: "Fotso" } })),
+        },
+        notification: { createMany: notificationCreateMany },
+        pushSubscription: { findMany: vi.fn(async () => []) },
+      },
+    }));
+
+    const { appEvents } = await import("./events");
+
+    appEvents.emit("appointment.scheduled", {
+      appointmentId: "apt1",
+      patientId: "p1",
+      caregiverId: "car1",
+      title: "Consultation de suivi",
+      scheduledAt: new Date().toISOString(),
+    });
+
+    await vi.waitFor(() => expect(notificationCreateMany).toHaveBeenCalled());
+
+    expect(notifiedIds).toEqual(["userPatient1", "userCaregiver1"]);
+  });
+
+  it("notifie uniquement le patient quand aucun soignant n'est encore assigné (caregiverId null)", async () => {
+    let notifiedIds: string[] = [];
+    const notificationCreateMany = vi.fn(async ({ data }: { data: { userId: string }[] }) => {
+      notifiedIds = data.map((n) => n.userId);
+      return { count: data.length };
+    });
+    const caregiverFindUnique = vi.fn();
+
+    vi.doMock("./db", () => ({
+      prisma: {
+        patient: {
+          findUnique: vi.fn(async () => ({ userId: "userPatient1", user: { firstName: "Awa", lastName: "Mballa" } })),
+        },
+        caregiver: { findUnique: caregiverFindUnique },
+        notification: { createMany: notificationCreateMany },
+        pushSubscription: { findMany: vi.fn(async () => []) },
+      },
+    }));
+
+    const { appEvents } = await import("./events");
+
+    appEvents.emit("appointment.scheduled", {
+      appointmentId: "apt1",
+      patientId: "p1",
+      caregiverId: null,
+      title: "Consultation de suivi",
+      scheduledAt: new Date().toISOString(),
+    });
+
+    await vi.waitFor(() => expect(notificationCreateMany).toHaveBeenCalled());
+
+    expect(notifiedIds).toEqual(["userPatient1"]);
+    expect(caregiverFindUnique).not.toHaveBeenCalled();
+  });
+});

@@ -209,6 +209,9 @@ model User {
   cashSessionsOpened           CashSession[]             @relation("CashSessionOpenedBy")
   cashSessionsClosed           CashSession[]             @relation("CashSessionClosedBy")
   prescriptionsDispensed       Prescription[]            @relation("PrescriptionDispensedBy")
+  shiftsAssigned               Shift[]                   @relation("ShiftAssignee")
+  shiftsCreated                Shift[]                   @relation("ShiftCreatedBy")
+  calendarEvents                CalendarEvent[]           @relation("UserCalendarEvents")
 
   organizationId String?       @db.ObjectId
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -698,6 +701,46 @@ model PushSubscription {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+// Garde/planning du personnel — n'importe quel rôle de staff (pas seulement Caregiver), pour
+// que pharmaciens/caissiers aient aussi un planning, pas seulement les soignants au sens strict.
+// Pas d'organizationId propre : résolu via user.organizationId (même convention que
+// Caregiver/Contract/CareTask). Écriture réservée au COORDINATOR (cf. src/actions/shifts.ts) —
+// même en consultant sa propre garde, l'affecté ne peut pas la modifier.
+model Shift {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation("ShiftAssignee", fields: [userId], references: [id])
+  createdById String   @db.ObjectId
+  createdBy   User     @relation("ShiftCreatedBy", fields: [createdById], references: [id])
+  title       String
+  startAt     DateTime
+  endAt       DateTime
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, startAt])
+}
+
+// Événement libre non lié à un patient (réunion, rappel personnel...) — toujours strictement
+// privé à son créateur, jamais de passe-droit COORDINATOR (cf. src/actions/calendar-events.ts) :
+// un rappel personnel reste personnel, contrairement aux autres sources agrégées sur le
+// calendrier (cf. src/actions/calendar.ts).
+model CalendarEvent {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation("UserCalendarEvents", fields: [userId], references: [id])
+  title       String
+  description String?
+  startAt     DateTime
+  endAt       DateTime?
+  allDay      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, startAt])
 }
 
 model Contract {

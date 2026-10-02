@@ -26,7 +26,10 @@ const restrictedSections: Record<string, string[]> = {
   incidents: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   rooms: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  appointments: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  // Élargi à PHARMACIST/CASHIER avec le calendrier unifié (gardes/échéances de stock
+  // désormais agrégées sur cette même page, cf. src/actions/calendar.ts) — garder en phase
+  // avec src/app/dashboard/sidebar.tsx, les deux doivent changer ensemble.
+  appointments: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'CASHIER'],
   'ai-assistant': ['ADMIN', 'COORDINATOR', 'MEDECIN'],
   medecin: ['MEDECIN'],
   // Finance & Pharmacie éclatées en 3 sections (séparation caisse/pharmacie) : la caisse

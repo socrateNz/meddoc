@@ -1,4 +1,4 @@
-import { CalendarAppointment } from "./types";
+import { CalendarAppointment, CalendarItem } from "./types";
 
 export function startOfWeek(date: Date, mondayFirst = true): Date {
   const d = new Date(date);
@@ -226,6 +226,119 @@ export function layoutAppointmentsForDay(
         leftPercent,
         widthPercent,
       });
+    }
+  }
+
+  return result;
+}
+
+export interface PositionedItem {
+  item: CalendarItem;
+  top: number;
+  height: number;
+  leftPercent: number;
+  widthPercent: number;
+}
+
+// Généralisation de layoutAppointmentsForDay au CalendarItem générique du calendrier unifié
+// (cf. src/actions/calendar.ts) : même algorithme de clustering/colonnes, mais lit item.start/
+// item.end (Date déjà résolues) au lieu de scheduledAt/durationMinutes. N'accueille que les
+// éléments non allDay (SHIFT, EVENT non allDay, APPOINTMENT) — les échéances ponctuelles
+// (CARE_TASK/CONTRACT_DEADLINE/STOCK_EXPIRY) et les EVENT allDay passent par la bande "Toute la
+// journée" des grilles, pas par ce positionnement horaire.
+//
+// Transitoire : layoutAppointmentsForDay ci-dessus reste utilisée telle quelle par
+// calendar-time-grid.tsx jusqu'à sa généralisation (cf. plan « Calendrier unifié », étape 7) —
+// les deux fonctions coexistent le temps de cette migration, à supprimer ensuite.
+export function layoutItemsForDay(
+  items: CalendarItem[],
+  targetDate: Date,
+  startHour = 7,
+  endHour = 20,
+  hourHeight = 64
+): PositionedItem[] {
+  const dayItems = items
+    .filter((i) => !i.allDay && isSameDay(i.start, targetDate))
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  if (dayItems.length === 0) return [];
+
+  const gridStartMinutes = startHour * 60;
+  const gridEndMinutes = endHour * 60;
+
+  interface EventBounds {
+    item: CalendarItem;
+    startMin: number;
+    endMin: number;
+    top: number;
+    height: number;
+    col: number;
+    totalCols: number;
+  }
+
+  const events: EventBounds[] = dayItems.map((item) => {
+    const startMin = item.start.getHours() * 60 + item.start.getMinutes();
+    const durationMinutes = Math.max((item.end.getTime() - item.start.getTime()) / 60000, 15);
+    const endMin = Math.min(startMin + durationMinutes, gridEndMinutes);
+
+    const clampedStart = Math.max(startMin, gridStartMinutes);
+    const clampedEnd = Math.max(endMin, clampedStart + 15);
+
+    const top = ((clampedStart - gridStartMinutes) / 60) * hourHeight;
+    const height = Math.max(((clampedEnd - clampedStart) / 60) * hourHeight, 26);
+
+    return { item, startMin, endMin, top, height, col: 0, totalCols: 1 };
+  });
+
+  const clusters: EventBounds[][] = [];
+  let currentCluster: EventBounds[] = [];
+  let clusterEnd = -1;
+
+  for (const ev of events) {
+    if (currentCluster.length === 0) {
+      currentCluster.push(ev);
+      clusterEnd = ev.endMin;
+    } else if (ev.startMin < clusterEnd) {
+      currentCluster.push(ev);
+      clusterEnd = Math.max(clusterEnd, ev.endMin);
+    } else {
+      clusters.push(currentCluster);
+      currentCluster = [ev];
+      clusterEnd = ev.endMin;
+    }
+  }
+  if (currentCluster.length > 0) {
+    clusters.push(currentCluster);
+  }
+
+  const result: PositionedItem[] = [];
+
+  for (const cluster of clusters) {
+    const columns: EventBounds[][] = [];
+
+    for (const ev of cluster) {
+      let placed = false;
+      for (let c = 0; c < columns.length; c++) {
+        const lastInCol = columns[c][columns[c].length - 1];
+        if (ev.startMin >= lastInCol.endMin) {
+          columns[c].push(ev);
+          ev.col = c;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        ev.col = columns.length;
+        columns.push([ev]);
+      }
+    }
+
+    const totalCols = columns.length;
+    for (const ev of cluster) {
+      const widthPercent = 100 / totalCols;
+      const leftPercent = ev.col * widthPercent;
+
+      result.push({ item: ev.item, top: ev.top, height: ev.height, leftPercent, widthPercent });
     }
   }
 

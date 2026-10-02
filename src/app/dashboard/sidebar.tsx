@@ -129,12 +129,12 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         section: "Clinique",
       },
       {
-        name: "Rendez-vous",
+        name: "Calendrier",
         href: `/dashboard/clinics/${activeClinicId}/appointments`,
         icon: Calendar,
         count: unreadCounts?.appointment || 0,
         badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'CASHIER'],
         section: "Clinique",
       },
       {

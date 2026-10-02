@@ -7,10 +7,13 @@ class AppEventEmitter extends EventEmitter { }
 
 export const appEvents = new AppEventEmitter();
 
-// Point d'écriture unique pour toute Notification créée par un listener ci-dessous : persiste en
-// base (comportement inchangé) puis tente un envoi Web Push best-effort pour les mêmes
-// destinataires (cf. src/lib/push.ts — respecte mutedNotificationTypes, ne relance jamais).
-async function notifyUsers(entries: { userId: string; title: string; message: string; type: string }[]) {
+// Point d'écriture unique pour toute Notification créée par un listener ci-dessous (et par
+// src/lib/scheduler.ts, qui l'importe directement — avant cette exportation, le planificateur
+// appelait prisma.notification.create en direct et contournait donc silencieusement l'envoi
+// push) : persiste en base (comportement inchangé) puis tente un envoi Web Push best-effort pour
+// les mêmes destinataires (cf. src/lib/push.ts — respecte mutedNotificationTypes, ne relance
+// jamais).
+export async function notifyUsers(entries: { userId: string; title: string; message: string; type: string }[]) {
   if (entries.length === 0) return;
   await prisma.notification.createMany({ data: entries });
   await sendPushToUsers(entries);
@@ -50,33 +53,49 @@ appEvents.on("incident.created", async (data: { incidentId: string; patientId: s
   }
 });
 
-// Event: Appointment Scheduled
-appEvents.on("appointment.scheduled", async (data: { appointmentId: string; patientId: string; caregiverId: string; title: string }) => {
+// Event: Appointment Scheduled — alerte le soignant assigné (s'il y en a déjà un) ET, désormais,
+// le patient lui-même (son propre compte, cf. Patient.userId) : avant ce correctif, le patient
+// n'était jamais informé qu'un rendez-vous avait été fixé pour lui, même en cas de réaffectation
+// ultérieure du soignant. caregiverId est maintenant nullable : un rendez-vous peut être créé
+// avant qu'un soignant ne soit assigné, le patient doit être prévenu dans tous les cas.
+appEvents.on("appointment.scheduled", async (data: { appointmentId: string; patientId: string; caregiverId: string | null; title: string; scheduledAt: string }) => {
   try {
-    // Find caregiver user ID
-    const caregiver = await prisma.caregiver.findUnique({
-      where: { id: data.caregiverId },
-      include: { user: true },
-    });
-
-    if (!caregiver) return;
-
     const patient = await prisma.patient.findUnique({
       where: { id: data.patientId },
       include: { user: true },
     });
+    if (!patient) return;
 
-    const patientName = patient ? `${patient.user.lastName} ${patient.user.firstName}` : "un patient";
+    const patientName = `${patient.user.lastName} ${patient.user.firstName}`;
+    const scheduledDate = new Date(data.scheduledAt);
+    const dateStr = scheduledDate.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+    const timeStr = scheduledDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
-    // Create database notification for the caregiver
-    await notifyUsers([
+    const entries: { userId: string; title: string; message: string; type: string }[] = [
       {
-        userId: caregiver.userId,
-        title: `Nouveau Rendez-vous : ${data.title}`,
-        message: `Vous avez été assigné(e) à une visite pour le patient ${patientName}.`,
+        userId: patient.userId,
+        title: `Rendez-vous confirmé : ${data.title}`,
+        message: `Bonjour ${patient.user.firstName}, votre rendez-vous "${data.title}" est prévu le ${dateStr} à ${timeStr}.`,
         type: "APPOINTMENT",
       },
-    ]);
+    ];
+
+    if (data.caregiverId) {
+      const caregiver = await prisma.caregiver.findUnique({
+        where: { id: data.caregiverId },
+        include: { user: true },
+      });
+      if (caregiver) {
+        entries.push({
+          userId: caregiver.userId,
+          title: `Nouveau Rendez-vous : ${data.title}`,
+          message: `Vous avez été assigné(e) à une visite pour le patient ${patientName}.`,
+          type: "APPOINTMENT",
+        });
+      }
+    }
+
+    await notifyUsers(entries);
   } catch (error) {
     console.error("Error handling appointment.scheduled event:", error);
   }

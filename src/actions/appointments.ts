@@ -60,19 +60,19 @@ export async function createAppointment(data: {
       },
     });
 
-    // Emit event for notification
-    if (appointment.caregiverId) {
-      try {
-        const { appEvents } = await import("@/lib/events");
-        appEvents.emit("appointment.scheduled", {
-          appointmentId: appointment.id,
-          patientId: appointment.patientId,
-          caregiverId: appointment.caregiverId,
-          title: appointment.title,
-        });
-      } catch (e) {
-        console.error("Failed to emit appointment.scheduled event:", e);
-      }
+    // Émis dans tous les cas (même sans soignant encore assigné) : le patient doit être informé
+    // de son propre rendez-vous indépendamment de cette affectation (cf. src/lib/events.ts).
+    try {
+      const { appEvents } = await import("@/lib/events");
+      appEvents.emit("appointment.scheduled", {
+        appointmentId: appointment.id,
+        patientId: appointment.patientId,
+        caregiverId: appointment.caregiverId,
+        title: appointment.title,
+        scheduledAt: appointment.scheduledAt.toISOString(),
+      });
+    } catch (e) {
+      console.error("Failed to emit appointment.scheduled event:", e);
     }
 
     // Write Audit Log

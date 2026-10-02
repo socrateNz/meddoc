@@ -1,22 +1,20 @@
 "use client";
 
 import { useMemo, useEffect, useRef } from "react";
-import { CalendarAppointment, getCaregiverColor } from "./types";
+import { CalendarAppointment, CalendarItem, getCaregiverColor, getKindColor } from "./types";
 import {
   formatDayHeader,
   formatTime,
-  getEndTime,
   isToday,
   isSameDay,
-  layoutAppointmentsForDay,
+  layoutItemsForDay,
 } from "./date-utils";
-import { Badge } from "@/components/ui/badge";
 import { Clock, User } from "lucide-react";
 
 interface CalendarTimeGridProps {
   days: Date[];
-  appointments: CalendarAppointment[];
-  onSelectAppointment: (appointment: CalendarAppointment) => void;
+  items: CalendarItem[];
+  onSelectItem: (item: CalendarItem) => void;
   onSlotClick: (date: Date, hour: number) => void;
   selectedDate: Date;
   onSelectDate: (date: Date) => void;
@@ -24,8 +22,8 @@ interface CalendarTimeGridProps {
 
 export default function CalendarTimeGrid({
   days,
-  appointments,
-  onSelectAppointment,
+  items,
+  onSelectItem,
   onSlotClick,
   selectedDate,
   onSelectDate,
@@ -103,6 +101,40 @@ export default function CalendarTimeGrid({
         </div>
       </div>
 
+      {/* Bande "Toute la journée" : échéances ponctuelles (CONTRACT_DEADLINE, STOCK_EXPIRY) et
+          événements libres marqués allDay — pas de vraie durée, ne jamais les forcer dans la
+          grille horaire ci-dessous. */}
+      {items.some((i) => i.allDay) && (
+        <div className="flex border-b border-border/70 bg-muted/10">
+          <div className="w-16 sm:w-20 border-r border-border/70 py-1.5 px-2 text-center text-[10px] font-semibold text-muted-foreground select-none shrink-0">
+            Journée
+          </div>
+          <div className="flex flex-1 divide-x divide-border/70">
+            {days.map((day, idx) => {
+              const dayAllDayItems = items.filter((i) => i.allDay && isSameDay(i.start, day));
+              return (
+                <div key={idx} className="flex-1 p-1 space-y-0.5 min-w-[100px]">
+                  {dayAllDayItems.map((item) => {
+                    const colorMeta = getKindColor(item.kind)!;
+                    return (
+                      <button
+                        type="button"
+                        key={item.id}
+                        onClick={() => onSelectItem(item)}
+                        className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] truncate border ${colorMeta.pill}`}
+                        title={item.title}
+                      >
+                        {item.title}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Scrollable Time Grid */}
       <div ref={containerRef} className="flex-1 overflow-y-auto relative flex">
         {/* Time labels axis */}
@@ -124,8 +156,8 @@ export default function CalendarTimeGrid({
         <div className="flex flex-1 divide-x divide-border/70 relative">
           {days.map((day, dayIndex) => {
             const currentIsToday = isToday(day);
-            const dayPositionedApts = layoutAppointmentsForDay(
-              appointments,
+            const dayPositionedItems = layoutItemsForDay(
+              items,
               day,
               START_HOUR,
               END_HOUR,
@@ -164,19 +196,20 @@ export default function CalendarTimeGrid({
                   </div>
                 )}
 
-                {/* Render Appointments */}
-                {dayPositionedApts.map(({ appointment, top, height, leftPercent, widthPercent }) => {
-                  const colorMeta = getCaregiverColor(appointment.caregiverId);
-                  const endTime = getEndTime(appointment.scheduledAt, appointment.durationMinutes);
-                  const isCancelled = appointment.status === "CANCELLED";
-                  const isCompleted = appointment.status === "COMPLETED";
+                {/* Render Items */}
+                {dayPositionedItems.map(({ item, top, height, leftPercent, widthPercent }) => {
+                  const isAppointment = item.kind === "APPOINTMENT";
+                  const appointmentRaw = isAppointment ? (item.raw as CalendarAppointment) : null;
+                  const colorMeta = isAppointment ? getCaregiverColor(appointmentRaw!.caregiverId) : getKindColor(item.kind)!;
+                  const isCancelled = isAppointment && item.status === "CANCELLED";
+                  const isCompleted = isAppointment && item.status === "COMPLETED";
 
                   return (
                     <div
-                      key={appointment.id}
+                      key={item.id}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSelectAppointment(appointment);
+                        onSelectItem(item);
                       }}
                       style={{
                         top: `${top}px`,
@@ -201,22 +234,22 @@ export default function CalendarTimeGrid({
                         {/* Title & Status */}
                         <div className="flex items-center justify-between gap-1">
                           <p className="font-semibold text-xs truncate leading-tight">
-                            {appointment.title}
+                            {item.title}
                           </p>
-                          {appointment.status === "COMPLETED" && (
+                          {isCompleted && (
                             <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 shrink-0 font-medium">
                               Terminé
                             </span>
                           )}
                         </div>
 
-                        {/* Patient info */}
-                        <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium opacity-90 truncate">
-                          <User className="h-3 w-3 shrink-0" />
-                          <span className="truncate">
-                            {appointment.patient.user.lastName} {appointment.patient.user.firstName}
-                          </span>
-                        </div>
+                        {/* Sous-titre (patient / soignant selon le type) */}
+                        {item.subtitle && (
+                          <div className="flex items-center gap-1 mt-0.5 text-[11px] font-medium opacity-90 truncate">
+                            <User className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{item.subtitle}</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Time footer if height permits */}
@@ -224,11 +257,11 @@ export default function CalendarTimeGrid({
                         <div className="flex items-center justify-between text-[10px] opacity-80 mt-1 font-mono">
                           <span className="flex items-center gap-1">
                             <Clock className="h-2.5 w-2.5" />
-                            {formatTime(appointment.scheduledAt)} - {formatTime(endTime)}
+                            {formatTime(item.start)} - {formatTime(item.end)}
                           </span>
-                          {appointment.caregiver && (
+                          {isAppointment && appointmentRaw!.caregiver && (
                             <span className="truncate max-w-[80px] font-sans font-medium text-right">
-                              Dr. {appointment.caregiver.user.lastName}
+                              Dr. {appointmentRaw!.caregiver.user.lastName}
                             </span>
                           )}
                         </div>

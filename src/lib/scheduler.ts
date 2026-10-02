@@ -79,15 +79,16 @@ async function sendDailyAgenda(now: Date) {
           })
           .join("\n");
 
-        await prisma.notification.create({
-          data: {
+        const { notifyUsers } = await import("./events");
+        await notifyUsers([
+          {
             userId: caregiver.userId,
             title: `📅 Votre agenda du jour (${todayString})`,
             message: `Bonjour ${caregiver.user.firstName}, vous avez ${appointments.length} intervention(s) aujourd'hui :\n${listText}`,
             type: "APPOINTMENT",
-          }
-        });
-        
+          },
+        ]);
+
         console.log(`[Scheduler] Daily agenda sent to caregiver ${caregiver.user.lastName} (${caregiver.userId})`);
       }
     }
@@ -96,7 +97,15 @@ async function sendDailyAgenda(now: Date) {
   }
 }
 
-async function sendAppointmentReminders(now: Date) {
+// Rappels avant rendez-vous — au soignant assigné (s'il y en a un) ET au patient lui-même (son
+// propre compte, cf. Patient.userId). Avant ce correctif, seul le soignant était prévenu : un
+// patient qui ne consulte pas spontanément le tableau de bord n'avait alors aucun moyen d'être
+// relancé avant sa visite — cause fréquente de rendez-vous manqués. Un rendez-vous sans soignant
+// assigné n'est donc plus totalement exclu : le patient doit quand même être relancé.
+// Exportée (seule fonction de ce fichier à l'être avec runSchedulerTasks) pour être testée
+// directement — cf. scheduler.test.ts — plutôt qu'à travers runSchedulerTasks, qui mélangerait
+// ses effets avec ceux de sendDailyAgenda/checkExpiringStock/checkLowStock dans le même test.
+export async function sendAppointmentReminders(now: Date) {
   try {
     // Look for appointments scheduled within the next 25 hours
     const maxTime = new Date(now.getTime() + 25 * 60 * 60 * 1000);
@@ -106,8 +115,7 @@ async function sendAppointmentReminders(now: Date) {
         scheduledAt: {
           gte: now,
           lte: maxTime
-        },
-        caregiverId: { not: null }
+        }
       },
       include: {
         caregiver: { include: { user: true } },
@@ -115,9 +123,9 @@ async function sendAppointmentReminders(now: Date) {
       }
     });
 
-    for (const app of appointments) {
-      if (!app.caregiver || !app.caregiver.user) continue;
+    const { notifyUsers } = await import("./events");
 
+    for (const app of appointments) {
       const diffMs = app.scheduledAt.getTime() - now.getTime();
       const diffHours = diffMs / (60 * 60 * 1000);
 
@@ -129,32 +137,48 @@ async function sendAppointmentReminders(now: Date) {
       ];
 
       for (const rem of reminders) {
-        if (diffHours >= rem.minHour && diffHours <= rem.maxHour) {
-          const reminderTitle = `⏰ Rappel ${rem.label} : ${app.title}`;
-          
-          // Check if notification already exists to prevent duplicate reminders
+        if (diffHours < rem.minHour || diffHours > rem.maxHour) continue;
+
+        // Même libellé pour les deux destinataires (comme avant ce correctif pour le soignant) :
+        // le dédoublonnage ci-dessous est scopé par userId, donc aucune collision entre eux, et
+        // la présence du titre du rendez-vous évite déjà la plupart des collisions entre deux
+        // rendez-vous distincts d'un même destinataire au même créneau de rappel.
+        const reminderTitle = `⏰ Rappel ${rem.label} : ${app.title}`;
+        const timeStr = app.scheduledAt.toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' });
+        const entries: { userId: string; title: string; message: string; type: string }[] = [];
+
+        if (app.caregiver?.user) {
           const existing = await prisma.notification.findFirst({
-            where: {
-              userId: app.caregiver.userId,
-              title: reminderTitle
-            }
+            where: { userId: app.caregiver.userId, title: reminderTitle }
           });
-
           if (!existing) {
-            const timeStr = app.scheduledAt.toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' });
             const patientName = `${app.patient.user.lastName} ${app.patient.user.firstName}`;
-            
-            await prisma.notification.create({
-              data: {
-                userId: app.caregiver.userId,
-                title: reminderTitle,
-                message: `Rappel : Votre intervention "${app.title}" pour le patient ${patientName} est planifiée dans ${rem.label} (à ${timeStr}).`,
-                type: "APPOINTMENT"
-              }
+            entries.push({
+              userId: app.caregiver.userId,
+              title: reminderTitle,
+              message: `Rappel : Votre intervention "${app.title}" pour le patient ${patientName} est planifiée dans ${rem.label} (à ${timeStr}).`,
+              type: "APPOINTMENT"
             });
-
-            console.log(`[Scheduler] Reminder (${rem.key}) sent to caregiver for appointment ${app.id}`);
           }
+        }
+
+        if (app.patient?.user) {
+          const existing = await prisma.notification.findFirst({
+            where: { userId: app.patient.userId, title: reminderTitle }
+          });
+          if (!existing) {
+            entries.push({
+              userId: app.patient.userId,
+              title: reminderTitle,
+              message: `Bonjour ${app.patient.user.firstName}, rappel : votre rendez-vous "${app.title}" est prévu dans ${rem.label} (à ${timeStr}).`,
+              type: "APPOINTMENT"
+            });
+          }
+        }
+
+        if (entries.length > 0) {
+          await notifyUsers(entries);
+          console.log(`[Scheduler] Reminder (${rem.key}) sent for appointment ${app.id} to ${entries.map((e) => e.userId).join(", ")}`);
         }
       }
     }
