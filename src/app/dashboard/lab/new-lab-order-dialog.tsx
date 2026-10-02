@@ -10,8 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import SearchableSelect from "@/components/ui/searchable-select";
-import { FlaskConical, Loader2, PlusCircle, X, Search, CheckSquare, Square } from "lucide-react";
+import { FlaskConical, Loader2, PlusCircle, X, Search, CheckSquare, Square, WifiOff } from "lucide-react";
 import { createLabOrder, listLabTests } from "@/actions/lab";
+import { submitOrQueueOffline } from "@/lib/offline-submit";
+import { useIsOffline } from "@/hooks/useIsOffline";
+import { useOfflineLabTests } from "@/hooks/use-offline-lab-tests";
 import { toast } from "sonner";
 
 const PRIORITY_OPTIONS = [
@@ -27,10 +30,14 @@ interface NewLabOrderDialogProps {
   patients: any[];
   defaultPatientId?: string;
   appointmentId?: string;
+  // Établissement ciblé — nécessaire pour répliquer le catalogue hors-ligne (cf.
+  // use-offline-lab-tests.ts) ; sans lui, la demande reste utilisable en ligne mais ne bascule
+  // pas sur le catalogue local si le réseau tombe.
+  organizationId?: string;
   onSuccess?: (order: any) => void;
 }
 
-export default function NewLabOrderDialog({ patients, defaultPatientId, appointmentId, onSuccess }: NewLabOrderDialogProps) {
+export default function NewLabOrderDialog({ patients, defaultPatientId, appointmentId, organizationId, onSuccess }: NewLabOrderDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [patientId, setPatientId] = useState(defaultPatientId || "");
@@ -39,15 +46,26 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
   const [notes, setNotes] = useState("");
   const [priority, setPriority] = useState<"ROUTINE" | "URGENT">("ROUTINE");
 
-  const { data: catalog = [], isLoading: catalogLoading } = useQuery({
+  const isOffline = useIsOffline();
+
+  const { data: onlineCatalog = [], isLoading: catalogLoading, isError: catalogError } = useQuery({
     queryKey: ["labTests"],
     queryFn: async () => {
       const res = await listLabTests();
       if (!res.success) throw new Error(res.error);
       return res.data || [];
     },
-    enabled: open,
+    enabled: open && !isOffline,
+    retry: false,
   });
+  // Repli sur le catalogue répliqué localement dès qu'on est hors-ligne, ou que la requête en
+  // ligne a échoué (connexion qui se déclarait active mais ne menait nulle part).
+  const useOfflineCatalog = isOffline || catalogError;
+  const offlineCatalogQuery = useOfflineLabTests(organizationId, open && useOfflineCatalog);
+  const catalog = useMemo(
+    () => (useOfflineCatalog ? offlineCatalogQuery.data || [] : onlineCatalog),
+    [useOfflineCatalog, offlineCatalogQuery.data, onlineCatalog]
+  );
 
   const filteredCatalog = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -83,14 +101,25 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
 
     setLoading(true);
     try {
-      const res = await createLabOrder({ patientId, tests, notes: notes || undefined, priority, appointmentId });
-      if (res.success) {
+      const payload = { patientId, tests, notes: notes || undefined, priority, appointmentId };
+      const patientLabel = patients.find((p) => p.id === patientId);
+      const res = await submitOrQueueOffline({
+        action: () => createLabOrder(payload),
+        queueType: "LAB_ORDER",
+        payload,
+        label: `Demande d'analyse — ${patientLabel ? `${patientLabel.user.lastName} ${patientLabel.user.firstName}` : "patient"}`,
+      });
+      if (!res.success) {
+        toast.error(res.error || "Erreur lors de la création de la demande.");
+      } else if (res.queued) {
+        toast.success("Hors-ligne : demande enregistrée localement, sera envoyée au retour du réseau.");
+        setOpen(false);
+        resetForm();
+      } else {
         toast.success("Demande d'analyse envoyée.");
         setOpen(false);
         resetForm();
         onSuccess?.(res.data);
-      } else {
-        toast.error(res.error || "Erreur lors de la création de la demande.");
       }
     } finally {
       setLoading(false);
@@ -129,7 +158,14 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
           )}
 
           <div className="space-y-1.5">
-            <Label>Examens demandés *</Label>
+            <div className="flex items-center justify-between">
+              <Label>Examens demandés *</Label>
+              {useOfflineCatalog && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                  <WifiOff className="h-3 w-3" /> Catalogue hors-ligne (tarifs estimatifs)
+                </span>
+              )}
+            </div>
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input
@@ -141,7 +177,7 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
             </div>
 
             <div className="max-h-56 overflow-y-auto rounded-xl border divide-y">
-              {catalogLoading ? (
+              {catalogLoading && !useOfflineCatalog ? (
                 <div className="flex items-center justify-center py-8 text-sm text-muted-foreground gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" /> Chargement du catalogue...
                 </div>

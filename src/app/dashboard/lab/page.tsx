@@ -48,7 +48,12 @@ export default async function LabPage() {
         </p>
       </div>
 
-      <LabView labOrders={labOrders} patients={patients} currentUserRole={currentUser.role} />
+      <LabView
+        labOrders={labOrders}
+        patients={patients}
+        currentUserRole={currentUser.role}
+        organizationId={currentUser.organization?.type === "CLINIC" ? currentUser.organizationId ?? undefined : undefined}
+      />
     </div>
   );
 }

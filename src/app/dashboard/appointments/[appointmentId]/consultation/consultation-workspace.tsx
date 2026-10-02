@@ -564,7 +564,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                   <div>
                     <CardTitle>Ordonnance & Médicaments</CardTitle>
                     <CardDescription>
-                      Ajoutez les médicaments prescrits. Génération automatique de l'ordonnance médicale PDF.
+                      Ajoutez les médicaments prescrits. Génération automatique de l&apos;ordonnance médicale PDF.
                     </CardDescription>
                   </div>
                   {medications.length > 0 && (
@@ -713,6 +713,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                     </CardDescription>
                   </div>
                   <NewLabOrderDialog
+                    organizationId={patient?.organizationId ?? undefined}
                     patients={[patient]}
                     defaultPatientId={patient.id}
                     appointmentId={appointment?.id}
@@ -769,7 +770,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                 <CardDescription className="text-xs">Dernière prise relevée pour ce patient.</CardDescription>
               </div>
               {!isCompleted && (
-                <VitalSignsDialog patientId={patient.id} appointmentId={appointment?.id} onSuccess={(vital) => queryClient.setQueryData(["vitals", patient.id], (prev: any[] = []) => [vital, ...prev])} />
+                <VitalSignsDialog patientId={patient.id} appointmentId={appointment?.id} patientName={`${patient.user.lastName} ${patient.user.firstName}`} onSuccess={(vital) => queryClient.setQueryData(["vitals", patient.id], (prev: any[] = []) => [vital, ...prev])} />
               )}
             </CardHeader>
             <CardContent>

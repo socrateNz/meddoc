@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import SearchableSelect from "@/components/ui/searchable-select";
-import { ShoppingCart, Receipt, Trash2, Loader2, Printer, PlusCircle, CheckCircle2 } from "lucide-react";
+import { ShoppingCart, Receipt, Trash2, Loader2, Printer, PlusCircle } from "lucide-react";
 import { createCaisseSale, payPendingInvoice } from "@/actions/finance";
+import { submitOrQueueOffline } from "@/lib/offline-submit";
+import { toast } from "sonner";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -150,12 +152,13 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
   const grandTotal = cartItems.reduce((sum, i) => sum + i.amount, 0);
   const hasZeroAmountItem = cartItems.some((i) => i.amount <= 0);
 
-  // Reste synchronisé sur le total tant que le caissier n'a pas lui-même modifié le champ.
-  useEffect(() => {
-    if (!amountTouched) setAmountReceivedInput(String(grandTotal));
-  }, [grandTotal, amountTouched]);
-
-  const amountReceived = Math.min(grandTotal, Math.max(0, Number(amountReceivedInput) || 0));
+  // Calculé directement pendant le rendu plutôt que synchronisé par un effet (schéma recommandé
+  // par React pour une valeur purement dérivée — cf. chat-panel.tsx pour le même principe) :
+  // reste collé au total tant que le caissier n'a pas lui-même modifié le champ, y compris après
+  // resetForm() (amountTouched repasse à false, grandTotal à 0, donc "0" sans aucune action
+  // supplémentaire).
+  const amountReceivedDisplay = amountTouched ? amountReceivedInput : String(grandTotal);
+  const amountReceived = Math.min(grandTotal, Math.max(0, Number(amountReceivedDisplay) || 0));
   const remainingAfterPayment = Math.max(0, grandTotal - amountReceived);
 
   const handleValidate = async () => {
@@ -179,9 +182,10 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
         type, pharmacyItemId, description, quantity, unitPrice, amount,
       }));
 
-      const res = mode === "pay" && pendingInvoice
-        ? await payPendingInvoice(pendingInvoice.id, cashSessionId, amountReceived, items)
-        : await createCaisseSale({
+      const isPay = mode === "pay" && !!pendingInvoice;
+      const payPayload = isPay ? { pendingInvoiceId: pendingInvoice!.id, cashSessionId, amount: amountReceived, items } : null;
+      const salePayload = !isPay
+        ? {
             cashSessionId,
             items,
             patientId: cartPatientId || undefined,
@@ -189,24 +193,61 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
             customPatientPhone: customPatientPhoneInput.trim() || undefined,
             organizationId,
             amountReceived,
+          }
+        : null;
+
+      const result = isPay
+        ? await submitOrQueueOffline({
+            action: () => payPendingInvoice(payPayload!.pendingInvoiceId, payPayload!.cashSessionId, payPayload!.amount, payPayload!.items),
+            queueType: "CAISSE_PAY",
+            payload: payPayload!,
+            label: `Paiement — ${patientName}`,
+          })
+        : await submitOrQueueOffline({
+            action: () => createCaisseSale(salePayload!),
+            queueType: "CAISSE_SALE",
+            payload: salePayload!,
+            label: `Vente — ${salePayload!.customPatientName || "client comptant"}`,
           });
 
-      if (res.success) {
-        setOpen(false);
-        const txn = (res.data as any)?.transaction || res.data;
-        const pendingInvoiceId = (res.data as any)?.pendingInvoice?.id;
-        // La référence imprimée sur le ticket doit être celle que le pharmacien devra saisir pour
-        // finaliser (PendingInvoice.id, cf. dispensePendingInvoice), pas l'id interne de la transaction.
-        if (pendingInvoiceId) (txn as any).pendingInvoiceId = pendingInvoiceId;
-        // Pour l'affichage "Total facture / Réglé sur ce ticket / Reste à payer" côté ticket
-        // quand le paiement n'est pas intégral (cf. invoice-modal.tsx / invoice-pdf.tsx).
-        (txn as any).invoiceTotalAmount = (res.data as any)?.invoiceTotalAmount;
-        (txn as any).remainingDue = (res.data as any)?.remainingDue;
-        onSuccess(txn);
-        resetForm();
-      } else {
-        setMsg({ type: "error", text: res.error || "Erreur lors de la validation." });
+      if (!result.success) {
+        setMsg({ type: "error", text: result.error || "Erreur lors de la validation." });
+        return;
       }
+
+      if (result.queued) {
+        // Pas de ticket imprimable immédiatement : pour une VENTE, la facture n'existe pas encore
+        // côté serveur tant qu'elle n'est pas synchronisée (le code de retrait que le patient
+        // devra donner au pharmacien, cf. dispensePendingInvoice, en dépend directement) — pour un
+        // PAIEMENT, la facture existe déjà, seul le règlement est en attente. On ne passe donc
+        // PAS cette réponse à onSuccess (qui attend une vraie transaction à afficher/imprimer,
+        // cf. caisse-view.tsx:handleMutationSuccess) — juste un avertissement persistant, le
+        // temps que le caissier le lise vraiment avant de fermer le dialogue.
+        toast.warning(
+          isPay
+            ? "Hors-ligne : paiement enregistré localement, sera synchronisé au retour du réseau."
+            : "Hors-ligne : vente enregistrée localement. Le ticket imprimable ne sera disponible qu'après synchronisation (Journal de caisse) — prévenez le patient.",
+          { duration: 10000 }
+        );
+        setOpen(false);
+        resetForm();
+        return;
+      }
+
+      setOpen(false);
+      // La référence imprimée sur le ticket doit être celle que le pharmacien devra saisir pour
+      // finaliser (PendingInvoice.id, cf. dispensePendingInvoice), pas l'id interne de la
+      // transaction ; invoiceTotalAmount/remainingDue alimentent l'affichage "Total facture /
+      // Réglé sur ce ticket / Reste à payer" quand le paiement n'est pas intégral (cf.
+      // invoice-modal.tsx / invoice-pdf.tsx).
+      const txn = {
+        ...result.data?.transaction,
+        pendingInvoiceId: result.data?.pendingInvoice?.id,
+        invoiceTotalAmount: result.data?.invoiceTotalAmount,
+        remainingDue: result.data?.remainingDue,
+      };
+      onSuccess(txn);
+      resetForm();
     } catch (err: any) {
       setMsg({ type: "error", text: err.message || "Erreur de connexion." });
     } finally {
@@ -413,7 +454,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                   type="number"
                   min="0"
                   max={grandTotal}
-                  value={amountReceivedInput}
+                  value={amountReceivedDisplay}
                   onChange={(e) => { setAmountTouched(true); setAmountReceivedInput(e.target.value); }}
                   className="h-9 w-32 text-sm font-bold text-right rounded-xl"
                 />

@@ -52,9 +52,12 @@ interface LabViewProps {
   labOrders: any[];
   patients: any[];
   currentUserRole?: string;
+  // Pour la réplication du catalogue hors-ligne (cf. new-lab-order-dialog.tsx) — absent sur la
+  // vue globale holding (patients de plusieurs cliniques à la fois, aucun établissement unique).
+  organizationId?: string;
 }
 
-export default function LabView({ labOrders, patients, currentUserRole }: LabViewProps) {
+export default function LabView({ labOrders, patients, currentUserRole, organizationId }: LabViewProps) {
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
@@ -254,7 +257,7 @@ export default function LabView({ labOrders, patients, currentUserRole }: LabVie
           )}
 
           {/* New lab order button */}
-          {canWrite && <NewLabOrderDialog patients={patients} />}
+          {canWrite && <NewLabOrderDialog patients={patients} organizationId={organizationId} />}
 
           {/* View mode toggle */}
           <div className="flex items-center p-1 rounded-xl bg-muted/40 border border-border/60">
@@ -287,7 +290,7 @@ export default function LabView({ labOrders, patients, currentUserRole }: LabVie
         <Card className="rounded-2xl border-border/70">
           <CardContent className="py-16 text-center">
             <FlaskConical className="h-12 w-12 text-muted-foreground/40 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-foreground">Aucune demande d'analyse trouvée</h3>
+            <h3 className="text-base font-bold text-foreground">Aucune demande d&apos;analyse trouvée</h3>
             <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
               Aucun examen de laboratoire ne correspond aux critères de recherche actuels.
             </p>

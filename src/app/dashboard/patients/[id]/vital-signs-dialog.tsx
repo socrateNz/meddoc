@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Activity, Plus, HeartPulse } from "lucide-react";
+import { Activity, HeartPulse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,15 +16,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { recordVitalSign } from "@/actions/vitals";
+import { submitOrQueueOffline } from "@/lib/offline-submit";
 import { toast } from "sonner";
 
 interface VitalSignsDialogProps {
   patientId: string;
   appointmentId?: string;
+  // Juste pour l'étiquette affichée dans la file hors-ligne (cf. OfflineBanner) — jamais utilisé
+  // pour l'enregistrement lui-même, qui ne porte que patientId.
+  patientName?: string;
   onSuccess?: (vital: any) => void;
 }
 
-export default function VitalSignsDialog({ patientId, appointmentId, onSuccess }: VitalSignsDialogProps) {
+export default function VitalSignsDialog({ patientId, appointmentId, patientName, onSuccess }: VitalSignsDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -41,7 +45,7 @@ export default function VitalSignsDialog({ patientId, appointmentId, onSuccess }
     e.preventDefault();
     setLoading(true);
 
-    const res = await recordVitalSign({
+    const payload = {
       patientId,
       appointmentId,
       temperature: temperature ? parseFloat(temperature) : undefined,
@@ -52,24 +56,36 @@ export default function VitalSignsDialog({ patientId, appointmentId, onSuccess }
       weight: weight ? parseFloat(weight) : undefined,
       painScore: painScore ? parseInt(painScore, 10) : undefined,
       notes: notes || undefined,
+    };
+
+    const res = await submitOrQueueOffline({
+      action: () => recordVitalSign(payload),
+      queueType: "VITALS",
+      payload,
+      label: `Constantes — ${patientName || "patient"}`,
     });
 
     setLoading(false);
     if (!res.success) {
       toast.error(res.error);
+      return;
+    }
+
+    if (res.queued) {
+      toast.success("Hors-ligne : constantes enregistrées localement, seront synchronisées au retour du réseau.");
     } else {
       toast.success("Constantes enregistrées avec succès.");
       onSuccess?.(res.data);
-      setOpen(false);
-      setTemperature("");
-      setBloodPressure("");
-      setHeartRate("");
-      setOxygenSaturation("");
-      setBloodSugar("");
-      setWeight("");
-      setPainScore("");
-      setNotes("");
     }
+    setOpen(false);
+    setTemperature("");
+    setBloodPressure("");
+    setHeartRate("");
+    setOxygenSaturation("");
+    setBloodSugar("");
+    setWeight("");
+    setPainScore("");
+    setNotes("");
   };
 
   return (

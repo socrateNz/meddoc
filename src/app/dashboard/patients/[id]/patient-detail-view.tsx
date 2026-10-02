@@ -180,7 +180,7 @@ export default function PatientDetailView({
           </Button>
         </Link>
         <div className="flex gap-2 flex-wrap">
-          {canWrite && !isDischarged && <VitalSignsDialog patientId={patient.id} />}
+          {canWrite && !isDischarged && <VitalSignsDialog patientId={patient.id} patientName={patientFullName} />}
           {canWrite && activeCarePlan && !isDischarged && (
             <CloseCarePlanDialog carePlanId={activeCarePlan.id} patientId={patient.id} patientName={patientFullName} />
           )}
@@ -509,7 +509,7 @@ export default function PatientDetailView({
                 {!latestVitals ? (
                   <div className="space-y-2">
                     <p className="text-xs text-muted-foreground">Aucune constante enregistrée.</p>
-                    {canWrite && !isDischarged && <VitalSignsDialog patientId={patient.id} />}
+                    {canWrite && !isDischarged && <VitalSignsDialog patientId={patient.id} patientName={patientFullName} />}
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -701,7 +701,7 @@ export default function PatientDetailView({
               <FlaskConical className="h-5 w-5 text-blue-500" />
               Demandes d&apos;analyses
             </h3>
-            {canOrderLab && !isDischarged && <NewLabOrderDialog patients={[patient]} defaultPatientId={patient.id} />}
+            {canOrderLab && !isDischarged && <NewLabOrderDialog patients={[patient]} defaultPatientId={patient.id} organizationId={patient.organizationId ?? undefined} />}
           </div>
 
           {labOrders.length === 0 ? (
@@ -835,7 +835,7 @@ export default function PatientDetailView({
                         <ul className="space-y-3">
                           {plan.tasks.map((task: any) => (
                             <li key={task.id} className="text-sm p-3 bg-muted/40 rounded-lg border border-border/50 flex items-start gap-3">
-                              {canWrite && <TaskStatusToggle taskId={task.id} patientId={patient.id} initialStatus={task.status} />}
+                              {canWrite && <TaskStatusToggle taskId={task.id} patientId={patient.id} initialStatus={task.status} taskTitle={task.title} />}
                               <div className="flex-1">
                                 <p className={`font-medium ${task.status === "COMPLETED" ? "text-muted-foreground line-through" : "text-foreground"}`}>
                                   {task.title}

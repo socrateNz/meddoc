@@ -43,7 +43,7 @@ export default async function ClinicLabPage({ params }: ClinicLabPageProps) {
         </p>
       </div>
 
-      <LabView labOrders={labOrders} patients={patients} currentUserRole={currentUser.role} />
+      <LabView labOrders={labOrders} patients={patients} currentUserRole={currentUser.role} organizationId={clinicId} />
     </div>
   );
 }
