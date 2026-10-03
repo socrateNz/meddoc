@@ -34,6 +34,7 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
   const registers = registersRes.success ? registersRes.data || [] : [];
   const pharmacyItems = pharmacyItemsRes.success ? pharmacyItemsRes.data || [] : [];
   const initialHistory = historyRes.success ? historyRes.data || [] : [];
+  const initialHistoryTotal = historyRes.success ? historyRes.total ?? 0 : 0;
   const orgName = clinicOrg?.name || (activeUser.organization as any)?.name || "ÉTABLISSEMENT MÉDICAL";
 
   return (
@@ -48,6 +49,7 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
       <CaisseView
         initialRegisters={registers as any}
         initialHistory={initialHistory as any}
+        initialHistoryTotal={initialHistoryTotal}
         organizationId={clinicId}
         organizationName={orgName}
         organizationLogoUrl={clinicOrg?.logoUrl}

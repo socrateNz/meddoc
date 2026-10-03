@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,6 +57,7 @@ interface RegisterRow {
 interface CaisseViewProps {
   initialRegisters: RegisterRow[];
   initialHistory?: any[];
+  initialHistoryTotal?: number;
   organizationId: string;
   organizationName?: string;
   organizationLogoUrl?: string | null;
@@ -66,9 +67,12 @@ interface CaisseViewProps {
   pharmacyItems: any[];
 }
 
+const HISTORY_PAGE_SIZE = 20;
+
 export default function CaisseView({
   initialRegisters,
   initialHistory = [],
+  initialHistoryTotal = 0,
   organizationId,
   organizationName,
   organizationLogoUrl,
@@ -90,11 +94,16 @@ export default function CaisseView({
   const [unpaidInvoices, setUnpaidInvoices] = useState<any[]>([]);
   const [loadingUnpaid, setLoadingUnpaid] = useState(false);
 
-  // Historique des tickets de caisse
+  // Historique des tickets de caisse — paginé et filtré côté serveur (listCaisseHistoryInvoices)
   const [historyInvoices, setHistoryInvoices] = useState<any[]>(initialHistory);
+  const [historyTotal, setHistoryTotal] = useState<number>(initialHistoryTotal);
+  const [historyPage, setHistoryPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
+  const [historyDebouncedSearch, setHistoryDebouncedSearch] = useState("");
   const [historyStatusFilter, setHistoryStatusFilter] = useState<"ALL" | "PAID" | "PARTIAL" | "PENDING" | "CANCELLED">("ALL");
+  const [historyReloadKey, setHistoryReloadKey] = useState(0);
+  const historyRequestId = useRef(0);
 
   // PHARMACIST inclus temporairement ("pour le moment") : peut se comporter comme un caissier
   // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
@@ -125,13 +134,28 @@ export default function CaisseView({
     if (res.success) setUnpaidInvoices(res.data as any[]);
   }, [organizationId]);
 
-  // Org-wide (TOUS STATUTS) — alimente l'onglet "Historique des tickets"
-  const refreshHistoryInvoices = useCallback(async () => {
-    setLoadingHistory(true);
-    const res = await listCaisseHistoryInvoices(organizationId);
-    setLoadingHistory(false);
-    if (res.success) setHistoryInvoices(res.data as any[]);
-  }, [organizationId]);
+  // Org-wide (TOUS STATUTS) — alimente l'onglet "Historique des tickets", page par page. Une
+  // réponse plus ancienne qu'une requête déjà lancée est ignorée (sinon une recherche tapée vite
+  // pourrait afficher un résultat périmé).
+  const refreshHistoryInvoices = useCallback(
+    async (page: number, search: string, status: string) => {
+      const requestId = ++historyRequestId.current;
+      setLoadingHistory(true);
+      const res = await listCaisseHistoryInvoices(organizationId, {
+        page,
+        pageSize: HISTORY_PAGE_SIZE,
+        search,
+        status: status === "ALL" ? undefined : status,
+      });
+      if (requestId !== historyRequestId.current) return;
+      setLoadingHistory(false);
+      if (res.success) {
+        setHistoryInvoices(res.data as any[]);
+        setHistoryTotal(res.total ?? 0);
+      }
+    },
+    [organizationId]
+  );
 
   useEffect(() => {
     if (selectedRegister?.openSession) {
@@ -144,8 +168,16 @@ export default function CaisseView({
 
   useEffect(() => {
     refreshUnpaidInvoices();
-    refreshHistoryInvoices();
-  }, [refreshUnpaidInvoices, refreshHistoryInvoices]);
+  }, [refreshUnpaidInvoices]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setHistoryDebouncedSearch(historySearch.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [historySearch]);
+
+  useEffect(() => {
+    refreshHistoryInvoices(historyPage, historyDebouncedSearch, historyStatusFilter);
+  }, [refreshHistoryInvoices, historyPage, historyDebouncedSearch, historyStatusFilter, historyReloadKey]);
 
   const handleOpen = async (openingFloat: number) => {
     if (!selectedRegister) return { success: false, error: "Aucune caisse sélectionnée." };
@@ -180,7 +212,7 @@ export default function CaisseView({
     if (transaction) setSelectedTransaction(transaction);
     if (selectedRegister?.openSession) refreshSummary(selectedRegister.openSession.id);
     refreshUnpaidInvoices();
-    refreshHistoryInvoices();
+    setHistoryReloadKey((k) => k + 1);
   };
 
   const handlePrintInvoice = (inv: any) => {
@@ -210,26 +242,14 @@ export default function CaisseView({
     });
   };
 
-  const filteredHistoryInvoices = historyInvoices.filter((inv) => {
-    if (historyStatusFilter === "PAID" && inv.status !== "PAID") return false;
-    if (historyStatusFilter === "PARTIAL" && inv.status !== "PARTIAL") return false;
-    if (historyStatusFilter === "PENDING" && inv.status !== "PENDING") return false;
-    if (historyStatusFilter === "CANCELLED" && inv.status !== "CANCELLED") return false;
+  const selectHistoryStatus = (status: "ALL" | "PAID" | "PARTIAL" | "PENDING" | "CANCELLED") => {
+    setHistoryStatusFilter(status);
+    setHistoryPage(1);
+  };
 
-    const q = historySearch.trim().toLowerCase();
-    if (!q) return true;
-
-    const ticketNum = String(inv.id).slice(-6).toLowerCase();
-    const name = inv.patient?.user
-      ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}`.toLowerCase()
-      : (inv.customPatientName || "").toLowerCase();
-    const phone = (inv.patient?.user?.phone || inv.customPatientPhone || "").toLowerCase();
-    const itemDescs = Array.isArray(inv.items)
-      ? inv.items.map((it: any) => (it.description || "").toLowerCase()).join(" ")
-      : "";
-
-    return ticketNum.includes(q) || name.includes(q) || phone.includes(q) || itemDescs.includes(q);
-  });
+  const historyTotalPages = Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE));
+  const historyFrom = historyTotal === 0 ? 0 : (historyPage - 1) * HISTORY_PAGE_SIZE + 1;
+  const historyTo = Math.min(historyPage * HISTORY_PAGE_SIZE, historyTotal);
 
   return (
     <div className="space-y-6">
@@ -245,7 +265,7 @@ export default function CaisseView({
           </TabsTrigger>
           <TabsTrigger value="historique" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
             <History className="h-4 w-4 text-emerald-500" />
-            Historique des tickets ({historyInvoices.length})
+            Historique des tickets ({historyTotal})
           </TabsTrigger>
         </TabsList>
 
@@ -580,7 +600,10 @@ export default function CaisseView({
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <Input
                 value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
+                onChange={(e) => {
+                  setHistorySearch(e.target.value);
+                  setHistoryPage(1);
+                }}
                 placeholder="Rechercher par patient, téléphone, ticket #..."
                 className="h-9 pl-9 text-sm rounded-xl"
               />
@@ -589,18 +612,18 @@ export default function CaisseView({
             <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl shrink-0 self-start sm:self-auto">
               <button
                 type="button"
-                onClick={() => setHistoryStatusFilter("ALL")}
+                onClick={() => selectHistoryStatus("ALL")}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
                   historyStatusFilter === "ALL"
                     ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900"
                 }`}
               >
-                Tous ({historyInvoices.length})
+                Tous ({historyTotal})
               </button>
               <button
                 type="button"
-                onClick={() => setHistoryStatusFilter("PAID")}
+                onClick={() => selectHistoryStatus("PAID")}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
                   historyStatusFilter === "PAID"
                     ? "bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs"
@@ -611,7 +634,7 @@ export default function CaisseView({
               </button>
               <button
                 type="button"
-                onClick={() => setHistoryStatusFilter("PARTIAL")}
+                onClick={() => selectHistoryStatus("PARTIAL")}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
                   historyStatusFilter === "PARTIAL"
                     ? "bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs"
@@ -622,7 +645,7 @@ export default function CaisseView({
               </button>
               <button
                 type="button"
-                onClick={() => setHistoryStatusFilter("PENDING")}
+                onClick={() => selectHistoryStatus("PENDING")}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
                   historyStatusFilter === "PENDING"
                     ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs"
@@ -633,7 +656,7 @@ export default function CaisseView({
               </button>
               <button
                 type="button"
-                onClick={() => setHistoryStatusFilter("CANCELLED")}
+                onClick={() => selectHistoryStatus("CANCELLED")}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
                   historyStatusFilter === "CANCELLED"
                     ? "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 shadow-xs"
@@ -647,17 +670,17 @@ export default function CaisseView({
 
           {loadingHistory && historyInvoices.length === 0 ? (
             <div className="py-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
-          ) : filteredHistoryInvoices.length === 0 ? (
+          ) : historyInvoices.length === 0 ? (
             <Card className="rounded-2xl border-dashed">
               <CardContent className="py-10 text-center text-sm text-slate-500">
-                {historyInvoices.length === 0
+                {historyTotal === 0 && !historyDebouncedSearch && historyStatusFilter === "ALL"
                   ? "Aucun ticket enregistré pour le moment."
                   : "Aucun ticket ne correspond à vos critères de recherche."}
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-3">
-              {filteredHistoryInvoices.map((inv: any) => {
+              {historyInvoices.map((inv: any) => {
                 const items = Array.isArray(inv.items) ? inv.items : [];
                 const total = items.reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
                 const name = inv.patient?.user
@@ -699,7 +722,7 @@ export default function CaisseView({
                                 pendingInvoiceId={inv.id}
                                 currentName={inv.customPatientName}
                                 currentPhone={inv.customPatientPhone}
-                                onSuccess={refreshHistoryInvoices}
+                                onSuccess={() => setHistoryReloadKey((k) => k + 1)}
                               />
                             )}
                           </div>
@@ -796,6 +819,39 @@ export default function CaisseView({
                   </Card>
                 );
               })}
+            </div>
+          )}
+
+          {historyTotal > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <span className="text-xs text-slate-500">
+                {historyFrom}–{historyTo} sur {historyTotal} ticket{historyTotal > 1 ? "s" : ""}
+              </span>
+              {historyTotalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl text-xs"
+                    disabled={historyPage <= 1 || loadingHistory}
+                    onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                  >
+                    Précédent
+                  </Button>
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300 tabular-nums">
+                    Page {historyPage} / {historyTotalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl text-xs"
+                    disabled={historyPage >= historyTotalPages || loadingHistory}
+                    onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))}
+                  >
+                    Suivant
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </TabsContent>

@@ -1,5 +1,6 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -2008,13 +2009,18 @@ export async function listPendingInvoices(organizationId?: string) {
 }
 
 // Historique complet des tickets de caisse de la clinique (tous statuts : PENDING, PARTIAL, PAID, CANCELLED)
-export async function listCaisseHistoryInvoices(organizationId?: string, take: number = 200) {
+const HISTORY_STATUSES = ["PAID", "PARTIAL", "PENDING", "CANCELLED"] as const;
+
+export async function listCaisseHistoryInvoices(
+  organizationId?: string,
+  options: { page?: number; pageSize?: number; status?: string; search?: string } = {}
+) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertRegisterReadRole(activeUser.role);
 
-    const where: any = {};
+    const where: Prisma.PendingInvoiceWhereInput = {};
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {
       where.OR = [
         { organizationId: activeUser.organizationId },
@@ -2025,17 +2031,51 @@ export async function listCaisseHistoryInvoices(organizationId?: string, take: n
       if (targetOrgId) where.organizationId = targetOrgId;
     }
 
-    const invoices = await prisma.pendingInvoice.findMany({
-      where,
-      include: {
-        patient: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } },
-        medicalRecord: { select: { title: true, createdAt: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take,
-    });
+    if (options.status && (HISTORY_STATUSES as readonly string[]).includes(options.status)) {
+      where.status = options.status;
+    }
 
-    return { success: true, data: await attachAmountPaid(invoices) };
+    const search = options.search?.trim();
+    if (search) {
+      where.AND = [
+        {
+          OR: [
+            { customPatientName: { contains: search, mode: "insensitive" } },
+            { customPatientPhone: { contains: search } },
+            {
+              patient: {
+                user: {
+                  OR: [
+                    { firstName: { contains: search, mode: "insensitive" } },
+                    { lastName: { contains: search, mode: "insensitive" } },
+                    { phone: { contains: search } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ];
+    }
+
+    const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100);
+    const page = Math.max(options.page ?? 1, 1);
+
+    const [invoices, total] = await Promise.all([
+      prisma.pendingInvoice.findMany({
+        where,
+        include: {
+          patient: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } },
+          medicalRecord: { select: { title: true, createdAt: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.pendingInvoice.count({ where }),
+    ]);
+
+    return { success: true, data: await attachAmountPaid(invoices), total, page, pageSize };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du chargement de l'historique des tickets." };
   }
