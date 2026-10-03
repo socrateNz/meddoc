@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -43,7 +44,7 @@ const VITAL_STATUS_OPTIONS = [
 export default function RecordDeliveryDialog({ pregnancyId }: { pregnancyId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [deliveredAt, setDeliveredAt] = useState(new Date().toISOString().slice(0, 10));
   const [mode, setMode] = useState<"VAGINAL" | "C_SECTION" | "ASSISTED">("VAGINAL");
   const [complicationInput, setComplicationInput] = useState("");
@@ -72,9 +73,8 @@ export default function RecordDeliveryDialog({ pregnancyId }: { pregnancyId: str
       toast.error("Le poids est requis pour chaque nouveau-né.");
       return;
     }
-    setLoading(true);
     try {
-      const res = await recordDelivery({
+      const res = await guard((idempotencyKey) => recordDelivery({
         pregnancyId,
         deliveredAt: deliveredAt || undefined,
         mode,
@@ -87,7 +87,9 @@ export default function RecordDeliveryDialog({ pregnancyId }: { pregnancyId: str
           apgarScore5: n.apgarScore5 ? Number(n.apgarScore5) : undefined,
           vitalStatus: n.vitalStatus,
         })),
-      });
+        idempotencyKey,
+      }));
+      if (!res) return;
       if (res.success) {
         toast.success("Accouchement enregistré.");
         setOpen(false);
@@ -95,8 +97,8 @@ export default function RecordDeliveryDialog({ pregnancyId }: { pregnancyId: str
       } else {
         toast.error(res.error || "Erreur lors de l'enregistrement.");
       }
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur de connexion.");
     }
   };
 

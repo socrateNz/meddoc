@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -40,7 +41,12 @@ const PREGNANCY_INCLUDE = {
   createdBy: { select: { firstName: true, lastName: true } },
 };
 
-export async function createPregnancy(data: {
+export async function createPregnancy(data: Parameters<typeof createPregnancyOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createPregnancy", idempotencyKey, payload, () => createPregnancyOnce(payload));
+}
+
+async function createPregnancyOnce(data: {
   patientId: string;
   lastMenstrualPeriod: string;
   expectedDueDate: string;
@@ -103,7 +109,12 @@ export async function listPregnancies(patientId: string) {
   }
 }
 
-export async function addPrenatalVisit(data: {
+export async function addPrenatalVisit(data: Parameters<typeof addPrenatalVisitOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("addPrenatalVisit", idempotencyKey, payload, () => addPrenatalVisitOnce(payload));
+}
+
+async function addPrenatalVisitOnce(data: {
   pregnancyId: string;
   visitDate?: string;
   gestationalWeeks?: number;
@@ -151,7 +162,12 @@ export async function addPrenatalVisit(data: {
   }
 }
 
-export async function recordDelivery(data: {
+export async function recordDelivery(data: Parameters<typeof recordDeliveryOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("recordDelivery", idempotencyKey, payload, () => recordDeliveryOnce(payload));
+}
+
+async function recordDeliveryOnce(data: {
   pregnancyId: string;
   deliveredAt?: string;
   mode: "VAGINAL" | "C_SECTION" | "ASSISTED";

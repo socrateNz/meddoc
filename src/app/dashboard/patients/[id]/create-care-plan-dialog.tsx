@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +20,7 @@ import { toast } from "sonner";
 
 export default function CreateCarePlanDialog({ patientId }: { patientId: string }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   const [formData, setFormData] = useState({
     title: "",
@@ -34,14 +35,14 @@ export default function CreateCarePlanDialog({ patientId }: { patientId: string 
       return;
     }
 
-    setLoading(true);
-    const result = await createCarePlan({
+    const result = await guard((idempotencyKey) => createCarePlan({
       patientId,
       title: formData.title,
       startDate: formData.startDate,
       endDate: formData.endDate || undefined,
-    });
-    setLoading(false);
+      idempotencyKey,
+    }));
+    if (!result) return;
 
     if (result.success) {
       toast.success("Plan de soins créé avec succès !");

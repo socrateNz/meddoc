@@ -39,6 +39,7 @@ import SaleBlockDialog from "@/app/dashboard/finance/sale-block-dialog";
 import DeletePharmacyItemDialog from "@/app/dashboard/finance/delete-pharmacy-item-dialog";
 import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
 import { dispensePendingInvoice, cancelDispense } from "@/actions/finance";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -82,7 +83,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
   // ici avant que la remise ne soit possible (évite les litiges « je vous l'ai déjà donné »).
   const [finalizingInvoice, setFinalizingInvoice] = useState<any | null>(null);
   const [finalizeReference, setFinalizeReference] = useState("");
-  const [finalizing, setFinalizing] = useState(false);
+  const { submitting: finalizing, guard: guardFinalize } = useSubmitGuard();
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   // Quantité à remettre LORS DE CETTE VISITE par ligne du panier (clé = index dans items[]),
   // pré-remplie à la quantité restante — donner l'intégralité reste le geste par défaut à un
@@ -139,10 +140,14 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
     const lines = Object.entries(lineQuantities)
       .map(([index, qty]) => ({ index: Number(index), quantity: Number(qty) || 0 }))
       .filter((l) => l.quantity > 0);
-    setFinalizing(true);
     setFinalizeError(null);
     try {
-      const res = await dispensePendingInvoice(finalizingInvoice.id, finalizeReference.trim(), lines);
+      // Clé d'idempotence : une remise déjà enregistrée (double clic, réponse perdue) ne doit pas
+      // être répétée — elle diminuerait à nouveau le stock des lignes remises.
+      const res = await guardFinalize((idempotencyKey) =>
+        dispensePendingInvoice(finalizingInvoice.id, finalizeReference.trim(), lines, idempotencyKey)
+      );
+      if (!res) return;
       if (res.success) {
         setMsg({
           type: "success",
@@ -157,8 +162,6 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
       }
     } catch (err: any) {
       setFinalizeError(err.message || "Erreur de connexion.");
-    } finally {
-      setFinalizing(false);
     }
   };
 

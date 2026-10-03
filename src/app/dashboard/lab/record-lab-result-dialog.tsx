@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -17,7 +18,7 @@ interface RecordLabResultDialogProps {
 
 export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLabResultDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [testName, setTestName] = useState(labOrder.tests[0] || "");
   const [value, setValue] = useState("");
   const [unit, setUnit] = useState("");
@@ -41,9 +42,8 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
       return;
     }
 
-    setLoading(true);
     try {
-      const res = await recordLabResult({
+      const res = await guard((idempotencyKey) => recordLabResult({
         labOrderId: labOrder.id,
         testName: testName.trim(),
         value: value.trim(),
@@ -51,7 +51,9 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
         referenceRange: referenceRange.trim() || undefined,
         isAbnormal,
         notes: notes.trim() || undefined,
-      });
+        idempotencyKey,
+      }));
+      if (!res) return;
       if (res.success) {
         toast.success("Résultat enregistré.");
         setOpen(false);
@@ -60,8 +62,8 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
       } else {
         toast.error(res.error || "Erreur lors de l'enregistrement du résultat.");
       }
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur de connexion.");
     }
   };
 

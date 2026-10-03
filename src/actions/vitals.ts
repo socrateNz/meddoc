@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -29,7 +30,12 @@ export interface RecordVitalSignInput {
   notes?: string;
 }
 
-export async function recordVitalSign(data: RecordVitalSignInput) {
+export async function recordVitalSign(data: Parameters<typeof recordVitalSignOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("recordVitalSign", idempotencyKey, payload, () => recordVitalSignOnce(payload));
+}
+
+async function recordVitalSignOnce(data: RecordVitalSignInput) {
   try {
     recordVitalSignSchema.parse(data);
     const activeUser = await getCurrentUser();

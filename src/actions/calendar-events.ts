@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
@@ -11,7 +12,12 @@ import { revalidatePath } from "next/cache";
 // créer pour lui-même, aucun rôle particulier requis. userId est toujours fixé ici à
 // activeUser.id, jamais accepté depuis le client.
 
-export async function createCalendarEvent(data: { title: string; description?: string; startAt: string; endAt?: string; allDay?: boolean }) {
+export async function createCalendarEvent(data: Parameters<typeof createCalendarEventOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createCalendarEvent", idempotencyKey, payload, () => createCalendarEventOnce(payload));
+}
+
+async function createCalendarEventOnce(data: { title: string; description?: string; startAt: string; endAt?: string; allDay?: boolean }) {
   try {
     createCalendarEventSchema.parse(data);
     const activeUser = await getCurrentUser();

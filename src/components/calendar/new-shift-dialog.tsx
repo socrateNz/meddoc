@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Briefcase, Trash2 } from "lucide-react";
 import { createShift, updateShift, deleteShift } from "@/actions/shifts";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { toast } from "sonner";
 import { StaffUser } from "./types";
 
@@ -90,7 +91,7 @@ interface ShiftFormProps {
 
 function ShiftForm({ staffUsers, shift, defaultDate, onOpenChange, onSuccess }: ShiftFormProps) {
   const isEdit = !!shift;
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const shiftStart = shift ? new Date(shift.startAt) : null;
@@ -112,14 +113,17 @@ function ShiftForm({ staffUsers, shift, defaultDate, onOpenChange, onSuccess }: 
       return;
     }
 
-    setLoading(true);
     try {
       const startAt = new Date(`${startDate}T${startTime}`).toISOString();
       const endAt = new Date(`${endDate}T${endTime}`).toISOString();
 
-      const response = isEdit
-        ? await updateShift({ id: shift!.id, userId, title, startAt, endAt, notes: notes || undefined })
-        : await createShift({ userId, title, startAt, endAt, notes: notes || undefined });
+      // Seule la création porte une clé : une modification est idempotente par nature.
+      const response = await guard((idempotencyKey) =>
+        isEdit
+          ? updateShift({ id: shift!.id, userId, title, startAt, endAt, notes: notes || undefined })
+          : createShift({ userId, title, startAt, endAt, notes: notes || undefined, idempotencyKey })
+      );
+      if (!response) return;
 
       if (response.success) {
         toast.success(isEdit ? "Garde mise à jour." : "Garde planifiée.");
@@ -130,8 +134,6 @@ function ShiftForm({ staffUsers, shift, defaultDate, onOpenChange, onSuccess }: 
       }
     } catch {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

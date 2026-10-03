@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 
 // Lecture seule pour la réplication RxDB du catalogue d'examens (cf. src/lib/offline-db.ts) —
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const checkpointUpdatedAt = searchParams.get("updatedAt");
     const checkpointId = searchParams.get("id");
-    const batchSize = Math.min(Math.max(Number(searchParams.get("limit")) || 200, 1), 500);
+    const batchSize = Math.min(Math.max(Number(searchParams.get("limit")) || MAX_PAGE_SIZE, 1), MAX_PAGE_SIZE);
 
     const orgFilter: Prisma.LabTestWhereInput =
       currentUser.organization?.type === "HOLDING"

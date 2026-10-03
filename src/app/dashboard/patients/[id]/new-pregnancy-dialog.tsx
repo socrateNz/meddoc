@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -21,7 +22,7 @@ function addDays(dateStr: string, days: number) {
 export default function NewPregnancyDialog({ patientId }: { patientId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [lastMenstrualPeriod, setLastMenstrualPeriod] = useState("");
   const [expectedDueDate, setExpectedDueDate] = useState("");
   const [dueDateTouched, setDueDateTouched] = useState(false);
@@ -51,16 +52,17 @@ export default function NewPregnancyDialog({ patientId }: { patientId: string })
       toast.error("La date des dernières règles et la date prévue d'accouchement sont requises.");
       return;
     }
-    setLoading(true);
     try {
-      const res = await createPregnancy({
+      const res = await guard((idempotencyKey) => createPregnancy({
         patientId,
         lastMenstrualPeriod,
         expectedDueDate,
         gravidity: Number(gravidity) || 1,
         parity: Number(parity) || 0,
         riskFactors,
-      });
+        idempotencyKey,
+      }));
+      if (!res) return;
       if (res.success) {
         toast.success("Grossesse enregistrée.");
         setOpen(false);
@@ -68,8 +70,8 @@ export default function NewPregnancyDialog({ patientId }: { patientId: string })
       } else {
         toast.error(res.error || "Erreur lors de l'enregistrement.");
       }
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur de connexion.");
     }
   };
 

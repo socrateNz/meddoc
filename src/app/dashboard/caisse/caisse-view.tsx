@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,16 +95,33 @@ export default function CaisseView({
   const [unpaidInvoices, setUnpaidInvoices] = useState<any[]>([]);
   const [loadingUnpaid, setLoadingUnpaid] = useState(false);
 
-  // Historique des tickets de caisse — paginé et filtré côté serveur (listCaisseHistoryInvoices)
-  const [historyInvoices, setHistoryInvoices] = useState<any[]>(initialHistory);
-  const [historyTotal, setHistoryTotal] = useState<number>(initialHistoryTotal);
+  // Historique des tickets de caisse — paginé et filtré côté serveur (listCaisseHistoryInvoices),
+  // mis en cache par react-query : une réponse plus ancienne ne remplace jamais une plus récente.
+  const queryClient = useQueryClient();
   const [historyPage, setHistoryPage] = useState(1);
-  const [loadingHistory, setLoadingHistory] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
   const [historyDebouncedSearch, setHistoryDebouncedSearch] = useState("");
   const [historyStatusFilter, setHistoryStatusFilter] = useState<"ALL" | "PAID" | "PARTIAL" | "PENDING" | "CANCELLED">("ALL");
-  const [historyReloadKey, setHistoryReloadKey] = useState(0);
-  const historyRequestId = useRef(0);
+  const historyKey = ["caisseHistory", organizationId] as const;
+  const isDefaultHistoryView = historyPage === 1 && historyDebouncedSearch === "" && historyStatusFilter === "ALL";
+  const historyQuery = useQuery({
+    queryKey: [...historyKey, historyPage, historyDebouncedSearch, historyStatusFilter],
+    queryFn: async () => {
+      const res = await listCaisseHistoryInvoices(organizationId, {
+        page: historyPage,
+        pageSize: HISTORY_PAGE_SIZE,
+        search: historyDebouncedSearch,
+        status: historyStatusFilter === "ALL" ? undefined : historyStatusFilter,
+      });
+      if (!res.success) throw new Error(res.error);
+      return { items: (res.data ?? []) as any[], total: res.total ?? 0 };
+    },
+    initialData: isDefaultHistoryView ? { items: initialHistory, total: initialHistoryTotal } : undefined,
+    placeholderData: keepPreviousData,
+  });
+  const historyInvoices = historyQuery.data?.items ?? [];
+  const historyTotal = historyQuery.data?.total ?? 0;
+  const loadingHistory = historyQuery.isFetching;
 
   // PHARMACIST inclus temporairement ("pour le moment") : peut se comporter comme un caissier
   // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
@@ -134,29 +152,6 @@ export default function CaisseView({
     if (res.success) setUnpaidInvoices(res.data as any[]);
   }, [organizationId]);
 
-  // Org-wide (TOUS STATUTS) — alimente l'onglet "Historique des tickets", page par page. Une
-  // réponse plus ancienne qu'une requête déjà lancée est ignorée (sinon une recherche tapée vite
-  // pourrait afficher un résultat périmé).
-  const refreshHistoryInvoices = useCallback(
-    async (page: number, search: string, status: string) => {
-      const requestId = ++historyRequestId.current;
-      setLoadingHistory(true);
-      const res = await listCaisseHistoryInvoices(organizationId, {
-        page,
-        pageSize: HISTORY_PAGE_SIZE,
-        search,
-        status: status === "ALL" ? undefined : status,
-      });
-      if (requestId !== historyRequestId.current) return;
-      setLoadingHistory(false);
-      if (res.success) {
-        setHistoryInvoices(res.data as any[]);
-        setHistoryTotal(res.total ?? 0);
-      }
-    },
-    [organizationId]
-  );
-
   useEffect(() => {
     if (selectedRegister?.openSession) {
       refreshSummary(selectedRegister.openSession.id);
@@ -174,10 +169,6 @@ export default function CaisseView({
     const timer = setTimeout(() => setHistoryDebouncedSearch(historySearch.trim()), 300);
     return () => clearTimeout(timer);
   }, [historySearch]);
-
-  useEffect(() => {
-    refreshHistoryInvoices(historyPage, historyDebouncedSearch, historyStatusFilter);
-  }, [refreshHistoryInvoices, historyPage, historyDebouncedSearch, historyStatusFilter, historyReloadKey]);
 
   const handleOpen = async (openingFloat: number) => {
     if (!selectedRegister) return { success: false, error: "Aucune caisse sélectionnée." };
@@ -212,7 +203,7 @@ export default function CaisseView({
     if (transaction) setSelectedTransaction(transaction);
     if (selectedRegister?.openSession) refreshSummary(selectedRegister.openSession.id);
     refreshUnpaidInvoices();
-    setHistoryReloadKey((k) => k + 1);
+    queryClient.invalidateQueries({ queryKey: historyKey });
   };
 
   const handlePrintInvoice = (inv: any) => {
@@ -722,7 +713,7 @@ export default function CaisseView({
                                 pendingInvoiceId={inv.id}
                                 currentName={inv.customPatientName}
                                 currentPhone={inv.customPatientPhone}
-                                onSuccess={() => setHistoryReloadKey((k) => k + 1)}
+                                onSuccess={() => queryClient.invalidateQueries({ queryKey: historyKey })}
                               />
                             )}
                           </div>

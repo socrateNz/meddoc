@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -24,7 +25,7 @@ interface ScheduleAppointmentDialogProps {
 export default function ScheduleAppointmentDialog({ patientId, caregivers }: ScheduleAppointmentDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   const [caregiverId, setCaregiverId] = useState("unassigned");
   const [title, setTitle] = useState("");
@@ -49,17 +50,18 @@ export default function ScheduleAppointmentDialog({ patientId, caregivers }: Sch
       return;
     }
 
-    setLoading(true);
     try {
       const scheduledAt = new Date(`${date}T${time}`).toISOString();
-      const response = await createAppointment({
+      const response = await guard((idempotencyKey) => createAppointment({
         patientId,
         caregiverId: caregiverId === "unassigned" ? undefined : caregiverId,
         title,
         type,
         scheduledAt,
         durationMinutes: Number(durationMinutes),
-      });
+        idempotencyKey,
+      }));
+      if (!response) return;
 
       if (response.success) {
         toast.success("Rendez-vous planifié avec succès.");
@@ -71,8 +73,6 @@ export default function ScheduleAppointmentDialog({ patientId, caregivers }: Sch
       }
     } catch (err: any) {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

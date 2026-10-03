@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState, useEffect } from "react";
 import {
   Dialog,
@@ -42,7 +43,7 @@ export default function NewAppointmentModal({
   defaultTime,
   onSuccess,
 }: NewAppointmentModalProps) {
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   const [patientId, setPatientId] = useState("");
   const [caregiverId, setCaregiverId] = useState("unassigned");
@@ -70,19 +71,20 @@ export default function NewAppointmentModal({
       return;
     }
 
-    setLoading(true);
     try {
       const scheduledAt = new Date(`${date}T${time}`).toISOString();
       const caregiverVal = caregiverId === "unassigned" ? undefined : caregiverId;
 
-      const response = await createAppointment({
+      const response = await guard((idempotencyKey) => createAppointment({
         patientId,
         caregiverId: caregiverVal,
         title,
         type,
         scheduledAt,
         durationMinutes: Number(durationMinutes),
-      });
+        idempotencyKey,
+      }));
+      if (!response) return;
 
       if (response.success) {
         toast.success("Rendez-vous planifié avec succès.");
@@ -99,8 +101,6 @@ export default function NewAppointmentModal({
       }
     } catch {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

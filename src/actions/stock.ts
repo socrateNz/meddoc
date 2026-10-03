@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -172,7 +173,12 @@ export async function applyStockReceipt(
   return { purchase, transaction };
 }
 
-export async function recordStockPurchase(data: {
+export async function recordStockPurchase(data: Parameters<typeof recordStockPurchaseOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("recordStockPurchase", idempotencyKey, payload, () => recordStockPurchaseOnce(payload));
+}
+
+async function recordStockPurchaseOnce(data: {
   pharmacyItemId?: string;
   newItem?: {
     name: string;

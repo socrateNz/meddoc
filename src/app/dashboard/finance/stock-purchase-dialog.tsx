@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,7 @@ interface WithdrawalOption {
 
 export default function StockPurchaseDialog({ pharmacyItems, organizationId, openRegisters = [] }: StockPurchaseDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [error, setError] = useState("");
   const [formData, setFormData] = useState(emptyForm);
   const [withdrawals, setWithdrawals] = useState<WithdrawalOption[]>([]);
@@ -84,11 +85,10 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
       return;
     }
 
-    setLoading(true);
     setError("");
 
     try {
-      const res = await recordStockPurchase({
+      const res = await guard((idempotencyKey) => recordStockPurchase({
         pharmacyItemId: formData.isNewProduct ? undefined : formData.pharmacyItemId || undefined,
         newItem: formData.isNewProduct
           ? {
@@ -105,7 +105,9 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
         organizationId,
         cashSessionId: formData.deductFromCash ? formData.cashSessionId || undefined : undefined,
         linkedExpenseTransactionId: formData.deductFromCash ? undefined : formData.linkedExpenseTransactionId || undefined,
-      });
+        idempotencyKey,
+      }));
+      if (!res) return;
 
       if (res.success) {
         setOpen(false);
@@ -115,8 +117,6 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
       }
     } catch (err: any) {
       setError(err.message || "Une erreur est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

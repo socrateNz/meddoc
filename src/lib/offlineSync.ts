@@ -31,6 +31,9 @@ export interface OfflineActionPayloadMap {
     cashSessionId: Parameters<typeof payPendingInvoice>[1];
     amount: Parameters<typeof payPendingInvoice>[2];
     items: Parameters<typeof payPendingInvoice>[3];
+    // Clé d'idempotence de la soumission d'origine : le rejeu la renvoie telle quelle, pour qu'un
+    // paiement déjà reçu par le serveur (réponse perdue) ne soit pas encaissé une seconde fois.
+    idempotencyKey: Parameters<typeof payPendingInvoice>[4];
   };
 }
 
@@ -245,7 +248,13 @@ async function dispatch(action: PendingOfflineAction): Promise<{ success: boolea
     }
     case "CAISSE_PAY": {
       const { payPendingInvoice } = await import("@/actions/finance");
-      return payPendingInvoice(action.payload.pendingInvoiceId, action.payload.cashSessionId, action.payload.amount, action.payload.items);
+      return payPendingInvoice(
+        action.payload.pendingInvoiceId,
+        action.payload.cashSessionId,
+        action.payload.amount,
+        action.payload.items,
+        action.payload.idempotencyKey
+      );
     }
   }
 }

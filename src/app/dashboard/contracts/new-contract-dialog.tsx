@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ interface NewContractDialogProps {
 
 export default function NewContractDialog({ patients, caregivers, organizationId }: NewContractDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   const [patientId, setPatientId] = useState("");
   const [caregiverId, setCaregiverId] = useState("unassigned");
@@ -45,9 +46,8 @@ export default function NewContractDialog({ patients, caregivers, organizationId
       return;
     }
 
-    setLoading(true);
     try {
-      const response = await createContract({
+      const response = await guard((idempotencyKey) => createContract({
         patientId,
         caregiverId: caregiverId === "unassigned" ? undefined : caregiverId,
         title,
@@ -56,7 +56,9 @@ export default function NewContractDialog({ patients, caregivers, organizationId
         hourlyRate: Number(hourlyRate),
         hoursPerWeek: Number(hoursPerWeek),
         organizationId,
-      });
+        idempotencyKey,
+      }));
+      if (!response) return;
 
       if (response.success) {
         toast.success("Contrat créé avec succès.");
@@ -67,8 +69,6 @@ export default function NewContractDialog({ patients, caregivers, organizationId
       }
     } catch (err: any) {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

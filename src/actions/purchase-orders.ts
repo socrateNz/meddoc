@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -10,7 +11,12 @@ import { createPurchaseOrderSchema, receivePurchaseOrderLinesSchema } from "@/va
 import { assertStockRead, assertStockWrite, applyStockReceipt } from "@/actions/stock";
 import { assertItemPurchasable, assertPharmacyItemsPurchasable } from "@/lib/pharmacy-sale-block";
 
-export async function createPurchaseOrder(data: {
+export async function createPurchaseOrder(data: Parameters<typeof createPurchaseOrderOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createPurchaseOrder", idempotencyKey, payload, () => createPurchaseOrderOnce(payload));
+}
+
+async function createPurchaseOrderOnce(data: {
   supplierId: string;
   organizationId?: string;
   expectedDate?: string;

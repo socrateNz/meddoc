@@ -1500,3 +1500,21 @@ model PurchaseOrderLine {
 
   @@index([purchaseOrderId])
 }
+
+// Mémoire des soumissions déjà traitées (cf. src/lib/idempotency.ts). Un même formulaire
+// renvoyé (double clic, réseau coupé après réception côté serveur, rejeu de la file hors-ligne)
+// ne doit créer qu'une seule fois l'enregistrement. `requestHash` empêche de réutiliser une clé
+// avec d'autres données ; un échec métier supprime l'entrée pour qu'une nouvelle tentative puisse
+// s'exécuter.
+model IdempotencyRecord {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  action      String
+  key         String
+  requestHash String
+  status      String
+  result      Json?
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, action, key])
+}

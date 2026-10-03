@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { PatientService } from "@/services/PatientService";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
+import { requireApiUser } from "@/lib/api-auth";
+import { parsePagination } from "@/lib/pagination";
+import { getOrgScopeWhere } from "@/lib/org-scope";
+import { prisma } from "@/lib/db";
 import { z } from "zod";
 
 const createPatientSchema = z.object({
@@ -13,21 +17,31 @@ const createPatientSchema = z.object({
   allergies: z.array(z.string()).optional(),
 });
 
+const PATIENT_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST"];
+
 export async function GET(req: Request) {
   try {
     const limited = await rateLimitOrResponse(req, 60, 60000);
     if (limited) return limited;
 
-    const role = req.headers.get("x-user-role");
+    const auth = await requireApiUser(PATIENT_READ_ROLES);
+    if ("response" in auth) return auth.response;
+    const { page, pageSize, skip, take } = parsePagination(new URL(req.url).searchParams);
 
-    // RBAC
-    if (role === "PATIENT" || role === "FAMILY") {
-      return NextResponse.json({ error: "Accès non autorisé à la liste globale" }, { status: 403 });
-    }
+    const where = getOrgScopeWhere(auth.user);
+    const [items, total] = await Promise.all([
+      prisma.patient.findMany({
+        where,
+        include: { user: true },
+        orderBy: { user: { lastName: "asc" } },
+        skip,
+        take,
+      }),
+      prisma.patient.count({ where }),
+    ]);
 
-    const patients = await PatientService.getPatients();
-    return NextResponse.json(patients);
-  } catch (error) {
+    return NextResponse.json({ data: items, total, page, pageSize });
+  } catch {
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
   }
 }
@@ -37,12 +51,8 @@ export async function POST(req: Request) {
     const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
-    const role = req.headers.get("x-user-role");
-
-    // Seuls Admin et Coordinateur peuvent créer un dossier patient
-    if (role !== "ADMIN" && role !== "COORDINATOR") {
-      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    }
+    const auth = await requireApiUser(["ADMIN", "COORDINATOR"]);
+    if ("response" in auth) return auth.response;
 
     const body = await req.json();
     const data = createPatientSchema.parse(body);

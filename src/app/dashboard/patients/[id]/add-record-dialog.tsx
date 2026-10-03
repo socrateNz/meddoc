@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ interface AddRecordDialogProps {
 
 export default function AddRecordDialog({ patientId }: AddRecordDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
@@ -27,13 +28,14 @@ export default function AddRecordDialog({ patientId }: AddRecordDialogProps) {
       return;
     }
 
-    setLoading(true);
     try {
-      const response = await createMedicalRecord({
+      const response = await guard((idempotencyKey) => createMedicalRecord({
         patientId,
         title,
         description,
-      });
+        idempotencyKey,
+      }));
+      if (!response) return;
 
       if (response.success) {
         toast.success("Document médical ajouté avec succès.");
@@ -45,8 +47,6 @@ export default function AddRecordDialog({ patientId }: AddRecordDialogProps) {
       }
     } catch (err: any) {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

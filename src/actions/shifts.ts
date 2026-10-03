@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -27,7 +28,12 @@ async function verifyUserInOrg(userId: string, activeUser: { organizationId: str
   return !!target && target.organizationId === activeUser.organizationId;
 }
 
-export async function createShift(data: { userId: string; title: string; startAt: string; endAt: string; notes?: string }) {
+export async function createShift(data: Parameters<typeof createShiftOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createShift", idempotencyKey, payload, () => createShiftOnce(payload));
+}
+
+async function createShiftOnce(data: { userId: string; title: string; startAt: string; endAt: string; notes?: string }) {
   try {
     createShiftSchema.parse(data);
     const activeUser = await getCurrentUser();

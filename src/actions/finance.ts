@@ -1,6 +1,8 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -334,7 +336,12 @@ export async function importPharmacyItems(data: {
   }
 }
 
-export async function recordExpense(data: { cashSessionId: string; description: string; amount: number; organizationId?: string }) {
+export async function recordExpense(data: Parameters<typeof recordExpenseOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("recordExpense", idempotencyKey, payload, () => recordExpenseOnce(payload));
+}
+
+async function recordExpenseOnce(data: { cashSessionId: string; description: string; amount: number; organizationId?: string }) {
   try {
     recordExpenseSchema.parse(data);
     const activeUser = await getCurrentUser();
@@ -474,6 +481,21 @@ function reconcileItemsWithPriorDispense(oldItems: any[], newItems: any[]): any[
 // N'est PAS touché ici, quel que soit l'état de règlement — cf. dispensePendingInvoice, seul
 // endroit où une vente pharmacie décrémente le stock, indépendant du paiement.
 export async function payPendingInvoice(
+  pendingInvoiceId: Parameters<typeof payPendingInvoiceOnce>[0],
+  cashSessionId: Parameters<typeof payPendingInvoiceOnce>[1],
+  amount: Parameters<typeof payPendingInvoiceOnce>[2],
+  items?: Parameters<typeof payPendingInvoiceOnce>[3],
+  idempotencyKey?: string
+) {
+  return runIdempotent(
+    "payPendingInvoice",
+    idempotencyKey,
+    { pendingInvoiceId, cashSessionId, amount, items },
+    () => payPendingInvoiceOnce(pendingInvoiceId, cashSessionId, amount, items)
+  );
+}
+
+async function payPendingInvoiceOnce(
   pendingInvoiceId: string,
   cashSessionId: string,
   amount: number,
@@ -608,7 +630,12 @@ export async function payPendingInvoice(
 // crédit ou paiement partiel, y compris pour un client comptant anonyme. Comme pour
 // payPendingInvoice, le stock n'est décrémenté qu'à la remise en pharmacie, indépendamment de
 // l'état de règlement.
-export async function createCaisseSale(data: {
+export async function createCaisseSale(data: Parameters<typeof createCaisseSaleOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createCaisseSale", idempotencyKey, payload, () => createCaisseSaleOnce(payload));
+}
+
+async function createCaisseSaleOnce(data: {
   cashSessionId: string;
   items: Array<{
     type: "PHARMACY" | "SERVICE" | "LAB";
@@ -783,6 +810,20 @@ export async function updateInvoicePatientInfo(data: {
 // la lui donner de vive voix ; elle est vérifiée à chaque appel (y compris une remise partielle
 // suivante), pour éviter les litiges « je vous l'ai déjà donné » / « non, pas à moi ».
 export async function dispensePendingInvoice(
+  pendingInvoiceId: Parameters<typeof dispensePendingInvoiceOnce>[0],
+  referenceCode: Parameters<typeof dispensePendingInvoiceOnce>[1],
+  lines: Parameters<typeof dispensePendingInvoiceOnce>[2] = [],
+  idempotencyKey?: string
+) {
+  return runIdempotent(
+    "dispensePendingInvoice",
+    idempotencyKey,
+    { pendingInvoiceId, referenceCode, lines },
+    () => dispensePendingInvoiceOnce(pendingInvoiceId, referenceCode, lines)
+  );
+}
+
+async function dispensePendingInvoiceOnce(
   pendingInvoiceId: string,
   referenceCode: string,
   lines: Array<{ index: number; quantity: number }> = []
@@ -2058,7 +2099,7 @@ export async function listCaisseHistoryInvoices(
       ];
     }
 
-    const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100);
+    const pageSize = Math.min(Math.max(options.pageSize ?? MAX_PAGE_SIZE, 1), MAX_PAGE_SIZE);
     const page = Math.max(options.page ?? 1, 1);
 
     const [invoices, total] = await Promise.all([

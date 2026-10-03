@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { getOrgScopeWhere } from "@/lib/org-scope";
 
 // Lecture seule pour la réplication RxDB Phase 1 — aucune écriture de Patient hors-ligne,
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const checkpointUpdatedAt = searchParams.get("updatedAt");
     const checkpointId = searchParams.get("id");
-    const batchSize = Math.min(Math.max(Number(searchParams.get("limit")) || 100, 1), 500);
+    const batchSize = Math.min(Math.max(Number(searchParams.get("limit")) || MAX_PAGE_SIZE, 1), MAX_PAGE_SIZE);
 
     const orgScope = getOrgScopeWhere(currentUser);
     // orgScope peut lui-même porter un `OR` (cas HOLDING) : composer via `AND` plutôt que

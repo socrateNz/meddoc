@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -26,7 +27,12 @@ function assertConsultationWriteAccess(role: string) {
   }
 }
 
-export async function createAppointment(data: {
+export async function createAppointment(data: Parameters<typeof createAppointmentOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createAppointment", idempotencyKey, payload, () => createAppointmentOnce(payload));
+}
+
+async function createAppointmentOnce(data: {
   patientId: string;
   caregiverId?: string;
   title: string;

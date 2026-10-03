@@ -13,6 +13,7 @@ import SearchableSelect from "@/components/ui/searchable-select";
 import { FlaskConical, Loader2, PlusCircle, X, Search, CheckSquare, Square, WifiOff } from "lucide-react";
 import { createLabOrder, listLabTests } from "@/actions/lab";
 import { submitOrQueueOffline } from "@/lib/offline-submit";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useIsOffline } from "@/hooks/useIsOffline";
 import { useOfflineLabTests } from "@/hooks/use-offline-lab-tests";
 import { toast } from "sonner";
@@ -39,7 +40,7 @@ interface NewLabOrderDialogProps {
 
 export default function NewLabOrderDialog({ patients, defaultPatientId, appointmentId, organizationId, onSuccess }: NewLabOrderDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [patientId, setPatientId] = useState(defaultPatientId || "");
   const [searchQuery, setSearchQuery] = useState("");
   const [tests, setTests] = useState<string[]>([]);
@@ -99,16 +100,19 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
       return;
     }
 
-    setLoading(true);
     try {
       const payload = { patientId, tests, notes: notes || undefined, priority, appointmentId };
       const patientLabel = patients.find((p) => p.id === patientId);
-      const res = await submitOrQueueOffline({
-        action: () => createLabOrder(payload),
-        queueType: "LAB_ORDER",
-        payload,
-        label: `Demande d'analyse — ${patientLabel ? `${patientLabel.user.lastName} ${patientLabel.user.firstName}` : "patient"}`,
-      });
+      // La clé voyage aussi dans la file hors-ligne : un rejeu ne crée pas une seconde demande.
+      const res = await guard((idempotencyKey) =>
+        submitOrQueueOffline({
+          action: () => createLabOrder({ ...payload, idempotencyKey }),
+          queueType: "LAB_ORDER",
+          payload: { ...payload, idempotencyKey },
+          label: `Demande d'analyse — ${patientLabel ? `${patientLabel.user.lastName} ${patientLabel.user.firstName}` : "patient"}`,
+        })
+      );
+      if (!res) return;
       if (!res.success) {
         toast.error(res.error || "Erreur lors de la création de la demande.");
       } else if (res.queued) {
@@ -121,8 +125,8 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
         resetForm();
         onSuccess?.(res.data);
       }
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur de connexion.");
     }
   };
 

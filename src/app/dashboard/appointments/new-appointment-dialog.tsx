@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ interface NewAppointmentDialogProps {
 
 export default function NewAppointmentDialog({ patients, caregivers }: NewAppointmentDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   // Form states
   const [patientId, setPatientId] = useState("");
@@ -47,20 +48,21 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
       return;
     }
 
-    setLoading(true);
     try {
       // Combine date and time
       const scheduledAt = new Date(`${date}T${time}`).toISOString();
       const caregiverVal = caregiverId === "unassigned" ? undefined : caregiverId;
 
-      const response = await createAppointment({
+      const response = await guard((idempotencyKey) => createAppointment({
         patientId,
         caregiverId: caregiverVal,
         title,
         type,
         scheduledAt,
         durationMinutes: Number(durationMinutes),
-      });
+        idempotencyKey,
+      }));
+      if (!response) return;
 
       if (response.success) {
         toast.success("Rendez-vous planifié avec succès.");
@@ -78,8 +80,6 @@ export default function NewAppointmentDialog({ patients, caregivers }: NewAppoin
       }
     } catch (err: any) {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

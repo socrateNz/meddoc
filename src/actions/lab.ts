@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -123,7 +124,12 @@ async function advanceOrderStatus(labOrderId: string) {
   }
 }
 
-export async function createLabOrder(data: {
+export async function createLabOrder(data: Parameters<typeof createLabOrderOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createLabOrder", idempotencyKey, payload, () => createLabOrderOnce(payload));
+}
+
+async function createLabOrderOnce(data: {
   patientId: string;
   medicalRecordId?: string;
   appointmentId?: string;
@@ -353,7 +359,12 @@ export async function receiveAtLab(labOrderId: string) {
   }
 }
 
-export async function recordLabResult(data: {
+export async function recordLabResult(data: Parameters<typeof recordLabResultOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("recordLabResult", idempotencyKey, payload, () => recordLabResultOnce(payload));
+}
+
+async function recordLabResultOnce(data: {
   labOrderId: string;
   testName: string;
   value: string;

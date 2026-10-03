@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Receipt, Loader2, Printer } from "lucide-react";
 import { payPendingInvoice } from "@/actions/finance";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -32,7 +33,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
   const [open, setOpen] = useState(false);
   const remainingDue = Math.max(0, pendingInvoice.invoiceTotalAmount - pendingInvoice.amountPaid);
   const [amountInput, setAmountInput] = useState(String(remainingDue));
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [msg, setMsg] = useState<string | null>(null);
 
   const patientName = pendingInvoice.patient?.user
@@ -46,10 +47,10 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
       setMsg("Indiquez un montant supérieur à 0.");
       return;
     }
-    setLoading(true);
     setMsg(null);
     try {
-      const res = await payPendingInvoice(pendingInvoice.id, cashSessionId, amount);
+      const res = await guard((idempotencyKey) => payPendingInvoice(pendingInvoice.id, cashSessionId, amount, undefined, idempotencyKey));
+      if (!res) return;
       if (res.success) {
         setOpen(false);
         const txn = (res.data as any)?.transaction || res.data;
@@ -64,8 +65,6 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
       }
     } catch (err: any) {
       setMsg(err.message || "Erreur de connexion.");
-    } finally {
-      setLoading(false);
     }
   };
 

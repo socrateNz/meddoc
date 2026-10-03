@@ -187,7 +187,7 @@ function startSimplePullReplication<T extends { id: string; updatedAt: string; _
     retryTime: 10000,
     autoStart: true,
     pull: {
-      batchSize: 200,
+      batchSize: 20,
       handler: async (checkpoint, batchSize) => {
         const params = new URLSearchParams({ limit: String(batchSize) });
         if (checkpoint) {
@@ -226,7 +226,7 @@ export function startPatientsReplication(db: OfflineDatabase) {
     retryTime: 10000,
     autoStart: true,
     pull: {
-      batchSize: 100,
+      batchSize: 20,
       handler: async (checkpoint, batchSize) => {
         const params = new URLSearchParams({ limit: String(batchSize) });
         if (checkpoint) {

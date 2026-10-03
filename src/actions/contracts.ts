@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -65,7 +66,12 @@ export async function listContracts(organizationId?: string) {
   }
 }
 
-export async function createContract(data: {
+export async function createContract(data: Parameters<typeof createContractOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createContract", idempotencyKey, payload, () => createContractOnce(payload));
+}
+
+async function createContractOnce(data: {
   patientId: string;
   caregiverId?: string;
   title: string;

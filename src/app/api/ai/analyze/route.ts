@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { AiService } from "@/services/AiService";
+import { requireApiUser } from "@/lib/api-auth";
+import { verifyPatientAccess } from "@/lib/auth";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 
 export async function POST(req: Request) {
@@ -7,12 +9,8 @@ export async function POST(req: Request) {
     const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
-    const role = req.headers.get("x-user-role");
-
-    // Seulement Admin, Coordinateur et Soignant (selon permissions)
-    if (role === "PATIENT" || role === "FAMILY") {
-      return NextResponse.json({ error: "Accès IA non autorisé" }, { status: 403 });
-    }
+    const auth = await requireApiUser(["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"]);
+    if ("response" in auth) return auth.response;
 
     const { patientId } = await req.json();
 
@@ -20,9 +18,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "patientId requis" }, { status: 400 });
     }
 
+    // Sans ce contrôle, n'importe quel identifiant de patient (d'une autre clinique) était analysé.
+    if (!(await verifyPatientAccess(patientId, auth.user))) {
+      return NextResponse.json({ error: "Accès IA non autorisé" }, { status: 403 });
+    }
+
     const analysis = await AiService.analyzePatient(patientId);
     return NextResponse.json(analysis, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Erreur serveur" }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Erreur serveur" }, { status: 500 });
   }
 }

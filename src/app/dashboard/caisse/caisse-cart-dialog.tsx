@@ -9,6 +9,7 @@ import SearchableSelect from "@/components/ui/searchable-select";
 import { ShoppingCart, Receipt, Trash2, Loader2, Printer, PlusCircle } from "lucide-react";
 import { createCaisseSale, payPendingInvoice } from "@/actions/finance";
 import { submitOrQueueOffline } from "@/lib/offline-submit";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { toast } from "sonner";
 
 function formatFCFA(val: number) {
@@ -59,7 +60,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
   const [cartPatientId, setCartPatientId] = useState("");
   const [customPatientNameInput, setCustomPatientNameInput] = useState("");
   const [customPatientPhoneInput, setCustomPatientPhoneInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Montant réellement remis par le client maintenant — reste synchronisé sur le total du panier
@@ -175,7 +176,6 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       return;
     }
 
-    setLoading(true);
     setMsg(null);
     try {
       const items = cartItems.map(({ type, pharmacyItemId, description, quantity, unitPrice, amount }) => ({
@@ -196,19 +196,25 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
           }
         : null;
 
-      const result = isPay
-        ? await submitOrQueueOffline({
-            action: () => payPendingInvoice(payPayload!.pendingInvoiceId, payPayload!.cashSessionId, payPayload!.amount, payPayload!.items),
-            queueType: "CAISSE_PAY",
-            payload: payPayload!,
-            label: `Paiement — ${patientName}`,
-          })
-        : await submitOrQueueOffline({
-            action: () => createCaisseSale(salePayload!),
-            queueType: "CAISSE_SALE",
-            payload: salePayload!,
-            label: `Vente — ${salePayload!.customPatientName || "client comptant"}`,
-          });
+      // La clé d'idempotence est posée dans la charge utile ET passée à l'action : un rejeu de la
+      // file hors-ligne réutilise la même clé, donc une vente déjà reçue par le serveur n'est pas
+      // créée une seconde fois.
+      const result = await guard((idempotencyKey) =>
+        isPay
+          ? submitOrQueueOffline({
+              action: () => payPendingInvoice(payPayload!.pendingInvoiceId, payPayload!.cashSessionId, payPayload!.amount, payPayload!.items, idempotencyKey),
+              queueType: "CAISSE_PAY",
+              payload: { ...payPayload!, idempotencyKey },
+              label: `Paiement — ${patientName}`,
+            })
+          : submitOrQueueOffline({
+              action: () => createCaisseSale({ ...salePayload!, idempotencyKey }),
+              queueType: "CAISSE_SALE",
+              payload: { ...salePayload!, idempotencyKey },
+              label: `Vente — ${salePayload!.customPatientName || "client comptant"}`,
+            })
+      );
+      if (!result) return;
 
       if (!result.success) {
         setMsg({ type: "error", text: result.error || "Erreur lors de la validation." });
@@ -250,8 +256,6 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       resetForm();
     } catch (err: any) {
       setMsg({ type: "error", text: err.message || "Erreur de connexion." });
-    } finally {
-      setLoading(false);
     }
   };
 

@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { recordVitalSign } from "@/actions/vitals";
 import { submitOrQueueOffline } from "@/lib/offline-submit";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { toast } from "sonner";
 
 interface VitalSignsDialogProps {
@@ -30,7 +31,7 @@ interface VitalSignsDialogProps {
 
 export default function VitalSignsDialog({ patientId, appointmentId, patientName, onSuccess }: VitalSignsDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   const [temperature, setTemperature] = useState("");
   const [bloodPressure, setBloodPressure] = useState("");
@@ -43,7 +44,6 @@ export default function VitalSignsDialog({ patientId, appointmentId, patientName
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
 
     const payload = {
       patientId,
@@ -58,14 +58,16 @@ export default function VitalSignsDialog({ patientId, appointmentId, patientName
       notes: notes || undefined,
     };
 
-    const res = await submitOrQueueOffline({
-      action: () => recordVitalSign(payload),
-      queueType: "VITALS",
-      payload,
-      label: `Constantes — ${patientName || "patient"}`,
-    });
-
-    setLoading(false);
+    // La clé voyage aussi dans la file hors-ligne : un rejeu ne crée pas un second relevé.
+    const res = await guard((idempotencyKey) =>
+      submitOrQueueOffline({
+        action: () => recordVitalSign({ ...payload, idempotencyKey }),
+        queueType: "VITALS",
+        payload: { ...payload, idempotencyKey },
+        label: `Constantes — ${patientName || "patient"}`,
+      })
+    );
+    if (!res) return;
     if (!res.success) {
       toast.error(res.error);
       return;

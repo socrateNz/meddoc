@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,7 @@ export default function NewPatientDialog({
   defaultOrganizationId?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   // Form states
   const [firstName, setFirstName] = useState("");
@@ -84,9 +85,8 @@ export default function NewPatientDialog({
       return;
     }
 
-    setLoading(true);
     try {
-      const response = await createPatient({
+      const response = await guard((idempotencyKey) => createPatient({
         firstName,
         lastName,
         email,
@@ -99,7 +99,9 @@ export default function NewPatientDialog({
         pathologies,
         allergies,
         organizationId: isHoldingAdmin ? organizationId : undefined,
-      });
+        idempotencyKey,
+      }));
+      if (!response) return;
 
       if (response.success) {
         toast.success(`Patient ${firstName} ${lastName} créé avec succès.`);
@@ -122,8 +124,6 @@ export default function NewPatientDialog({
       }
     } catch (err: any) {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

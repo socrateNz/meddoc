@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -14,7 +15,7 @@ import { toast } from "sonner";
 export default function AddPrenatalVisitDialog({ pregnancyId }: { pregnancyId: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [visitDate, setVisitDate] = useState(new Date().toISOString().slice(0, 10));
   const [gestationalWeeks, setGestationalWeeks] = useState("");
   const [weightKg, setWeightKg] = useState("");
@@ -26,9 +27,8 @@ export default function AddPrenatalVisitDialog({ pregnancyId }: { pregnancyId: s
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     try {
-      const res = await addPrenatalVisit({
+      const res = await guard((idempotencyKey) => addPrenatalVisit({
         pregnancyId,
         visitDate: visitDate || undefined,
         gestationalWeeks: gestationalWeeks ? Number(gestationalWeeks) : undefined,
@@ -38,7 +38,9 @@ export default function AddPrenatalVisitDialog({ pregnancyId }: { pregnancyId: s
         fundalHeightCm: fundalHeightCm ? Number(fundalHeightCm) : undefined,
         fetalHeartRateBpm: fetalHeartRateBpm ? Number(fetalHeartRateBpm) : undefined,
         notes: notes || undefined,
-      });
+        idempotencyKey,
+      }));
+      if (!res) return;
       if (res.success) {
         toast.success("Visite prénatale enregistrée.");
         setOpen(false);
@@ -46,8 +48,8 @@ export default function AddPrenatalVisitDialog({ pregnancyId }: { pregnancyId: s
       } else {
         toast.error(res.error || "Erreur lors de l'enregistrement.");
       }
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur de connexion.");
     }
   };
 

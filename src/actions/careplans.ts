@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -25,7 +26,12 @@ function assertClinicalWriteAccess(role: string) {
   }
 }
 
-export async function createCarePlan(data: {
+export async function createCarePlan(data: Parameters<typeof createCarePlanOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createCarePlan", idempotencyKey, payload, () => createCarePlanOnce(payload));
+}
+
+async function createCarePlanOnce(data: {
   patientId: string;
   title: string;
   startDate: string;
@@ -66,7 +72,12 @@ export async function createCarePlan(data: {
   }
 }
 
-export async function createCareTask(data: {
+export async function createCareTask(data: Parameters<typeof createCareTaskOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createCareTask", idempotencyKey, payload, () => createCareTaskOnce(payload));
+}
+
+async function createCareTaskOnce(data: {
   carePlanId: string;
   patientId: string; // for revalidation
   title: string;

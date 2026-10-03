@@ -1,5 +1,6 @@
 "use server";
 
+import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { Role, Priority, IncidentStatus } from "@prisma/client";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
@@ -25,7 +26,12 @@ function assertClinicalWriteAccess(role: string) {
   }
 }
 
-export async function createPatient(data: {
+export async function createPatient(data: Parameters<typeof createPatientOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createPatient", idempotencyKey, payload, () => createPatientOnce(payload));
+}
+
+async function createPatientOnce(data: {
   email: string;
   firstName: string;
   lastName: string;
@@ -118,7 +124,12 @@ export async function createPatient(data: {
   }
 }
 
-export async function createMedicalRecord(data: {
+export async function createMedicalRecord(data: Parameters<typeof createMedicalRecordOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createMedicalRecord", idempotencyKey, payload, () => createMedicalRecordOnce(payload));
+}
+
+async function createMedicalRecordOnce(data: {
   patientId: string;
   title: string;
   description: string;
@@ -212,7 +223,12 @@ export async function listMedicalRecords(options?: { patientId?: string; created
   }
 }
 
-export async function createIncident(data: {
+export async function createIncident(data: Parameters<typeof createIncidentOnce>[0] & IdempotentInput) {
+  const { idempotencyKey, ...payload } = data;
+  return runIdempotent("createIncident", idempotencyKey, payload, () => createIncidentOnce(payload));
+}
+
+async function createIncidentOnce(data: {
   patientId: string;
   reportedById: string;
   title: string;

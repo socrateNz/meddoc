@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,7 @@ interface CreateIncidentDialogProps {
 
 export default function CreateIncidentDialog({ patients, reportedById }: CreateIncidentDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   // Form states
   const [patientId, setPatientId] = useState("");
@@ -40,15 +41,16 @@ export default function CreateIncidentDialog({ patients, reportedById }: CreateI
       return;
     }
 
-    setLoading(true);
     try {
-      const response = await createIncident({
+      const response = await guard((idempotencyKey) => createIncident({
         patientId,
         reportedById,
         title,
         description,
         priority,
-      });
+        idempotencyKey,
+      }));
+      if (!response) return;
 
       if (response.success) {
         toast.success("Incident signalé avec succès. Les équipes ont été alertées.");
@@ -62,8 +64,6 @@ export default function CreateIncidentDialog({ patients, reportedById }: CreateI
       }
     } catch (err: any) {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, CalendarClock, Trash2 } from "lucide-react";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "@/actions/calendar-events";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { toast } from "sonner";
 
 function toLocalDateStr(d: Date) {
@@ -72,7 +73,7 @@ interface EventFormProps {
 
 function EventForm({ event, defaultDate, onOpenChange, onSuccess }: EventFormProps) {
   const isEdit = !!event;
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [deleteLoading, setDeleteLoading] = useState(false);
 
   const eventStart = event ? new Date(event.startAt) : null;
@@ -91,14 +92,17 @@ function EventForm({ event, defaultDate, onOpenChange, onSuccess }: EventFormPro
       return;
     }
 
-    setLoading(true);
     try {
       const startAt = allDay ? new Date(`${startDate}T00:00:00`).toISOString() : new Date(`${startDate}T${startTime}`).toISOString();
       const endAt = allDay ? undefined : new Date(`${startDate}T${endTime}`).toISOString();
 
-      const response = isEdit
-        ? await updateCalendarEvent({ id: event!.id, title, description: description || undefined, startAt, endAt, allDay })
-        : await createCalendarEvent({ title, description: description || undefined, startAt, endAt, allDay });
+      // Seule la création porte une clé : une modification est idempotente par nature.
+      const response = await guard((idempotencyKey) =>
+        isEdit
+          ? updateCalendarEvent({ id: event!.id, title, description: description || undefined, startAt, endAt, allDay })
+          : createCalendarEvent({ title, description: description || undefined, startAt, endAt, allDay, idempotencyKey })
+      );
+      if (!response) return;
 
       if (response.success) {
         toast.success(isEdit ? "Événement mis à jour." : "Événement créé.");
@@ -109,8 +113,6 @@ function EventForm({ event, defaultDate, onOpenChange, onSuccess }: EventFormPro
       }
     } catch {
       toast.error("Une erreur inattendue est survenue.");
-    } finally {
-      setLoading(false);
     }
   };
 

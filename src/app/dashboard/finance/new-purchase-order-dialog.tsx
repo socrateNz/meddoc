@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Plus, ClipboardList, Loader2, Trash2 } from "lucide-react";
 import { createPurchaseOrder } from "@/actions/purchase-orders";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { toast } from "sonner";
 
 interface Line {
@@ -28,7 +29,7 @@ interface NewPurchaseOrderDialogProps {
 
 export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organizationId, onSuccess }: NewPurchaseOrderDialogProps) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [supplierId, setSupplierId] = useState("");
   const [expectedDate, setExpectedDate] = useState("");
   const [notes, setNotes] = useState("");
@@ -76,15 +77,18 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
     if (!supplierId) { toast.error("Sélectionnez un fournisseur."); return; }
     if (lines.length === 0) { toast.error("Ajoutez au moins une ligne à la commande."); return; }
 
-    setLoading(true);
     try {
-      const res = await createPurchaseOrder({
-        supplierId,
-        organizationId,
-        expectedDate: expectedDate || undefined,
-        notes: notes || undefined,
-        lines: lines.map((l) => ({ pharmacyItemId: l.pharmacyItemId, newItemName: l.newItemName, quantityOrdered: l.quantityOrdered, unitCost: l.unitCost })),
-      });
+      const res = await guard((idempotencyKey) =>
+        createPurchaseOrder({
+          supplierId,
+          organizationId,
+          expectedDate: expectedDate || undefined,
+          notes: notes || undefined,
+          lines: lines.map((l) => ({ pharmacyItemId: l.pharmacyItemId, newItemName: l.newItemName, quantityOrdered: l.quantityOrdered, unitCost: l.unitCost })),
+          idempotencyKey,
+        })
+      );
+      if (!res) return;
       if (res.success) {
         toast.success("Commande créée (brouillon).");
         setOpen(false);
@@ -93,8 +97,8 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
       } else {
         toast.error(res.error || "Erreur lors de la création de la commande.");
       }
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur de connexion.");
     }
   };
 

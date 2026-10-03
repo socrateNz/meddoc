@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { IncidentService } from "@/services/IncidentService";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
+import { requireApiUser } from "@/lib/api-auth";
+import { parsePagination } from "@/lib/pagination";
+import { getOrgScopeWhere } from "@/lib/org-scope";
+import { verifyPatientAccess } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { z } from "zod";
 import { Priority } from "@prisma/client";
 
@@ -11,21 +16,31 @@ const createIncidentSchema = z.object({
   priority: z.nativeEnum(Priority).optional(),
 });
 
+const INCIDENT_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"];
+
 export async function GET(req: Request) {
   try {
     const limited = await rateLimitOrResponse(req, 60, 60000);
     if (limited) return limited;
 
-    const role = req.headers.get("x-user-role");
+    const auth = await requireApiUser(INCIDENT_ROLES);
+    if ("response" in auth) return auth.response;
+    const { page, pageSize, skip, take } = parsePagination(new URL(req.url).searchParams);
 
-    // Seulement Admin, Coordinateur et Soignant
-    if (role === "PATIENT" || role === "FAMILY") {
-      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    }
+    const where = { patient: getOrgScopeWhere(auth.user) };
+    const [items, total] = await Promise.all([
+      prisma.incident.findMany({
+        where,
+        include: { patient: { include: { user: true } } },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.incident.count({ where }),
+    ]);
 
-    const incidents = await IncidentService.getIncidents();
-    return NextResponse.json(incidents);
-  } catch (error) {
+    return NextResponse.json({ data: items, total, page, pageSize });
+  } catch {
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
   }
 }
@@ -35,17 +50,17 @@ export async function POST(req: Request) {
     const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
-    const userId = req.headers.get("x-user-id");
-    const role = req.headers.get("x-user-role");
-    
-    if (!userId || role === "PATIENT" || role === "FAMILY") {
-      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
-    }
+    const auth = await requireApiUser(INCIDENT_ROLES);
+    if ("response" in auth) return auth.response;
 
     const body = await req.json();
     const data = createIncidentSchema.parse(body);
 
-    const newIncident = await IncidentService.createIncident(data, userId);
+    if (!(await verifyPatientAccess(data.patientId, auth.user))) {
+      return NextResponse.json({ error: "Accès refusé" }, { status: 403 });
+    }
+
+    const newIncident = await IncidentService.createIncident(data, auth.user.id);
     return NextResponse.json(newIncident, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {

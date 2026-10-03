@@ -1,5 +1,6 @@
 "use client";
 
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +21,7 @@ import { toast } from "sonner";
 
 export default function CreateCareTaskDialog({ carePlanId, patientId }: { carePlanId: string, patientId: string }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
 
   const [formData, setFormData] = useState({
     title: "",
@@ -35,15 +36,15 @@ export default function CreateCareTaskDialog({ carePlanId, patientId }: { carePl
       return;
     }
 
-    setLoading(true);
-    const result = await createCareTask({
+    const result = await guard((idempotencyKey) => createCareTask({
       carePlanId,
       patientId,
       title: formData.title,
       description: formData.description || undefined,
       scheduledFor: formData.scheduledFor,
-    });
-    setLoading(false);
+      idempotencyKey,
+    }));
+    if (!result) return;
 
     if (result.success) {
       toast.success("Tâche ajoutée avec succès !");

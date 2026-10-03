@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MinusCircle, Loader2, Info } from "lucide-react";
 import { recordExpense } from "@/actions/finance";
+import { useSubmitGuard } from "@/hooks/use-submit-guard";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -22,7 +23,7 @@ interface CaisseExpenseDialogProps {
 export default function CaisseExpenseDialog({ cashSessionId, organizationId, onSuccess }: CaisseExpenseDialogProps) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState({ description: "", amount: "" });
-  const [loading, setLoading] = useState(false);
+  const { submitting: loading, guard } = useSubmitGuard();
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const resetForm = () => {
@@ -32,10 +33,12 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setMsg(null);
     try {
-      const res = await recordExpense({ cashSessionId, description: data.description, amount: Number(data.amount), organizationId });
+      const res = await guard((idempotencyKey) =>
+        recordExpense({ cashSessionId, description: data.description, amount: Number(data.amount), organizationId, idempotencyKey })
+      );
+      if (!res) return;
       if (res.success) {
         resetForm();
         setOpen(false);
@@ -45,8 +48,6 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
       }
     } catch (err: any) {
       setMsg({ type: "error", text: err.message || "Erreur de connexion." });
-    } finally {
-      setLoading(false);
     }
   };
 
