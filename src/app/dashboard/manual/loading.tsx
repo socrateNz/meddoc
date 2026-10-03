@@ -1,5 +1,10 @@
-import { PageLoading } from "@/components/ui/page-loading";
+import { LoadingRegion, PageHeaderSkeleton, TextSkeleton } from "@/components/ui/page-skeletons";
 
 export default function Loading() {
-  return <PageLoading />;
+  return (
+    <LoadingRegion>
+      <PageHeaderSkeleton />
+      <TextSkeleton paragraphs={5} />
+    </LoadingRegion>
+  );
 }

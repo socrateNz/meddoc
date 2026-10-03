@@ -1,5 +1,10 @@
-import { PageLoading } from "@/components/ui/page-loading";
+import { LoadingRegion, PageHeaderSkeleton, CardGridSkeleton } from "@/components/ui/page-skeletons";
 
 export default function Loading() {
-  return <PageLoading />;
+  return (
+    <LoadingRegion>
+      <PageHeaderSkeleton title="Cliniques affiliées" />
+      <CardGridSkeleton count={6} />
+    </LoadingRegion>
+  );
 }

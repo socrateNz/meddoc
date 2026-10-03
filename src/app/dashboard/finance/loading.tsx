@@ -1,5 +1,11 @@
-import { PageLoading } from "@/components/ui/page-loading";
+import { LoadingRegion, PageHeaderSkeleton, CardGridSkeleton, TableSkeleton } from "@/components/ui/page-skeletons";
 
 export default function Loading() {
-  return <PageLoading />;
+  return (
+    <LoadingRegion>
+      <PageHeaderSkeleton />
+      <CardGridSkeleton count={4} />
+      <TableSkeleton columns={4} />
+    </LoadingRegion>
+  );
 }

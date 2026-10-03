@@ -293,15 +293,16 @@ export default function NotificationsClient({
             return (
               <div
                 key={n.id}
-                className={`group relative flex items-start gap-4 p-4 rounded-xl border transition-all duration-200 ${
+                className={`relative flex items-start gap-3 p-3 sm:gap-4 sm:p-4 rounded-xl border transition-all duration-200 ${
                   n.isRead
                     ? "bg-card border-border/40 opacity-80"
                     : "bg-card border-border shadow-sm"
                 } ${isRemoving ? "opacity-40 scale-95" : ""}`}
               >
-                {/* Unread dot */}
+                {/* Unread dot — côté gauche, pour ne jamais chevaucher les boutons d'action à
+                    droite (sur mobile ils sont empilés à cet endroit). */}
                 {!n.isRead && (
-                  <span className="absolute right-4 top-4 h-2 w-2 rounded-full bg-primary animate-pulse" />
+                  <span className="absolute left-1.5 top-1.5 h-2 w-2 rounded-full bg-primary animate-pulse" />
                 )}
 
                 {/* Icon */}
@@ -313,17 +314,13 @@ export default function NotificationsClient({
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className={`text-sm font-semibold leading-snug ${n.isRead ? "text-foreground/70" : "text-foreground"}`}>
-                        {n.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                        {n.message}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 mt-2">
+                  <p className={`text-sm font-semibold leading-snug wrap-break-word ${n.isRead ? "text-foreground/70" : "text-foreground"}`}>
+                    {n.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed wrap-break-word">
+                    {n.message}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
                     <Badge
                       variant="outline"
                       className={`text-[10px] px-2 py-0 border ${config.border} ${config.text} ${config.bg}`}
@@ -336,14 +333,17 @@ export default function NotificationsClient({
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                {/* Actions — toujours visibles : un survol (group-hover) n'existe pas sur écran
+                    tactile, et ces deux boutons seraient alors invisibles. Empilés verticalement
+                    sur mobile pour ne pas rogner la largeur du texte. */}
+                <div className="flex flex-col sm:flex-row items-center gap-1 shrink-0">
                   {!n.isRead && (
                     <button
                       onClick={() => handleMarkRead(n.id)}
                       disabled={isPending}
                       title="Marquer comme lu"
-                      className="h-7 w-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                      aria-label="Marquer comme lu"
+                      className="h-8 w-8 sm:h-7 sm:w-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
                     >
                       <Check className="h-3.5 w-3.5" />
                     </button>
@@ -352,7 +352,8 @@ export default function NotificationsClient({
                     onClick={() => handleDelete(n.id)}
                     disabled={isPending}
                     title="Supprimer"
-                    className="h-7 w-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    aria-label="Supprimer la notification"
+                    className="h-8 w-8 sm:h-7 sm:w-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>

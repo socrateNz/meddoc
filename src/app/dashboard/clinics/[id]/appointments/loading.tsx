@@ -64,9 +64,9 @@ export default function Loading() {
       <div className="space-y-6" aria-hidden="true">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Calendrier</h1>
             <p className="text-muted-foreground">
-              Visualisez et planifiez les rendez-vous et consultations cliniques pour cette clinique.
+              Rendez-vous, gardes, tâches de soins et échéances pour cet établissement.
             </p>
           </div>
         </div>
@@ -121,7 +121,7 @@ export default function Loading() {
     <div className="space-y-6 pointer-events-none select-none" aria-hidden="true" inert>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Rendez-vous</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Calendrier</h1>
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 mt-1.5">
             <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
             Mise à jour…
