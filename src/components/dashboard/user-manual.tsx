@@ -137,7 +137,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           icon: Wallet,
           content: "L'admin voit tout ce qui se passe dans ses cliniques, mais ne modifie jamais les données opérationnelles.",
           details: [
-            "Consulter les patients, consultations, rendez-vous et incidents de chaque clinique (sans créer/modifier).",
+            "Consulter les patients, consultations, incidents et le calendrier de chaque clinique — rendez-vous, gardes et échéances (sans créer/modifier).",
             "Consulter la caisse, le stock pharmacie et l'inventaire (sans enregistrer de vente, dépense ou achat).",
             "Consulter les paramètres de chaque clinique (modifiables uniquement par son coordinateur)."
           ],
@@ -160,9 +160,9 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           icon: Users,
           content: "Le coordinateur recrute et gère toute l'équipe de sa clinique.",
           details: [
-            "Ajouter des Médecins (MEDECIN), des Infirmier(e)s (CAREGIVER) et des Pharmaciens (PHARMACIST).",
+            "Ajouter des Médecins (MEDECIN), des Infirmier(e)s (CAREGIVER), des Pharmaciens (PHARMACIST) et des Caissier(ère)s (CASHIER).",
             "Activer / Désactiver les accès du personnel de sa clinique.",
-            "Consulter les disponibilités et les affectations de l'équipe."
+            "Planifier les gardes de chaque membre de l'équipe depuis le Calendrier (menu « + Nouveau » > Garde)."
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/team` : "/dashboard/team",
           linkText: "Gérer l'Équipe Médicale"
@@ -181,16 +181,17 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           linkText: "Consulter la liste des Patients"
         },
         {
-          title: "3. Rendez-vous, Incidents & Pharmacie/Caisse",
+          title: "3. Calendrier, Incidents & Pharmacie/Caisse",
           icon: Calendar,
-          content: "Organisation de l'agenda médical et suivi financier de l'établissement.",
+          content: "Organisation du calendrier de la clinique et suivi financier de l'établissement.",
           details: [
-            "Planifier les consultations, examens et visites de contrôle.",
+            "Planifier les rendez-vous, les gardes et les événements depuis le menu « + Nouveau » du Calendrier.",
+            "Suivre les échéances : fin de contrats aidants, lots pharmacie qui expirent dans les 90 jours.",
             "Superviser les incidents déclarés et leur résolution.",
             "Gérer le catalogue pharmacie, les achats de stock, les ventes, dépenses et l'inventaire."
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/appointments` : "/dashboard/appointments",
-          linkText: "Ouvrir l'Agenda des Rendez-vous"
+          linkText: "Ouvrir le Calendrier"
         },
         {
           title: "4. Paramètres de la Clinique",
@@ -240,8 +241,78 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           details: [
             "Enregistrer une vente ou une facture regroupée pour un patient.",
             "Enregistrer une dépense / un retrait de caisse.",
-            "Imprimer les reçus et factures."
+            "Imprimer les reçus et factures.",
+            "Encaisser même sans réseau : la vente est synchronisée au retour de la connexion. La remise des médicaments, elle, exige toujours le réseau."
           ]
+        },
+        {
+          title: "4. Calendrier & Échéances",
+          icon: Calendar,
+          content: "Vos gardes, vos événements et les dates de péremption à anticiper.",
+          details: [
+            "Consulter vos gardes planifiées et créer vos propres événements (vous seul les voyez).",
+            "Repérer sur le calendrier les lots de stock qui expirent dans les 90 jours, lot par lot.",
+            "Sur téléphone, le calendrier s'ouvre en vue Planning ; vous pouvez passer en vue Jour, Semaine ou Mois."
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/appointments` : "/dashboard/appointments",
+          linkText: "Ouvrir le Calendrier"
+        }
+      ]
+    },
+    {
+      id: "CASHIER",
+      title: "Caissier(ère)",
+      subtitle: "Ouverture et clôture de caisse, encaissement des ventes et des factures — avec mode hors-ligne",
+      icon: Wallet,
+      color: "from-teal-600 to-emerald-600",
+      badge: "Caisse",
+      badgeColor: "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20",
+      items: [
+        {
+          title: "1. Ouverture & Clôture de caisse",
+          icon: Wallet,
+          content: "Chaque encaissement se rattache à une session de caisse ouverte.",
+          details: [
+            "Ouvrir la session de caisse avant d'encaisser la première vente du service.",
+            "Clôturer la session en fin de service après avoir compté la caisse.",
+            "Enregistrer une dépense ou un retrait de caisse, rattaché à la session en cours."
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/caisse` : "/dashboard/caisse",
+          linkText: "Ouvrir la Caisse"
+        },
+        {
+          title: "2. Ventes & Encaissements",
+          icon: FileText,
+          content: "Encaisser les ventes comptant et les factures en attente.",
+          details: [
+            "Créer une vente au panier : patient inscrit ou client de passage (nom facultatif).",
+            "Régler une facture en attente, en totalité ou en partie : le reste dû reste enregistré.",
+            "Imprimer le ticket ou la facture après chaque encaissement.",
+            "La remise des médicaments reste assurée par le pharmacien, qui utilise le code de retrait du ticket."
+          ]
+        },
+        {
+          title: "3. Mode hors-ligne",
+          icon: Activity,
+          content: "En cas de coupure réseau, vous pouvez continuer à encaisser.",
+          details: [
+            "Une vente ou un paiement enregistré sans réseau est mis en file d'attente et envoyé dès le retour de la connexion.",
+            "Le ticket imprimable d'une vente hors-ligne n'est disponible qu'après synchronisation : prévenez le patient.",
+            "Un paiement ou une vente refusé au moment de la synchronisation (session refermée, stock changé) reste visible dans le bandeau d'alerte, avec un bouton pour l'écarter.",
+            "La remise des médicaments au comptoir (pharmacien) exige toujours la connexion."
+          ]
+        },
+        {
+          title: "4. Calendrier & Gardes",
+          icon: Calendar,
+          content: "Votre planning personnel et vos rappels, au même endroit que le reste de l'équipe.",
+          details: [
+            "Consulter vos gardes planifiées par le coordinateur.",
+            "Créer vos propres événements personnels : seuls vous les voyez.",
+            "Sur téléphone, le calendrier s'ouvre en vue Planning ; vous pouvez passer en vue Jour, Semaine ou Mois."
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/appointments` : "/dashboard/appointments",
+          linkText: "Ouvrir le Calendrier"
         }
       ]
     },
@@ -259,7 +330,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           icon: Calendar,
           content: "Vue centralisée de l'activité clinique du jour.",
           details: [
-            "Consulter ses consultations du jour et son calendrier de rendez-vous.",
+            "Consulter ses consultations du jour et son calendrier : ses rendez-vous, les rendez-vous non affectés à personne et ses gardes.",
             "Retrouver la liste de ses patients, ses résultats de laboratoire récents/en attente et ses notes cliniques.",
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/medecin` : undefined,
@@ -296,6 +367,26 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/ai-assistant` : "/dashboard/ai-assistant",
           linkText: "Lancer l'Assistant IA"
+        },
+        {
+          title: "5. Mode hors-ligne",
+          icon: Activity,
+          content: "Pendant une coupure réseau, les actions de soins les plus courantes restent disponibles.",
+          details: [
+            "Saisir des constantes vitales : elles sont envoyées au retour de la connexion.",
+            "Demander un examen de laboratoire : le catalogue des examens est répliqué sur l'appareil, les tarifs affichés sont alors estimatifs.",
+            "Un bandeau d'alerte signale toute action qui n'a pas pu être synchronisée ; vous pouvez l'écarter après vérification.",
+            "La prescription de médicaments et la validation de résultats exigent la connexion."
+          ]
+        },
+        {
+          title: "6. Messagerie d'équipe",
+          icon: LifeBuoy,
+          content: "Échanges avec les collègues dans les canaux et les conversations privées.",
+          details: [
+            "Partager le dossier d'un patient dans une conversation.",
+            "Les pièces jointes (fichiers, images) ne sont plus acceptées : passez par le dossier patient."
+          ]
         }
       ]
     },
@@ -315,7 +406,8 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           details: [
             "Saisir la Pression Artérielle (Systolique / Diastolique en mmHg).",
             "Saisir le Pouls (BPM), la Saturation en Oxygène (SpO2 en %), la Température (°C) et la Glycémie (g/L).",
-            "Visualisation immédiate des indicateurs colorés d'alerte en cas de constante anormale."
+            "Visualisation immédiate des indicateurs colorés d'alerte en cas de constante anormale.",
+            "Fonctionne sans réseau : la saisie est envoyée dès le retour de la connexion."
           ]
         },
         {
@@ -325,7 +417,9 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           details: [
             "Consulter la feuille de soins quotidienne attribuée par le coordinateur.",
             "Cocher les tâches effectuées avec horodatage automatique.",
-            "Ajouter des observations textuelles pour la relève d'équipe."
+            "Ajouter des observations textuelles pour la relève d'équipe.",
+            "Retrouver vos tâches à venir dans le Calendrier : les vôtres et celles qui ne sont affectées à personne.",
+            "Cocher une tâche fonctionne aussi hors-ligne ; elle sera synchronisée au retour de la connexion."
           ]
         },
         {
@@ -349,6 +443,28 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           ],
           link: clinicId ? `/dashboard/clinics/${clinicId}/incidents` : "/dashboard/incidents",
           linkText: "Déclarer un incident"
+        },
+        {
+          title: "5. Calendrier, Gardes & Rappels",
+          icon: Calendar,
+          content: "Votre planning et les rappels qui vous évitent d'oublier une intervention.",
+          details: [
+            "Consulter vos gardes et vos rendez-vous. Les rendez-vous qui n'ont pas encore de soignant apparaissent aussi : vous pouvez vous les attribuer.",
+            "Créer vos propres événements personnels : vous seul les voyez.",
+            "Recevoir un rappel 24 h, 2 h et 1 h avant chacun de vos rendez-vous, ainsi que votre agenda du jour.",
+            "Ces rappels s'affichent sur l'appareil si vous avez autorisé les notifications (Paramètres > Notifications)."
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/appointments` : "/dashboard/appointments",
+          linkText: "Ouvrir le Calendrier"
+        },
+        {
+          title: "6. Messagerie d'équipe",
+          icon: LifeBuoy,
+          content: "Échanges avec les collègues dans les canaux et les conversations privées.",
+          details: [
+            "Partager le dossier d'un patient dans une conversation.",
+            "Les pièces jointes (fichiers, images) ne sont plus acceptées : passez par le dossier patient."
+          ]
         }
       ]
     },
@@ -368,7 +484,8 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           details: [
             "Consulter le résumé du dossier médical et le niveau de dépendance.",
             "Suivre l'évolution des constantes vitales et la prise en charge au quotidien.",
-            "Consulter l'historique des rendez-vous et ordonnances."
+            "Consulter l'historique des rendez-vous et ordonnances.",
+            "Si vous avez un compte patient : recevoir un rappel 24 h, 2 h et 1 h avant chacun de vos rendez-vous, sur l'appareil si vous avez autorisé les notifications."
           ]
         },
         {
@@ -377,7 +494,8 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           content: "Communication bienveillante avec l'équipe de coordination.",
           details: [
             "Envoyer des messages à la clinique pour toute question administrative ou d'organisation.",
-            "Recevoir les notifications importantes concernant la santé du proche."
+            "Recevoir les notifications importantes concernant la santé du proche.",
+            "La messagerie n'accepte pas de pièces jointes (fichiers, images)."
           ]
         }
       ]
@@ -386,12 +504,13 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
 
   // Role hierarchy filtering: Users can view their own role tab and all role tabs below them in hierarchy
   const roleHierarchy: Record<string, string[]> = {
-    SUPER_ADMIN: ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "FAMILY"],
-    ADMIN: ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "FAMILY"],
-    COORDINATOR: ["COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "FAMILY"],
+    SUPER_ADMIN: ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "FAMILY"],
+    ADMIN: ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "FAMILY"],
+    COORDINATOR: ["COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "FAMILY"],
     MEDECIN: ["MEDECIN", "FAMILY"],
     CAREGIVER: ["CAREGIVER", "FAMILY"],
     PHARMACIST: ["PHARMACIST", "FAMILY"],
+    CASHIER: ["CASHIER", "FAMILY"],
     FAMILY: ["FAMILY"],
     PATIENT: ["FAMILY"]
   };
@@ -456,7 +575,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
               </Badge>
             </div>
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-100 to-slate-300">
-              Manuel d'Utilisation adapté à votre rôle
+              Manuel d&apos;Utilisation adapté à votre rôle
             </h1>
             <p className="text-slate-300 text-sm md:text-base leading-relaxed">
               Consultez les guides et procédures correspondant à vos habilitations ({userRole}) et à votre niveau de responsabilité en descendant.
@@ -521,7 +640,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-              Résultats de recherche pour "{searchQuery}" ({filteredSections.reduce((acc, s) => acc + s.items.length, 0)} éléments)
+              Résultats de recherche pour &quot;{searchQuery}&quot; ({filteredSections.reduce((acc, s) => acc + s.items.length, 0)} éléments)
             </h2>
             <Button variant="ghost" size="sm" onClick={() => setSearchQuery("")}>
               Effacer la recherche
@@ -657,10 +776,10 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
             </div>
             <div className="space-y-1">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                Besoin d'aide supplémentaire ou d'assistance technique ?
+                Besoin d&apos;aide supplémentaire ou d&apos;assistance technique ?
               </h3>
               <p className="text-xs md:text-sm text-slate-600 dark:text-slate-400 max-w-xl">
-                Pour toute question sur la configuration des holdings, les licences SaaS ou l'intégration des équipements médicaux, contactez l'équipe support MedDoc.
+                Pour toute question sur la configuration des holdings, les licences SaaS ou l&apos;intégration des équipements médicaux, contactez l&apos;équipe support MedDoc.
               </p>
             </div>
           </div>
