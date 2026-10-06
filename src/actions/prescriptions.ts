@@ -5,6 +5,7 @@ import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
+import { resolvePage } from "@/lib/pagination";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   createPrescriptionSchema,
@@ -364,6 +365,8 @@ export async function listPrescriptions(options?: {
   prescribedById?: string;
   organizationId?: string;
   status?: string;
+  page?: number;
+  pageSize?: number;
 }) {
   try {
     const activeUser = await getCurrentUser();
@@ -389,21 +392,26 @@ export async function listPrescriptions(options?: {
     if (options?.prescribedById) where.prescribedById = options.prescribedById;
     if (options?.status) where.status = options.status;
 
-    const prescriptions = await prisma.prescription.findMany({
-      where,
-      include: {
-        items: true,
-        prescribedBy: { select: { firstName: true, lastName: true } },
-        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
-        appointment: { select: { id: true, title: true, scheduledAt: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [prescriptions, total] = await Promise.all([
+      prisma.prescription.findMany({
+        where,
+        include: {
+          items: true,
+          prescribedBy: { select: { firstName: true, lastName: true } },
+          patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+          appointment: { select: { id: true, title: true, scheduledAt: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.prescription.count({ where }),
+    ]);
 
-    return { success: true, data: prescriptions };
+    return { success: true as const, data: prescriptions, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des prescriptions.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des prescriptions.") };
   }
 }
 

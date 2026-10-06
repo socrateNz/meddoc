@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { listContactMessages } from "@/actions/contact-messages";
+import { PaginationNav, keepQuery } from "@/components/ui/pagination-nav";
+import { pageFromParam } from "@/lib/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Mail, MessageSquareText } from "lucide-react";
 import MessageRowActions from "./message-row-actions";
@@ -32,7 +34,11 @@ function statusBadge(status: string) {
   }
 }
 
-export default async function ContactMessagesPage() {
+interface ContactMessagesPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function ContactMessagesPage({ searchParams }: ContactMessagesPageProps) {
   const currentUser = await getCurrentUser();
   if (!currentUser) {
     redirect("/login");
@@ -41,7 +47,8 @@ export default async function ContactMessagesPage() {
     redirect("/dashboard");
   }
 
-  const result = await listContactMessages();
+  const query = await searchParams;
+  const result = await listContactMessages({ page: pageFromParam(query.page) });
   const messages = result.success ? (result.data as any[]) : [];
 
   return (
@@ -85,6 +92,16 @@ export default async function ContactMessagesPage() {
             </div>
           ))}
         </div>
+      )}
+      {result.success && (
+        <PaginationNav
+          page={result.page}
+          pageSize={result.pageSize}
+          total={result.total}
+          pathname="/dashboard/contact-messages"
+          query={keepQuery(query)}
+          itemLabel="message"
+        />
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
+import { resolvePage } from "@/lib/pagination";
 import { recordVitalSignSchema } from "@/validators/vitals";
 import { revalidatePath } from "next/cache";
 
@@ -78,8 +79,9 @@ async function recordVitalSignOnce(data: RecordVitalSignInput) {
   }
 }
 
-export async function getPatientVitalSigns(patientId: string) {
+export async function getPatientVitalSigns(patientId: string, options?: { page?: number; pageSize?: number }) {
   try {
+    const { page, pageSize, skip, take } = resolvePage(options);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
@@ -100,10 +102,13 @@ export async function getPatientVitalSigns(patientId: string) {
         appointment: { select: { id: true, title: true, scheduledAt: true } },
       },
       orderBy: { createdAt: "desc" },
+      skip,
+      take,
     });
+    const total = await (prisma as any).vitalSign.count({ where: { patientId } });
 
-    return { success: true, data: vitals };
+    return { success: true as const, data: vitals, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la récupération des constantes." };
+    return { success: false as const, error: error.message || "Erreur lors de la récupération des constantes." };
   }
 }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import type { Role } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -10,12 +11,15 @@ import AddMemberDialog from "@/app/dashboard/team/add-member-dialog";
 import UserActionsMenu from "@/app/dashboard/team/user-actions-menu";
 import { Button } from "@/components/ui/button";
 import { getClinics } from "@/actions/organizations";
+import { PaginationNav, keepQuery } from "@/components/ui/pagination-nav";
+import { pageFromParam, resolvePage } from "@/lib/pagination";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function ClinicTeamPage({ params }: PageProps) {
+export default async function ClinicTeamPage({ params, searchParams }: PageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
 
@@ -24,13 +28,16 @@ export default async function ClinicTeamPage({ params }: PageProps) {
 
   const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
 
-  // Fetch only members in this clinic
-  const [members, clinicsRes] = await Promise.all([
+  const query = await searchParams;
+  const { page, pageSize, skip, take } = resolvePage({ page: pageFromParam(query.page) });
+  // Membres de cette clinique uniquement, 20 par page.
+  const clinicMembers = {
+    organizationId: clinicId,
+    role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] as Role[] },
+  };
+  const [members, total, clinicsRes] = await Promise.all([
     prisma.user.findMany({
-      where: {
-        organizationId: clinicId,
-        role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] },
-      },
+      where: clinicMembers,
       include: {
         caregiverProfile: {
           include: {
@@ -54,8 +61,11 @@ export default async function ClinicTeamPage({ params }: PageProps) {
           }
         }
       },
-      orderBy: { lastName: "asc" }
+      orderBy: { lastName: "asc" },
+      skip,
+      take,
     }),
+    prisma.user.count({ where: clinicMembers }),
     isHoldingAdmin ? getClinics() : Promise.resolve(null),
   ]);
 
@@ -207,6 +217,14 @@ export default async function ClinicTeamPage({ params }: PageProps) {
           );
         })}
       </div>
+      <PaginationNav
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        pathname={`/dashboard/clinics/${clinicId}/team`}
+        query={keepQuery(query)}
+        itemLabel="membre"
+      />
     </div>
   );
 }

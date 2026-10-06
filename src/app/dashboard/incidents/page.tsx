@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { PaginationNav } from "@/components/ui/pagination-nav";
+import { resolvePage } from "@/lib/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, AlertTriangle, CheckCircle, Clock } from "lucide-react";
@@ -13,6 +15,7 @@ interface PageProps {
   searchParams: Promise<{
     priority?: string;
     status?: string;
+    page?: string;
   }>;
 }
 
@@ -26,6 +29,7 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
 
   const priorityFilter = params.priority;
   const statusFilter = params.status;
+  const { page, pageSize, skip, take } = resolvePage({ page: params.page });
 
   // Filtrage par organisation : une holding voit ses cliniques, une clinique
   // ne voit que ses propres données (cf. src/app/dashboard/page.tsx:82-91).
@@ -51,7 +55,8 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
     where.status = statusFilter as IncidentStatus;
   }
 
-  const [incidents, patients] = await Promise.all([
+  const [incidents, total, patients] = await Promise.all([
+    // Une page à la fois (20 max) : le total sert à la barre de navigation.
     prisma.incident.findMany({
       where,
       include: {
@@ -62,8 +67,10 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
       orderBy: {
         createdAt: "desc"
       },
-      take: 500,
+      skip,
+      take,
     }),
+    prisma.incident.count({ where }),
     prisma.patient.findMany({
       where: orgFilter,
       include: { user: true },
@@ -271,6 +278,14 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
             )}
           </TableBody>
         </Table>
+        <PaginationNav
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          pathname="/dashboard/incidents"
+          query={{ priority: priorityFilter, status: statusFilter }}
+          itemLabel="incident"
+        />
       </div>
     </div>
   );

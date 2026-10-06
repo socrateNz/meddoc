@@ -26,6 +26,8 @@ const restrictedSections: Record<string, string[]> = {
   incidents: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   rooms: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  // Ronde médicale : l'équipe qui visite les patients hospitalisés (cf. src/lib/rounds.ts ROUND_ROLES).
+  ronde: ['COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   // Élargi à PHARMACIST/CASHIER avec le calendrier unifié (gardes/échéances de stock
   // désormais agrégées sur cette même page, cf. src/actions/calendar.ts) — garder en phase
   // avec src/app/dashboard/sidebar.tsx, les deux doivent changer ensemble.

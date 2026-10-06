@@ -1,10 +1,12 @@
 "use server";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
+import { resolvePage } from "@/lib/pagination";
 import {
   createLabOrderSchema,
   updateLabOrderStatusSchema,
@@ -225,42 +227,136 @@ async function createLabOrderOnce(data: {
   }
 }
 
-export async function listLabOrders(options?: { patientId?: string; organizationId?: string; orderedById?: string }) {
+type ActiveLabUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
+
+type LabOrderListOptions = {
+  patientId?: string;
+  organizationId?: string;
+  orderedById?: string;
+  page?: number;
+  pageSize?: number;
+  // "ALL" ou absent = tous les statuts.
+  status?: string;
+  // Demandes URGENT, ou ayant au moins un résultat anormal non encore validé.
+  urgentOnly?: boolean;
+  // Patient, prescripteur, ou nom d'une analyse du catalogue.
+  search?: string;
+};
+
+// Périmètre commun à la liste paginée et aux statistiques : un patient précis (avec contrôle
+// d'accès), une clinique, la vue holding, ou les demandes d'un prescripteur.
+async function labOrderScope(activeUser: ActiveLabUser, options: LabOrderListOptions): Promise<Prisma.LabOrderWhereInput[]> {
+  const conditions: Prisma.LabOrderWhereInput[] = [];
+
+  if (options.patientId) {
+    const hasAccess = await verifyPatientAccess(options.patientId, activeUser);
+    if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+    conditions.push({ patientId: options.patientId });
+  } else if (activeUser.organization?.type === "HOLDING" && !options.organizationId) {
+    conditions.push({
+      OR: [
+        { organizationId: activeUser.organizationId },
+        { organization: { parentId: activeUser.organizationId } },
+      ],
+    });
+  } else {
+    const targetOrgId = options.organizationId || activeUser.organizationId;
+    conditions.push({ organizationId: targetOrgId ? targetOrgId : { in: [] } });
+  }
+
+  if (options.orderedById) conditions.push({ orderedById: options.orderedById });
+  return conditions;
+}
+
+// Recherche : patient, prescripteur, ou analyses du catalogue dont le nom contient le terme.
+// `tests` est une liste de libellés (pas de recherche par sous-chaîne possible en base), on passe
+// donc par le catalogue pour retrouver les libellés correspondants.
+async function labOrderSearch(term: string): Promise<Prisma.LabOrderWhereInput> {
+  const matchingTests = await prisma.labTest.findMany({
+    where: { name: { contains: term, mode: "insensitive" } },
+    select: { name: true },
+  });
+  const person: Prisma.UserWhereInput = {
+    OR: [
+      { firstName: { contains: term, mode: "insensitive" } },
+      { lastName: { contains: term, mode: "insensitive" } },
+    ],
+  };
+  return {
+    OR: [
+      { patient: { user: person } },
+      { orderedBy: person },
+      ...(matchingTests.length > 0 ? [{ tests: { hasSome: matchingTests.map((t) => t.name) } }] : []),
+    ],
+  };
+}
+
+const PENDING_LAB_STATUSES = ["PRESCRIBED", "SAMPLE_COLLECTED", "RECEIVED_AT_LAB"];
+const CLOSED_LAB_STATUSES = ["DELIVERED", "CANCELLED"];
+
+// Liste paginée (20 par page maximum), filtres appliqués côté serveur : une recherche ou un filtre
+// doit porter sur TOUTES les demandes, pas seulement sur la page affichée.
+export async function listLabOrders(options?: LabOrderListOptions) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertLabReadRole(activeUser.role);
 
-    const where: any = {};
-
-    if (options?.patientId) {
-      const hasAccess = await verifyPatientAccess(options.patientId, activeUser);
-      if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
-      where.patientId = options.patientId;
-    } else if (activeUser.organization?.type === "HOLDING" && !options?.organizationId) {
-      where.OR = [
-        { organizationId: activeUser.organizationId },
-        { organization: { parentId: activeUser.organizationId } },
-      ];
-    } else {
-      const targetOrgId = options?.organizationId || activeUser.organizationId;
-      where.organizationId = targetOrgId ? targetOrgId : { in: [] };
+    const conditions = await labOrderScope(activeUser, options ?? {});
+    if (options?.status && options.status !== "ALL") conditions.push({ status: options.status });
+    if (options?.urgentOnly) {
+      conditions.push({
+        OR: [{ priority: "URGENT" }, { results: { some: { isAbnormal: true, validatedAt: null } } }],
+      });
     }
+    const term = options?.search?.trim();
+    if (term) conditions.push(await labOrderSearch(term));
 
-    if (options?.orderedById) where.orderedById = options.orderedById;
+    const where: Prisma.LabOrderWhereInput = { AND: conditions };
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [labOrders, total] = await Promise.all([
+      prisma.labOrder.findMany({
+        where,
+        include: ORDER_INCLUDE,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.labOrder.count({ where }),
+    ]);
 
-    const labOrders = await prisma.labOrder.findMany({
-      where,
-      include: ORDER_INCLUDE,
-      orderBy: { createdAt: "desc" },
-      // Garde-fou : évite de ramener une collection entière si le volume de demandes grossit
-      // fortement — pas une vraie pagination, juste une limite haute sur les plus récentes.
-      take: 500,
-    });
-
-    return { success: true, data: labOrders };
+    return { success: true as const, data: labOrders, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du chargement des demandes d'analyse." };
+    return { success: false as const, error: error.message || "Erreur lors du chargement des demandes d'analyse." };
+  }
+}
+
+// Compteurs des tableaux de bord : calculés en base sur tout le périmètre, jamais à partir de la
+// page affichée (qui ne contient que 20 demandes au plus).
+export async function getLabOrderStats(options?: { organizationId?: string; orderedById?: string }) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertLabReadRole(activeUser.role);
+
+    const scope = await labOrderScope(activeUser, { organizationId: options?.organizationId, orderedById: options?.orderedById });
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const countWhere = (extra: Prisma.LabOrderWhereInput) => prisma.labOrder.count({ where: { AND: [...scope, extra] } });
+
+    const [pending, inAnalysis, toValidate, validatedToday, urgent, critical, open] = await Promise.all([
+      countWhere({ status: { in: PENDING_LAB_STATUSES } }),
+      countWhere({ status: "IN_ANALYSIS" }),
+      countWhere({ status: "TO_VALIDATE" }),
+      countWhere({ status: { in: ["VALIDATED", "DELIVERED"] }, updatedAt: { gte: startOfToday } }),
+      countWhere({ priority: "URGENT", status: { notIn: CLOSED_LAB_STATUSES } }),
+      countWhere({ results: { some: { isAbnormal: true, validatedAt: null } } }),
+      countWhere({ status: { notIn: CLOSED_LAB_STATUSES } }),
+    ]);
+
+    return { success: true as const, data: { pending, inAnalysis, toValidate, validatedToday, urgent, critical, open } };
+  } catch (error: any) {
+    return { success: false as const, error: error.message || "Erreur lors du calcul des indicateurs de laboratoire." };
   }
 }
 
@@ -527,7 +623,7 @@ export async function updateLabOrderStatus(labOrderId: string, status: "PRESCRIB
 
 // --- Catalogue d'examens (COORDINATOR uniquement) ---
 
-export async function listLabTests(organizationId?: string) {
+export async function listLabTests(organizationId?: string, options?: { page?: number; pageSize?: number; search?: string }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
@@ -537,13 +633,18 @@ export async function listLabTests(organizationId?: string) {
     const where: any = { isActive: true };
     if (targetOrgId) where.organizationId = targetOrgId;
 
-    const labTests = await prisma.labTest.findMany({
-      where,
-      orderBy: { name: "asc" },
-    });
-    return { success: true, data: await priceLabTests(labTests) };
+    // Recherche sur le nom, faite en base : une recherche porte sur TOUT le catalogue.
+    const term = options?.search?.trim();
+    if (term) where.name = { contains: term, mode: "insensitive" };
+
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [labTests, total] = await Promise.all([
+      prisma.labTest.findMany({ where, orderBy: { name: "asc" }, skip, take }),
+      prisma.labTest.count({ where }),
+    ]);
+    return { success: true as const, data: await priceLabTests(labTests), total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du chargement du catalogue." };
+    return { success: false as const, error: error.message || "Erreur lors du chargement du catalogue." };
   }
 }
 

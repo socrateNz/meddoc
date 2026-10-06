@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Search, Printer, Loader2, RotateCcw, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Scale } from "lucide-react";
 import { listFinancialTransactions } from "@/actions/finance";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import PaymentStatusBadge from "@/components/payment-status-badge";
 
 // Exporté pour être réutilisé par finance-view.tsx (carte de répartition des revenus) — un seul
@@ -90,7 +91,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
         minAmount: minAmount ? Number(minAmount) : undefined,
         maxAmount: maxAmount ? Number(maxAmount) : undefined,
         page,
-        pageSize: 30,
+        pageSize: MAX_PAGE_SIZE,
       });
       if (cancelled) return;
       if (res.success && res.data) {

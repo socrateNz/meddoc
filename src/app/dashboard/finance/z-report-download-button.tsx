@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { getSessionSummary } from "@/actions/registers";
+import { fetchAllPages } from "@/lib/fetch-all-pages";
 
 interface ZReportDownloadButtonProps {
   sessionId: string;
@@ -24,11 +25,19 @@ export default function ZReportDownloadButton({ sessionId, registerName, organiz
   const handleDownload = async () => {
     setIsGenerating(true);
     try {
-      const res = await getSessionSummary(sessionId);
-      if (!res.success || !res.data) {
-        throw new Error(res.error || "Impossible de charger le détail de cette session.");
+      // Le rapport Z doit contenir TOUS les mouvements : on enchaîne les pages (20 par requête).
+      const first = await getSessionSummary(sessionId, { page: 1 });
+      if (!first.success || !first.data) {
+        throw new Error(first.error || "Impossible de charger le détail de cette session.");
       }
-      const { session, transactions, totalIncome, totalExpenses, expectedAmount, variance } = res.data;
+      const { session, totalIncome, totalExpenses, expectedAmount, variance } = first.data;
+      const transactions = await fetchAllPages(async (page) => {
+        const res = await getSessionSummary(sessionId, { page });
+        if (!res.success || !res.data) {
+          throw new Error(res.error || "Impossible de charger les mouvements de cette session.");
+        }
+        return { data: res.data.transactions, total: res.data.transactionsTotal, pageSize: res.data.pageSize };
+      });
 
       const ZReportPDFDocument = (await import("@/components/pdf/z-report-pdf")).default;
       const { pdf } = await import("@react-pdf/renderer");

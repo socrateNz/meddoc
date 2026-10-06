@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { PaginationNav } from "@/components/ui/pagination-nav";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,8 +50,27 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
 
 const PENDING_STATUSES = ["PRESCRIBED", "SAMPLE_COLLECTED", "RECEIVED_AT_LAB"];
 
+export interface LabStats {
+  pending: number;
+  inAnalysis: number;
+  toValidate: number;
+  validatedToday: number;
+  urgent: number;
+  critical: number;
+  open: number;
+}
+
 interface LabViewProps {
+  // Une page de demandes (20 au plus), filtrée côté serveur par `query`.
   labOrders: any[];
+  total: number;
+  page: number;
+  pageSize: number;
+  // Indicateurs calculés en base sur tout le périmètre (pas sur la page affichée).
+  stats: LabStats;
+  // Paramètres d'URL courants (recherche q, filtre urgent) : conservés lors du changement de page.
+  query: Record<string, string | undefined>;
+  pathname: string;
   patients: any[];
   currentUserRole?: string;
   // Pour la réplication du catalogue hors-ligne (cf. new-lab-order-dialog.tsx) — absent sur la
@@ -57,68 +78,36 @@ interface LabViewProps {
   organizationId?: string;
 }
 
-export default function LabView({ labOrders, patients, currentUserRole, organizationId }: LabViewProps) {
+export default function LabView({ labOrders, total, page, pageSize, stats, query, pathname, patients, currentUserRole, organizationId }: LabViewProps) {
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [urgentOnly, setUrgentOnly] = useState(false);
+  const router = useRouter();
+  // Recherche et filtre « urgences » sont dans l'URL : chaque requête part au serveur, qui filtre
+  // toutes les demandes avant de paginer. Le champ garde sa valeur localement pour rester fluide.
+  const [searchQuery, setSearchQuery] = useState(query.q ?? "");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const urgentOnly = query.urgent === "1";
+
+  const navigate = (changes: Record<string, string | undefined>) => {
+    // Tout changement de filtre revient à la première page.
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries({ ...query, ...changes, page: undefined })) {
+      if (value) params.set(key, value);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => navigate({ q: value.trim() || undefined }), 300);
+  };
 
   const canWrite = currentUserRole !== "ADMIN";
   const isCoordinator = currentUserRole === "COORDINATOR";
 
-  // KPIs
-  const stats = useMemo(() => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-
-    let pending = 0,
-      inAnalysis = 0,
-      toValidate = 0,
-      validatedToday = 0,
-      urgent = 0,
-      critical = 0;
-
-    for (const o of labOrders) {
-      if (PENDING_STATUSES.includes(o.status)) pending++;
-      if (o.status === "IN_ANALYSIS") inAnalysis++;
-      if (o.status === "TO_VALIDATE") toValidate++;
-      if ((o.status === "VALIDATED" || o.status === "DELIVERED") && new Date(o.updatedAt) >= startOfToday)
-        validatedToday++;
-      if (o.priority === "URGENT" && !["DELIVERED", "CANCELLED"].includes(o.status)) urgent++;
-      if ((o.results || []).some((r: any) => r.isAbnormal && !r.validatedAt)) critical++;
-    }
-    return { pending, inAnalysis, toValidate, validatedToday, urgent, critical };
-  }, [labOrders]);
-
-  // Filtering
-  const filteredOrders = useMemo(() => {
-    return labOrders.filter((order) => {
-      // Status filter
-      if (statusFilter !== "ALL" && order.status !== statusFilter) {
-        return false;
-      }
-
-      // Urgent or critical toggle
-      const hasCritical = (order.results || []).some((r: any) => r.isAbnormal && !r.validatedAt);
-      if (urgentOnly && order.priority !== "URGENT" && !hasCritical) {
-        return false;
-      }
-
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const patientName = `${order.patient?.user?.lastName || ""} ${order.patient?.user?.firstName || ""}`.toLowerCase();
-        const doctorName = `${order.orderedBy?.lastName || ""} ${order.orderedBy?.firstName || ""}`.toLowerCase();
-        const tests = (order.tests || []).join(" ").toLowerCase();
-
-        if (!patientName.includes(q) && !doctorName.includes(q) && !tests.includes(q)) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [labOrders, statusFilter, urgentOnly, searchQuery]);
+  // La page affichée est déjà filtrée par le serveur.
+  const filteredOrders = labOrders;
 
   // Kanban Columns
   const kanbanColumns = useMemo(() => {
@@ -225,7 +214,7 @@ export default function LabView({ labOrders, patients, currentUserRole, organiza
             type="search"
             placeholder="Rechercher patient, analyse (NFS, CRP...), médecin..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9 pr-4 h-10 text-xs bg-muted/20 border-border/70 focus-visible:bg-background"
           />
         </div>
@@ -235,7 +224,7 @@ export default function LabView({ labOrders, patients, currentUserRole, organiza
           {/* Urgent / Critical Quick Toggle */}
           <button
             type="button"
-            onClick={() => setUrgentOnly(!urgentOnly)}
+            onClick={() => navigate({ urgent: urgentOnly ? undefined : "1" })}
             className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all flex items-center gap-1.5 ${
               urgentOnly
                 ? "bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300"
@@ -460,6 +449,14 @@ export default function LabView({ labOrders, patients, currentUserRole, organiza
           })}
         </div>
       )}
+      <PaginationNav
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        pathname={pathname}
+        query={query}
+        itemLabel="demande"
+      />
     </div>
   );
 }

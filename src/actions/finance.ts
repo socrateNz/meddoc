@@ -2,7 +2,7 @@
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
-import { MAX_PAGE_SIZE } from "@/lib/pagination";
+import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -1686,7 +1686,7 @@ export async function listFinancialTransactions(filters: {
     assertFinanceReadRole(activeUser.role);
 
     const page = Math.max(1, Math.floor(filters.page || 1));
-    const pageSize = Math.min(200, Math.max(1, Math.floor(filters.pageSize || 50)));
+    const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(filters.pageSize || MAX_PAGE_SIZE)));
 
     // Toutes les conditions SAUF le type — réutilisées telles quelles pour calculer les totaux
     // encaissé/dépensé indépendamment du filtre de type actif (voir plus bas).
@@ -1885,167 +1885,221 @@ function computeDispenseLines(inv: { items: any; labOrders?: { testDetails: any 
   return { cartLines, labLines: [...labMap.values()] };
 }
 
-function hasDispensableContent(inv: { items: any; labOrders?: { testDetails: any }[] }) {
-  const hasPharmacyItems = Array.isArray(inv.items) && (inv.items as any[]).some((i) => i.type === "PHARMACY");
-  const hasLabConsumables = (inv.labOrders || []).some((lo) =>
-    ((lo.testDetails as any[]) || []).some((td: any) => (td.consumables || []).length > 0)
-  );
-  return hasPharmacyItems || hasLabConsumables;
+// ---------------------------------------------------------------------------------------------
+// Files pharmacie : remise (à faire) et historique (remis / annulé). Le contenu d'une facture (lignes
+// PHARMACY dans un champ Json, consommables des examens) ne se filtre pas avec Prisma : ces requêtes
+// passent par MongoDB directement, qui filtre, trie et pagine en base.
+// ---------------------------------------------------------------------------------------------
+
+type ActiveFinanceUser = { role: string; organizationId: string | null; organization?: { type?: string | null } | null };
+type Oid = { $oid: string };
+
+const toOid = (id: string): Oid => ({ $oid: id });
+const rawId = (value: unknown): string => (typeof value === "string" ? value : (value as Oid).$oid);
+
+// Organisations couvertes : la clinique demandée, ou la holding et ses cliniques.
+async function scopeOrganizationIds(activeUser: ActiveFinanceUser, organizationId?: string): Promise<string[]> {
+  if (activeUser.organization?.type === "HOLDING" && !organizationId) {
+    const children = await prisma.organization.findMany({ where: { parentId: activeUser.organizationId! }, select: { id: true } });
+    return [activeUser.organizationId!, ...children.map((c) => c.id)];
+  }
+  const targetOrgId = organizationId || activeUser.organizationId;
+  return targetOrgId ? [targetOrgId] : [];
 }
 
-// File d'attente du comptoir pharmacie : factures contenant au moins un médicament, pas encore
-// intégralement remises (dispensedAt null) et pas clôturées côté caisse (status CANCELLED) —
-// quel que soit leur état de règlement sinon (PENDING/PARTIAL/PAID), puisqu'un patient peut
-// repartir avec une partie de ses médicaments avant d'avoir tout payé. Un ticket partiellement
-// remis reste ici tant qu'il reste quelque chose à donner, avec sa progression ligne par ligne.
-// Filtrage en mémoire après lecture (un champ Json ne se filtre pas nativement côté Mongo/
-// Prisma sur son contenu) — le volume de factures en attente de remise reste faible.
-export async function listPharmacyDispenseQueue(organizationId?: string) {
+// Factures portant au moins un consommable d'examen (LabOrder.testDetails[].consumables) : elles aussi
+// se remettent au comptoir, au même titre qu'un médicament.
+async function invoicesWithLabConsumables(orgIds: string[]): Promise<Oid[]> {
+  const res: any = await prisma.$runCommandRaw({
+    find: "LabOrder",
+    filter: {
+      organizationId: { $in: orgIds.map(toOid) },
+      pendingInvoiceId: { $ne: null },
+      testDetails: { $elemMatch: { "consumables.0": { $exists: true } } },
+    },
+    projection: { pendingInvoiceId: 1 },
+    batchSize: 10000,
+  });
+  const ids = new Set<string>((res.cursor?.firstBatch || []).map((row: any) => rawId(row.pendingInvoiceId)));
+  return [...ids].map(toOid);
+}
+
+// Filtre « au moins un médicament, ou un consommable d'examen ».
+function dispensableClause(labInvoiceIds: Oid[]) {
+  return {
+    $or: [
+      { items: { $elemMatch: { type: "PHARMACY" } } },
+      ...(labInvoiceIds.length > 0 ? [{ _id: { $in: labInvoiceIds } }] : []),
+    ],
+  };
+}
+
+// Patients dont le nom correspond à la recherche : sert à filtrer l'historique côté serveur.
+async function patientOidsMatching(term: string): Promise<Oid[]> {
+  const patients = await prisma.patient.findMany({
+    where: {
+      user: {
+        OR: [
+          { firstName: { contains: term, mode: "insensitive" } },
+          { lastName: { contains: term, mode: "insensitive" } },
+        ],
+      },
+    },
+    select: { id: true },
+  });
+  return patients.map((p) => toOid(p.id));
+}
+
+// Total exact + identifiants de la page demandée, dans l'ordre de tri.
+async function rawInvoicePage(filter: Prisma.InputJsonObject, sort: Record<string, number>, page: number, pageSize: number) {
+  const [countRes, findRes]: any[] = await Promise.all([
+    prisma.$runCommandRaw({ count: "PendingInvoice", query: filter }),
+    prisma.$runCommandRaw({
+      find: "PendingInvoice",
+      filter,
+      sort,
+      skip: (page - 1) * pageSize,
+      limit: pageSize,
+      projection: { _id: 1 },
+    }),
+  ]);
+  return {
+    total: Number(countRes.n ?? 0),
+    ids: (findRes.cursor?.firstBatch || []).map((row: any) => rawId(row._id)) as string[],
+  };
+}
+
+// Charge les factures de la page, dans l'ordre demandé, avec leurs lignes à remettre.
+async function loadInvoicesInOrder(ids: string[]) {
+  const rows = await prisma.pendingInvoice.findMany({
+    where: { id: { in: ids } },
+    include: {
+      patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+      labOrders: { select: { testDetails: true } },
+    },
+  });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const ordered = ids.map((id) => byId.get(id)).filter((row): row is (typeof rows)[number] => row !== undefined);
+  const withPaid = await attachAmountPaid(ordered);
+  return withPaid.map((inv) => {
+    const { cartLines, labLines } = computeDispenseLines(inv);
+    return { ...inv, cartLines, labLines };
+  });
+}
+
+// File de remise du comptoir : factures à remettre, pas entièrement remises, pas clôturées — quel que
+// soit leur état de règlement (un patient peut repartir avec une partie de ses médicaments avant d'avoir
+// tout payé). Un ticket partiellement remis reste ici tant qu'il reste quelque chose à donner.
+export async function listPharmacyDispenseQueue(organizationId?: string, options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertPharmacyCatalogReadRole(activeUser.role);
 
-    // Un champ optionnel jamais explicitement écrit à sa création (le cas de dispensedAt pour
-    // toute facture créée avant cette remise) reste ABSENT du document Mongo plutôt que null —
-    // et { dispensedAt: null } seul ne matche QUE les documents où le champ vaut littéralement
-    // null, pas ceux où il est simplement absent (confirmé : { $ne: ["$dispensedAt","$$REMOVE"] }
-    // dans la requête générée). isSet: false couvre ce cas, la comparaison à null couvre les
-    // documents futurs où il serait explicitement mis à null.
-    const notDispensed = { OR: [{ dispensedAt: null }, { dispensedAt: { isSet: false } }] };
-    const notCancelled = { status: { not: "CANCELLED" } };
-    const where: any = { AND: [notDispensed, notCancelled] };
-    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
-      where.AND.push({
-        OR: [
-          { organizationId: activeUser.organizationId },
-          { organization: { parentId: activeUser.organizationId } },
-        ],
-      });
-    } else {
-      const targetOrgId = organizationId || activeUser.organizationId;
-      if (targetOrgId) where.AND.push({ organizationId: targetOrgId });
-    }
-
-    const invoices = await prisma.pendingInvoice.findMany({
-      where,
-      include: {
-        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
-        labOrders: { select: { testDetails: true } },
-      },
-      // paidAt peut désormais être null (facture non/partiellement réglée) — createdAt reste
-      // toujours renseigné, ordre "plus ancien ticket en attente d'abord" plus fiable.
-      orderBy: { createdAt: "desc" },
-    });
-
-    const queue = await attachAmountPaid(invoices.filter(hasDispensableContent));
-    const queueWithLines = queue.map((inv) => {
-      const { cartLines, labLines } = computeDispenseLines(inv);
-      return { ...inv, cartLines, labLines };
-    });
-
-    return { success: true, data: queueWithLines };
+    const { page, pageSize } = resolvePage(options);
+    const orgIds = await scopeOrganizationIds(activeUser, organizationId);
+    const labIds = await invoicesWithLabConsumables(orgIds);
+    // { dispensedAt: null } couvre à la fois null et un champ absent (jamais écrit avant la remise).
+    const filter = {
+      organizationId: { $in: orgIds.map(toOid) },
+      status: { $ne: "CANCELLED" },
+      dispensedAt: null,
+      ...dispensableClause(labIds),
+    };
+    const { total, ids } = await rawInvoicePage(filter, { createdAt: -1 }, page, pageSize);
+    const data = await loadInvoicesInOrder(ids);
+    return { success: true as const, data, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du chargement de la file d'attente pharmacie." };
+    return { success: false as const, error: error.message || "Erreur lors du chargement de la file d'attente pharmacie." };
   }
 }
 
-// Historique pharmacie : factures intégralement remises (dispensedAt renseigné) OU clôturées
-// côté caisse sans avoir été intégralement remises (status CANCELLED) — un ticket partiellement
-// remis puis abandonné reste ainsi traçable ici plutôt que de disparaître silencieusement. L'état
-// de règlement (badge Payé/Partiel/Non payé/Clôturé) reste affiché pour signaler un solde dû.
-export async function listPharmacyDispenseHistory(organizationId?: string, options?: { search?: string; take?: number }) {
+// Historique : factures remises (même partiellement) ou annulées, les plus récemment remises d'abord.
+export async function listPharmacyDispenseHistory(organizationId?: string, options?: { search?: string; page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertPharmacyCatalogReadRole(activeUser.role);
 
-    const relevant = { OR: [{ dispensedAt: { not: null } }, { status: "CANCELLED" }] };
-    const where: any = { AND: [relevant] };
-    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
-      where.AND.push({
-        OR: [
-          { organizationId: activeUser.organizationId },
-          { organization: { parentId: activeUser.organizationId } },
-        ],
-      });
-    } else {
-      const targetOrgId = organizationId || activeUser.organizationId;
-      if (targetOrgId) where.AND.push({ organizationId: targetOrgId });
+    const { page, pageSize } = resolvePage(options);
+    const orgIds = await scopeOrganizationIds(activeUser, organizationId);
+    const labIds = await invoicesWithLabConsumables(orgIds);
+    const term = options?.search?.trim();
+    // Recherche : par nom de patient, ou par référence (les 6 derniers caractères de l'identifiant,
+    // tels qu'imprimés sur le ticket).
+    const searchClause: Prisma.InputJsonObject[] = [];
+    if (term) {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      searchClause.push({ $expr: { $regexMatch: { input: { $substrCP: [{ $toString: "$_id" }, 18, 6] }, regex: escaped, options: "i" } } });
+      searchClause.push({ patientId: { $in: await patientOidsMatching(term) } });
     }
-
-    const invoices = await prisma.pendingInvoice.findMany({
-      where,
-      include: {
-        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
-        labOrders: { select: { testDetails: true } },
-      },
-      orderBy: { dispensedAt: "desc" },
-      take: options?.take || 200,
-    });
-
-    let history = (await attachAmountPaid(invoices.filter(hasDispensableContent))).map((inv) => {
-      const { cartLines, labLines } = computeDispenseLines(inv);
-      return { ...inv, cartLines, labLines };
-    });
-
-    const search = options?.search?.trim().toLowerCase();
-    if (search) {
-      history = history.filter((inv) => {
-        const ref = String(inv.id).slice(-6).toLowerCase();
-        const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}`.toLowerCase() : "";
-        return ref.includes(search) || name.includes(search);
-      });
-    }
-
-    return { success: true, data: history };
+    const filter: Prisma.InputJsonObject = {
+      organizationId: { $in: orgIds.map(toOid) },
+      $and: [{ $or: [{ dispensedAt: { $ne: null } }, { status: "CANCELLED" }] }, dispensableClause(labIds)],
+      ...(searchClause.length > 0 ? { $or: searchClause } : {}),
+    };
+    const { total, ids } = await rawInvoicePage(filter, { dispensedAt: -1 }, page, pageSize);
+    const data = await loadInvoicesInOrder(ids);
+    return { success: true as const, data, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du chargement de l'historique." };
+    return { success: false as const, error: error.message || "Erreur lors du chargement de l'historique." };
   }
 }
 
 // Créées automatiquement à la clôture d'une consultation, d'une demande labo, un envoi
 // d'ordonnance, ou directement à la caisse — pas encore intégralement réglées (PENDING ou
 // PARTIAL) — cf. onglet "Tickets impayés" de src/app/dashboard/caisse. Rôle de lecture aligné
-// sur REGISTER_READ_ROLES (pas seulement CAISSE_READ_ROLES) : un PHARMACIST qui opère déjà la
-// caisse comme un caissier temporaire doit pouvoir voir cet onglet sur la même page.
-export async function listPendingInvoices(organizationId?: string) {
+// sur REGISTER_READ_ROLES. Liste paginée ; le bandeau (valeur, déjà réglé, partiels) porte sur
+// toutes les factures en attente.
+export async function listPendingInvoices(organizationId?: string, options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertRegisterReadRole(activeUser.role);
 
-    const where: any = { status: { in: ["PENDING", "PARTIAL"] } };
-    if (activeUser.organization?.type === "HOLDING" && !organizationId) {
-      where.OR = [
-        { organizationId: activeUser.organizationId },
-        { organization: { parentId: activeUser.organizationId } },
-      ];
-    } else {
-      const targetOrgId = organizationId || activeUser.organizationId;
-      if (targetOrgId) where.organizationId = targetOrgId;
-    }
+    const orgIds = await scopeOrganizationIds(activeUser, organizationId);
+    const where = { status: { in: ["PENDING", "PARTIAL"] }, organizationId: { in: orgIds } };
+    const { page, pageSize, skip, take } = resolvePage(options);
 
-    const invoices = await prisma.pendingInvoice.findMany({
-      where,
-      include: {
-        patient: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } },
-        medicalRecord: { select: { title: true, createdAt: true } },
-        // Nécessaire pour afficher le récapitulatif donné/commandé (panier + labo) dans la boîte
-        // de dialogue de clôture d'un ticket non réglé (cf. closeUnpaidInvoice).
-        labOrders: { select: { testDetails: true } },
+    const [pageRows, total, allRows] = await Promise.all([
+      prisma.pendingInvoice.findMany({
+        where,
+        include: {
+          patient: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } },
+          medicalRecord: { select: { title: true, createdAt: true } },
+          // Nécessaire pour afficher le récapitulatif donné/commandé (panier + labo) dans la boîte
+          // de dialogue de clôture d'un ticket non réglé (cf. closeUnpaidInvoice).
+          labOrders: { select: { testDetails: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.pendingInvoice.count({ where }),
+      prisma.pendingInvoice.findMany({ where, select: { id: true, status: true, items: true } }),
+    ]);
+
+    const paidAll = await attachAmountPaid(allRows);
+    const summary = paidAll.reduce(
+      (acc, inv) => {
+        const invoiceValue = ((inv.items as any[]) || []).reduce((sum, it) => sum + Number(it.amount || 0), 0);
+        acc.totalValue += invoiceValue;
+        acc.totalPaid += inv.amountPaid;
+        if (inv.status === "PARTIAL") acc.partialCount++;
+        return acc;
       },
-      orderBy: { createdAt: "desc" },
-    });
+      { totalValue: 0, totalPaid: 0, partialCount: 0 }
+    );
 
-    const withLines = (await attachAmountPaid(invoices)).map((inv) => {
+    const withPaid = await attachAmountPaid(pageRows);
+    const withLines = withPaid.map((inv) => {
       const { cartLines, labLines } = computeDispenseLines(inv);
       return { ...inv, cartLines, labLines };
     });
 
-    return { success: true, data: withLines };
+    return { success: true as const, data: withLines, total, page, pageSize, summary };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du chargement des factures en attente." };
+    return { success: false as const, error: error.message || "Erreur lors du chargement des factures en attente." };
   }
 }
 

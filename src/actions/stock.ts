@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
+import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
 import { requirePermission } from "@/lib/permissions";
 import { assertItemPurchasable } from "@/lib/pharmacy-sale-block";
 import { applyLotConsumption, groupIdsByValue, planLotConsumption, setField } from "@/lib/stock-batch";
@@ -631,7 +632,11 @@ export async function cancelStockPurchase(stockPurchaseId: string, reason?: stri
   }
 }
 
-export async function getStockPurchaseHistory(organizationId?: string, pharmacyItemId?: string) {
+export async function getStockPurchaseHistory(
+  organizationId?: string,
+  pharmacyItemId?: string,
+  options?: { page?: number; pageSize?: number; search?: string }
+) {
   try {
     const activeUser = await getCurrentUser();
     await assertStockRead(activeUser);
@@ -641,19 +646,37 @@ export async function getStockPurchaseHistory(organizationId?: string, pharmacyI
     const targetOrgId = organizationId || activeUser!.organizationId;
     if (targetOrgId) where.organizationId = targetOrgId;
 
-    const purchases = await prisma.stockPurchase.findMany({
-      where,
-      include: {
-        pharmacyItem: { select: { name: true, dosage: true } },
-        purchasedBy: { select: { firstName: true, lastName: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 200,
-    });
+    // Recherche côté serveur : sans elle, le filtre ne porterait que sur la page affichée.
+    const term = options?.search?.trim();
+    if (term) {
+      where.OR = [
+        { pharmacyItem: { name: { contains: term, mode: "insensitive" } } },
+        { pharmacyItem: { dosage: { contains: term, mode: "insensitive" } } },
+        { supplier: { contains: term, mode: "insensitive" } },
+        { batchNumber: { contains: term, mode: "insensitive" } },
+      ];
+    }
 
-    return { success: true, data: purchases };
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [purchases, total, sums] = await Promise.all([
+      prisma.stockPurchase.findMany({
+        where,
+        include: {
+          pharmacyItem: { select: { name: true, dosage: true } },
+          purchasedBy: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.stockPurchase.count({ where }),
+      // Coût total de TOUT le résultat filtré (pas seulement la page affichée).
+      prisma.stockPurchase.aggregate({ where, _sum: { totalCost: true } }),
+    ]);
+
+    return { success: true as const, data: purchases, total, page, pageSize, totalCost: sums._sum.totalCost ?? 0 };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de l'historique des achats.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement de l'historique des achats.") };
   }
 }
 
@@ -825,36 +848,54 @@ export async function startInventoryCount(organizationId: string) {
   }
 }
 
-export async function getActiveInventoryCount(organizationId: string) {
+export async function getActiveInventoryCount(organizationId: string, options?: { page?: number; pageSize?: number; search?: string }) {
   try {
     const activeUser = await getCurrentUser();
     await assertStockRead(activeUser);
 
-    const includeLines = {
-      lines: {
-        include: { pharmacyItem: { select: { name: true, dosage: true, category: true } } },
-        orderBy: { createdAt: "asc" as const },
-      },
-    };
-
-    let inventoryCount = await prisma.inventoryCount.findFirst({
+    const inventoryCount = await prisma.inventoryCount.findFirst({
       where: { organizationId, status: "IN_PROGRESS" },
-      include: includeLines,
     });
+    if (!inventoryCount) return { success: true as const, data: null };
 
-    if (inventoryCount) {
-      const added = await syncInventoryCountLines(inventoryCount.id, organizationId);
-      if (added) {
-        inventoryCount = await prisma.inventoryCount.findFirst({
-          where: { id: inventoryCount.id },
-          include: includeLines,
-        });
-      }
-    }
+    // Ajoute les produits créés depuis le démarrage, puis lit la page demandée.
+    await syncInventoryCountLines(inventoryCount.id, organizationId);
 
-    return { success: true, data: inventoryCount };
+    const term = options?.search?.trim();
+    const lineWhere = {
+      inventoryCountId: inventoryCount.id,
+      ...(term
+        ? {
+            pharmacyItem: {
+              OR: [
+                { name: { contains: term, mode: "insensitive" as const } },
+                { dosage: { contains: term, mode: "insensitive" as const } },
+              ],
+            },
+          }
+        : {}),
+    };
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [lines, linesTotal, totalLines] = await Promise.all([
+      prisma.inventoryCountLine.findMany({
+        where: lineWhere,
+        include: { pharmacyItem: { select: { name: true, dosage: true, category: true } } },
+        orderBy: { createdAt: "asc" },
+        skip,
+        take,
+      }),
+      prisma.inventoryCountLine.count({ where: lineWhere }),
+      prisma.inventoryCountLine.count({ where: { inventoryCountId: inventoryCount.id } }),
+    ]);
+
+    // `lines` = la page affichée ; `linesTotal` = lignes correspondant à la recherche ;
+    // `totalLines` = toutes les lignes du comptage.
+    return {
+      success: true as const,
+      data: { ...inventoryCount, lines, linesTotal, totalLines, page, pageSize },
+    };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de l'inventaire en cours.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement de l'inventaire en cours.") };
   }
 }
 
@@ -1159,13 +1200,47 @@ export async function getInventoryHistory(organizationId: string) {
       where: { organizationId, status: "COMPLETED" },
       include: {
         startedBy: { select: { firstName: true, lastName: true } },
-        lines: true,
       },
       orderBy: { completedAt: "desc" },
-      take: 20,
+      take: MAX_PAGE_SIZE,
     });
 
-    return { success: true, data: counts };
+    // Compteurs par inventaire calculés en base (lignes, lignes comptées, lignes en écart) : les
+    // lignes elles-mêmes ne sont pas renvoyées. Agrégation brute MongoDB, car un écart compare deux
+    // champs d'une même ligne, ce que le filtre Prisma ne sait pas exprimer.
+    const ids = counts.map((c) => c.id);
+    const agg: any = await prisma.$runCommandRaw({
+      aggregate: "InventoryCountLine",
+      pipeline: [
+        { $match: { inventoryCountId: { $in: ids.map((id) => ({ "$oid": id })) } } },
+        {
+          $group: {
+            _id: "$inventoryCountId",
+            lineCount: { $sum: 1 },
+            countedCount: { $sum: { $cond: [{ $ne: ["$countedQuantity", null] }, 1, 0] } },
+            varianceCount: {
+              $sum: {
+                $cond: [{ $and: [{ $ne: ["$countedQuantity", null] }, { $ne: ["$countedQuantity", "$systemQuantity"] }] }, 1, 0],
+              },
+            },
+          },
+        },
+      ],
+      cursor: {},
+    });
+    const byId = new Map<string, { lineCount: number; countedCount: number; varianceCount: number }>();
+    for (const row of agg.cursor?.firstBatch || []) {
+      const key = typeof row._id === "string" ? row._id : row._id?.$oid;
+      byId.set(key, { lineCount: row.lineCount, countedCount: row.countedCount, varianceCount: row.varianceCount });
+    }
+    const data = counts.map((c) => ({
+      ...c,
+      lineCount: byId.get(c.id)?.lineCount ?? 0,
+      countedCount: byId.get(c.id)?.countedCount ?? 0,
+      varianceCount: byId.get(c.id)?.varianceCount ?? 0,
+    }));
+
+    return { success: true, data };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de l'historique des inventaires.") };
   }
@@ -1176,7 +1251,7 @@ export async function getInventoryHistory(organizationId: string) {
 // simple comparaison compté/système, qui disent quels produits ont vu leur stock modifié (cf.
 // buildInventoryReport). Accessible à l'établissement de l'inventaire, ou à la holding parente
 // (lecture seule, comme le reste du stock pour ADMIN).
-export async function getInventoryReport(inventoryCountId: string) {
+export async function getInventoryReport(inventoryCountId: string, options?: { page?: number; pageSize?: number }) {
   try {
     z.string().min(1).parse(inventoryCountId);
     const activeUser = await getCurrentUser();
@@ -1187,10 +1262,6 @@ export async function getInventoryReport(inventoryCountId: string) {
       include: {
         organization: { select: { name: true, logoUrl: true, parentId: true } },
         startedBy: { select: { firstName: true, lastName: true } },
-        lines: {
-          include: { pharmacyItem: { select: { name: true, dosage: true, category: true } } },
-          orderBy: { createdAt: "asc" },
-        },
       },
     });
     if (!count) throw new Error("Inventaire introuvable.");
@@ -1205,13 +1276,28 @@ export async function getInventoryReport(inventoryCountId: string) {
       throw new Error("Le rapport n'est disponible que pour un inventaire clôturé.");
     }
 
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const lineWhere = { inventoryCountId };
+    const [lines, linesTotal] = await Promise.all([
+      prisma.inventoryCountLine.findMany({
+        where: lineWhere,
+        include: { pharmacyItem: { select: { name: true, dosage: true, category: true } } },
+        orderBy: { createdAt: "asc" },
+        skip,
+        take,
+      }),
+      prisma.inventoryCountLine.count({ where: lineWhere }),
+    ]);
+
     const adjustments = await prisma.stockAdjustment.findMany({
-      where: { inventoryCountLineId: { in: count.lines.map((line) => line.id) } },
+      where: { inventoryCountLineId: { in: lines.map((line) => line.id) } },
       select: { inventoryCountLineId: true, quantityDelta: true, valuationAmount: true },
     });
 
+    // Le rapport (lignes + totaux) est assemblé côté client à partir de toutes les pages
+    // (cf. inventory-report-download-button.tsx) : buildInventoryReport est une fonction pure.
     return {
-      success: true,
+      success: true as const,
       data: {
         inventory: {
           id: count.id,
@@ -1221,10 +1307,14 @@ export async function getInventoryReport(inventoryCountId: string) {
           startedBy: count.startedBy,
         },
         organization: { name: count.organization?.name ?? null, logoUrl: count.organization?.logoUrl ?? null },
-        report: buildInventoryReport(count.lines, adjustments),
+        lines,
+        adjustments,
+        linesTotal,
+        page,
+        pageSize,
       },
     };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement du rapport d'inventaire.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du rapport d'inventaire.") };
   }
 }

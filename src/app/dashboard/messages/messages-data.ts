@@ -8,6 +8,7 @@
 // depuis le navigateur directement.
 
 import { prisma } from "@/lib/db";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 
 export const DEFAULT_CHANNEL_NAMES = ["urgences", "garde-nuit", "staff-médical"] as const;
 
@@ -135,6 +136,7 @@ export async function fetchMessagingPageData({
           where: { organizationId: channelsOrganizationId, type: "CHANNEL" },
           include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
           orderBy: { title: "asc" },
+          take: MAX_PAGE_SIZE,
         })
       : Promise.resolve([]),
     prisma.conversation.findMany({
@@ -144,15 +146,15 @@ export async function fetchMessagingPageData({
         messages: { orderBy: { createdAt: "desc" }, take: 1 },
       },
       orderBy: { createdAt: "desc" },
-      // Garde-fou : évite de ramener une collection entière si le nombre de discussions grossit
-      // fortement — pas une vraie pagination, juste une limite haute sur les plus récentes.
-      take: 500,
+      // Les discussions privées les plus récentes, 20 au plus (une page de la liste).
+      take: MAX_PAGE_SIZE,
     }),
     otherUsersWhere
       ? prisma.user.findMany({
           where: { id: { not: currentUser.id }, isActive: true, ...otherUsersWhere },
           select: USER_SUMMARY_SELECT,
           orderBy: { lastName: "asc" },
+          take: MAX_PAGE_SIZE,
         })
       : Promise.resolve([]),
   ]);
@@ -170,8 +172,8 @@ export async function fetchMessagingPageData({
         where: { conversationId: activeConversationId },
         include: MESSAGE_INCLUDE,
         orderBy: { createdAt: "desc" },
-        // Garde-fou : les 200 plus récents, remis en ordre chronologique pour l'affichage.
-        take: 200,
+        // Les 20 plus récents, remis en ordre chronologique ; les plus anciens se chargent à la demande.
+        take: MAX_PAGE_SIZE,
       });
       messages = rawMessages.reverse();
     }

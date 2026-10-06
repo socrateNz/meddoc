@@ -337,7 +337,20 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           linkText: "Ouvrir mon tableau de bord"
         },
         {
-          title: "2. Consultations & Diagnostic",
+          title: "2. Ronde médicale",
+          icon: Stethoscope,
+          content: "La visite quotidienne de l'équipe au chevet des patients hospitalisés, service par service.",
+          details: [
+            "Ouvrir la ronde du jour d'un service : chaque patient hospitalisé est listé dans l'ordre des chambres, avec ses dernières constantes, ses tâches de soins en attente, ses analyses en cours et ses incidents ouverts.",
+            "Choisir les présents avant de démarrer la ronde (ou les modifier ensuite, puis les enregistrer). Basculer entre la liste et la grille (lits par chambre) pour repérer les patients d'un coup d'œil.",
+            "Pour chaque patient, cliquer sur « Visiter » (ou sur son lit dans la grille) : une fenêtre s'ouvre avec ses constantes, puis vous enregistrez les constats, la décision (poursuivre, adapter, examens, sortie envisagée, transfert) et la conduite à tenir.",
+            "Passer un patient non vu en précisant le motif. Clôturer la ronde à la fin de la visite : les patients non vus restent signalés dans le résumé.",
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/ronde` : undefined,
+          linkText: "Ouvrir la ronde du jour"
+        },
+        {
+          title: "3. Consultations & Diagnostic",
           icon: FileText,
           content: "Clôture structurée d'une consultation avec codification du diagnostic.",
           details: [
@@ -347,7 +360,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           ]
         },
         {
-          title: "3. Prescriptions & Examens de Laboratoire",
+          title: "4. Prescriptions & Examens de Laboratoire",
           icon: CheckCircle2,
           content: "Autorité exclusive de prescription (ordonnances et examens).",
           details: [
@@ -357,7 +370,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           ]
         },
         {
-          title: "4. Assistant Clinique IA",
+          title: "5. Assistant Clinique IA",
           icon: Sparkles,
           content: "Support à la décision clinique et analyse intelligente des synthèses.",
           details: [
@@ -369,7 +382,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           linkText: "Lancer l'Assistant IA"
         },
         {
-          title: "5. Mode hors-ligne",
+          title: "6. Mode hors-ligne",
           icon: Activity,
           content: "Pendant une coupure réseau, les actions de soins les plus courantes restent disponibles.",
           details: [
@@ -380,7 +393,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           ]
         },
         {
-          title: "6. Messagerie d'équipe",
+          title: "7. Messagerie d'équipe",
           icon: LifeBuoy,
           content: "Échanges avec les collègues dans les canaux et les conversations privées.",
           details: [
@@ -423,7 +436,20 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           ]
         },
         {
-          title: "3. Prélèvements de Laboratoire",
+          title: "3. Ronde médicale",
+          icon: Stethoscope,
+          content: "Participer à la visite quotidienne de l'équipe au chevet des patients hospitalisés.",
+          details: [
+            "Retrouver la ronde du jour de votre service : les patients hospitalisés, dans l'ordre des chambres, avec leurs dernières constantes et leurs soins en attente.",
+            "Vous signaler comme présent à la ronde, pour que l'équipe sache qui a participé.",
+            "Noter vos constats sur chaque patient (état, douleur, tolérance) : cliquez sur « Voir » ou « Visiter » dans la liste (ou sur le lit dans la grille) pour ouvrir la fenêtre de visite. Le médecin lit ces constats avant de décider.",
+            "Un patient admis pendant la ronde y est ajouté automatiquement ; un patient qui ne peut pas être vu se passe avec un motif.",
+          ],
+          link: clinicId ? `/dashboard/clinics/${clinicId}/ronde` : undefined,
+          linkText: "Ouvrir la ronde du jour"
+        },
+        {
+          title: "4. Prélèvements de Laboratoire",
           icon: FileText,
           content: "Gestes techniques d'exécution sur prescription du médecin.",
           details: [
@@ -434,7 +460,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           linkText: "Ouvrir le Laboratoire"
         },
         {
-          title: "4. Signalement d'Incidents Instantané",
+          title: "5. Signalement d'Incidents Instantané",
           icon: AlertCircle,
           content: "Transmission immédiate des urgences ou événements indésirables.",
           details: [
@@ -445,7 +471,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           linkText: "Déclarer un incident"
         },
         {
-          title: "5. Calendrier, Gardes & Rappels",
+          title: "6. Calendrier, Gardes & Rappels",
           icon: Calendar,
           content: "Votre planning et les rappels qui vous évitent d'oublier une intervention.",
           details: [
@@ -458,7 +484,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
           linkText: "Ouvrir le Calendrier"
         },
         {
-          title: "6. Messagerie d'équipe",
+          title: "7. Messagerie d'équipe",
           icon: LifeBuoy,
           content: "Échanges avec les collègues dans les canaux et les conversations privées.",
           details: [

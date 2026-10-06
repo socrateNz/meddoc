@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { PaginationNav } from "@/components/ui/pagination-nav";
+import { resolvePage } from "@/lib/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, AlertTriangle, CheckCircle, Clock } from "lucide-react";
@@ -14,6 +16,7 @@ interface PageProps {
   searchParams: Promise<{
     priority?: string;
     status?: string;
+    page?: string;
   }>;
 }
 
@@ -24,6 +27,7 @@ export default async function ClinicIncidentsPage({ params, searchParams }: Page
   const clinicId = resolvedParams.id;
   const priorityFilter = resolvedSearchParams.priority;
   const statusFilter = resolvedSearchParams.status;
+  const { page, pageSize, skip, take } = resolvePage({ page: resolvedSearchParams.page });
 
   const currentUser = await getCurrentUser();
   if (!currentUser) {
@@ -45,7 +49,8 @@ export default async function ClinicIncidentsPage({ params, searchParams }: Page
   }
 
   // Les 2 requêtes ci-dessous sont indépendantes, on les lance en parallèle.
-  const [incidents, patients] = await Promise.all([
+  const [incidents, total, patients] = await Promise.all([
+    // Une page à la fois (20 max) : le total sert à la barre de navigation.
     prisma.incident.findMany({
       where,
       include: {
@@ -56,8 +61,10 @@ export default async function ClinicIncidentsPage({ params, searchParams }: Page
       orderBy: {
         createdAt: "desc"
       },
-      take: 500,
+      skip,
+      take,
     }),
+    prisma.incident.count({ where }),
     prisma.patient.findMany({
       where: {
         organizationId: clinicId
@@ -250,6 +257,14 @@ export default async function ClinicIncidentsPage({ params, searchParams }: Page
             )}
           </TableBody>
         </Table>
+        <PaginationNav
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          pathname={`/dashboard/clinics/${clinicId}/incidents`}
+          query={{ priority: priorityFilter, status: statusFilter }}
+          itemLabel="incident"
+        />
       </div>
     </div>
   );

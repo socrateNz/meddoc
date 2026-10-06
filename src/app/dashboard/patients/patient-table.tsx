@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { PaginationNav } from "@/components/ui/pagination-nav";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useOfflinePatients } from "@/hooks/use-offline-patients";
+import PatientBedDialog from "./patient-bed-dialog";
 
 export interface PatientWithUser {
   id: string;
@@ -45,6 +48,7 @@ export interface PatientWithUser {
     phone?: string | null;
   };
   carePlans?: { id: string; status: string }[];
+  bed?: { id: string; label: string; room: { name: string } } | null;
   vitalSigns?: {
     bloodPressure?: string | null;
     heartRate?: number | null;
@@ -61,17 +65,51 @@ export interface PatientWithUser {
 }
 
 interface PatientTableProps {
+  // Une page de patients (20 au plus), déjà filtrée et triée par le serveur (cf. listPatientsPage).
   patients: PatientWithUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+  // Compteurs sur tout le périmètre (et non sur la page affichée).
+  counts: { active: number; discharged: number; allergies: number; highDependency: number };
+  // Paramètres d'URL courants (recherche q, statut, gir, allergies, tri) : conservés lors d'un changement.
+  query: Record<string, string | undefined>;
+  pathname: string;
   clinicId?: string;
   organizationId?: string;
+  // Affectation d'un lit depuis la liste : réservée au personnel clinique (cf. wards.ts ROOMS_OPERATE_ROLES).
+  canAssignBed?: boolean;
 }
 
-export default function PatientTable({ patients, clinicId, organizationId }: PatientTableProps) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "DISCHARGED">("ALL");
-  const [dependencyFilter, setDependencyFilter] = useState<"ALL" | "HEAVY" | "MODERATE" | "AUTONOMOUS">("ALL");
-  const [allergiesOnly, setAllergiesOnly] = useState(false);
-  const [sortBy, setSortBy] = useState<"name-asc" | "name-desc" | "age-asc" | "age-desc" | "gir-asc" | "gir-desc">("name-asc");
+export default function PatientTable({ patients, total, page, pageSize, counts, query, pathname, clinicId, organizationId, canAssignBed = false }: PatientTableProps) {
+  const router = useRouter();
+  // Recherche : valeur locale pour une frappe fluide, requête serveur après une courte pause.
+  const [searchTerm, setSearchDraft] = useState(query.q ?? "");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusFilter = (query.status ?? "ALL") as "ALL" | "ACTIVE" | "DISCHARGED";
+  const dependencyFilter = (query.gir ?? "ALL") as "ALL" | "HEAVY" | "MODERATE" | "AUTONOMOUS";
+  const allergiesOnly = query.allergies === "1";
+  const sortBy = (query.sort ?? "name-asc") as "name-asc" | "name-desc" | "age-asc" | "age-desc" | "gir-asc" | "gir-desc";
+
+  // Tout changement de filtre revient à la première page.
+  const navigate = (changes: Record<string, string | undefined>) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries({ ...query, ...changes, page: undefined })) {
+      if (value) params.set(key, value);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+
+  const setSearchTerm = (value: string) => {
+    setSearchDraft(value);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => navigate({ q: value.trim() || undefined }), 300);
+  };
+  const setStatusFilter = (value: string) => navigate({ status: value === "ALL" ? undefined : value });
+  const setDependencyFilter = (value: string) => navigate({ gir: value === "ALL" ? undefined : value });
+  const setAllergiesOnly = (value: boolean) => navigate({ allergies: value ? "1" : undefined });
+  const setSortBy = (value: string) => navigate({ sort: value === "name-asc" ? undefined : value });
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
   // Offline fallback (RxDB)
@@ -119,13 +157,16 @@ export default function PatientTable({ patients, clinicId, organizationId }: Pat
   };
 
   // KPIs
-  const activeCount = effectivePatients.filter((p) => !checkIsDischarged(p)).length;
-  const dischargedCount = effectivePatients.filter((p) => checkIsDischarged(p)).length;
-  const allergiesCount = effectivePatients.filter((p) => p.allergies && p.allergies.length > 0).length;
-  const highDependencyCount = effectivePatients.filter((p) => p.dependencyLevel <= 3).length;
+  const totalCount = isOffline ? effectivePatients.length : total;
+  const activeCount = isOffline ? effectivePatients.filter((p) => !checkIsDischarged(p)).length : counts.active;
+  const dischargedCount = isOffline ? effectivePatients.filter((p) => checkIsDischarged(p)).length : counts.discharged;
+  const allergiesCount = isOffline ? effectivePatients.filter((p) => p.allergies && p.allergies.length > 0).length : counts.allergies;
+  const highDependencyCount = isOffline ? effectivePatients.filter((p) => p.dependencyLevel <= 3).length : counts.highDependency;
 
   // Filtering & Sorting
   const filteredPatients = useMemo(() => {
+    // En ligne, le serveur a déjà filtré et trié la page : rien à refiltrer ici.
+    if (!isOffline) return patients;
     const list = effectivePatients.filter((patient) => {
       const isDischarged = checkIsDischarged(patient);
 
@@ -185,7 +226,7 @@ export default function PatientTable({ patients, clinicId, organizationId }: Pat
     });
 
     return list;
-  }, [effectivePatients, statusFilter, dependencyFilter, allergiesOnly, searchTerm, sortBy]);
+  }, [isOffline, patients, effectivePatients, statusFilter, dependencyFilter, allergiesOnly, searchTerm, sortBy]);
 
   // Export to CSV
   const handleExportCSV = () => {
@@ -273,7 +314,7 @@ export default function PatientTable({ patients, clinicId, organizationId }: Pat
         <div className="p-4 rounded-2xl bg-card border border-border/70 shadow-xs flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Total Patients</span>
-            <div className="text-2xl font-bold text-foreground">{effectivePatients.length}</div>
+            <div className="text-2xl font-bold text-foreground">{totalCount}</div>
           </div>
           <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
             <Users className="h-5 w-5" />
@@ -341,7 +382,7 @@ export default function PatientTable({ patients, clinicId, organizationId }: Pat
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Tous ({effectivePatients.length})
+              Tous ({totalCount})
             </button>
             <button
               type="button"
@@ -610,6 +651,14 @@ export default function PatientTable({ patients, clinicId, organizationId }: Pat
                       RDV
                     </Link>
                   </Button>
+                  {canAssignBed && clinicId && (
+                    <PatientBedDialog
+                      clinicId={clinicId}
+                      patientId={patient.id}
+                      patientName={`${patient.user.lastName} ${patient.user.firstName}`}
+                      currentBed={patient.bed ? { label: patient.bed.label, roomName: patient.bed.room.name } : null}
+                    />
+                  )}
 
                   <Button asChild size="sm" className="h-8 text-xs gap-1.5 flex-1 shadow-xs">
                     <Link href={patientLink}>
@@ -726,6 +775,14 @@ export default function PatientTable({ patients, clinicId, organizationId }: Pat
                     </TableCell>
 
                     <TableCell className="py-3 text-right">
+                      {canAssignBed && clinicId && (
+                        <PatientBedDialog
+                          clinicId={clinicId}
+                          patientId={patient.id}
+                          patientName={`${patient.user.lastName} ${patient.user.firstName}`}
+                          currentBed={patient.bed ? { label: patient.bed.label, roomName: patient.bed.room.name } : null}
+                        />
+                      )}
                       <Button asChild variant="ghost" size="sm" className="h-8 text-xs text-primary font-semibold">
                         <Link href={patientLink}>
                           Dossier <ChevronRight className="h-3 w-3 ml-1" />
@@ -738,6 +795,16 @@ export default function PatientTable({ patients, clinicId, organizationId }: Pat
             </TableBody>
           </Table>
         </div>
+      )}
+      {!isOffline && (
+        <PaginationNav
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          pathname={pathname}
+          query={query}
+          itemLabel="patient"
+        />
       )}
     </div>
   );

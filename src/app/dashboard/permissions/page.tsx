@@ -1,13 +1,19 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { listPermissions } from "@/actions/permissions";
+import { PaginationNav, keepQuery } from "@/components/ui/pagination-nav";
+import { pageFromParam } from "@/lib/pagination";
 import PermissionsMatrix from "./permissions-matrix";
 
 export const metadata = {
   title: "Permissions | MedDoc",
 };
 
-export default async function PermissionsPage() {
+interface PermissionsPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function PermissionsPage({ searchParams }: PermissionsPageProps) {
   const currentUser = await getCurrentUser();
   if (!currentUser) {
     redirect("/login");
@@ -16,7 +22,8 @@ export default async function PermissionsPage() {
     redirect("/dashboard");
   }
 
-  const result = await listPermissions();
+  const query = await searchParams;
+  const result = await listPermissions({ page: pageFromParam(query.page) });
 
   return (
     <div className="space-y-6">
@@ -29,6 +36,16 @@ export default async function PermissionsPage() {
       </div>
 
       <PermissionsMatrix permissions={result.success ? (result.data as any) : []} />
+      {result.success && (
+        <PaginationNav
+          page={result.page}
+          pageSize={result.pageSize}
+          total={result.total}
+          pathname="/dashboard/permissions"
+          query={keepQuery(query)}
+          itemLabel="permission"
+        />
+      )}
     </div>
   );
 }

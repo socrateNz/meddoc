@@ -45,6 +45,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PaginationNav } from "@/components/ui/pagination-nav";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AddRecordDialog from "./add-record-dialog";
 import AddIncidentDialog from "./add-incident-dialog";
@@ -56,6 +57,7 @@ import ReassignPatientDialog from "../reassign-patient-dialog";
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 import VitalSignsDialog from "./vital-signs-dialog";
 import VitalSignsChart from "./vital-signs-chart";
+import VitalSignsTable from "./vital-signs-table";
 import CloseCarePlanDialog from "./close-care-plan-dialog";
 import ReopenCarePlanDialog from "./reopen-care-plan-dialog";
 import PrescriptionsPanel from "./prescriptions-panel";
@@ -118,8 +120,14 @@ interface PatientDetailViewProps {
   canOrderLab: boolean;
   clinics: { id: string; name: string }[];
   vitalSigns: any[];
+  // Pagination des constantes et des grossesses : la page courante est dans `vitalSigns` / `pregnancies`.
+  vitalSignsPage: { page: number; pageSize: number; total: number; query: Record<string, string | undefined> };
+  pregnanciesPage: { page: number; pageSize: number; total: number; query: Record<string, string | undefined> };
   prescriptions: any[];
   labOrders: any[];
+  // Totaux serveur : les listes ci-dessus ne contiennent qu'une page (20 au plus).
+  prescriptionsPage: { page: number; pageSize: number; total: number; query: Record<string, string | undefined> };
+  labOrdersPage: { page: number; pageSize: number; total: number; query: Record<string, string | undefined> };
   pregnancies: any[];
   caregivers: any[];
   // "/dashboard/patients" ou `/dashboard/clinics/${clinicId}/patients` — seule différence réelle
@@ -137,8 +145,12 @@ export default function PatientDetailView({
   canOrderLab,
   clinics,
   vitalSigns,
+  vitalSignsPage,
+  pregnanciesPage,
   prescriptions,
   labOrders,
+  prescriptionsPage,
+  labOrdersPage,
   pregnancies,
   caregivers,
   basePath,
@@ -149,7 +161,7 @@ export default function PatientDetailView({
   const activeCarePlan = patient.carePlans.find((cp: any) => cp.status === "ACTIVE");
   const isDischarged = patient.status === "DISCHARGED" || (patient.carePlans.length > 0 && !activeCarePlan);
   const patientFullName = `${patient.user.firstName} ${patient.user.lastName}`;
-  const showMaternityTab = patient.sex === "F" || pregnancies.length > 0;
+  const showMaternityTab = patient.sex === "F" || pregnanciesPage.total > 0;
 
   // `patient` reste typé `any` (comme le reste de ce composant, cf. patient.carePlans.map((cp: any)
   // => ...) plus bas) : le cast explicite évite que l'inférence générique de findNextAppointment
@@ -330,7 +342,7 @@ export default function PatientDetailView({
             value="vitals"
             className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
-            Évolution & Constantes ({vitalSigns.length})
+            Évolution & Constantes ({vitalSignsPage.total})
           </TabsTrigger>
           <TabsTrigger
             value="records"
@@ -342,13 +354,13 @@ export default function PatientDetailView({
             value="prescriptions"
             className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
-            Ordonnances ({prescriptions.length})
+            Ordonnances ({prescriptionsPage.total})
           </TabsTrigger>
           <TabsTrigger
             value="lab"
             className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
-            Laboratoire ({labOrders.length})
+            Laboratoire ({labOrdersPage.total})
           </TabsTrigger>
           {showMaternityTab && (
             <TabsTrigger
@@ -356,7 +368,7 @@ export default function PatientDetailView({
               className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
             >
               <Baby className="h-4 w-4 text-pink-500" />
-              Maternité ({pregnancies.length})
+              Maternité ({pregnanciesPage.total})
             </TabsTrigger>
           )}
           <TabsTrigger
@@ -630,6 +642,16 @@ export default function PatientDetailView({
         {/* Onglet Évolution & Constantes */}
         <TabsContent value="vitals" className="pt-6">
           <VitalSignsChart vitalSigns={vitalSigns} />
+          <VitalSignsTable vitalSigns={vitalSigns} />
+          <PaginationNav
+            page={vitalSignsPage.page}
+            pageSize={vitalSignsPage.pageSize}
+            total={vitalSignsPage.total}
+            pathname={`${basePath}/${patient.id}`}
+            query={vitalSignsPage.query}
+            pageParam="vitalPage"
+            itemLabel="relevé"
+          />
         </TabsContent>
 
         {/* Tab Content: Dossier médical — uniquement les documents/comptes-rendus (pathologies et
@@ -692,6 +714,15 @@ export default function PatientDetailView({
             Historique des ordonnances
           </h3>
           <PrescriptionsPanel prescriptions={prescriptions} canPrescribe={canPrescribe} />
+          <PaginationNav
+            page={prescriptionsPage.page}
+            pageSize={prescriptionsPage.pageSize}
+            total={prescriptionsPage.total}
+            pathname={`${basePath}/${patient.id}`}
+            query={prescriptionsPage.query}
+            pageParam="rxPage"
+            itemLabel="ordonnance"
+          />
         </TabsContent>
 
         {/* Tab Content: Laboratoire */}
@@ -746,12 +777,30 @@ export default function PatientDetailView({
               })}
             </div>
           )}
+          <PaginationNav
+            page={labOrdersPage.page}
+            pageSize={labOrdersPage.pageSize}
+            total={labOrdersPage.total}
+            pathname={`${basePath}/${patient.id}`}
+            query={labOrdersPage.query}
+            pageParam="labPage"
+            itemLabel="demande"
+          />
         </TabsContent>
 
         {/* Tab Content: Maternité */}
         {showMaternityTab && (
           <TabsContent value="maternity" className="pt-6">
             <MaternityPanel patientId={patient.id} pregnancies={pregnancies} canWrite={canWrite} isDischarged={isDischarged} />
+            <PaginationNav
+              page={pregnanciesPage.page}
+              pageSize={pregnanciesPage.pageSize}
+              total={pregnanciesPage.total}
+              pathname={`${basePath}/${patient.id}`}
+              query={pregnanciesPage.query}
+              pageParam="pregnancyPage"
+              itemLabel="grossesse"
+            />
           </TabsContent>
         )}
 
@@ -1069,8 +1118,8 @@ export default function PatientDetailView({
           pathologiesCount: patient.pathologies.length,
           allergiesCount: patient.allergies.length,
           medicalRecordsCount: patient.medicalRecords.length,
-          prescriptionsCount: prescriptions.length,
-          labOrdersCount: labOrders.length,
+          prescriptionsCount: prescriptionsPage.total,
+          labOrdersCount: labOrdersPage.total,
           carePlansCount: patient.carePlans.length,
           incidentsCount: patient.incidents.length,
           activeCarePlanTitle: activeCarePlan?.title ?? null,

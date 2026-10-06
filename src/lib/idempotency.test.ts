@@ -107,7 +107,7 @@ describe("runIdempotent", () => {
     const run = vi.fn(async () => ({ success: true, data: "A" }));
 
     await runIdempotent("payX", "k1", { amount: 500 }, run);
-    const res = await runIdempotent("payX", "k1", { amount: 900 }, run);
+    const res = await runIdempotent<{ success: boolean; error?: string }>("payX", "k1", { amount: 900 }, run);
 
     expect(run).toHaveBeenCalledTimes(1);
     expect(res.success).toBe(false);
@@ -121,7 +121,7 @@ describe("runIdempotent", () => {
     const slow = vi.fn(() => new Promise<{ success: boolean }>((resolve) => (release = resolve)));
 
     const firstCall = runIdempotent("payX", "k1", { amount: 500 }, slow);
-    const second = await runIdempotent("payX", "k1", { amount: 500 }, slow);
+    const second = await runIdempotent<{ success: boolean; error?: string }>("payX", "k1", { amount: 500 }, slow);
     release({ success: true });
     const first = await firstCall;
 

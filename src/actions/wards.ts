@@ -109,6 +109,33 @@ export async function listWardsWithRooms(clinicId: string) {
   }
 }
 
+// Lits libres de la clinique, pour affecter un patient depuis la liste des patients. Liste complète :
+// c'est un sélecteur (les lits occupés ne sont pas proposés, le transfert libère l'ancien lit).
+export async function listAvailableBeds(clinicId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertRoomsOperateRole(activeUser.role);
+    await assertClinicScope(clinicId, activeUser);
+
+    const beds = await prisma.bed.findMany({
+      where: { organizationId: clinicId, status: "AVAILABLE" },
+      select: { id: true, label: true, room: { select: { name: true } }, ward: { select: { name: true } } },
+    });
+    const data = beds
+      .map((b) => ({ id: b.id, label: b.label, roomName: b.room.name, wardName: b.ward.name }))
+      .sort(
+        (a, b) =>
+          a.wardName.localeCompare(b.wardName, "fr", { numeric: true }) ||
+          a.roomName.localeCompare(b.roomName, "fr", { numeric: true }) ||
+          a.label.localeCompare(b.label, "fr", { numeric: true })
+      );
+    return { success: true as const, data };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des lits libres.") };
+  }
+}
+
 // --- Services (COORDINATOR uniquement) ---
 
 export async function createWard(data: { organizationId: string; name: string; code: string }) {

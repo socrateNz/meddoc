@@ -1,4 +1,12 @@
+import { buildInventoryReport } from "@/lib/inventory-report";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Utilisateur courant : un état partagé, réinitialisé avant chaque test, et un mock déclaré une seule
+// fois (hissé). Réenregistrer le mock dans chaque test faisait « fuir » le rôle d'un test à l'autre.
+const authState = vi.hoisted(() => ({ user: null as Record<string, unknown> | null }));
+vi.mock("@/lib/auth", () => ({
+  getCurrentUser: async () => authState.user,
+}));
 
 // src/actions/stock.ts importe @/lib/db au niveau module (transitivement via
 // @/lib/auth, @/lib/permissions et @/middlewares/auditLogger). On le mocke
@@ -160,7 +168,7 @@ describe("recordStockPurchase — deductFromCash", () => {
     // assertStockWrite appelle requirePermission (@/lib/permissions), qui lit
     // prisma.permission en base — non pertinent pour ces tests, on le neutralise.
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   it("refuse une session de caisse fermée", async () => {
@@ -273,7 +281,7 @@ describe("recordStockPurchase — linkedExpenseTransactionId (retrait absorbé)"
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   it("refuse de fournir à la fois cashSessionId et linkedExpenseTransactionId", async () => {
@@ -477,7 +485,7 @@ describe("recordStockPurchase — prix d'achat optionnel pour un produit existan
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   it("reprend le dernier prix d'achat connu quand purchasePrice est omis pour un produit existant", async () => {
@@ -569,7 +577,7 @@ describe("recordStockPurchase — produit bloqué par le coordinateur", () => {
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   it("refuse l'achat d'un produit bloqué, avec le motif, sans rien écrire", async () => {
@@ -634,7 +642,7 @@ describe("saveInventoryCounts — rafraîchit systemQuantity au moment du compta
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   it("fige systemQuantity à la valeur actuelle du stock au moment de l'enregistrement, pas celle figée au démarrage", async () => {
@@ -746,33 +754,27 @@ describe("getActiveInventoryCount — rattrapage des produits ajoutés après le
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
-  it("ajoute une ligne pour un produit créé après le démarrage de l'inventaire, et retourne la liste à jour", async () => {
+  it("ajoute une ligne pour un produit créé après le démarrage de l'inventaire, et retourne la page à jour", async () => {
     const createManyCall = vi.fn(async () => ({ count: 1 }));
-    let includeCallCount = 0;
-    const findFirst = vi.fn(async () => {
-      includeCallCount++;
-      const lines = [{ id: "line1", pharmacyItemId: "item1", systemQuantity: 5, countedQuantity: null }];
-      if (includeCallCount === 2) {
-        lines.push({ id: "line2", pharmacyItemId: "item2", systemQuantity: 10, countedQuantity: null } as any);
-      }
-      return { id: "inv1", organizationId: "org1", status: "IN_PROGRESS", lines };
-    });
-
     const updateCall = vi.fn(async () => ({}));
+    const findMany = vi.fn(async () => [
+      { id: "line1", pharmacyItemId: "item1", systemQuantity: 5, countedQuantity: null },
+      { id: "line2", pharmacyItemId: "item2", systemQuantity: 10, countedQuantity: null },
+    ]);
     vi.doMock("@/lib/db", () => ({
       prisma: {
         inventoryCount: {
-          findFirst,
+          findFirst: vi.fn(async () => ({ id: "inv1", organizationId: "org1", status: "IN_PROGRESS" })),
           // Appel interne de syncInventoryCountLines : ne connaît encore que item1, pas comptée,
           // système déjà à jour (5) — pas de rafraîchissement attendu pour elle.
           findUnique: vi.fn(async () => ({ lines: [{ id: "line1", pharmacyItemId: "item1", countedQuantity: null, systemQuantity: 5 }] })),
         },
         pharmacyItem: { findMany: vi.fn(async () => [{ id: "item1", stockQuantity: 5 }, { id: "item2", stockQuantity: 10 }]) },
         stockPurchase: { findMany: vi.fn(async () => []) },
-        inventoryCountLine: { createMany: createManyCall, update: updateCall },
+        inventoryCountLine: { createMany: createManyCall, update: updateCall, findMany, count: vi.fn(async () => 2) },
       },
     }));
     const { getActiveInventoryCount } = await import("./stock");
@@ -785,28 +787,26 @@ describe("getActiveInventoryCount — rattrapage des produits ajoutés après le
     });
     // item1 était déjà à jour (systemQuantity 5 == stock réel 5) : aucun rafraîchissement inutile.
     expect(updateCall).not.toHaveBeenCalled();
-    expect(findFirst).toHaveBeenCalledTimes(2);
     expect((result.data as any).lines).toHaveLength(2);
+    expect((result.data as any).totalLines).toBe(2);
   });
 
   it("rafraîchit systemQuantity d'une ligne pas encore comptée dont le stock a bougé (ravitaillement reçu pendant que l'inventaire reste ouvert)", async () => {
     const updateCall = vi.fn(async () => ({}));
-    const findFirst = vi.fn(async () => ({
-      id: "inv1",
-      organizationId: "org1",
-      status: "IN_PROGRESS",
-      lines: [{ id: "line1", pharmacyItemId: "item1", systemQuantity: 6, countedQuantity: null }],
-    }));
-
     vi.doMock("@/lib/db", () => ({
       prisma: {
         inventoryCount: {
-          findFirst,
+          findFirst: vi.fn(async () => ({ id: "inv1", organizationId: "org1", status: "IN_PROGRESS" })),
           findUnique: vi.fn(async () => ({ lines: [{ id: "line1", pharmacyItemId: "item1", countedQuantity: null, systemQuantity: 6 }] })),
         },
         // Un ravitaillement de +10 a été reçu depuis le démarrage : le stock réel est maintenant 16.
         pharmacyItem: { findMany: vi.fn(async () => [{ id: "item1", stockQuantity: 16 }]) },
-        inventoryCountLine: { createMany: vi.fn(), update: updateCall },
+        inventoryCountLine: {
+          createMany: vi.fn(),
+          update: updateCall,
+          findMany: vi.fn(async () => [{ id: "line1", pharmacyItemId: "item1", systemQuantity: 16, countedQuantity: null }]),
+          count: vi.fn(async () => 1),
+        },
       },
     }));
     const { getActiveInventoryCount } = await import("./stock");
@@ -819,14 +819,8 @@ describe("getActiveInventoryCount — rattrapage des produits ajoutés après le
 
   it("ne fait aucun appel de rattrapage quand tous les produits du catalogue sont déjà dans l'inventaire", async () => {
     const createManyCall = vi.fn();
-    const findFirst = vi.fn(async () => ({
-      id: "inv1",
-      organizationId: "org1",
-      status: "IN_PROGRESS",
-      lines: [{ id: "line1", pharmacyItemId: "item1", systemQuantity: 5, countedQuantity: null }],
-    }));
-
     const updateCall = vi.fn();
+    const findFirst = vi.fn(async () => ({ id: "inv1", organizationId: "org1", status: "IN_PROGRESS" }));
     vi.doMock("@/lib/db", () => ({
       prisma: {
         inventoryCount: {
@@ -834,7 +828,12 @@ describe("getActiveInventoryCount — rattrapage des produits ajoutés après le
           findUnique: vi.fn(async () => ({ lines: [{ id: "line1", pharmacyItemId: "item1", countedQuantity: null, systemQuantity: 5 }] })),
         },
         pharmacyItem: { findMany: vi.fn(async () => [{ id: "item1", stockQuantity: 5 }]) },
-        inventoryCountLine: { createMany: createManyCall, update: updateCall },
+        inventoryCountLine: {
+          createMany: createManyCall,
+          update: updateCall,
+          findMany: vi.fn(async () => [{ id: "line1", pharmacyItemId: "item1", systemQuantity: 5, countedQuantity: null }]),
+          count: vi.fn(async () => 1),
+        },
       },
     }));
     const { getActiveInventoryCount } = await import("./stock");
@@ -847,6 +846,29 @@ describe("getActiveInventoryCount — rattrapage des produits ajoutés après le
     // Un seul appel : pas de deuxième lecture inutile quand rien n'a changé.
     expect(findFirst).toHaveBeenCalledTimes(1);
   });
+
+  it("ne renvoie qu'une page de 20 lignes au plus, la recherche portant sur le nom du produit", async () => {
+    const findMany = vi.fn(async () => []);
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        inventoryCount: {
+          findFirst: vi.fn(async () => ({ id: "inv1", organizationId: "org1", status: "IN_PROGRESS" })),
+          findUnique: vi.fn(async () => ({ lines: [] })),
+        },
+        pharmacyItem: { findMany: vi.fn(async () => []) },
+        stockPurchase: { findMany: vi.fn(async () => []) },
+        inventoryCountLine: { createMany: vi.fn(), update: vi.fn(), findMany, count: vi.fn(async () => 0) },
+      },
+    }));
+    const { getActiveInventoryCount } = await import("./stock");
+
+    await getActiveInventoryCount("org1", { page: 3, pageSize: 500, search: "  amox " });
+
+    const args = (findMany.mock.calls[0] as any)[0];
+    expect(args.take).toBe(20);
+    expect(args.skip).toBe(40);
+    expect(args.where.pharmacyItem.OR).toContainEqual({ name: { contains: "amox", mode: "insensitive" } });
+  });
 });
 
 describe("completeInventoryCount — rattrapage de sécurité avant clôture", () => {
@@ -857,7 +879,7 @@ describe("completeInventoryCount — rattrapage de sécurité avant clôture", (
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   it("synchronise un produit manquant avant de clôturer ; la ligne ajoutée (jamais comptée) n'entraîne aucun ajustement", async () => {
@@ -975,7 +997,7 @@ describe("completeInventoryCount — requêtes groupées (pas une par ligne)", (
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   // Client Prisma factice qui compte chaque appel de méthode (= chaque aller-retour réseau).
@@ -1157,10 +1179,11 @@ describe("getInventoryReport — rapport PDF d'un inventaire clôturé", () => {
 
   function mockDb(user: any, count: any) {
     const adjustmentFindMany = vi.fn(async () => [{ inventoryCountLineId: "l1", quantityDelta: -3, valuationAmount: 400 }]);
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => user) }));
+    authState.user = user;
     vi.doMock("@/lib/db", () => ({
       prisma: {
         inventoryCount: { findUnique: vi.fn(async () => count) },
+        inventoryCountLine: { findMany: vi.fn(async () => count.lines), count: vi.fn(async () => count.lines.length) },
         stockAdjustment: { findMany: adjustmentFindMany },
       },
     }));
@@ -1179,9 +1202,13 @@ describe("getInventoryReport — rapport PDF d'un inventaire clôturé", () => {
     );
     const data = (result as any).data;
     expect(data.organization.name).toBe("Clinique Bien-être");
-    expect(data.report.modified).toHaveLength(1);
-    expect(data.report.modified[0]).toMatchObject({ name: "Amoxicilline", stockBefore: 10, stockAfter: 7, delta: -3, valuation: 400 });
-    expect(data.report.totals).toMatchObject({ modified: 1, conform: 1, lossUnits: 3, lossValue: 400 });
+    expect(data.lines).toHaveLength(2);
+    expect(data.adjustments).toEqual([{ inventoryCountLineId: "l1", quantityDelta: -3, valuationAmount: 400 }]);
+    // Le rapport est assemblé à partir des lignes et des ajustements (fonction pure).
+    const report = buildInventoryReport(data.lines, data.adjustments);
+    expect(report.modified).toHaveLength(1);
+    expect(report.modified[0]).toMatchObject({ name: "Amoxicilline", stockBefore: 10, stockAfter: 7, delta: -3, valuation: 400 });
+    expect(report.totals).toMatchObject({ modified: 1, conform: 1, lossUnits: 3, lossValue: 400 });
   });
 
   it("refuse un inventaire d'un autre établissement", async () => {
@@ -1232,7 +1259,7 @@ describe("cancelInventoryCount", () => {
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   it("marque l'inventaire CANCELLED sans toucher au stock ni aux lignes", async () => {
@@ -1277,7 +1304,7 @@ describe("cancelInventoryCount", () => {
 
   it("refuse pour un rôle hors COORDINATOR/PHARMACIST", async () => {
     const cashierUser = { id: "cash1", role: "CASHIER", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => cashierUser) }));
+    authState.user = cashierUser;
     vi.doMock("@/lib/db", () => ({ prisma: {} }));
     const { cancelInventoryCount } = await import("./stock");
 
@@ -1296,7 +1323,7 @@ describe("cancelStockPurchase", () => {
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   it("décrémente le stock, supprime le lot et sa dépense associée, et libère un retrait absorbé", async () => {
@@ -1344,7 +1371,7 @@ describe("cancelStockPurchase", () => {
 
   it("refuse pour un PHARMACIST : seul le coordinateur peut annuler un achat", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
     const findUnique = vi.fn();
     vi.doMock("@/lib/db", () => ({ prisma: { stockPurchase: { findUnique } } }));
     const { cancelStockPurchase } = await import("./stock");
@@ -1477,7 +1504,7 @@ describe("setPharmacyItemSaleBlock", () => {
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   function mockItem(overrides: any = {}) {
@@ -1534,7 +1561,7 @@ describe("setPharmacyItemSaleBlock", () => {
 
   it("refuse pour tout rôle autre que COORDINATOR, y compris le PHARMACIST", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
     const update = mockItem();
     const { setPharmacyItemSaleBlock } = await import("./stock");
 
@@ -1565,7 +1592,7 @@ describe("deletePharmacyItem / getPharmacyItemDeletionInfo", () => {
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
   });
 
   function mockCatalogDb(overrides: any = {}) {
@@ -1664,7 +1691,7 @@ describe("deletePharmacyItem / getPharmacyItemDeletionInfo", () => {
   });
 
   it("refuse pour tout rôle autre que COORDINATOR, y compris le PHARMACIST", async () => {
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => ({ id: "pharma1", role: "PHARMACIST", organizationId: "org1" })) }));
+    authState.user = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
     const { prisma } = mockCatalogDb();
     const { deletePharmacyItem } = await import("./stock");
 

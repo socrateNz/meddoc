@@ -1,14 +1,29 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const activeUser = { id: "user1", role: "CASHIER", organizationId: "org1" };
+// Utilisateur courant : un état partagé réinitialisé avant chaque test. Le mock est déclaré une seule
+// fois (hissé), au lieu d'être réenregistré dans chaque test : c'était la source des rôles qui
+// « fuyaient » d'un test à l'autre (un test de pharmacien recevait l'ancien mock de caissier).
+const authState = vi.hoisted(() => ({
+  user: { id: "user1", role: "CASHIER", organizationId: "org1" } as Record<string, unknown>,
+}));
+vi.mock("@/lib/auth", () => ({
+  getCurrentUser: async () => authState.user,
+}));
+
+const DEFAULT_USER = { id: "user1", role: "CASHIER", organizationId: "org1" };
 
 beforeEach(() => {
   vi.resetModules();
+  authState.user = DEFAULT_USER;
+  // Horloge figée : les calculs de période (aujourd'hui, 30 derniers jours) ne dépendent plus de l'heure réelle.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-06-15T10:00:00.000Z"));
   vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
   vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-  vi.doMock("@/lib/auth", () => ({
-    getCurrentUser: vi.fn(async () => activeUser),
-  }));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("payPendingInvoice", () => {
@@ -545,7 +560,7 @@ describe("payPendingInvoice — produits dont la vente est bloquée", () => {
 describe("dispensePendingInvoice", () => {
   it("décrémente le stock, incrémente dispensedQuantity et pose dispensedAt pour un PHARMACIST", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const pharmacyItemUpdate = vi.fn(async () => ({}));
     const pendingInvoiceUpdate = vi.fn(async () => ({}));
@@ -605,7 +620,7 @@ describe("dispensePendingInvoice", () => {
 
   it("remet une partie seulement d'une ligne : dispensedAt n'est PAS posé, le reste reste disponible", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const pharmacyItemUpdate = vi.fn(async () => ({}));
     const pendingInvoiceUpdate = vi.fn(async () => ({}));
@@ -661,7 +676,7 @@ describe("dispensePendingInvoice", () => {
 
   it("progression sur deux visites : la deuxième complète la ligne et pose dispensedAt", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     // État partagé simulant la persistance entre les deux appels successifs.
     const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 3 }];
@@ -702,7 +717,7 @@ describe("dispensePendingInvoice", () => {
 
   it("rejette une quantité demandée supérieure au reste disponible sur une ligne, sans toucher au stock", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const pharmacyItemUpdate = vi.fn(async () => ({}));
     const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000, dispensedQuantity: 1 }];
@@ -737,7 +752,7 @@ describe("dispensePendingInvoice", () => {
 
   it("rejette un index de ligne invalide ou non PHARMACY", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const items = [
       { type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000 },
@@ -772,7 +787,7 @@ describe("dispensePendingInvoice", () => {
 
   it("décrémente les produits consommés d'un examen labo lié, même avec une seule ligne SERVICE dans le panier", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const pharmacyItemUpdates: any[] = [];
     const items = [{ type: "SERVICE", description: "Analyse : Exam A", quantity: 1, unitPrice: 1800, amount: 1800 }];
@@ -833,7 +848,7 @@ describe("dispensePendingInvoice", () => {
 
   it("ticket à nombreuses lignes : lectures groupées (produits + lots) et écritures groupées par quantité identique, FEFO respecté, un même produit sur deux lignes additionné", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     // a, b, c à 6 unités ; d à 10 ; e à 1 ; "a" apparaît sur deux lignes (4 + 2 = 6).
     const items = [
@@ -910,7 +925,7 @@ describe("dispensePendingInvoice", () => {
 
   it("refuse une remise dont deux lignes du même produit dépassent ensemble le stock, même si chacune passerait isolément", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const items = [
       { type: "PHARMACY", pharmacyItemId: "a", description: "A", quantity: 6, unitPrice: 100, amount: 600 },
@@ -946,7 +961,7 @@ describe("dispensePendingInvoice", () => {
 
   it("ne redécompte pas les consommables labo une deuxième fois sur un appel ultérieur", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const pharmacyItemUpdates: any[] = [];
     const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 2, unitPrice: 500, amount: 1000, dispensedQuantity: 0 }];
@@ -986,7 +1001,7 @@ describe("dispensePendingInvoice", () => {
 
   it("ne marque une Prescription DISPENSED que lorsque la remise est désormais complète", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const prescriptionUpdate = vi.fn(async () => ({}));
     const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 4, unitPrice: 500, amount: 2000 }];
@@ -1018,7 +1033,7 @@ describe("dispensePendingInvoice", () => {
 
   it("refuse si l'examen labo lié ne consomme aucun produit (rien à remettre)", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
     const transactionFn = vi.fn();
     vi.doMock("@/lib/db", () => ({
       prisma: {
@@ -1046,7 +1061,7 @@ describe("dispensePendingInvoice", () => {
 
   it("refuse un COORDINATOR — la remise en pharmacie est réservée aux pharmacien(ne)s", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
     vi.doMock("@/lib/db", () => ({ prisma: {} }));
 
     const { dispensePendingInvoice } = await import("./finance");
@@ -1058,7 +1073,7 @@ describe("dispensePendingInvoice", () => {
 
   it("refuse de dispenser une facture déjà remise", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
     vi.doMock("@/lib/db", () => ({
       prisma: {
         pendingInvoice: {
@@ -1083,7 +1098,7 @@ describe("dispensePendingInvoice", () => {
 
   it("refuse de dispenser si la référence saisie ne correspond pas au ticket (sans toucher au stock)", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
 
     const transactionFn = vi.fn();
     vi.doMock("@/lib/db", () => ({
@@ -1113,7 +1128,7 @@ describe("dispensePendingInvoice", () => {
 describe("cancelDispense", () => {
   it("réintègre le stock (nouveau lot valorisé au coût moyen), remet dispensedQuantity à 0, dispensedAt à null, et l'ordonnance à SENT_TO_PHARMACY — pour un COORDINATOR", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     const pharmacyItemUpdate = vi.fn(async () => ({}));
     const stockPurchaseCreate = vi.fn(async ({ data }: any) => ({ id: "sp1", ...data }));
@@ -1185,7 +1200,7 @@ describe("cancelDispense", () => {
 
   it("refuse pour un rôle autre que COORDINATOR (ex: le PHARMACIST qui a fait la remise ne peut pas se corriger seul)", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => pharmacistUser) }));
+    authState.user = pharmacistUser;
     vi.doMock("@/lib/db", () => ({ prisma: {} }));
     const { cancelDispense } = await import("./finance");
 
@@ -1197,7 +1212,7 @@ describe("cancelDispense", () => {
 
   it("refuse quand rien n'a été remis pour cette facture", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     const items = [{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 5, unitPrice: 500, amount: 2500, dispensedQuantity: 0 }];
     const tx = {
@@ -1298,8 +1313,7 @@ describe("closeUnpaidInvoice", () => {
   });
 
   it("refuse un rôle non autorisé (ex: un rôle sans accès caisse)", async () => {
-    const { getCurrentUser } = await import("@/lib/auth");
-    (getCurrentUser as any).mockResolvedValueOnce({ id: "doc1", role: "PATIENT", organizationId: "org1" });
+    authState.user = { id: "doc1", role: "PATIENT", organizationId: "org1" };
     vi.doMock("@/lib/db", () => ({
       prisma: {
         pendingInvoice: {
@@ -1330,6 +1344,7 @@ describe("listPendingInvoices — forme de computeDispenseLines", () => {
       prisma: {
         pendingInvoice: {
           findMany: vi.fn(async () => [{ id: "inv1", organizationId: "org1", items, labOrders, createdAt: new Date() }]),
+          count: vi.fn(async () => 1),
         },
         financialTransaction: { findMany: vi.fn(async () => []) },
       },
@@ -1351,7 +1366,7 @@ describe("listPendingInvoices — forme de computeDispenseLines", () => {
 describe("listFinancialTransactions", () => {
   it("attache invoiceTotalAmount et remainingDue à une transaction liée à une facture pas intégralement soldée (paiement échelonné)", async () => {
     const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+    authState.user = adminUser;
 
     const items = [
       { type: "PHARMACY", pharmacyItemId: "item1", description: "Ceftriaxone", quantity: 1, unitPrice: 800, amount: 800 },
@@ -1392,7 +1407,7 @@ describe("listFinancialTransactions", () => {
 
   it("laisse une transaction sans facture liée inchangée (pas d'appel groupBy inutile)", async () => {
     const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+    authState.user = adminUser;
 
     const transaction = { id: "tx1", amount: 5000, items: [], pendingInvoiceId: null };
     const groupByCall = vi.fn(async () => []);
@@ -1420,7 +1435,7 @@ describe("listFinancialTransactions", () => {
 describe("getFinanceSummary — revenueByCategory", () => {
   it("regroupe le revenu par catégorie (tout-temps + aujourd'hui) sans passer par le tableau plafonné à 500 lignes", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     const groupByCalls: any[] = [];
     vi.doMock("@/lib/db", () => ({
@@ -1481,7 +1496,7 @@ describe("getFinanceSummary — revenueByCategory", () => {
 
   it("exclut des Dépenses totales/du jour un retrait de caisse déjà absorbé par un achat pharmacie (évite le double comptage)", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     const now = new Date();
     const transactions = [
@@ -1522,7 +1537,7 @@ describe("getFinanceSummary — revenueByCategory", () => {
 
   it("calcule le coût des examens (marge Examens) depuis testDetails : baseCost du test figé + coût moyen actuel des consommables", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     const labOrders = [
       {
@@ -1579,7 +1594,7 @@ describe("getFinanceSummary — revenueByCategory", () => {
 
   it("cashBalance reprend le dernier montant compté d'une caisse sans session ouverte, au lieu de tomber à 0 entre deux sessions", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     vi.doMock("@/lib/db", () => ({
       prisma: {
@@ -1625,7 +1640,7 @@ describe("getFinanceSummary — revenueByCategory", () => {
 
   it("le coût Médicament inclut les lots StockPurchase amorcés par import CSV (aucune FinancialTransaction associée), en excluant les ajustements d'inventaire", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     const stockPurchaseAggregateCalls: any[] = [];
     vi.doMock("@/lib/db", () => ({
@@ -1681,7 +1696,7 @@ describe("getFinanceSummary — revenueByCategory", () => {
 
   it("bénéfice sur ventes réalisées : coût des quantités effectivement vendues (coût moyen des lots restants), pas les achats de la période", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     const yesterday = new Date(Date.now() - 2 * 24 * 3600 * 1000);
     const now = new Date();
@@ -1750,7 +1765,7 @@ describe("getFinanceSummary — filtre de période", () => {
       stockAggregate: [] as any[],
       labFindMany: [] as any[],
     };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
     vi.doMock("@/lib/db", () => ({
       prisma: {
         financialTransaction: {
@@ -1870,7 +1885,7 @@ describe("getFinanceSummary — filtre de période", () => {
 describe("listFinancialTransactions / listCashSessions — filtre de période", () => {
   it("le journal applique les jours de l'utilisateur (fuseau) et ramène une fin future à aujourd'hui", async () => {
     const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+    authState.user = adminUser;
     const findMany = vi.fn(async () => []);
     vi.doMock("@/lib/db", () => ({
       prisma: {
@@ -1896,7 +1911,7 @@ describe("listFinancialTransactions / listCashSessions — filtre de période", 
 
   it("sans dates, le journal n'ajoute aucun filtre createdAt", async () => {
     const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+    authState.user = adminUser;
     const findMany = vi.fn(async () => []);
     vi.doMock("@/lib/db", () => ({
       prisma: {
@@ -1918,7 +1933,7 @@ describe("listFinancialTransactions / listCashSessions — filtre de période", 
 
   it("les sessions de caisse ne gardent que celles ouvertes pendant la période", async () => {
     const adminUser = { id: "admin1", role: "ADMIN", organizationId: "org1", organization: { type: "CLINIC" } };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => adminUser) }));
+    authState.user = adminUser;
     const findMany = vi.fn(async () => []);
     vi.doMock("@/lib/db", () => ({ prisma: { cashSession: { findMany } } }));
     const { listCashSessions } = await import("./registers");
@@ -1935,7 +1950,7 @@ describe("listFinancialTransactions / listCashSessions — filtre de période", 
 describe("changeInvoiceStatus", () => {
   it("permets au coordonnateur de remettre une facture payée à non payé (PENDING) et supprime les encaissements", async () => {
     const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
+    authState.user = coordinatorUser;
 
     const deleteManyTx = vi.fn(async () => ({ count: 1 }));
     const updatePending = vi.fn(async () => ({ id: "inv1", status: "PENDING" }));
@@ -1978,7 +1993,7 @@ describe("changeInvoiceStatus", () => {
 
   it("refuse la modification pour un caissier standard", async () => {
     const cashierUser = { id: "cashier1", role: "CASHIER", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => cashierUser) }));
+    authState.user = cashierUser;
 
     vi.doMock("@/lib/db", () => ({
       prisma: {
@@ -2014,7 +2029,7 @@ describe("deletePendingInvoice", () => {
     const updateManyLabOrders = vi.fn(async () => ({ count: 1 }));
     const deleteInvoice = vi.fn(async () => ({ id: "inv1" }));
 
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordUser) }));
+    authState.user = coordUser;
     vi.doMock("@/lib/db", () => ({
       prisma: {
         pendingInvoice: {
@@ -2045,7 +2060,7 @@ describe("deletePendingInvoice", () => {
 
   it("refuse la suppression pour un caissier standard", async () => {
     const cashierUser = { id: "cashier1", role: "CASHIER", organizationId: "org1" };
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => cashierUser) }));
+    authState.user = cashierUser;
 
     vi.doMock("@/lib/db", () => ({
       prisma: {

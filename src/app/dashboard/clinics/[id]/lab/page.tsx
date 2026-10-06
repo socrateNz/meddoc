@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { listLabOrders } from "@/actions/lab";
+import { getLabOrderStats, listLabOrders } from "@/actions/lab";
+import { MAX_PAGE_SIZE, pageFromParam } from "@/lib/pagination";
+import { keepQuery } from "@/components/ui/pagination-nav";
 import LabView from "@/app/dashboard/lab/lab-view";
 
 export const metadata = {
@@ -10,19 +12,25 @@ export const metadata = {
 
 interface ClinicLabPageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function ClinicLabPage({ params }: ClinicLabPageProps) {
+const EMPTY_STATS = { pending: 0, inAnalysis: 0, toValidate: 0, validatedToday: 0, urgent: 0, critical: 0, open: 0 };
+
+export default async function ClinicLabPage({ params, searchParams }: ClinicLabPageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
+  const query = await searchParams;
+  const search = typeof query.q === "string" ? query.q : undefined;
 
   const currentUser = await getCurrentUser();
   if (!currentUser) {
     redirect("/login");
   }
 
-  const [labOrdersRes, patients] = await Promise.all([
-    listLabOrders({ organizationId: clinicId }),
+  const [labOrdersRes, statsRes, patients] = await Promise.all([
+    listLabOrders({ organizationId: clinicId, page: pageFromParam(query.page), search, urgentOnly: query.urgent === "1" }),
+    getLabOrderStats({ organizationId: clinicId }),
     prisma.patient.findMany({
       where: { organizationId: clinicId },
       include: { user: true },
@@ -30,7 +38,8 @@ export default async function ClinicLabPage({ params }: ClinicLabPageProps) {
     }),
   ]);
 
-  const labOrders = labOrdersRes.success ? labOrdersRes.data || [] : [];
+  const list = labOrdersRes.success ? labOrdersRes : { data: [], total: 0, page: 1, pageSize: MAX_PAGE_SIZE };
+  const stats = statsRes.success ? statsRes.data : EMPTY_STATS;
 
   return (
     <div className="space-y-6">
@@ -43,7 +52,18 @@ export default async function ClinicLabPage({ params }: ClinicLabPageProps) {
         </p>
       </div>
 
-      <LabView labOrders={labOrders} patients={patients} currentUserRole={currentUser.role} organizationId={clinicId} />
+      <LabView
+        labOrders={list.data}
+        total={list.total}
+        page={list.page}
+        pageSize={list.pageSize}
+        stats={stats}
+        query={keepQuery(query)}
+        pathname={`/dashboard/clinics/${clinicId}/lab`}
+        patients={patients}
+        currentUserRole={currentUser.role}
+        organizationId={clinicId}
+      />
     </div>
   );
 }

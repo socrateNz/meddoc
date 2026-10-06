@@ -5,6 +5,8 @@ import { listCashSessions } from "@/actions/registers";
 import FinanceView from "./finance-view";
 import { redirect } from "next/navigation";
 import { parsePeriodSearchParams, resolvePeriod } from "@/lib/finance-period";
+import { pageFromParam } from "@/lib/pagination";
+import { keepQuery } from "@/components/ui/pagination-nav";
 
 export const metadata = {
   title: "Finance | MedDoc",
@@ -17,7 +19,8 @@ interface FinancePageProps {
 export default async function FinancePage({ searchParams }: FinancePageProps) {
   // Filtre global de période (?p=7d, ?p=custom&from=...&to=...&tz=...) : validé et plafonné à
   // aujourd'hui par resolvePeriod, jamais utilisé tel quel.
-  const periodInput = parsePeriodSearchParams(await searchParams);
+  const rawParams = await searchParams;
+  const periodInput = parsePeriodSearchParams(rawParams);
   const period = resolvePeriod(periodInput);
 
   const activeUser = await getCurrentUser();
@@ -29,7 +32,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
   const [financeRes, valuationRes, sessionsRes] = await Promise.all([
     getFinanceSummary(undefined, periodInput),
     getStockValuation(),
-    listCashSessions(undefined, periodInput),
+    listCashSessions(undefined, periodInput, { page: pageFromParam(rawParams.page) }),
   ]);
 
   const summary = financeRes.success && financeRes.data ? financeRes.data : {
@@ -69,6 +72,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         currentUserRole={activeUser.role}
         period={period}
         sessions={sessions as any}
+        sessionsPagination={sessionsRes.success ? { page: sessionsRes.page, pageSize: sessionsRes.pageSize, total: sessionsRes.total, pathname: "/dashboard/finance", query: keepQuery(rawParams) } : undefined}
         valuation={valuation}
       />
     </div>

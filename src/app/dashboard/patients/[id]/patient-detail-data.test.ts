@@ -148,7 +148,13 @@ describe("fetchPatientRelatedData", () => {
 
     const result = await fetchPatientRelatedData("patient1", { isPharmacist: true, organizationIdForCaregivers: "org1" });
 
-    expect(result).toEqual({ vitalSigns: [{ id: "v1" }], prescriptions: [], labOrders: [], pregnancies: [], caregivers: [] });
+    expect(result).toMatchObject({
+      vitalSigns: [{ id: "v1" }],
+      prescriptions: [],
+      labOrders: [],
+      pregnancies: [],
+      caregivers: [],
+    });
     expect(listPrescriptions).not.toHaveBeenCalled();
     expect(listLabOrders).not.toHaveBeenCalled();
     expect(listPregnancies).not.toHaveBeenCalled();

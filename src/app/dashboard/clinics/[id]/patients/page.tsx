@@ -1,23 +1,19 @@
-import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Search, User as UserIcon } from "lucide-react";
-import NewPatientDialog from "@/app/dashboard/patients/new-patient-dialog";
-import Link from "next/link";
-import { Patient, User } from "@prisma/client";
 import { getClinics } from "@/actions/organizations";
+import { listPatientsPage } from "@/actions/patient-list";
 import CacheWriter from "@/components/cache-writer";
+import { keepQuery } from "@/components/ui/pagination-nav";
+import NewPatientDialog from "@/app/dashboard/patients/new-patient-dialog";
+import { EMPTY_PATIENT_PAGE, patientListOptions } from "@/app/dashboard/patients/patient-list-params";
 
 import PatientTable from "@/app/dashboard/patients/patient-table";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function ClinicPatientsPage({ params }: PageProps) {
+export default async function ClinicPatientsPage({ params, searchParams }: PageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
 
@@ -31,40 +27,14 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
   if (!activeUser) return null;
 
   const isHoldingAdmin = activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING";
+  const query = await searchParams;
 
-  // Strictly filter patients belonging to this clinic ID
-  const [clinicsRes, patients] = await Promise.all([
+  // Périmètre de la clinique contrôlé dans listPatientsPage (même contrôle que le layout de clinique).
+  const [clinicsRes, patientsRes] = await Promise.all([
     isHoldingAdmin ? getClinics() : Promise.resolve(null),
-    prisma.patient.findMany({
-      where: {
-        organizationId: clinicId,
-      },
-      include: {
-        user: true,
-        carePlans: {
-          select: {
-            id: true,
-            status: true,
-          }
-        },
-        vitalSigns: {
-          take: 1,
-          orderBy: { createdAt: "desc" }
-        },
-        appointments: {
-          take: 1,
-          where: { scheduledAt: { gte: new Date() } },
-          orderBy: { scheduledAt: "asc" }
-        }
-      },
-      orderBy: {
-        user: {
-          lastName: "asc"
-        }
-      },
-      take: 500,
-    }),
+    listPatientsPage({ ...patientListOptions(query), organizationId: clinicId }),
   ]);
+  const patientsPage = patientsRes.success ? patientsRes : EMPTY_PATIENT_PAGE;
 
   let clinics: { id: string; name: string }[] = [];
   if (isHoldingAdmin && clinicsRes?.clinics) {
@@ -90,14 +60,25 @@ export default async function ClinicPatientsPage({ params }: PageProps) {
         )}
       </div>
 
-      <PatientTable patients={patients} clinicId={clinicId} organizationId={clinicId} />
+      <PatientTable
+        patients={patientsPage.data}
+        total={patientsPage.total}
+        page={patientsPage.page}
+        pageSize={patientsPage.pageSize}
+        counts={patientsPage.counts}
+        query={keepQuery(query)}
+        pathname={`/dashboard/clinics/${clinicId}/patients`}
+        clinicId={clinicId}
+        organizationId={clinicId}
+        canAssignBed={["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role)}
+      />
 
       <CacheWriter
         cacheKey={`patients-list:${clinicId}`}
         updatedAt={cachedAt}
         data={{
-          totalCount: patients.length,
-          patients: patients.slice(0, 30).map((p) => ({
+          totalCount: patientsPage.total,
+          patients: patientsPage.data.slice(0, 30).map((p) => ({
             id: p.id,
             firstName: p.user.firstName,
             lastName: p.user.lastName,

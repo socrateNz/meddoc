@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
+import { PaginationFooter } from "@/components/ui/pagination-footer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,23 +31,43 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
   const queryClient = useQueryClient();
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
 
-  const { data: suppliers = [], isLoading: suppliersLoading } = useQuery({
-    queryKey: ["suppliers", organizationId],
+  // Chaque liste est paginée (20 par page) : le total affiché dans les titres vient du serveur.
+  const [suppliersPage, setSuppliersPage] = useState(1);
+  const [ordersPage, setOrdersPage] = useState(1);
+
+  const { data: suppliersData, isLoading: suppliersLoading, isFetching: suppliersFetching } = useQuery({
+    queryKey: ["suppliers", organizationId, suppliersPage],
+    queryFn: async () => {
+      const res = await listSuppliers(organizationId, { page: suppliersPage });
+      if (!res.success) throw new Error(res.error);
+      return res;
+    },
+    placeholderData: keepPreviousData,
+  });
+  const suppliers = (suppliersData?.data ?? []) as any[];
+  const suppliersTotal = suppliersData?.total ?? 0;
+
+  // Liste complète des fournisseurs, pour le sélecteur du bon de commande (aucune limite pour les sélecteurs).
+  const { data: allSuppliers = [] } = useQuery({
+    queryKey: ["suppliers", organizationId, "all"],
     queryFn: async () => {
       const res = await listSuppliers(organizationId);
       if (!res.success) throw new Error(res.error);
-      return res.data || [];
+      return res.data as any[];
     },
   });
 
-  const { data: orders = [], isLoading: ordersLoading } = useQuery({
-    queryKey: ["purchaseOrders", organizationId],
+  const { data: ordersData, isLoading: ordersLoading, isFetching: ordersFetching } = useQuery({
+    queryKey: ["purchaseOrders", organizationId, ordersPage],
     queryFn: async () => {
-      const res = await listPurchaseOrders({ organizationId });
+      const res = await listPurchaseOrders({ organizationId, page: ordersPage });
       if (!res.success) throw new Error(res.error);
-      return res.data || [];
+      return res;
     },
+    placeholderData: keepPreviousData,
   });
+  const orders = (ordersData?.data ?? []) as any[];
+  const ordersTotal = ordersData?.total ?? 0;
 
   const loading = suppliersLoading || ordersLoading;
 
@@ -55,7 +77,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
       const res = await updatePurchaseOrderStatus(orderId, "SENT");
       if (res.success) {
         toast.success("Commande envoyée au fournisseur.");
-        queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => prev.map((o) => (o.id === orderId ? res.data : o)));
+        queryClient.invalidateQueries({ queryKey: ["purchaseOrders", organizationId] });
       } else {
         toast.error(res.error || "Erreur.");
       }
@@ -70,7 +92,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
       const res = await updatePurchaseOrderStatus(orderId, "CANCELLED");
       if (res.success) {
         toast.success("Commande annulée.");
-        queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => prev.map((o) => (o.id === orderId ? res.data : o)));
+        queryClient.invalidateQueries({ queryKey: ["purchaseOrders", organizationId] });
       } else {
         toast.error(res.error || "Erreur.");
       }
@@ -95,16 +117,12 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
             <Truck className="h-5 w-5 text-indigo-500" />
-            Fournisseurs ({suppliers.length})
+            Fournisseurs ({suppliersTotal})
           </h3>
           {canWrite && (
             <NewSupplierDialog
               organizationId={organizationId}
-              onSuccess={(s) =>
-                queryClient.setQueryData(["suppliers", organizationId], (prev: any[] = []) =>
-                  [...prev, s].sort((a, b) => a.name.localeCompare(b.name))
-                )
-              }
+              onSuccess={() => queryClient.invalidateQueries({ queryKey: ["suppliers", organizationId] })}
             />
           )}
         </div>
@@ -126,6 +144,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
             ))}
           </div>
         )}
+        <PaginationFooter page={suppliersPage} pageSize={suppliersData?.pageSize ?? 20} total={suppliersTotal} onPageChange={setSuppliersPage} loading={suppliersFetching} itemLabel="fournisseur" />
       </div>
 
       {/* Commandes fournisseurs */}
@@ -133,18 +152,18 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold tracking-tight flex items-center gap-2">
             <ClipboardList className="h-5 w-5 text-indigo-500" />
-            Commandes fournisseurs ({orders.length})
+            Commandes fournisseurs ({ordersTotal})
           </h3>
-          {canWrite && suppliers.length > 0 && (
+          {canWrite && allSuppliers.length > 0 && (
             <NewPurchaseOrderDialog
-              suppliers={suppliers}
+              suppliers={allSuppliers}
               pharmacyItems={pharmacyItems}
               organizationId={organizationId}
-              onSuccess={(o) => queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => [o, ...prev])}
+              onSuccess={() => queryClient.invalidateQueries({ queryKey: ["purchaseOrders", organizationId] })}
             />
           )}
         </div>
-        {suppliers.length === 0 ? (
+        {allSuppliers.length === 0 ? (
           <p className="text-xs text-muted-foreground">Ajoutez un fournisseur pour pouvoir créer une commande.</p>
         ) : orders.length === 0 ? (
           <div className="border border-dashed rounded-xl p-8 text-center text-sm text-muted-foreground">Aucune commande fournisseur pour le moment.</div>
@@ -191,7 +210,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
                             order={order}
                             openRegisters={openRegisters}
                             onSuccess={(o) =>
-                              queryClient.setQueryData(["purchaseOrders", organizationId], (prev: any[] = []) => prev.map((x) => (x.id === o.id ? o : x)))
+                              queryClient.invalidateQueries({ queryKey: ["purchaseOrders", organizationId] })
                             }
                           />
                         )}
@@ -203,6 +222,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
             })}
           </div>
         )}
+        <PaginationFooter page={ordersPage} pageSize={ordersData?.pageSize ?? 20} total={ordersTotal} onPageChange={setOrdersPage} loading={ordersFetching} itemLabel="commande" />
       </div>
     </div>
   );

@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PaginationFooter } from "@/components/ui/pagination-footer";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { fetchAllPages } from "@/lib/fetch-all-pages";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -43,18 +46,35 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [lastClosure, setLastClosure] = useState<{ inventoryCountId?: string; totalLossValue: number; staleProducts?: string[] } | null>(null);
   const [inventorySearch, setInventorySearch] = useState("");
+  const [countPage, setCountPage] = useState(1);
+  const debouncedInventorySearch = useDebouncedValue(inventorySearch.trim(), 300);
+  // Valeur enregistrée par ligne, pour savoir quelles saisies sont réellement nouvelles.
+  const [storedValues, setStoredValues] = useState<Record<string, number>>({});
 
   const countQueryKey = ["activeInventoryCount", organizationId];
   const historyQueryKey = ["inventoryHistory", organizationId];
 
   const { data: count = null, isLoading: countLoading } = useQuery({
-    queryKey: countQueryKey,
+    queryKey: [...countQueryKey, countPage, debouncedInventorySearch],
     queryFn: async () => {
-      const res = await getActiveInventoryCount(organizationId!);
+      const res = await getActiveInventoryCount(organizationId!, { page: countPage, search: debouncedInventorySearch || undefined });
       if (!res.success) throw new Error(res.error);
       return res.data ?? null;
     },
     enabled: !!organizationId,
+    placeholderData: keepPreviousData,
+  });
+
+  // Toutes les lignes, chargées par pages, uniquement pour le résumé de clôture.
+  const { data: allLines = [] } = useQuery({
+    queryKey: ["inventoryAllLines", count?.id],
+    queryFn: () =>
+      fetchAllPages(async (page) => {
+        const res = await getActiveInventoryCount(organizationId!, { page });
+        if (!res.success || !res.data) throw new Error(res.error || "Impossible de charger les lignes du comptage.");
+        return { data: res.data.lines as any[], total: res.data.linesTotal, pageSize: res.data.pageSize };
+      }),
+    enabled: !!organizationId && !!count && confirmOpen,
   });
 
   const { data: history = [], isLoading: historyLoading, refetch: refetchHistory } = useQuery({
@@ -71,7 +91,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
 
   const closureSummary = () => {
     let conforming = 0, negative = 0, positive = 0, lossValue = 0;
-    (count?.lines || []).forEach((line: any) => {
+    allLines.forEach((line: any) => {
       const counted = Number(countedValues[line.id] ?? line.systemQuantity);
       const variance = counted - line.systemQuantity;
       if (variance === 0) conforming++;
@@ -86,14 +106,16 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
   };
 
   useEffect(() => {
-    if (count?.lines) {
-      const initial: Record<string, string> = {};
-      count.lines.forEach((line: any) => {
-        initial[line.id] = String(line.countedQuantity ?? line.systemQuantity);
-      });
-      setCountedValues(initial);
-    }
-  }, [count?.id]);
+    if (!count?.lines) return;
+    const stored: Record<string, number> = {};
+    const initial: Record<string, string> = {};
+    count.lines.forEach((line: any) => {
+      stored[line.id] = line.countedQuantity ?? line.systemQuantity;
+      initial[line.id] = String(line.countedQuantity ?? line.systemQuantity);
+    });
+    setStoredValues((prev) => ({ ...prev, ...stored }));
+    setCountedValues((prev) => ({ ...initial, ...prev }));
+  }, [count?.lines]);
 
   if (!organizationId) {
     return (
@@ -110,7 +132,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     try {
       const res = await startInventoryCount(organizationId);
       if (res.success) {
-        queryClient.setQueryData(countQueryKey, res.data);
+        queryClient.invalidateQueries({ queryKey: countQueryKey });
         setLastClosure(null);
       } else {
         setMsg({ type: "error", text: res.error || "Erreur lors du démarrage." });
@@ -127,13 +149,9 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
   // sa valeur système par défaut n'a rien de nouveau à écrire : la clôture la traite déjà comme
   // conforme dans ce cas (cf. completeInventoryCount), donc l'omettre ne change aucun comportement.
   const buildLinesPayload = () =>
-    (count?.lines || [])
-      .map((line: any) => ({ lineId: line.id, countedQuantity: Number(countedValues[line.id] ?? line.systemQuantity) }))
-      .filter(({ lineId, countedQuantity }: any) => {
-        const original = count?.lines.find((l: any) => l.id === lineId);
-        const alreadyStored = original?.countedQuantity ?? original?.systemQuantity;
-        return countedQuantity !== alreadyStored;
-      });
+    Object.entries(countedValues)
+      .filter(([lineId, value]) => storedValues[lineId] !== undefined && Number(value) !== storedValues[lineId])
+      .map(([lineId, value]) => ({ lineId, countedQuantity: Number(value) }));
 
   const handleSaveDraft = async (silent = false) => {
     if (!count) return { success: false, error: "Aucun inventaire en cours." };
@@ -148,6 +166,9 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     if (!silent) setMsg(null);
     try {
       const res = await saveInventoryCounts(count.id, linesPayload);
+      if (res.success) {
+        setStoredValues((prev) => ({ ...prev, ...Object.fromEntries(linesPayload.map((l) => [l.lineId, l.countedQuantity])) }));
+      }
       if (!silent) {
         if (res.success) {
           setMsg({ type: "success", text: "Comptage enregistré." });
@@ -178,7 +199,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
       const res = await completeInventoryCount(count.id);
       if (res.success) {
         setLastClosure(res.data ?? null);
-        queryClient.setQueryData(countQueryKey, null);
+        queryClient.invalidateQueries({ queryKey: countQueryKey });
         setMsg({ type: "success", text: "Inventaire clôturé avec succès." });
         refetchHistory();
       } else {
@@ -197,8 +218,9 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
     try {
       const res = await cancelInventoryCount(count.id);
       if (res.success) {
-        queryClient.setQueryData(countQueryKey, null);
+        queryClient.invalidateQueries({ queryKey: countQueryKey });
         setCountedValues({});
+        setStoredValues({});
         setMsg({ type: "success", text: "Inventaire annulé — aucun ajustement n'a été appliqué." });
       } else {
         setMsg({ type: "error", text: res.error || "Erreur lors de l'annulation de l'inventaire." });
@@ -219,13 +241,8 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
   // Filtre d'affichage uniquement — le comptage, la clôture et le résumé continuent de porter
   // sur count.lines en entier (jamais sur ce sous-ensemble), pour ne jamais perdre de saisie ou
   // fausser le résumé de clôture sur une ligne simplement masquée par la recherche.
-  const q = inventorySearch.trim().toLowerCase();
-  const filteredLines = q
-    ? (count?.lines || []).filter((line: any) => {
-        const name = `${line.pharmacyItem?.name || ""} ${line.pharmacyItem?.dosage || ""}`.toLowerCase();
-        return name.includes(q);
-      })
-    : count?.lines || [];
+  // La recherche et la pagination sont faites par le serveur : `count.lines` est la page affichée.
+  const filteredLines = count?.lines || [];
 
   return (
     <div className="space-y-4">
@@ -285,7 +302,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              Inventaire démarré le {formatDate(count.createdAt)} — {count.lines.length} produit(s) à compter.
+              Inventaire démarré le {formatDate(count.createdAt)} — {count.totalLines} produit(s) à compter.
             </p>
             {canWrite && (
               <div className="flex gap-2">
@@ -314,7 +331,10 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <Input
               value={inventorySearch}
-              onChange={(e) => setInventorySearch(e.target.value)}
+              onChange={(e) => {
+                setInventorySearch(e.target.value);
+                setCountPage(1);
+              }}
               placeholder="Rechercher un produit..."
               className="pl-9 h-9 text-sm rounded-xl"
             />
@@ -387,6 +407,16 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                 )}
               </TableBody>
             </Table>
+              {count && (
+                <PaginationFooter
+                  page={countPage}
+                  pageSize={count.pageSize ?? 20}
+                  total={count.linesTotal ?? 0}
+                  onPageChange={setCountPage}
+                  loading={countLoading}
+                  itemLabel="produit"
+                />
+              )}
           </div>
         </div>
       )}
@@ -411,7 +441,7 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                 <div className="space-y-2 text-sm rounded-xl border border-slate-200/60 dark:border-slate-800/60 p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Produits comptés</span>
-                    <span className="font-semibold">{count?.lines.length ?? 0}</span>
+                    <span className="font-semibold">{count?.totalLines ?? 0}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Conformes</span>
@@ -495,15 +525,14 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                   // Une ligne jamais comptée (countedQuantity null, cf. buildLinesPayload qui
                   // n'envoie plus que les lignes modifiées) n'est pas un écart — juste une ligne
                   // sur laquelle personne n'a rien saisi, traitée comme conforme à la clôture.
-                  const countedLines = h.lines.filter((l: any) => l.countedQuantity !== null);
-                  const variances = countedLines.filter((l: any) => l.countedQuantity !== l.systemQuantity).length;
+                  const variances = h.varianceCount;
                   return (
                     <TableRow key={h.id}>
                       <TableCell className="py-2.5 text-xs">{h.completedAt ? formatDate(h.completedAt) : "-"}</TableCell>
                       <TableCell className="py-2.5 text-xs">
                         {h.startedBy?.firstName} {h.startedBy?.lastName}
                       </TableCell>
-                      <TableCell className="py-2.5 text-xs">{countedLines.length}/{h.lines.length}</TableCell>
+                      <TableCell className="py-2.5 text-xs">{h.countedCount}/{h.lineCount}</TableCell>
                       <TableCell className="py-2.5 text-xs">
                         {variances === 0 ? (
                           <span className="text-emerald-600 font-semibold">Aucun écart</span>

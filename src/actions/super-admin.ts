@@ -3,32 +3,39 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
+import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { createHoldingSchema, updateHoldingSubscriptionSchema } from "@/validators/super-admin";
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcrypt";
 import { Role, SubscriptionPlan, SubscriptionStatus, PaymentFrequency, PaymentPlan } from "@prisma/client";
 
-export async function getHoldings() {
+export async function getHoldings(options?: { page?: number; pageSize?: number }) {
   try {
     const user = await getCurrentUser();
     if (!user || user.role !== "SUPER_ADMIN") {
       throw new Error("Unauthorized");
     }
 
-    const rawHoldings = await prisma.organization.findMany({
-      where: {
-        type: "HOLDING"
-      },
-      include: {
-        _count: {
-          select: { children: true }
-        }
-      },
-      orderBy: {
-        createdAt: "desc"
-      }
-    });
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [rawHoldings, total] = await Promise.all([
+      prisma.organization.findMany({
+        where: {
+          type: "HOLDING"
+        },
+        include: {
+          _count: {
+            select: { children: true }
+          }
+        },
+        orderBy: {
+          createdAt: "desc"
+        },
+        skip,
+        take,
+      }),
+      prisma.organization.count({ where: { type: "HOLDING" } }),
+    ]);
 
     const holdings = await Promise.all(
       rawHoldings.map(async (holding) => {
@@ -70,10 +77,10 @@ export async function getHoldings() {
       })
     );
 
-    return { holdings, error: null };
+    return { holdings, error: null, total, page, pageSize };
   } catch (error: any) {
     console.error("Error fetching holdings:", error);
-    return { holdings: [], error: error.message || "Failed to fetch holdings" };
+    return { holdings: [], error: error.message || "Failed to fetch holdings", total: 0, page: 1, pageSize: MAX_PAGE_SIZE };
   }
 }
 
@@ -319,9 +326,9 @@ export async function getSuperAdminOverview() {
       // Somme brute du coût de licence de TOUTES les holdings (peu importe le statut d'abonnement
       // ou la fréquence de paiement) — remplace l'ancien MRR (revenu mensuel récurrent, réservé aux
       // holdings ACTIVE et normalisé par mois) par un total cumulé plus simple, tel que demandé.
-      prisma.organization.findMany({
+      prisma.organization.aggregate({
         where: { type: "HOLDING", paymentAmount: { not: null } },
-        select: { paymentAmount: true },
+        _sum: { paymentAmount: true },
       }),
       prisma.organization.groupBy({
         by: ["plan"],
@@ -334,10 +341,12 @@ export async function getSuperAdminOverview() {
         where: { type: "HOLDING", licenseExpiresAt: { not: null, lte: in30Days } },
         select: { id: true, name: true, licenseExpiresAt: true, subscriptionStatus: true },
         orderBy: { licenseExpiresAt: "asc" },
+        take: MAX_PAGE_SIZE,
       }),
       prisma.organization.findMany({
         where: { type: "HOLDING", subscriptionStatus: { in: ["INACTIVE", "CANCELLED"] } },
         select: { id: true, name: true, licenseExpiresAt: true, subscriptionStatus: true },
+        take: MAX_PAGE_SIZE,
       }),
       prisma.organization.findMany({
         where: { type: "HOLDING" },
@@ -351,7 +360,7 @@ export async function getSuperAdminOverview() {
       }),
     ]);
 
-    const totalRevenue = allHoldingsForRevenue.reduce((sum, h) => sum + (h.paymentAmount || 0), 0);
+    const totalRevenue = allHoldingsForRevenue._sum.paymentAmount ?? 0;
 
     const planBreakdown = planGroups.map((g) => ({ plan: g.plan, count: g._count._all }));
 

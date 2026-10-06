@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
+import { resolvePage } from "@/lib/pagination";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -13,18 +14,20 @@ function assertSuperAdmin(activeUser: any) {
   }
 }
 
-export async function listContactMessages() {
+export async function listContactMessages(options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     assertSuperAdmin(activeUser);
 
-    const messages = await prisma.contactMessage.findMany({
-      orderBy: { createdAt: "desc" },
-    });
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [messages, total] = await Promise.all([
+      prisma.contactMessage.findMany({ orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.contactMessage.count(),
+    ]);
 
-    return { success: true, data: messages };
+    return { success: true as const, data: messages, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des messages.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des messages.") };
   }
 }
 

@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { completeConsultation, saveConsultationDraft } from "@/actions/appointments";
 import { listLabOrders } from "@/actions/lab";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { listPrescriptionTemplates, createPrescriptionTemplate, listPrescriptions, renewPrescription } from "@/actions/prescriptions";
 import { getPatientVitalSigns } from "@/actions/vitals";
 import { transcribeConsultationAudio } from "@/actions/ai";
@@ -512,6 +513,11 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  {prescriptionHistory.length >= MAX_PAGE_SIZE && (
+                    <p className="mb-3 text-[11px] text-muted-foreground">
+                      {MAX_PAGE_SIZE} ordonnances les plus récentes affichées. L&apos;historique complet est dans le dossier patient.
+                    </p>
+                  )}
                   {prescriptionHistoryLoading ? (
                     <div className="flex items-center justify-center py-6">
                       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -721,6 +727,11 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                   />
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {labOrders.length >= MAX_PAGE_SIZE && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {MAX_PAGE_SIZE} demandes les plus récentes affichées. L&apos;historique complet est dans le dossier patient.
+                    </p>
+                  )}
                   {labLoading ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />

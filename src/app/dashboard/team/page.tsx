@@ -10,16 +10,22 @@ import AddMemberDialog from "./add-member-dialog";
 import UserActionsMenu from "./user-actions-menu";
 import { Button } from "@/components/ui/button";
 import { getClinics } from "@/actions/organizations";
+import { PaginationNav } from "@/components/ui/pagination-nav";
 
-export default async function TeamPage() {
+interface TeamPageProps {
+  searchParams: Promise<{ page?: string }>;
+}
+
+export default async function TeamPage({ searchParams }: TeamPageProps) {
   const currentUser = await getCurrentUser();
   if (!currentUser) redirect("/login");
 
   const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
 
   // Requêtes indépendantes : la liste de l'équipe ne dépend pas des cliniques, et vice-versa.
+  const { page } = await searchParams;
   const [response, clinicsRes] = await Promise.all([
-    getTeamMembers(),
+    getTeamMembers({ page: Number(page) || 1 }),
     isHoldingAdmin ? getClinics() : Promise.resolve({ clinics: [] as any[], error: null }),
   ]);
   const members = response.success ? response.data : [];
@@ -172,6 +178,15 @@ export default async function TeamPage() {
           );
         })}
       </div>
+      {response.success && (
+        <PaginationNav
+          page={response.page}
+          pageSize={response.pageSize}
+          total={response.total}
+          pathname="/dashboard/team"
+          itemLabel="membre"
+        />
+      )}
     </div>
   );
 }

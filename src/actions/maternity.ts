@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
+import { resolvePage } from "@/lib/pagination";
 import {
   createPregnancySchema,
   addPrenatalVisitSchema,
@@ -88,7 +89,7 @@ async function createPregnancyOnce(data: {
   }
 }
 
-export async function listPregnancies(patientId: string) {
+export async function listPregnancies(patientId: string, options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
@@ -97,15 +98,22 @@ export async function listPregnancies(patientId: string) {
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
 
-    const pregnancies = await prisma.pregnancy.findMany({
-      where: { patientId },
-      include: PREGNANCY_INCLUDE,
-      orderBy: { createdAt: "desc" },
-    });
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const where = { patientId };
+    const [pregnancies, total] = await Promise.all([
+      prisma.pregnancy.findMany({
+        where,
+        include: PREGNANCY_INCLUDE,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.pregnancy.count({ where }),
+    ]);
 
-    return { success: true, data: pregnancies };
+    return { success: true as const, data: pregnancies, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement du suivi de maternité.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du suivi de maternité.") };
   }
 }
 

@@ -147,6 +147,7 @@ model Organization {
   updatedAt DateTime @updatedAt
 
   @@index([parentId])
+  roundSessions RoundSession[]
 }
 
 model User {
@@ -218,6 +219,9 @@ model User {
 
   @@index([organizationId])
   @@index([organizationId, role])
+  roundsStarted       RoundSession[] @relation("RoundStartedBy")
+  roundsClosed        RoundSession[] @relation("RoundClosedBy")
+  roundEntriesVisited RoundEntry[]   @relation("RoundEntryVisitedBy")
 }
 
 model Patient {
@@ -273,6 +277,7 @@ model Patient {
 
   @@index([organizationId])
   @@index([organizationId, updatedAt])
+  roundEntries RoundEntry[] @relation("RoundPatient")
 }
 
 model FamilyMember {
@@ -805,6 +810,7 @@ model Ward {
 
   @@unique([organizationId, code])
   @@index([organizationId])
+  roundSessions RoundSession[]
 }
 
 model Room {
@@ -1517,4 +1523,54 @@ model IdempotencyRecord {
   createdAt   DateTime @default(now())
 
   @@unique([userId, action, key])
+}
+
+// Ronde médicale quotidienne d'un service : la visite de l'équipe au chevet des patients hospitalisés.
+// Une session par service et par jour (contrainte [wardId, day]) ; une entrée par patient, dans l'ordre
+// de passage. Le lit est recopié sur l'entrée au moment du passage (il peut changer ensuite).
+model RoundSession {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  wardId         String       @db.ObjectId
+  ward           Ward         @relation(fields: [wardId], references: [id], onDelete: Cascade)
+  day            String // "YYYY-MM-DD", jour de la ronde (fuseau de l'établissement)
+  status         String       @default("OPEN") // OPEN, CLOSED
+  // Membres de l'équipe présents à la ronde (identifiants d'utilisateurs, sans relation).
+  participantIds String[]     @db.ObjectId
+  startedById    String       @db.ObjectId
+  startedBy      User         @relation("RoundStartedBy", fields: [startedById], references: [id])
+  closedById     String?      @db.ObjectId
+  closedBy       User?        @relation("RoundClosedBy", fields: [closedById], references: [id])
+  closedAt       DateTime?
+  entries        RoundEntry[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([wardId, day])
+  @@index([organizationId, day])
+}
+
+model RoundEntry {
+  id           String       @id @default(auto()) @map("_id") @db.ObjectId
+  sessionId    String       @db.ObjectId
+  session      RoundSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  patientId    String       @db.ObjectId
+  patient      Patient      @relation("RoundPatient", fields: [patientId], references: [id])
+  bedLabel     String // instantané du lit au passage, ex. "Chambre 12 · Lit A"
+  roomName     String? // instantané : chambre au passage
+  bedNumber    String? // instantané : numéro de lit au passage
+  position     Int // ordre de passage
+  status       String       @default("PENDING") // PENDING, VISITED, SKIPPED
+  observations String? // état du patient constaté pendant la visite (ou motif de passage)
+  decision     String? // CONTINUE, ADJUST, EXAMS, DISCHARGE_PLANNED, TRANSFER, OTHER
+  plan         String? // conduite à tenir, tâches à suivre
+  visitedAt    DateTime?
+  visitedById  String?      @db.ObjectId
+  visitedBy    User?        @relation("RoundEntryVisitedBy", fields: [visitedById], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([sessionId, patientId])
+  @@index([sessionId, position])
 }

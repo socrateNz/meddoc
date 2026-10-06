@@ -4,12 +4,17 @@ import { redirect } from "next/navigation";
 import { listContracts } from "@/actions/contracts";
 import NewContractDialog from "./new-contract-dialog";
 import ContractsList from "./contracts-list";
+import { PaginationNav } from "@/components/ui/pagination-nav";
 
 export const metadata = {
   title: "Contrats aidants | MedDoc",
 };
 
-export default async function ContractsPage() {
+interface ContractsPageProps {
+  searchParams: Promise<{ page?: string }>;
+}
+
+export default async function ContractsPage({ searchParams }: ContractsPageProps) {
   const activeUser = await getCurrentUser();
   if (!activeUser) {
     redirect("/login");
@@ -28,8 +33,9 @@ export default async function ContractsPage() {
     whereClause.organizationId = activeUser.organizationId;
   }
 
+  const { page } = await searchParams;
   const [contractsRes, patients, caregivers] = await Promise.all([
-    listContracts(),
+    listContracts(undefined, { page: Number(page) || 1 }),
     prisma.patient.findMany({
       where: whereClause,
       include: { user: true },
@@ -55,6 +61,15 @@ export default async function ContractsPage() {
       </div>
 
       <ContractsList contracts={(contractsRes.success ? contractsRes.data : []) as any} />
+      {contractsRes.success && (
+        <PaginationNav
+          page={contractsRes.page}
+          pageSize={contractsRes.pageSize}
+          total={contractsRes.total}
+          pathname="/dashboard/contracts"
+          itemLabel="contrat"
+        />
+      )}
     </div>
   );
 }

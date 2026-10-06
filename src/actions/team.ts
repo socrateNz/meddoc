@@ -14,10 +14,12 @@ import {
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
+import { resolvePage } from "@/lib/pagination";
 
-export async function getTeamMembers() {
+export async function getTeamMembers(options?: { page?: number; pageSize?: number }) {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
+  const { page, pageSize, skip, take } = resolvePage(options);
 
   const whereClause: any = {
     role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] },
@@ -35,7 +37,8 @@ export async function getTeamMembers() {
     whereClause.organizationId = { in: [] };
   }
 
-  const members = await prisma.user.findMany({
+  const [members, total] = await Promise.all([
+    prisma.user.findMany({
     where: whereClause,
     include: {
       caregiverProfile: {
@@ -61,10 +64,13 @@ export async function getTeamMembers() {
       }
     },
     orderBy: { lastName: "asc" },
-    take: 500,
-  });
+    skip,
+    take,
+  }),
+    prisma.user.count({ where: whereClause }),
+  ]);
 
-  return { success: true, data: members };
+  return { success: true as const, data: members, total, page, pageSize };
 }
 
 export async function toggleAvailability(userId: string, isAvailable: boolean) {
@@ -347,7 +353,7 @@ export async function reactivateTeamMember(userId: string) {
   }
 }
 
-export async function getClinicTeam(clinicId: string) {
+export async function getClinicTeam(clinicId: string, options?: { page?: number; pageSize?: number }) {
   const activeUser = await getCurrentUser();
   if (!activeUser || activeUser.role !== "ADMIN" || activeUser.organization?.type !== "HOLDING") {
     throw new Error("Non authentifié ou non autorisé.");
@@ -362,11 +368,14 @@ export async function getClinicTeam(clinicId: string) {
     throw new Error("Clinique introuvable ou non autorisée.");
   }
 
-  const members = await prisma.user.findMany({
-    where: {
-      organizationId: clinicId,
-      role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] },
-    },
+  const { page, pageSize, skip, take } = resolvePage(options);
+  const clinicMembers = {
+    organizationId: clinicId,
+    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] as Role[] },
+  };
+  const [members, total] = await Promise.all([
+  prisma.user.findMany({
+    where: clinicMembers,
     include: {
       caregiverProfile: {
         include: {
@@ -383,10 +392,14 @@ export async function getClinicTeam(clinicId: string) {
         }
       }
     },
-    orderBy: { lastName: "asc" }
-  });
+    orderBy: { lastName: "asc" },
+    skip,
+    take,
+  }),
+    prisma.user.count({ where: clinicMembers }),
+  ]);
 
-  return { success: true, data: members, clinicName: clinic.name };
+  return { success: true as const, data: members, total, page, pageSize, clinicName: clinic.name };
 }
 
 export async function reassignTeamMember(userId: string, newOrganizationId: string) {

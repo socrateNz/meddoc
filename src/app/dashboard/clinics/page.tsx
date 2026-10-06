@@ -1,4 +1,6 @@
 import { getClinics } from "@/actions/organizations";
+import { PaginationNav, keepQuery } from "@/components/ui/pagination-nav";
+import { pageFromParam } from "@/lib/pagination";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -9,7 +11,11 @@ import ClinicStatusToggle from "./clinic-status-toggle";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClinicsPage() {
+interface ClinicsPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function ClinicsPage({ searchParams }: ClinicsPageProps) {
   const user = await getCurrentUser();
 
   // Protect the route: Only Holding Admins
@@ -17,7 +23,8 @@ export default async function ClinicsPage() {
     redirect("/dashboard");
   }
 
-  const { clinics, error } = await getClinics();
+  const query = await searchParams;
+  const { clinics, error, total, page, pageSize } = await getClinics({ page: pageFromParam(query.page) });
 
   return (
     <div className="space-y-6">
@@ -107,6 +114,16 @@ export default async function ClinicsPage() {
             </Card>
           ))}
         </div>
+      )}
+      {!error && (
+        <PaginationNav
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          pathname="/dashboard/clinics"
+          query={keepQuery(query)}
+          itemLabel="clinique"
+        />
       )}
     </div>
   );

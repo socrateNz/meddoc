@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PaginationFooter } from "@/components/ui/pagination-footer";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,21 +42,28 @@ interface PurchaseHistoryPanelProps {
 export default function PurchaseHistoryPanel({ organizationId, canCancel: canCancelPurchases = false }: PurchaseHistoryPanelProps) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const debouncedSearch = useDebouncedValue(search.trim(), 300);
   const [cancellingPurchase, setCancellingPurchase] = useState<any | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   const queryKey = ["stockPurchaseHistory", organizationId];
-  const { data: purchases = [], isLoading } = useQuery({
-    queryKey,
+  // Une page de 20 achats à la fois ; recherche et total calculés côté serveur.
+  const { data, isLoading } = useQuery({
+    queryKey: [...queryKey, page, debouncedSearch],
     queryFn: async () => {
-      const res = await getStockPurchaseHistory(organizationId);
+      const res = await getStockPurchaseHistory(organizationId, undefined, { page, search: debouncedSearch });
       if (!res.success) throw new Error(res.error);
-      return (res.data ?? []) as any[];
+      return res;
     },
     enabled: !!organizationId,
+    placeholderData: keepPreviousData,
   });
+  const purchases = (data?.data ?? []) as any[];
+  const total = data?.total ?? 0;
+  const totalCost = data?.totalCost ?? 0;
 
   const closeCancelDialog = () => {
     setCancellingPurchase(null);
@@ -99,18 +108,6 @@ export default function PurchaseHistoryPanel({ organizationId, canCancel: canCan
     );
   }
 
-  const q = search.trim().toLowerCase();
-  const filtered = q
-    ? purchases.filter((p: any) => {
-        const name = `${p.pharmacyItem?.name || ""} ${p.pharmacyItem?.dosage || ""}`.toLowerCase();
-        const supplier = (p.supplier || "").toLowerCase();
-        const batch = (p.batchNumber || "").toLowerCase();
-        return name.includes(q) || supplier.includes(q) || batch.includes(q);
-      })
-    : purchases;
-
-  const totalCost = filtered.reduce((sum: number, p: any) => sum + Number(p.totalCost || 0), 0);
-
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -118,22 +115,25 @@ export default function PurchaseHistoryPanel({ organizationId, canCancel: canCan
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
             placeholder="Rechercher par produit, fournisseur, lot..."
             className="pl-9 h-9 text-sm rounded-xl"
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          {filtered.length} achat{filtered.length > 1 ? "s" : ""} · Total{" "}
+          {total} achat{total > 1 ? "s" : ""} · Total{" "}
           <span className="font-bold text-slate-700 dark:text-slate-300">{formatFCFA(totalCost)}</span>
         </p>
       </div>
 
-      {filtered.length === 0 ? (
+      {total === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center">
           <ShoppingCart className="h-8 w-8 mx-auto mb-3 opacity-40" />
           <p className="text-sm text-muted-foreground">
-            {purchases.length === 0 ? "Aucun achat enregistré pour le moment." : "Aucun achat ne correspond à votre recherche."}
+            {debouncedSearch ? "Aucun achat ne correspond à votre recherche." : "Aucun achat enregistré pour le moment."}
           </p>
         </div>
       ) : (
@@ -153,7 +153,7 @@ export default function PurchaseHistoryPanel({ organizationId, canCancel: canCan
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((p: any) => {
+              {purchases.map((p: any) => {
                 const isInventoryAdjustment = p.batchNumber === "AJUSTEMENT-INVENTAIRE";
                 const isDispenseCancellationReturn = p.batchNumber === "ANNULATION-REMISE";
                 const isUntouched = p.remainingQuantity === p.quantity;
@@ -212,6 +212,10 @@ export default function PurchaseHistoryPanel({ organizationId, canCancel: canCan
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {total > 0 && (
+        <PaginationFooter page={page} pageSize={data?.pageSize ?? 20} total={total} onPageChange={setPage} loading={isLoading} itemLabel="achat" />
       )}
 
       <Dialog open={!!cancellingPurchase} onOpenChange={(v) => !v && closeCancelDialog()}>

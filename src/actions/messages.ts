@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { sendMessageSchema, createConversationSchema, createChannelSchema } from "@/validators/messages";
 import { revalidatePath } from "next/cache";
 import {
@@ -266,11 +267,35 @@ export async function fetchRecentMessages(conversationId: string, afterCreatedAt
       },
       include: MESSAGE_INCLUDE,
       orderBy: { createdAt: "asc" },
-      take: 100,
+      take: MAX_PAGE_SIZE,
     });
 
-    return { success: true, data: messages };
+    return { success: true as const, data: messages };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des messages.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des messages.") };
+  }
+}
+
+// Messages plus anciens qu'un repère, par tranches de 20 (bouton « Charger les messages précédents »).
+// `hasMore` indique qu'il reste des messages plus anciens à charger.
+export async function fetchOlderMessages(conversationId: string, beforeCreatedAt: string) {
+  try {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) throw new Error("Non authentifié.");
+
+    await assertConversationAccess(currentUser, conversationId);
+
+    const rows = await prisma.message.findMany({
+      where: { conversationId, createdAt: { lt: new Date(beforeCreatedAt) } },
+      include: MESSAGE_INCLUDE,
+      orderBy: { createdAt: "desc" },
+      take: MAX_PAGE_SIZE + 1,
+    });
+
+    const hasMore = rows.length > MAX_PAGE_SIZE;
+    const page = rows.slice(0, MAX_PAGE_SIZE).reverse();
+    return { success: true as const, data: page, hasMore };
+  } catch (error: any) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des messages précédents.") };
   }
 }

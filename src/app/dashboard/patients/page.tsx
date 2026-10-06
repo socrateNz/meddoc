@@ -1,19 +1,18 @@
-import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Search, User as UserIcon } from "lucide-react";
 import NewPatientDialog from "./new-patient-dialog";
-import Link from "next/link";
-import { Patient, User } from "@prisma/client";
 import { getClinics } from "@/actions/organizations";
+import { listPatientsPage } from "@/actions/patient-list";
 import CacheWriter from "@/components/cache-writer";
+import { keepQuery } from "@/components/ui/pagination-nav";
+import { EMPTY_PATIENT_PAGE, patientListOptions } from "./patient-list-params";
 
 import PatientTable from "./patient-table";
 
-export default async function PatientsPage() {
+interface PatientsPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function PatientsPage({ searchParams }: PatientsPageProps) {
   const activeUser = await getCurrentUser();
   if (!activeUser) return null;
 
@@ -25,51 +24,15 @@ export default async function PatientsPage() {
   // fait que rejouer la dernière liste vue pendant le rafraîchissement serveur.
   const cachedAt = new Date().toISOString();
 
-  const whereClause: any = {};
-  if (activeUser.organization?.type === "HOLDING") {
-    whereClause.OR = [
-      { organizationId: activeUser.organizationId },
-      { organization: { parentId: activeUser.organizationId } }
-    ];
-  } else if (activeUser.organization?.type === "CLINIC") {
-    whereClause.organizationId = activeUser.organizationId;
-  } else {
-    // Tableau `in` vide : ne matche jamais, sans faire planter Prisma sur un ObjectId invalide.
-    whereClause.organizationId = { in: [] };
-  }
+  const params = await searchParams;
 
-  // La liste des cliniques (pour le sélecteur holding) et la liste des patients
+  // La liste des cliniques (pour le sélecteur holding) et la page de patients
   // sont indépendantes l'une de l'autre — un seul aller-retour réseau au lieu de deux.
-  const [clinicsRes, patients] = await Promise.all([
+  const [clinicsRes, patientsRes] = await Promise.all([
     isHoldingAdmin ? getClinics() : Promise.resolve({ clinics: [] as any[], error: null }),
-    prisma.patient.findMany({
-      where: whereClause,
-      include: {
-        user: true,
-        carePlans: {
-          select: {
-            id: true,
-            status: true,
-          }
-        },
-        vitalSigns: {
-          take: 1,
-          orderBy: { createdAt: "desc" }
-        },
-        appointments: {
-          take: 1,
-          where: { scheduledAt: { gte: new Date() } },
-          orderBy: { scheduledAt: "asc" }
-        }
-      },
-      orderBy: {
-        user: {
-          lastName: "asc"
-        }
-      },
-      take: 500,
-    }),
+    listPatientsPage(patientListOptions(params)),
   ]);
+  const patientsPage = patientsRes.success ? patientsRes : EMPTY_PATIENT_PAGE;
 
   let clinics: { id: string; name: string }[] = [];
   if (isHoldingAdmin && clinicsRes.clinics) {
@@ -94,7 +57,16 @@ export default async function PatientsPage() {
         )}
       </div>
 
-      <PatientTable patients={patients} organizationId={activeUser.organizationId || undefined} />
+      <PatientTable
+        patients={patientsPage.data}
+        total={patientsPage.total}
+        page={patientsPage.page}
+        pageSize={patientsPage.pageSize}
+        counts={patientsPage.counts}
+        query={keepQuery(params)}
+        pathname="/dashboard/patients"
+        organizationId={activeUser.organizationId || undefined}
+      />
 
       <CacheWriter
         cacheKey={`patients-list:${activeUser.organizationId ?? "none"}`}
@@ -102,8 +74,8 @@ export default async function PatientsPage() {
         routeFamily="patients-list"
         contextHint={{ organizationId: activeUser.organizationId ?? "none" }}
         data={{
-          totalCount: patients.length,
-          patients: patients.slice(0, 30).map((p) => ({
+          totalCount: patientsPage.total,
+          patients: patientsPage.data.slice(0, 30).map((p) => ({
             id: p.id,
             firstName: p.user.firstName,
             lastName: p.user.lastName,

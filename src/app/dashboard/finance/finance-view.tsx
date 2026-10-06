@@ -30,6 +30,7 @@ import ZReportDownloadButton from "./z-report-download-button";
 import FinanceJournal, { TRANSACTION_CATEGORY_LABELS } from "./finance-journal";
 import PeriodFilter from "./period-filter";
 import { formatPeriodLabel, periodIncludesToday, type ResolvedPeriod } from "@/lib/finance-period";
+import { PaginationNav } from "@/components/ui/pagination-nav";
 
 // Icône + couleur par catégorie facturable — utilisées pour les cartes "Répartition des
 // revenus"/"Répartition du bénéfice" (une carte par catégorie, même gabarit que les KPI du
@@ -232,6 +233,8 @@ interface FinanceViewProps {
   // sessions de caisse ne montrent que cette période.
   period: ResolvedPeriod;
   sessions?: CashSessionRow[];
+  // Pagination serveur de l'onglet « Rapport de Caisse » (absente = liste complète déjà chargée).
+  sessionsPagination?: { page: number; pageSize: number; total: number; pathname: string; query: Record<string, string | undefined> };
   valuation?: {
     totalCostValue: number;
     totalSaleValue: number;
@@ -247,7 +250,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   EQUIPMENT: "Matériel médical",
 };
 
-export default function FinanceView({ summary, organizationId, organizationName, organizationLogoUrl, currentUserRole, period, sessions = [], valuation }: FinanceViewProps) {
+export default function FinanceView({ summary, organizationId, organizationName, organizationLogoUrl, currentUserRole, period, sessions = [], sessionsPagination, valuation }: FinanceViewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -624,7 +627,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
             </TabsTrigger>
             <TabsTrigger value="rapports" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <History className="h-4 w-4 text-purple-500" />
-              Rapport de Caisse ({sessions.length})
+              Rapport de Caisse ({sessionsPagination?.total ?? sessions.length})
             </TabsTrigger>
             <TabsTrigger value="valorisation" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <PieChart className="h-4 w-4 text-indigo-500" />
@@ -742,6 +745,16 @@ export default function FinanceView({ summary, organizationId, organizationName,
               </TableBody>
             </Table>
           </div>
+          {sessionsPagination && (
+            <PaginationNav
+              page={sessionsPagination.page}
+              pageSize={sessionsPagination.pageSize}
+              total={sessionsPagination.total}
+              pathname={sessionsPagination.pathname}
+              query={sessionsPagination.query}
+              itemLabel="session"
+            />
+          )}
         </TabsContent>
 
         {/* TAB: Valorisation du stock */}

@@ -14,6 +14,7 @@ import { getPatientVitalSigns } from "@/actions/vitals";
 import { listPrescriptions } from "@/actions/prescriptions";
 import { listLabOrders } from "@/actions/lab";
 import { listPregnancies } from "@/actions/maternity";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 
 // Inclusion Prisma complète du dossier : utilisée telle quelle par les deux page.tsx pour que leurs
 // arbres de données ne puissent plus diverger.
@@ -47,15 +48,39 @@ export const PATIENT_DETAIL_INCLUDE = {
 // sur un tableau vide plutôt que de faire échouer toute la page).
 export async function fetchPatientRelatedData(
   patientId: string,
-  options: { isPharmacist: boolean; organizationIdForCaregivers: string | null | undefined }
+  options: {
+    isPharmacist: boolean;
+    organizationIdForCaregivers: string | null | undefined;
+    // Pages demandées (?rxPage / ?labPage) : chaque liste ne charge jamais plus de 20 éléments.
+    rxPage?: number;
+    labPage?: number;
+    vitalPage?: number;
+    pregnancyPage?: number;
+  }
 ) {
-  const { isPharmacist, organizationIdForCaregivers } = options;
+  const { isPharmacist, organizationIdForCaregivers, rxPage = 1, labPage = 1, vitalPage = 1, pregnancyPage = 1 } = options;
 
-  const [vitalSigns, prescriptions, labOrders, pregnancies, caregivers] = await Promise.all([
-    getPatientVitalSigns(patientId).then((r) => (r.success && r.data ? r.data : [])).catch(() => []),
-    isPharmacist ? Promise.resolve([]) : listPrescriptions({ patientId }).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
-    isPharmacist ? Promise.resolve([]) : listLabOrders({ patientId }).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
-    isPharmacist ? Promise.resolve([]) : listPregnancies(patientId).then((r) => (r.success ? r.data || [] : [])).catch(() => []),
+  const EMPTY_PAGE = { data: [] as any[], total: 0, page: 1, pageSize: MAX_PAGE_SIZE };
+  const [vitalsPage, prescriptionsPage, labOrdersPage, pregnanciesPage, caregivers] = await Promise.all([
+    // Une page de 20 relevés (graphique et tableau) ; le total reste exact pour la navigation.
+    getPatientVitalSigns(patientId, { page: vitalPage })
+      .then((r) => (r.success ? { data: r.data as any[], total: r.total, page: r.page, pageSize: r.pageSize } : EMPTY_PAGE))
+      .catch(() => EMPTY_PAGE),
+    isPharmacist
+      ? Promise.resolve(EMPTY_PAGE)
+      : listPrescriptions({ patientId, page: rxPage })
+          .then((r) => (r.success ? { data: r.data || [], total: r.total, page: r.page, pageSize: r.pageSize } : EMPTY_PAGE))
+          .catch(() => EMPTY_PAGE),
+    isPharmacist
+      ? Promise.resolve(EMPTY_PAGE)
+      : listLabOrders({ patientId, page: labPage })
+          .then((r) => (r.success ? { data: r.data || [], total: r.total, page: r.page, pageSize: r.pageSize } : EMPTY_PAGE))
+          .catch(() => EMPTY_PAGE),
+    isPharmacist
+      ? Promise.resolve(EMPTY_PAGE)
+      : listPregnancies(patientId, { page: pregnancyPage })
+          .then((r) => (r.success ? { data: r.data || [], total: r.total, page: r.page, pageSize: r.pageSize } : EMPTY_PAGE))
+          .catch(() => EMPTY_PAGE),
     isPharmacist || !organizationIdForCaregivers
       ? Promise.resolve([])
       : prisma.caregiver.findMany({
@@ -65,7 +90,17 @@ export async function fetchPatientRelatedData(
         }),
   ]);
 
-  return { vitalSigns, prescriptions, labOrders, pregnancies, caregivers };
+  return {
+    vitalSigns: vitalsPage.data,
+    vitalSignsPage: { page: vitalsPage.page, pageSize: vitalsPage.pageSize, total: vitalsPage.total },
+    prescriptions: prescriptionsPage.data,
+    prescriptionsPage: { page: prescriptionsPage.page, pageSize: prescriptionsPage.pageSize, total: prescriptionsPage.total },
+    labOrders: labOrdersPage.data,
+    labOrdersPage: { page: labOrdersPage.page, pageSize: labOrdersPage.pageSize, total: labOrdersPage.total },
+    pregnancies: pregnanciesPage.data,
+    pregnanciesPage: { page: pregnanciesPage.page, pageSize: pregnanciesPage.pageSize, total: pregnanciesPage.total },
+    caregivers,
+  };
 }
 
 export function calculatePatientAge(birthDate: Date | string): number {

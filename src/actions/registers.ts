@@ -13,6 +13,7 @@ import {
 import { revalidatePath } from "next/cache";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { periodCreatedAtFilter, resolvePeriod, type PeriodInput } from "@/lib/finance-period";
+import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
 
 // Créer/désactiver une caisse physique est une opération structurelle réservée au coordinateur
 // (même périmètre que src/actions/wards.ts). Ouvrir/fermer une session et encaisser reste
@@ -219,7 +220,7 @@ export async function correctOpeningFloat(data: { sessionId: string; newOpeningF
 
 // Calculé à la lecture (jamais persisté) pour ne jamais devenir périmé entre deux consultations
 // de l'écran de caisse.
-export async function getSessionSummary(sessionId: string) {
+export async function getSessionSummary(sessionId: string, options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
@@ -236,41 +237,63 @@ export async function getSessionSummary(sessionId: string) {
     if (!session) throw new Error("Session de caisse introuvable.");
     await assertClinicScope(session.organizationId, activeUser);
 
-    // pendingInvoiceId est désormais une colonne directe sur FinancialTransaction (elle porte le
-    // règlement d'une facture, potentiellement l'une de plusieurs tranches) — plus besoin de
-    // remonter par la reverse-relation comme avant le paiement échelonné.
-    const transactions = await prisma.financialTransaction.findMany({
-      where: { cashSessionId: sessionId },
-      include: {
-        recordedBy: { select: { firstName: true, lastName: true } },
-        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    // Totaux calculés en base sur TOUS les mouvements de la session, jamais sur la page affichée.
+    // pendingInvoiceId est une colonne directe sur FinancialTransaction (règlement d'une facture,
+    // éventuellement en plusieurs tranches).
+    const sessionFilter = { cashSessionId: sessionId };
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [incomeSum, expenseSum, transactions, transactionsTotal] = await Promise.all([
+      prisma.financialTransaction.aggregate({ where: { ...sessionFilter, type: "INCOME" }, _sum: { amount: true } }),
+      prisma.financialTransaction.aggregate({ where: { ...sessionFilter, type: "EXPENSE" }, _sum: { amount: true } }),
+      prisma.financialTransaction.findMany({
+        where: sessionFilter,
+        include: {
+          recordedBy: { select: { firstName: true, lastName: true } },
+          patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.financialTransaction.count({ where: sessionFilter }),
+    ]);
 
-    let totalIncome = 0;
-    let totalExpenses = 0;
-    for (const t of transactions) {
-      if (t.type === "INCOME") totalIncome += t.amount;
-      else if (t.type === "EXPENSE") totalExpenses += t.amount;
-    }
+    const totalIncome = incomeSum._sum.amount ?? 0;
+    const totalExpenses = expenseSum._sum.amount ?? 0;
     const expectedAmount = session.openingFloat + totalIncome - totalExpenses;
     const variance = session.countedAmount != null ? session.countedAmount - expectedAmount : null;
 
     // PENDING (rien reçu) et PARTIAL (acompte reçu) comptent toutes deux comme "en attente de
-    // règlement" depuis le paiement échelonné.
-    const pendingInvoices = await prisma.pendingInvoice.findMany({
-      where: { organizationId: session.organizationId, status: { in: ["PENDING", "PARTIAL"] } },
-      include: { patient: { include: { user: { select: { firstName: true, lastName: true } } } } },
-      orderBy: { createdAt: "desc" },
-    });
+    // règlement". Les 20 plus récentes sont affichées, le total donne le nombre réel.
+    const pendingWhere = { organizationId: session.organizationId, status: { in: ["PENDING", "PARTIAL"] } };
+    const [pendingInvoices, pendingInvoicesTotal] = await Promise.all([
+      prisma.pendingInvoice.findMany({
+        where: pendingWhere,
+        include: { patient: { include: { user: { select: { firstName: true, lastName: true } } } } },
+        orderBy: { createdAt: "desc" },
+        take: MAX_PAGE_SIZE,
+      }),
+      prisma.pendingInvoice.count({ where: pendingWhere }),
+    ]);
 
     return {
-      success: true,
-      data: { session, transactions, pendingInvoices, totalIncome, totalExpenses, expectedAmount, variance },
+      success: true as const,
+      data: {
+        session,
+        transactions,
+        transactionsTotal,
+        pendingInvoices,
+        pendingInvoicesTotal,
+        totalIncome,
+        totalExpenses,
+        expectedAmount,
+        variance,
+        page,
+        pageSize,
+      },
     };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de la session de caisse.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement de la session de caisse.") };
   }
 }
 
@@ -279,7 +302,7 @@ export async function getSessionSummary(sessionId: string) {
 // liées (jamais persistés), comme getSessionSummary/closeRegisterSession.
 // `periodInput` = filtre global de période de la page Finance : ne garde que les sessions OUVERTES
 // pendant la période (cf. src/lib/finance-period.ts). Sans période : les 200 dernières, comme avant.
-export async function listCashSessions(organizationId?: string, periodInput?: PeriodInput) {
+export async function listCashSessions(organizationId?: string, periodInput?: PeriodInput, options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
@@ -298,17 +321,22 @@ export async function listCashSessions(organizationId?: string, periodInput?: Pe
     const openedAt = periodCreatedAtFilter(resolvePeriod(periodInput));
     if (openedAt) where.openedAt = openedAt;
 
-    const sessions = await prisma.cashSession.findMany({
-      where,
-      include: {
-        register: { select: { name: true } },
-        openedBy: { select: { firstName: true, lastName: true } },
-        closedBy: { select: { firstName: true, lastName: true } },
-        transactions: { select: { type: true, amount: true } },
-      },
-      orderBy: { openedAt: "desc" },
-      take: 200,
-    });
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [sessions, total] = await Promise.all([
+      prisma.cashSession.findMany({
+        where,
+        include: {
+          register: { select: { name: true } },
+          openedBy: { select: { firstName: true, lastName: true } },
+          closedBy: { select: { firstName: true, lastName: true } },
+          transactions: { select: { type: true, amount: true } },
+        },
+        orderBy: { openedAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.cashSession.count({ where }),
+    ]);
 
     const data = sessions.map((s) => {
       let totalIncome = 0;
@@ -338,9 +366,9 @@ export async function listCashSessions(organizationId?: string, periodInput?: Pe
       };
     });
 
-    return { success: true, data };
+    return { success: true as const, data, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de l'historique des caisses.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement de l'historique des caisses.") };
   }
 }
 

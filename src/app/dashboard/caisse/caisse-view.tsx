@@ -5,6 +5,7 @@ import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-quer
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PaginationFooter } from "@/components/ui/pagination-footer";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -88,11 +89,17 @@ export default function CaisseView({
     return mine?.id || initialRegisters[0]?.id || "";
   });
   const [summary, setSummary] = useState<any>(null);
+  // Page des mouvements de la session affichée (20 par page) ; les totaux viennent du serveur.
+  const [summaryPage, setSummaryPage] = useState(1);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any | null>(null);
   const [opening, setOpening] = useState(false);
   const [activeTab, setActiveTab] = useState("caisse");
   const [unpaidInvoices, setUnpaidInvoices] = useState<any[]>([]);
+  // Tickets impayés : une page à la fois ; le total et le bandeau viennent du serveur.
+  const [unpaidTotal, setUnpaidTotal] = useState(0);
+  const [unpaidPage, setUnpaidPage] = useState(1);
+  const [unpaidSummary, setUnpaidSummary] = useState({ totalValue: 0, totalPaid: 0, partialCount: 0 });
   const [loadingUnpaid, setLoadingUnpaid] = useState(false);
 
   // Historique des tickets de caisse — paginé et filtré côté serveur (listCaisseHistoryInvoices),
@@ -136,21 +143,32 @@ export default function CaisseView({
     if (res.success) setRegisters(res.data as any);
   }, [organizationId]);
 
-  const refreshSummary = useCallback(async (sessionId: string) => {
+  const refreshSummary = useCallback(async (sessionId: string, page = 1) => {
     setLoadingSummary(true);
-    const res = await getSessionSummary(sessionId);
+    const res = await getSessionSummary(sessionId, { page });
     setLoadingSummary(false);
-    if (res.success) setSummary(res.data);
+    if (res.success) {
+      setSummary(res.data);
+      setSummaryPage(page);
+    }
   }, []);
 
   // Org-wide (PENDING + PARTIAL) — alimente l'onglet "Tickets impayés", indépendant de la caisse
   // sélectionnée : un ticket peut avoir été ouvert sur une autre caisse ou une autre session.
-  const refreshUnpaidInvoices = useCallback(async () => {
-    setLoadingUnpaid(true);
-    const res = await listPendingInvoices(organizationId);
-    setLoadingUnpaid(false);
-    if (res.success) setUnpaidInvoices(res.data as any[]);
-  }, [organizationId]);
+  const refreshUnpaidInvoices = useCallback(
+    async (page = 1) => {
+      setLoadingUnpaid(true);
+      const res = await listPendingInvoices(organizationId, { page });
+      setLoadingUnpaid(false);
+      if (res.success) {
+        setUnpaidInvoices(res.data as any[]);
+        setUnpaidTotal(res.total);
+        setUnpaidSummary(res.summary);
+        setUnpaidPage(page);
+      }
+    },
+    [organizationId]
+  );
 
   useEffect(() => {
     if (selectedRegister?.openSession) {
@@ -252,7 +270,7 @@ export default function CaisseView({
           </TabsTrigger>
           <TabsTrigger value="impayes" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
             <AlertCircle className="h-4 w-4 text-amber-500" />
-            Tickets impayés ({unpaidInvoices.length})
+            Tickets impayés ({unpaidTotal})
           </TabsTrigger>
           <TabsTrigger value="historique" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
             <History className="h-4 w-4 text-emerald-500" />
@@ -344,7 +362,7 @@ export default function CaisseView({
                           <EditOpeningFloatDialog
                             currentOpeningFloat={summary.session.openingFloat}
                             disabledReason={
-                              summary.transactions.length > 0 && !canManageRegisters
+                              summary.transactionsTotal > 0 && !canManageRegisters
                                 ? "Des opérations ont déjà été enregistrées sur cette session : seul un coordinateur peut encore corriger le fond de départ."
                                 : undefined
                             }
@@ -380,7 +398,7 @@ export default function CaisseView({
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                           <Receipt className="h-3.5 w-3.5" />
-                          Tickets impayés ({summary.pendingInvoices.length})
+                          Tickets impayés ({summary.pendingInvoicesTotal})
                         </p>
                         <button type="button" onClick={() => setActiveTab("impayes")} className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline">
                           Voir tout <ArrowRight className="h-3 w-3" />
@@ -405,7 +423,7 @@ export default function CaisseView({
                   )}
 
                   <div className="space-y-2">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Mouvements de cette session ({summary.transactions.length})</p>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Mouvements de cette session ({summary.transactionsTotal})</p>
                     {summary.transactions.length === 0 ? (
                       <p className="text-sm text-slate-500 py-4 text-center">Aucun mouvement pour l&apos;instant.</p>
                     ) : (
@@ -433,6 +451,16 @@ export default function CaisseView({
                         })}
                       </div>
                     )}
+                    {summary.session && (
+                      <PaginationFooter
+                        page={summaryPage}
+                        pageSize={summary.pageSize}
+                        total={summary.transactionsTotal}
+                        onPageChange={(p) => refreshSummary(summary.session.id, p)}
+                        loading={loadingSummary}
+                        itemLabel="mouvement"
+                      />
+                    )}
                   </div>
                 </>
               ) : null}
@@ -440,12 +468,13 @@ export default function CaisseView({
           )}
         </Card>
       )}
+          <PaginationFooter page={unpaidPage} pageSize={20} total={unpaidTotal} onPageChange={(p) => refreshUnpaidInvoices(p)} loading={loadingUnpaid} itemLabel="ticket" />
         </TabsContent>
 
         <TabsContent value="impayes" className="space-y-3">
           {loadingUnpaid && unpaidInvoices.length === 0 ? (
             <div className="py-10 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
-          ) : unpaidInvoices.length === 0 ? (
+          ) : unpaidTotal === 0 ? (
             <Card className="rounded-2xl border-dashed">
               <CardContent className="py-10 text-center text-sm text-slate-500">
                 Aucun ticket impayé. Tous les tickets de la clinique sont réglés.
@@ -454,21 +483,14 @@ export default function CaisseView({
           ) : (
             <div className="space-y-2">
               {(() => {
-                let totalValue = 0;
-                let totalPaid = 0;
-                let partialCount = 0;
-                for (const inv of unpaidInvoices) {
-                  const invoiceTotalAmount = (inv.items || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-                  totalValue += invoiceTotalAmount;
-                  totalPaid += Number(inv.amountPaid || 0);
-                  if (inv.status === "PARTIAL") partialCount++;
-                }
+                // Totaux calculés par le serveur sur toutes les factures impayées (pas seulement la page).
+                const { totalValue, totalPaid, partialCount } = unpaidSummary;
                 const totalUnpaid = Math.max(0, totalValue - totalPaid);
                 return (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-1">
                     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60">
                       <p className="text-[10px] font-bold uppercase text-slate-400">Tickets impayés</p>
-                      <p className="text-sm font-extrabold mt-1">{unpaidInvoices.length}{partialCount > 0 && <span className="font-medium text-slate-400"> · {partialCount} partiel{partialCount > 1 ? "s" : ""}</span>}</p>
+                      <p className="text-sm font-extrabold mt-1">{unpaidTotal}{partialCount > 0 && <span className="font-medium text-slate-400"> · {partialCount} partiel{partialCount > 1 ? "s" : ""}</span>}</p>
                     </div>
                     <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/30">
                       <p className="text-[10px] font-bold uppercase text-blue-600 flex items-center gap-1"><Wallet className="h-3 w-3" />Valeur totale des tickets</p>

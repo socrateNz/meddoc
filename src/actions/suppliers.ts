@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
@@ -62,7 +63,7 @@ export async function createOrUpdateSupplier(data: {
   }
 }
 
-export async function listSuppliers(organizationId?: string) {
+export async function listSuppliers(organizationId?: string, options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     await assertStockRead(activeUser);
@@ -71,11 +72,17 @@ export async function listSuppliers(organizationId?: string) {
     const where: any = { isActive: true };
     if (targetOrgId) where.organizationId = targetOrgId;
 
-    const suppliers = await prisma.supplier.findMany({ where, orderBy: { name: "asc" } });
+    // Sans option de page : liste complète (sélecteur). Avec une page : pagination (écran de liste).
+    const paged = options !== undefined;
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [suppliers, total] = await Promise.all([
+      prisma.supplier.findMany({ where, orderBy: { name: "asc" }, ...(paged ? { skip, take } : {}) }),
+      prisma.supplier.count({ where }),
+    ]);
 
-    return { success: true, data: suppliers };
+    return { success: true as const, data: suppliers, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des fournisseurs.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des fournisseurs.") };
   }
 }
 
@@ -105,7 +112,7 @@ export async function getSupplierOrderHistory(supplierId: string) {
       where: { supplierId },
       include: { lines: true, createdBy: { select: { firstName: true, lastName: true } } },
       orderBy: { createdAt: "desc" },
-      take: 50,
+      take: MAX_PAGE_SIZE,
     });
 
     return { success: true, data: orders };

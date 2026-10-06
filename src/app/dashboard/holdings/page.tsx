@@ -1,18 +1,25 @@
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getHoldings } from "@/actions/super-admin";
+import { PaginationNav, keepQuery } from "@/components/ui/pagination-nav";
+import { pageFromParam } from "@/lib/pagination";
 import NewHoldingDialog from "./new-holding-dialog";
 import HoldingActionsMenu from "./holding-actions-menu";
 import { Server, Building2, Users, Activity, Crown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-export default async function HoldingsPage() {
+interface HoldingsPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function HoldingsPage({ searchParams }: HoldingsPageProps) {
   const currentUser = await getCurrentUser();
   if (!currentUser || currentUser.role !== "SUPER_ADMIN") {
     redirect("/dashboard");
   }
 
-  const { holdings } = await getHoldings();
+  const query = await searchParams;
+  const { holdings, total, page, pageSize } = await getHoldings({ page: pageFromParam(query.page) });
 
   return (
     <div className="space-y-6">
@@ -93,6 +100,14 @@ export default async function HoldingsPage() {
           ))
         )}
       </div>
+      <PaginationNav
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        pathname="/dashboard/holdings"
+        query={keepQuery(query)}
+        itemLabel="holding"
+      />
     </div>
   );
 }

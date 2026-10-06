@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Loader2, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { getInventoryReport } from "@/actions/stock";
+import { fetchAllPages } from "@/lib/fetch-all-pages";
+import { buildInventoryReport } from "@/lib/inventory-report";
 
 interface InventoryReportDownloadButtonProps {
   inventoryCountId: string;
@@ -20,11 +22,23 @@ export default function InventoryReportDownloadButton({ inventoryCountId, label 
   const handleDownload = async () => {
     setIsGenerating(true);
     try {
-      const res = await getInventoryReport(inventoryCountId);
-      if (!res.success || !res.data) {
-        throw new Error(res.error || "Impossible de charger le rapport de cet inventaire.");
-      }
-      const { inventory, organization, report } = res.data;
+      // Le rapport couvre toutes les lignes du comptage : on enchaîne les pages (20 par requête),
+      // puis le rapport est assemblé ici, avec la même fonction pure que côté serveur.
+      // Résultat de la première page (en-tête) : rangé dans un objet, affecté dans la closure.
+      const ctx: { header?: { inventory: any; organization: { name: string | null; logoUrl: string | null } } } = {};
+      const adjustments: any[] = [];
+      const lines = await fetchAllPages(async (page) => {
+        const res = await getInventoryReport(inventoryCountId, { page });
+        if (!res.success || !res.data) {
+          throw new Error(res.error || "Impossible de charger le rapport de cet inventaire.");
+        }
+        ctx.header = { inventory: res.data.inventory, organization: res.data.organization };
+        adjustments.push(...res.data.adjustments);
+        return { data: res.data.lines, total: res.data.linesTotal, pageSize: res.data.pageSize };
+      });
+      if (!ctx.header) throw new Error("Impossible de charger le rapport de cet inventaire.");
+      const { inventory, organization } = ctx.header;
+      const report = buildInventoryReport(lines, adjustments);
 
       const InventoryReportPDFDocument = (await import("@/components/pdf/inventory-report-pdf")).default;
       const { pdf } = await import("@react-pdf/renderer");

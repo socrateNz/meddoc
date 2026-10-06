@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PaginationNav } from "@/components/ui/pagination-nav";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import PaymentStatusBadge from "@/components/payment-status-badge";
@@ -56,16 +57,39 @@ function formatDateTime(dateInput: string | Date) {
   }).format(new Date(dateInput));
 }
 
+// Pagination d'une liste : page courante, taille, total, et le chemin + les autres paramètres d'URL.
+type ListPagination = { page: number; pageSize: number; total: number };
+
 interface PharmacieViewProps {
   pharmacyItems: any[];
   dispenseQueue: any[];
   dispenseHistory: any[];
+  queuePagination: ListPagination;
+  historyPagination: ListPagination;
+  initialHistorySearch: string;
+  pathname: string;
+  // Paramètres d'URL à conserver lors d'un changement de page, sans le paramètre de page de la liste.
+  queueQuery: Record<string, string | undefined>;
+  historyQuery: Record<string, string | undefined>;
   organizationId?: string;
   currentUserRole?: string;
   openRegisters?: any[];
 }
 
-export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHistory, organizationId, currentUserRole, openRegisters = [] }: PharmacieViewProps) {
+export default function PharmacieView({
+  pharmacyItems,
+  dispenseQueue,
+  dispenseHistory,
+  queuePagination,
+  historyPagination,
+  initialHistorySearch,
+  pathname,
+  queueQuery,
+  historyQuery,
+  organizationId,
+  currentUserRole,
+  openRegisters = [],
+}: PharmacieViewProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("queue");
   // Plus de miroir local optimiste (queue/history) : la remise partielle change trop la forme
@@ -90,7 +114,18 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
   // clic, le partiel est une correction explicite du pharmacien.
   const [lineQuantities, setLineQuantities] = useState<Record<number, string>>({});
 
-  const [historySearch, setHistorySearch] = useState("");
+  const [historySearch, setHistorySearch] = useState(initialHistorySearch);
+  const historyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Recherche de l'historique : dans l'URL, pour être faite par le serveur sur tout l'historique.
+  const navigateHistory = (historySearchValue: string | undefined) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries({ ...historyQuery, historySearch: historySearchValue })) {
+      if (value) params.set(key, value);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
 
   // ADMIN (holding) consulte le stock en lecture seule ; COORDINATOR/PHARMACIST gèrent le catalogue.
   const canWrite = currentUserRole === "COORDINATOR" || currentUserRole === "PHARMACIST";
@@ -199,14 +234,8 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
     }
   };
 
-  const filteredHistory = historySearch.trim()
-    ? history.filter((inv: any) => {
-        const q = historySearch.trim().toLowerCase();
-        const ref = String(inv.id).slice(-6).toLowerCase();
-        const name = inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}`.toLowerCase() : "";
-        return ref.includes(q) || name.includes(q);
-      })
-    : history;
+  // La recherche de l'historique est faite par le serveur : `history` est déjà la page filtrée.
+  const filteredHistory = history;
 
   return (
     <div className="space-y-6">
@@ -221,7 +250,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
           <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl overflow-x-auto flex-nowrap justify-start w-full sm:w-auto">
             <TabsTrigger value="queue" className="shrink-0 rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <PackageCheck className="h-4 w-4 text-emerald-500" />
-              File d&apos;attente ({queue.length})
+              File d&apos;attente ({queuePagination.total})
             </TabsTrigger>
             <TabsTrigger value="historique" className="shrink-0 rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
               <History className="h-4 w-4 text-blue-500" />
@@ -270,7 +299,7 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
           )}
 
           <p className="text-xs font-bold uppercase tracking-wider text-slate-500 pt-2">
-            Tickets réglés en attente ({queue.length})
+            Tickets réglés en attente ({queuePagination.total})
           </p>
 
           {queue.length === 0 ? (
@@ -349,6 +378,8 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
               })}
             </div>
           )}
+          <PaginationNav page={queuePagination.page} pageSize={queuePagination.pageSize} total={queuePagination.total} pathname={pathname} query={queueQuery} pageParam="queuePage" itemLabel="ticket" />
+          <PaginationNav page={historyPagination.page} pageSize={historyPagination.pageSize} total={historyPagination.total} pathname={pathname} query={historyQuery} pageParam="historyPage" itemLabel="ticket" />
         </TabsContent>
 
         {/* TAB: Historique des tickets finalisés (remis) */}
@@ -357,7 +388,12 @@ export default function PharmacieView({ pharmacyItems, dispenseQueue, dispenseHi
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <Input
               value={historySearch}
-              onChange={(e) => setHistorySearch(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setHistorySearch(value);
+                if (historyTimer.current) clearTimeout(historyTimer.current);
+                historyTimer.current = setTimeout(() => navigateHistory(value.trim() || undefined), 300);
+              }}
               placeholder="Rechercher par référence ou nom du patient..."
               className="h-9 pl-9 text-sm rounded-xl"
             />

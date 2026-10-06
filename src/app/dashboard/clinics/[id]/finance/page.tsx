@@ -6,6 +6,8 @@ import { listCashSessions } from "@/actions/registers";
 import FinanceView from "@/app/dashboard/finance/finance-view";
 import { redirect } from "next/navigation";
 import { parsePeriodSearchParams, resolvePeriod } from "@/lib/finance-period";
+import { pageFromParam } from "@/lib/pagination";
+import { keepQuery } from "@/components/ui/pagination-nav";
 
 export const metadata = {
   title: "Finance Clinique | MedDoc",
@@ -20,7 +22,8 @@ export default async function ClinicFinancePage({ params, searchParams }: Clinic
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
   // Filtre global de période : validé et plafonné à aujourd'hui par resolvePeriod.
-  const periodInput = parsePeriodSearchParams(await searchParams);
+  const rawParams = await searchParams;
+  const periodInput = parsePeriodSearchParams(rawParams);
   const period = resolvePeriod(periodInput);
 
   const activeUser = await getCurrentUser();
@@ -37,7 +40,7 @@ export default async function ClinicFinancePage({ params, searchParams }: Clinic
       select: { name: true, logoUrl: true }
     }),
     getStockValuation(clinicId),
-    listCashSessions(clinicId, periodInput),
+    listCashSessions(clinicId, periodInput, { page: pageFromParam(rawParams.page) }),
   ]);
 
   const summary = financeRes.success && financeRes.data ? financeRes.data : {
@@ -77,6 +80,7 @@ export default async function ClinicFinancePage({ params, searchParams }: Clinic
         currentUserRole={activeUser.role}
         period={period}
         sessions={sessions as any}
+        sessionsPagination={sessionsRes.success ? { page: sessionsRes.page, pageSize: sessionsRes.pageSize, total: sessionsRes.total, pathname: `/dashboard/clinics/${clinicId}/finance`, query: keepQuery(rawParams) } : undefined}
         valuation={valuation}
       />
     </div>

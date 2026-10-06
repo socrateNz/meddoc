@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { listLabTests } from "@/actions/lab";
+import { PaginationNav, keepQuery } from "@/components/ui/pagination-nav";
+import { pageFromParam } from "@/lib/pagination";
 import { getPharmacyItems } from "@/actions/finance";
 import CatalogView from "./catalog-view";
 
@@ -11,7 +13,11 @@ export const metadata = {
   title: "Catalogue des examens | MedDoc",
 };
 
-export default async function LabCatalogPage() {
+interface LabCatalogPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function LabCatalogPage({ searchParams }: LabCatalogPageProps) {
   const currentUser = await getCurrentUser();
   if (!currentUser) {
     redirect("/login");
@@ -20,7 +26,8 @@ export default async function LabCatalogPage() {
     redirect("/dashboard/lab");
   }
 
-  const [res, pharmacyRes] = await Promise.all([listLabTests(), getPharmacyItems()]);
+  const query = await searchParams;
+  const [res, pharmacyRes] = await Promise.all([listLabTests(undefined, { page: pageFromParam(query.page) }), getPharmacyItems()]);
   const labTests = res.success ? res.data || [] : [];
   const pharmacyItems = pharmacyRes.success ? pharmacyRes.data || [] : [];
 
@@ -39,6 +46,16 @@ export default async function LabCatalogPage() {
       </div>
 
       <CatalogView labTests={labTests} pharmacyItems={pharmacyItems} />
+      {res.success && (
+        <PaginationNav
+          page={res.page}
+          pageSize={res.pageSize}
+          total={res.total}
+          pathname="/dashboard/lab/catalog"
+          query={keepQuery(query)}
+          itemLabel="examen"
+        />
+      )}
     </div>
   );
 }

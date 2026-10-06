@@ -2,6 +2,7 @@
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
+import { resolvePage } from "@/lib/pagination";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
@@ -195,7 +196,7 @@ export async function receivePurchaseOrderLines(
   }
 }
 
-export async function listPurchaseOrders(options?: { supplierId?: string; organizationId?: string; status?: string }) {
+export async function listPurchaseOrders(options?: { supplierId?: string; organizationId?: string; status?: string; page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     await assertStockRead(activeUser);
@@ -207,19 +208,24 @@ export async function listPurchaseOrders(options?: { supplierId?: string; organi
     const targetOrgId = options?.organizationId || activeUser!.organizationId;
     where.organizationId = targetOrgId ? targetOrgId : { in: [] };
 
-    const orders = await prisma.purchaseOrder.findMany({
-      where,
-      include: {
-        supplier: true,
-        lines: { include: { pharmacyItem: { select: { name: true } } } },
-        createdBy: { select: { firstName: true, lastName: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [orders, total] = await Promise.all([
+      prisma.purchaseOrder.findMany({
+        where,
+        include: {
+          supplier: true,
+          lines: { include: { pharmacyItem: { select: { name: true } } } },
+          createdBy: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.purchaseOrder.count({ where }),
+    ]);
 
-    return { success: true, data: orders };
+    return { success: true as const, data: orders, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des commandes fournisseurs.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des commandes fournisseurs.") };
   }
 }

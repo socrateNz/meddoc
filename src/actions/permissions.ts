@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
+import { resolvePage } from "@/lib/pagination";
 import { revalidatePath } from "next/cache";
 import { Role } from "@prisma/client";
 import { z } from "zod";
@@ -17,15 +18,19 @@ function assertAdmin(activeUser: any) {
   }
 }
 
-export async function listPermissions() {
+export async function listPermissions(options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     assertAdmin(activeUser);
 
-    const permissions = await prisma.permission.findMany({ orderBy: { name: "asc" } });
-    return { success: true, data: permissions };
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [permissions, total] = await Promise.all([
+      prisma.permission.findMany({ orderBy: { name: "asc" }, skip, take }),
+      prisma.permission.count(),
+    ]);
+    return { success: true as const, data: permissions, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des permissions.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des permissions.") };
   }
 }
 

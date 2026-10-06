@@ -7,14 +7,18 @@ import { Button } from "@/components/ui/button";
 import { getClinics } from "@/actions/organizations";
 import CacheWriter from "@/components/cache-writer";
 import { PATIENT_DETAIL_INCLUDE, calculatePatientAge, fetchPatientRelatedData, formatPatientDate } from "./patient-detail-data";
+import { pageFromParam } from "@/lib/pagination";
+import { keepQuery } from "@/components/ui/pagination-nav";
 import PatientDetailView from "./patient-detail-view";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ rxPage?: string; labPage?: string; vitalPage?: string; pregnancyPage?: string }>;
 }
 
-export default async function PatientDetailPage({ params }: PageProps) {
+export default async function PatientDetailPage({ params, searchParams }: PageProps) {
   const { id } = await params;
+  const query = await searchParams;
   const currentUser = await getCurrentUser();
 
   if (!currentUser) {
@@ -55,9 +59,13 @@ export default async function PatientDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  const { vitalSigns, prescriptions, labOrders, pregnancies, caregivers } = await fetchPatientRelatedData(id, {
+  const { vitalSigns, vitalSignsPage, prescriptions, prescriptionsPage, labOrders, labOrdersPage, pregnanciesPage, pregnancies, caregivers } = await fetchPatientRelatedData(id, {
     isPharmacist,
     organizationIdForCaregivers: patient.organizationId,
+    rxPage: pageFromParam(query.rxPage),
+    labPage: pageFromParam(query.labPage),
+    vitalPage: pageFromParam(query.vitalPage),
+    pregnancyPage: pageFromParam(query.pregnancyPage),
   });
 
   // Accès pharmacien : identité uniquement, aucun onglet clinique (dossier, consultations, IA...).
@@ -115,9 +123,13 @@ export default async function PatientDetailPage({ params }: PageProps) {
       canOrderLab={canOrderLab}
       clinics={clinics}
       vitalSigns={vitalSigns}
+      vitalSignsPage={{ ...vitalSignsPage, query: keepQuery(query, ["vitalPage"]) }}
       prescriptions={prescriptions}
       labOrders={labOrders}
+      prescriptionsPage={{ ...prescriptionsPage, query: keepQuery(query, ["rxPage"]) }}
+      labOrdersPage={{ ...labOrdersPage, query: keepQuery(query, ["labPage"]) }}
       pregnancies={pregnancies}
+      pregnanciesPage={{ ...pregnanciesPage, query: keepQuery(query, ["pregnancyPage"]) }}
       caregivers={caregivers}
       basePath="/dashboard/patients"
       cachedAt={cachedAt}

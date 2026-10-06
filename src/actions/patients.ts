@@ -6,6 +6,7 @@ import { Role, Priority, IncidentStatus } from "@prisma/client";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
+import { resolvePage } from "@/lib/pagination";
 import {
   createPatientSchema,
   createMedicalRecordSchema,
@@ -186,7 +187,7 @@ async function createMedicalRecordOnce(data: {
 
 // Utilisé notamment par le Dashboard Médecin ("mes notes cliniques / historique de mes
 // consultations") : listMedicalRecords({ createdById: currentUser.id }).
-export async function listMedicalRecords(options?: { patientId?: string; createdById?: string; organizationId?: string }) {
+export async function listMedicalRecords(options?: { patientId?: string; createdById?: string; organizationId?: string; page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
@@ -207,19 +208,24 @@ export async function listMedicalRecords(options?: { patientId?: string; created
       where.patient = { organizationId: { in: [] } };
     }
 
-    const records = await prisma.medicalRecord.findMany({
-      where,
-      include: {
-        patient: { include: { user: { select: { firstName: true, lastName: true } } } },
-        createdBy: { select: { firstName: true, lastName: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [records, total] = await Promise.all([
+      prisma.medicalRecord.findMany({
+        where,
+        include: {
+          patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+          createdBy: { select: { firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.medicalRecord.count({ where }),
+    ]);
 
-    return { success: true, data: records };
+    return { success: true as const, data: records, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des dossiers médicaux.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des dossiers médicaux.") };
   }
 }
 

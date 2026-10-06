@@ -9,12 +9,16 @@ import {
   Calendar, Clock, Users, FlaskConical, FileText, Sparkles, MessageSquare,
   Pill, ArrowRight, User as UserIcon, HeartPulse,
 } from "lucide-react";
-import { listLabOrders } from "@/actions/lab";
+import { getLabOrderStats, listLabOrders } from "@/actions/lab";
 import { listMedicalRecords } from "@/actions/patients";
 import PatientTable from "@/app/dashboard/patients/patient-table";
+import { listPatientsPage } from "@/actions/patient-list";
+import { keepQuery } from "@/components/ui/pagination-nav";
+import { EMPTY_PATIENT_PAGE, patientListOptions } from "@/app/dashboard/patients/patient-list-params";
 
 interface PageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 const LAB_STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -36,7 +40,7 @@ function formatDateShort(date: Date) {
   return new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "2-digit", month: "short" }).format(new Date(date));
 }
 
-export default async function MedecinDashboardPage({ params }: PageProps) {
+export default async function MedecinDashboardPage({ params, searchParams }: PageProps) {
   const resolvedParams = await params;
   const clinicId = resolvedParams.id;
 
@@ -83,20 +87,21 @@ export default async function MedecinDashboardPage({ params }: PageProps) {
     return { todayAppointments, upcomingAppointments };
   }
 
-  const [{ todayAppointments, upcomingAppointments }, patients, labOrdersRes, medicalRecordsRes] = await Promise.all([
+  const query = await searchParams;
+  const [{ todayAppointments, upcomingAppointments }, patientsRes, labOrdersRes, medicalRecordsRes, labStatsRes] = await Promise.all([
     fetchAppointments(),
-    prisma.patient.findMany({
-      where: { organizationId: clinicId },
-      include: { user: true, carePlans: { select: { id: true, status: true } } },
-      orderBy: { user: { lastName: "asc" } },
-    }),
+    listPatientsPage({ ...patientListOptions(query), organizationId: clinicId }),
     listLabOrders({ organizationId: clinicId, orderedById: currentUser.id }),
     listMedicalRecords({ createdById: currentUser.id, organizationId: clinicId }),
+    getLabOrderStats({ organizationId: clinicId, orderedById: currentUser.id }),
   ]);
 
+  const patientsPage = patientsRes.success ? patientsRes : EMPTY_PATIENT_PAGE;
   const labOrders = labOrdersRes.success ? labOrdersRes.data || [] : [];
   const medicalRecords = medicalRecordsRes.success ? medicalRecordsRes.data || [] : [];
-  const pendingLabOrders = labOrders.filter((o: any) => !["DELIVERED", "CANCELLED"].includes(o.status));
+  // Compteurs calculés en base : la liste ci-dessus ne contient que la première page.
+  const pendingLabCount = labStatsRes.success ? labStatsRes.data.open : 0;
+  const medicalRecordsTotal = medicalRecordsRes.success ? medicalRecordsRes.total : 0;
   const recentMedicalRecords = medicalRecords.slice(0, 6);
 
   return (
@@ -128,16 +133,16 @@ export default async function MedecinDashboardPage({ params }: PageProps) {
             <Users className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-extrabold">{patients.length}</div>
+            <div className="text-3xl font-extrabold">{patientsPage.total}</div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs uppercase tracking-wider font-bold text-slate-400">Résultats labo en attente</CardTitle>
-            <FlaskConical className={`h-4 w-4 ${pendingLabOrders.length > 0 ? "text-amber-500" : "text-slate-400"}`} />
+            <FlaskConical className={`h-4 w-4 ${pendingLabCount > 0 ? "text-amber-500" : "text-slate-400"}`} />
           </CardHeader>
           <CardContent>
-            <div className={`text-3xl font-extrabold ${pendingLabOrders.length > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>{pendingLabOrders.length}</div>
+            <div className={`text-3xl font-extrabold ${pendingLabCount > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>{pendingLabCount}</div>
           </CardContent>
         </Card>
         <Card className="rounded-2xl">
@@ -146,7 +151,7 @@ export default async function MedecinDashboardPage({ params }: PageProps) {
             <FileText className="h-4 w-4 text-violet-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-extrabold">{medicalRecords.length}</div>
+            <div className="text-3xl font-extrabold">{medicalRecordsTotal}</div>
           </CardContent>
         </Card>
       </div>
@@ -318,7 +323,16 @@ export default async function MedecinDashboardPage({ params }: PageProps) {
       {/* Mes patients */}
       <div className="space-y-3">
         <h2 className="text-xl font-bold tracking-tight">Patients de la clinique</h2>
-        <PatientTable patients={patients as any} clinicId={clinicId} />
+        <PatientTable
+          patients={patientsPage.data as any}
+          total={patientsPage.total}
+          page={patientsPage.page}
+          pageSize={patientsPage.pageSize}
+          counts={patientsPage.counts}
+          query={keepQuery(query)}
+          pathname={`/dashboard/clinics/${clinicId}/medecin`}
+          clinicId={clinicId}
+        />
       </div>
     </div>
   );

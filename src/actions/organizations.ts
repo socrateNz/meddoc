@@ -3,10 +3,11 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
+import { resolvePage } from "@/lib/pagination";
 import { createClinicSchema, updateClinicSchema } from "@/validators/organizations";
 import { revalidatePath } from "next/cache";
 
-export async function getClinics() {
+export async function getClinics(options?: { page?: number; pageSize?: number }) {
   try {
     const user = await getCurrentUser();
     if (!user || user.role !== "ADMIN" || user.organization?.type !== "HOLDING") {
@@ -17,25 +18,30 @@ export async function getClinics() {
        throw new Error("User does not belong to a holding");
     }
 
-    const clinics = await prisma.organization.findMany({
-      where: {
-        parentId: user.organizationId,
-        type: "CLINIC"
-      },
-      include: {
-        _count: {
-          select: { users: true, patients: true }
-        }
-      },
-      orderBy: {
-        name: "asc"
-      }
-    });
+    const clinicWhere = { parentId: user.organizationId, type: "CLINIC" as const };
+    // Sans option de page : liste complète (sélecteurs). Avec une page : pagination (écran de liste).
+    const paged = options !== undefined;
+    const { page, pageSize, skip, take } = resolvePage(options);
+    const [clinics, total] = await Promise.all([
+      prisma.organization.findMany({
+        where: clinicWhere,
+        include: {
+          _count: {
+            select: { users: true, patients: true }
+          }
+        },
+        orderBy: {
+          name: "asc"
+        },
+        ...(paged ? { skip, take } : {}),
+      }),
+      prisma.organization.count({ where: clinicWhere }),
+    ]);
 
-    return { clinics, error: null };
+    return { clinics, error: null, total, page, pageSize };
   } catch (error: any) {
     console.error("Error fetching clinics:", error);
-    return { clinics: [], error: error.message || "Failed to fetch clinics" };
+    return { clinics: [], error: error.message || "Failed to fetch clinics", total: 0, page: 1, pageSize: 20 };
   }
 }
 

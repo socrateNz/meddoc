@@ -6,6 +6,7 @@ import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { requirePermission } from "@/lib/permissions";
+import { resolvePage } from "@/lib/pagination";
 import { createContractSchema, updateContractStatusSchema } from "@/validators/contracts";
 import { revalidatePath } from "next/cache";
 
@@ -29,11 +30,12 @@ async function assertContractWrite(activeUser: any) {
   await requirePermission(activeUser.role, "MANAGE_CONTRACTS");
 }
 
-export async function listContracts(organizationId?: string) {
+export async function listContracts(organizationId?: string, options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();
     await assertContractRead(activeUser);
 
+    const { page, pageSize, skip, take } = resolvePage(options);
     const whereClause: any = {};
 
     if (activeUser!.organization?.type === "HOLDING" && !organizationId) {
@@ -50,19 +52,23 @@ export async function listContracts(organizationId?: string) {
       }
     }
 
-    const contracts = await prisma.contract.findMany({
-      where: whereClause,
-      include: {
-        patient: { include: { user: true } },
-        caregiver: { include: { user: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 500,
-    });
+    const [contracts, total] = await Promise.all([
+      prisma.contract.findMany({
+        where: whereClause,
+        include: {
+          patient: { include: { user: true } },
+          caregiver: { include: { user: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take,
+      }),
+      prisma.contract.count({ where: whereClause }),
+    ]);
 
-    return { success: true, data: contracts };
+    return { success: true as const, data: contracts, total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des contrats.") };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des contrats.") };
   }
 }
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { sendMessage, createConversation, fetchRecentMessages, getPresenceSnapshot } from "@/actions/messages";
+import { sendMessage, createConversation, fetchRecentMessages, fetchOlderMessages, getPresenceSnapshot } from "@/actions/messages";
+import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -105,6 +106,10 @@ export default function ChatPanel({
   const [messageInput, setMessageInput] = useState("");
   const [sending, setSending] = useState(false);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  // null = pas encore chargé plus ancien : il en reste si la première page est pleine.
+  const [olderHasMore, setOlderHasMore] = useState<boolean | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const canLoadOlder = olderHasMore ?? initialMessages.length >= MAX_PAGE_SIZE;
   const [pendingPatient, setPendingPatient] = useState<SharePatientOption | null>(null);
   // Avancé au fil des battements de présence reçus (cf. PresenceHeartbeat, mémorisé au niveau du
   // dashboard) — initialisé depuis les lastActiveAt déjà chargés par la page, puis rafraîchi par
@@ -123,6 +128,7 @@ export default function ChatPanel({
   if (syncedConversationId !== activeConversationId) {
     setSyncedConversationId(activeConversationId);
     setMessages(initialMessages);
+    setOlderHasMore(null);
     setMessageInput("");
     setPendingPatient(null);
   }
@@ -215,6 +221,22 @@ export default function ChatPanel({
       toast.error("Une erreur inattendue est survenue.");
     } finally {
       setNewChatLoading(false);
+    }
+  };
+
+  const loadOlderMessages = async () => {
+    if (!activeConversationId || messages.length === 0 || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const res = await fetchOlderMessages(activeConversationId, new Date(messages[0].createdAt).toISOString());
+      if (!res.success) {
+        toast.error(res.error);
+        return;
+      }
+      setMessages((prev) => [...(res.data as Message[]), ...prev]);
+      setOlderHasMore(res.hasMore);
+    } finally {
+      setLoadingOlder(false);
     }
   };
 
@@ -466,6 +488,14 @@ export default function ChatPanel({
 
             {/* Chat Messages list */}
             <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-muted/5">
+              {canLoadOlder && messages.length > 0 && (
+                <div className="flex justify-center">
+                  <Button variant="outline" size="sm" className="rounded-xl text-xs" disabled={loadingOlder} onClick={loadOlderMessages}>
+                    {loadingOlder && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+                    Charger les messages précédents
+                  </Button>
+                </div>
+              )}
               {messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-muted-foreground text-sm">
                   <Info className="h-6 w-6 text-muted-foreground/50 mb-2" />

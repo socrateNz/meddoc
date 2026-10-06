@@ -163,6 +163,13 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         section: "Clinique",
       },
       {
+        name: "Ronde médicale",
+        href: `/dashboard/clinics/${activeClinicId}/ronde`,
+        icon: Stethoscope,
+        roles: ['COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
+      },
+      {
         name: "Assistant Clinique IA",
         href: `/dashboard/clinics/${activeClinicId}/ai-assistant`,
         icon: Sparkles,
