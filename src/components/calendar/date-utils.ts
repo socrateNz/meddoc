@@ -1,4 +1,4 @@
-import { CalendarAppointment, CalendarItem } from "./types";
+import { CalendarItem } from "./types";
 
 export function startOfWeek(date: Date, mondayFirst = true): Date {
   const d = new Date(date);
@@ -103,135 +103,6 @@ export function getEndTime(scheduledAt: Date | string, durationMinutes: number):
   return new Date(start.getTime() + durationMinutes * 60 * 1000);
 }
 
-export interface PositionedAppointment {
-  appointment: CalendarAppointment;
-  top: number;
-  height: number;
-  leftPercent: number;
-  widthPercent: number;
-}
-
-/**
- * Calculates accurate positions and side-by-side columns for overlapping appointments
- * in a time grid (Outlook / Google Calendar layout).
- */
-export function layoutAppointmentsForDay(
-  appointments: CalendarAppointment[],
-  targetDate: Date,
-  startHour = 7,
-  endHour = 20,
-  hourHeight = 64
-): PositionedAppointment[] {
-  // 1. Filter appointments for this day
-  const dayApts = appointments
-    .filter((a) => isSameDay(a.scheduledAt, targetDate))
-    .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
-
-  if (dayApts.length === 0) return [];
-
-  // Total grid minutes
-  const gridStartMinutes = startHour * 60;
-  const gridEndMinutes = endHour * 60;
-  const totalGridMinutes = gridEndMinutes - gridStartMinutes;
-
-  interface EventBounds {
-    apt: CalendarAppointment;
-    startMin: number;
-    endMin: number;
-    top: number;
-    height: number;
-    col: number;
-    totalCols: number;
-  }
-
-  const events: EventBounds[] = dayApts.map((apt) => {
-    const d = new Date(apt.scheduledAt);
-    const startMin = d.getHours() * 60 + d.getMinutes();
-    const endMin = Math.min(startMin + (apt.durationMinutes || 60), gridEndMinutes);
-
-    // Clamp within visible grid
-    const clampedStart = Math.max(startMin, gridStartMinutes);
-    const clampedEnd = Math.max(endMin, clampedStart + 15);
-
-    const top = ((clampedStart - gridStartMinutes) / 60) * hourHeight;
-    const height = Math.max(((clampedEnd - clampedStart) / 60) * hourHeight, 26);
-
-    return {
-      apt,
-      startMin,
-      endMin,
-      top,
-      height,
-      col: 0,
-      totalCols: 1,
-    };
-  });
-
-  // Cluster overlapping events together
-  const clusters: EventBounds[][] = [];
-  let currentCluster: EventBounds[] = [];
-  let clusterEnd = -1;
-
-  for (const ev of events) {
-    if (currentCluster.length === 0) {
-      currentCluster.push(ev);
-      clusterEnd = ev.endMin;
-    } else {
-      if (ev.startMin < clusterEnd) {
-        currentCluster.push(ev);
-        clusterEnd = Math.max(clusterEnd, ev.endMin);
-      } else {
-        clusters.push(currentCluster);
-        currentCluster = [ev];
-        clusterEnd = ev.endMin;
-      }
-    }
-  }
-  if (currentCluster.length > 0) {
-    clusters.push(currentCluster);
-  }
-
-  // For each cluster, assign columns (greedy algorithm)
-  const result: PositionedAppointment[] = [];
-
-  for (const cluster of clusters) {
-    const columns: EventBounds[][] = [];
-
-    for (const ev of cluster) {
-      let placed = false;
-      for (let c = 0; c < columns.length; c++) {
-        const lastInCol = columns[c][columns[c].length - 1];
-        if (ev.startMin >= lastInCol.endMin) {
-          columns[c].push(ev);
-          ev.col = c;
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) {
-        ev.col = columns.length;
-        columns.push([ev]);
-      }
-    }
-
-    const totalCols = columns.length;
-    for (const ev of cluster) {
-      const widthPercent = 100 / totalCols;
-      const leftPercent = ev.col * widthPercent;
-
-      result.push({
-        appointment: ev.apt,
-        top: ev.top,
-        height: ev.height,
-        leftPercent,
-        widthPercent,
-      });
-    }
-  }
-
-  return result;
-}
-
 export interface PositionedItem {
   item: CalendarItem;
   top: number;
@@ -240,16 +111,13 @@ export interface PositionedItem {
   widthPercent: number;
 }
 
-// Généralisation de layoutAppointmentsForDay au CalendarItem générique du calendrier unifié
-// (cf. src/actions/calendar.ts) : même algorithme de clustering/colonnes, mais lit item.start/
-// item.end (Date déjà résolues) au lieu de scheduledAt/durationMinutes. N'accueille que les
+// Positionnement des éléments d'une journée dans la grille horaire (chevauchements en colonnes)
+// pour le CalendarItem générique du calendrier unifié (cf. src/actions/calendar.ts) : même
+// algorithme de clustering/colonnes, mais lit item.start/item.end (Date déjà résolues) au lieu de
+// scheduledAt/durationMinutes. N'accueille que les
 // éléments non allDay (SHIFT, EVENT non allDay, APPOINTMENT) — les échéances ponctuelles
 // (CARE_TASK/CONTRACT_DEADLINE/STOCK_EXPIRY) et les EVENT allDay passent par la bande "Toute la
 // journée" des grilles, pas par ce positionnement horaire.
-//
-// Transitoire : layoutAppointmentsForDay ci-dessus reste utilisée telle quelle par
-// calendar-time-grid.tsx jusqu'à sa généralisation (cf. plan « Calendrier unifié », étape 7) —
-// les deux fonctions coexistent le temps de cette migration, à supprimer ensuite.
 export function layoutItemsForDay(
   items: CalendarItem[],
   targetDate: Date,
