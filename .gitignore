@@ -20,6 +20,9 @@
 # production
 /build
 
+# motion
+/motion
+
 # misc
 .DS_Store
 *.pem
