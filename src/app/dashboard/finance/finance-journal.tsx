@@ -30,10 +30,6 @@ interface FinanceJournalProps {
   dateFrom?: string | null;
   dateTo?: string | null;
   tzOffsetMinutes?: number;
-  // En-tête des exports PDF / Excel.
-  periodLabel: string;
-  organizationName?: string;
-  organizationLogoUrl?: string | null;
 }
 
 function formatFCFA(val: number) {
@@ -51,16 +47,7 @@ function formatDateTime(dateInput: string | Date) {
   }).format(new Date(dateInput));
 }
 
-export default function FinanceJournal({
-  organizationId,
-  onSelectTransaction,
-  dateFrom,
-  dateTo,
-  tzOffsetMinutes,
-  periodLabel,
-  organizationName,
-  organizationLogoUrl,
-}: FinanceJournalProps) {
+export default function FinanceJournal({ organizationId, onSelectTransaction, dateFrom, dateTo, tzOffsetMinutes }: FinanceJournalProps) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("");
   const [category, setCategory] = useState("ALL");
@@ -170,9 +157,6 @@ export default function FinanceJournal({
             dateFrom={dateFrom}
             dateTo={dateTo}
             tzOffsetMinutes={tzOffsetMinutes}
-            periodLabel={periodLabel}
-            organizationName={organizationName}
-            organizationLogoUrl={organizationLogoUrl}
             disabled={loading || data.totalCount === 0}
           />
         </div>

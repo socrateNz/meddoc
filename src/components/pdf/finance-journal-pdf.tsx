@@ -1,9 +1,9 @@
-"use client";
-
 import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
-import { formatFCFA, type JournalExportRow } from "@/lib/finance-journal-export";
+import { formatDateTimeInTz, formatFCFA, type JournalExportRow } from "@/lib/finance-journal-export";
 
+// Rendu côté serveur par la route d'export (src/app/api/finance/journal/export/route.ts), d'où
+// l'absence de "use client" et le fuseau de l'utilisateur passé explicitement.
 // Même charte que z-report-pdf.tsx (en-tête, encadrés, pied de page répété), en paysage : le
 // journal a deux colonnes de plus que le Z (statut, enregistré par).
 // Pas de lineHeight sur la Page : hérité par le pied de page en position absolue, il l'empêche de
@@ -167,18 +167,10 @@ interface FinanceJournalPDFProps {
   periodLabel: string;
   filters: string[];
   generatedAt: Date;
+  tzOffsetMinutes?: number;
   organizationName?: string;
   organizationLogoUrl?: string | null;
 }
-
-const formatDateTime = (d: Date) =>
-  new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
 
 export default function FinanceJournalPDFDocument({
   rows,
@@ -187,10 +179,12 @@ export default function FinanceJournalPDFDocument({
   periodLabel,
   filters,
   generatedAt,
+  tzOffsetMinutes,
   organizationName,
   organizationLogoUrl,
 }: FinanceJournalPDFProps) {
   const netBalance = totalIncome - totalExpenses;
+  const formatDateTime = (d: Date) => formatDateTimeInTz(d, tzOffsetMinutes);
 
   return (
     <Document title={`Journal de caisse — ${periodLabel}`}>

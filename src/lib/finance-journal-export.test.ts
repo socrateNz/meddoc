@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildJournalExportRows, buildJournalSheetData, describeJournalFilters, formatFCFA, journalExportFileName, type JournalTransaction } from "./finance-journal-export";
+import { buildJournalExportRows, buildJournalSheetData, describeJournalFilters, formatDateTimeInTz, formatFCFA, journalExportFileName, toExcelLocalDate, type JournalTransaction } from "./finance-journal-export";
 
 const tx = (overrides: Partial<JournalTransaction> = {}): JournalTransaction => ({
   id: "t1",
@@ -86,5 +86,15 @@ describe("buildJournalSheetData", () => {
     expect(amountOf(data[6])).toBe(12500);
     expect(amountOf(data[7])).toBe(-3000);
     expect(data.slice(-3).map(amountOf)).toEqual([12500, -3000, 9500]);
+  });
+});
+
+describe("fuseau de l'utilisateur (export généré côté serveur)", () => {
+  // Douala : UTC+1 → Date.getTimezoneOffset() = -60
+  it("affiche l'heure locale dans le PDF et dans les cellules Excel", () => {
+    const d = new Date("2026-10-10T09:30:00.000Z");
+    expect(formatDateTimeInTz(d, -60)).toBe("10/10/2026 10:30");
+    expect(formatDateTimeInTz(d, 0)).toBe("10/10/2026 09:30");
+    expect(toExcelLocalDate(d, -60).toISOString()).toBe("2026-10-10T10:30:00.000Z");
   });
 });

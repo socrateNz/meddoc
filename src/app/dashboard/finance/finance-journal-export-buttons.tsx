@@ -4,18 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileDown, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
-import { listFinancialTransactions } from "@/actions/finance";
-import { fetchAllPages } from "@/lib/fetch-all-pages";
-import { MAX_PAGE_SIZE } from "@/lib/pagination";
-import {
-  buildJournalExportRows,
-  buildJournalSheetData,
-  describeJournalFilters,
-  JOURNAL_SHEET_COLUMNS,
-  journalExportFileName,
-  type JournalExportFilters,
-  type JournalTransaction,
-} from "@/lib/finance-journal-export";
+import type { JournalExportFilters } from "@/lib/finance-journal-export";
 
 interface FinanceJournalExportButtonsProps {
   organizationId?: string;
@@ -25,113 +14,58 @@ interface FinanceJournalExportButtonsProps {
   dateFrom?: string | null;
   dateTo?: string | null;
   tzOffsetMinutes?: number;
-  periodLabel: string;
-  organizationName?: string;
-  organizationLogoUrl?: string | null;
   disabled?: boolean;
 }
 
 type ExportFormat = "pdf" | "xlsx";
 
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-// Même mécanique que ZReportDownloadButton : rien n'est chargé tant qu'on ne clique pas, puis on
-// enchaîne les pages de listFinancialTransactions (20 par requête) et le fichier est généré côté
-// navigateur.
+// Une seule requête par export : la route /api/finance/journal/export lit tout le journal filtré,
+// calcule les totaux et génère le fichier côté serveur ; le navigateur ne fait que le télécharger.
 export default function FinanceJournalExportButtons({
   organizationId,
   filters,
   dateFrom,
   dateTo,
   tzOffsetMinutes,
-  periodLabel,
-  organizationName,
-  organizationLogoUrl,
   disabled,
 }: FinanceJournalExportButtonsProps) {
   const [generating, setGenerating] = useState<ExportFormat | null>(null);
 
-  const loadJournal = async () => {
-    // Totaux du premier appel : agrégés côté serveur sur l'ensemble filtré (pas sur une page).
-    const totals = { income: 0, expenses: 0 };
-    const transactions = await fetchAllPages<JournalTransaction>(async (page) => {
-      const res = await listFinancialTransactions({
-        organizationId,
-        search: filters.search?.trim() || undefined,
-        type: filters.type || undefined,
-        category: filters.category && filters.category !== "ALL" ? filters.category : undefined,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        tzOffsetMinutes,
-        minAmount: filters.minAmount ? Number(filters.minAmount) : undefined,
-        maxAmount: filters.maxAmount ? Number(filters.maxAmount) : undefined,
-        page,
-        pageSize: MAX_PAGE_SIZE,
-      });
-      if (!res.success || !res.data) {
-        throw new Error(res.error || "Impossible de charger le journal de caisse.");
-      }
-      totals.income = res.data.filteredIncome;
-      totals.expenses = res.data.filteredExpenses;
-      return { data: res.data.transactions, total: res.data.totalCount, pageSize: res.data.pageSize };
-    });
-    return { rows: buildJournalExportRows(transactions), totals };
-  };
-
-  const exportPdf = async () => {
-    const { rows, totals } = await loadJournal();
-    const FinanceJournalPDFDocument = (await import("@/components/pdf/finance-journal-pdf")).default;
-    const { pdf } = await import("@react-pdf/renderer");
-    const blob = await pdf(
-      <FinanceJournalPDFDocument
-        rows={rows}
-        totalIncome={totals.income}
-        totalExpenses={totals.expenses}
-        periodLabel={periodLabel}
-        filters={describeJournalFilters(filters)}
-        generatedAt={new Date()}
-        organizationName={organizationName}
-        organizationLogoUrl={organizationLogoUrl}
-      />
-    ).toBlob();
-    downloadBlob(blob, journalExportFileName({ from: dateFrom, to: dateTo }, "pdf"));
-  };
-
-  const exportXlsx = async () => {
-    const { rows, totals } = await loadJournal();
-    const writeExcelFile = (await import("write-excel-file/browser")).default;
-
-    const { data, stickyRowsCount } = buildJournalSheetData({
-      rows,
-      totalIncome: totals.income,
-      totalExpenses: totals.expenses,
-      periodLabel,
-      filters: describeJournalFilters(filters),
-      generatedAt: new Date(),
-      organizationName,
-    });
-    const blob = await writeExcelFile(data, {
-      sheet: "Journal de caisse",
-      columns: JOURNAL_SHEET_COLUMNS,
-      stickyRowsCount,
-      orientation: "landscape",
-    }).toBlob();
-    downloadBlob(blob, journalExportFileName({ from: dateFrom, to: dateTo }, "xlsx"));
-  };
-
   const run = async (format: ExportFormat) => {
     setGenerating(format);
     try {
-      await (format === "pdf" ? exportPdf() : exportXlsx());
+      const params = new URLSearchParams({ format });
+      const set = (key: string, value: string | number | null | undefined) => {
+        if (value !== undefined && value !== null && String(value).trim() !== "") params.set(key, String(value).trim());
+      };
+      set("organizationId", organizationId);
+      set("dateFrom", dateFrom);
+      set("dateTo", dateTo);
+      set("tzOffsetMinutes", tzOffsetMinutes);
+      set("search", filters.search);
+      set("type", filters.type);
+      if (filters.category !== "ALL") set("category", filters.category);
+      set("minAmount", filters.minAmount);
+      set("maxAmount", filters.maxAmount);
+
+      const res = await fetch(`/api/finance/journal/export?${params.toString()}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Impossible d'exporter le journal de caisse.");
+      }
+
+      const blob = await res.blob();
+      const fileName =
+        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || `journal-caisse.${format}`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
       toast.success(format === "pdf" ? "Journal de caisse exporté en PDF !" : "Journal de caisse exporté en Excel !");
     } catch (error) {
       console.error("Erreur lors de l'export du journal de caisse:", error);

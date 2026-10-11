@@ -1,4 +1,4 @@
-import type { CellObject, Row, SheetData } from "write-excel-file/browser";
+import type { CellObject, Row, SheetData } from "write-excel-file/node";
 
 // Export du Journal de caisse (PDF + Excel) : logique pure partagée par les deux formats, pour
 // qu'un même mouvement porte exactement les mêmes libellés, statut et montant signé dans le PDF,
@@ -119,10 +119,28 @@ export function journalExportFileName(
   return `journal-caisse_${range}.${extension}`;
 }
 
-// Excel n'a pas de fuseau : write-excel-file convertit une Date depuis son instant UTC. On décale
-// donc de l'offset du navigateur pour que la cellule affiche l'heure locale, comme à l'écran.
-export function toExcelLocalDate(date: Date): Date {
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
+// L'export est généré côté serveur (UTC) : l'heure affichée doit être celle de l'utilisateur, d'où
+// le décalage du navigateur (Date.getTimezoneOffset, positif à l'ouest de Greenwich) transmis avec
+// les filtres, comme pour la période (cf. src/lib/finance-period.ts).
+function shiftToLocal(date: Date, tzOffsetMinutes = 0): Date {
+  return new Date(date.getTime() - tzOffsetMinutes * 60 * 1000);
+}
+
+export function formatDateTimeInTz(date: Date, tzOffsetMinutes = 0): string {
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+  }).format(shiftToLocal(date, tzOffsetMinutes));
+}
+
+// Excel n'a pas de fuseau : write-excel-file convertit une Date depuis son instant UTC, on la
+// décale donc pour que la cellule affiche l'heure locale de l'utilisateur.
+export function toExcelLocalDate(date: Date, tzOffsetMinutes = 0): Date {
+  return shiftToLocal(date, tzOffsetMinutes);
 }
 
 const AMOUNT_FORMAT = '#,##0" FCFA";[Red]-#,##0" FCFA"';
@@ -139,6 +157,7 @@ export function buildJournalSheetData(input: {
   periodLabel: string;
   filters: string[];
   generatedAt: Date;
+  tzOffsetMinutes?: number;
   organizationName?: string;
 }): { data: SheetData; stickyRowsCount: number } {
   const header = (value: string): CellObject => ({ value, fontWeight: "bold", backgroundColor: "#F1F5F9", borderColor: "#CBD5E1", borderStyle: "thin" });
@@ -146,12 +165,12 @@ export function buildJournalSheetData(input: {
     [{ value: `Journal de caisse — ${input.organizationName || "MedDoc"}`, fontWeight: "bold", fontSize: 14 }],
     [`Période : ${input.periodLabel}`],
     ...(input.filters.length > 0 ? [[`Filtres : ${input.filters.join(" • ")}`]] : []),
-    [`Édité le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(input.generatedAt)}`],
+    [`Édité le ${formatDateTimeInTz(input.generatedAt, input.tzOffsetMinutes)}`],
     [],
   ];
   const headerRow = ["Date & heure", "Type", "Catégorie", "Motif / Description", "Statut", "Patient", "Enregistré par", "Montant (FCFA)"].map(header);
   const dataRows = input.rows.map((r): Row => [
-    { value: toExcelLocalDate(r.date), type: Date, format: "dd/mm/yyyy hh:mm" },
+    { value: toExcelLocalDate(r.date, input.tzOffsetMinutes), type: Date, format: "dd/mm/yyyy hh:mm" },
     r.isIncome ? "Encaissement" : "Dépense",
     r.categoryLabel,
     r.description,

@@ -645,9 +645,6 @@ export default function FinanceView({ summary, organizationId, organizationName,
             dateFrom={period.from}
             dateTo={period.to}
             tzOffsetMinutes={period.tzOffsetMinutes}
-            periodLabel={periodLabel}
-            organizationName={organizationName}
-            organizationLogoUrl={organizationLogoUrl}
           />
         </TabsContent>
 

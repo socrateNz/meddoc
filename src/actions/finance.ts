@@ -3,6 +3,7 @@
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
 import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
+import { attachInvoiceTotals, buildJournalWhere, FINANCE_READ_ROLES, getJournalTotals, JOURNAL_TRANSACTION_INCLUDE } from "@/lib/finance-journal-query";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -25,7 +26,6 @@ import { assertPharmacyItemsSellable } from "@/lib/pharmacy-sale-block";
 import { applyLotConsumption, decrementField, groupIdsByValue, planLotConsumption } from "@/lib/stock-batch";
 import {
   periodCreatedAtFilter,
-  periodRange,
   resolvePeriod,
   todayCreatedAtFilter,
   type PeriodInput,
@@ -42,7 +42,6 @@ import { z } from "zod";
 // COORDINATOR seul y a un accès d'écriture directe (dépenses hors-session exceptées — voir
 // recordExpense, désormais rattaché à une session de caisse). Le catalogue pharmacie a son
 // propre rôle de lecture élargi (CASHIER en a besoin pour construire un panier de vente).
-const FINANCE_READ_ROLES = ["ADMIN", "COORDINATOR"];
 const PHARMACY_CATALOG_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST", "CASHIER"];
 // Remise des médicaments au comptoir : PHARMACIST uniquement, volontairement plus strict que
 // STOCK_WRITE_ROLES (COORDINATOR+PHARMACIST) qui régit le reste du stock — séparation caisse/
@@ -1688,127 +1687,22 @@ export async function listFinancialTransactions(filters: {
     const page = Math.max(1, Math.floor(filters.page || 1));
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(filters.pageSize || MAX_PAGE_SIZE)));
 
-    // Toutes les conditions SAUF le type — réutilisées telles quelles pour calculer les totaux
-    // encaissé/dépensé indépendamment du filtre de type actif (voir plus bas).
-    const baseAnd: any[] = [];
+    // Filtres, totaux et reste dû partagés avec l'export PDF/Excel (src/lib/finance-journal-query.ts).
+    const { baseAnd, listWhere } = buildJournalWhere(activeUser, filters);
 
-    if (activeUser.organization?.type === "HOLDING" && !filters.organizationId) {
-      baseAnd.push({
-        OR: [
-          { organizationId: activeUser.organizationId },
-          { organization: { parentId: activeUser.organizationId } },
-        ],
-      });
-    } else {
-      const targetOrgId = filters.organizationId || activeUser.organizationId;
-      if (targetOrgId) baseAnd.push({ organizationId: targetOrgId });
-    }
-
-    // Même résolution (jours valides, jamais de date future, bornes remises dans l'ordre) que le
-    // résumé de la page : le journal et les KPI parlent forcément de la même période.
-    const journalPeriod = resolvePeriod({
-      preset: "custom",
-      from: filters.dateFrom,
-      to: filters.dateTo,
-      tzOffsetMinutes: filters.tzOffsetMinutes,
-    });
-    const { start: periodStart, end: periodEnd } = periodRange(journalPeriod);
-    if (periodStart) baseAnd.push({ createdAt: { gte: periodStart } });
-    if (periodEnd) baseAnd.push({ createdAt: { lte: periodEnd } });
-    if (filters.category && filters.category !== "ALL") {
-      baseAnd.push({ category: filters.category });
-    }
-    if (filters.minAmount != null && !Number.isNaN(Number(filters.minAmount))) {
-      baseAnd.push({ amount: { gte: Number(filters.minAmount) } });
-    }
-    if (filters.maxAmount != null && !Number.isNaN(Number(filters.maxAmount))) {
-      baseAnd.push({ amount: { lte: Number(filters.maxAmount) } });
-    }
-    if (filters.search?.trim()) {
-      const q = filters.search.trim();
-      baseAnd.push({
-        OR: [
-          { description: { contains: q, mode: "insensitive" } },
-          {
-            patient: {
-              user: {
-                OR: [
-                  { firstName: { contains: q, mode: "insensitive" } },
-                  { lastName: { contains: q, mode: "insensitive" } },
-                ],
-              },
-            },
-          },
-          {
-            recordedBy: {
-              OR: [
-                { firstName: { contains: q, mode: "insensitive" } },
-                { lastName: { contains: q, mode: "insensitive" } },
-              ],
-            },
-          },
-        ],
-      });
-    }
-
-    const listWhere = filters.type ? { AND: [...baseAnd, { type: filters.type }] } : { AND: baseAnd };
-
-    const [transactions, totalCount, incomeAgg, expenseAgg] = await Promise.all([
+    const [transactions, totalCount, totals] = await Promise.all([
       prisma.financialTransaction.findMany({
         where: listWhere,
-        include: {
-          recordedBy: { select: { firstName: true, lastName: true } },
-          patient: { include: { user: { select: { firstName: true, lastName: true } } } },
-          pharmacyItem: { select: { name: true, dosage: true } },
-          // Pour le badge "Partiel/Non payé" du journal : une transaction dont la facture liée
-          // n'est pas encore PAID correspond à un règlement partiel/échelonné.
-          pendingInvoice: { select: { status: true, createdAt: true } },
-        },
+        include: JOURNAL_TRANSACTION_INCLUDE,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
       prisma.financialTransaction.count({ where: listWhere }),
-      prisma.financialTransaction.aggregate({
-        where: { AND: [...baseAnd, { type: "INCOME" }] },
-        _sum: { amount: true },
-      }),
-      prisma.financialTransaction.aggregate({
-        where: { AND: [...baseAnd, { type: "EXPENSE" }] },
-        _sum: { amount: true },
-      }),
+      getJournalTotals(baseAnd),
     ]);
 
-    // Attache le total facturé et le reste dû à chaque transaction liée à une facture (impression
-    // depuis le Journal, cf. finance-journal.tsx → InvoiceModal) : sans ça, seul le montant de
-    // CETTE transaction précise est connu — sur la dernière tranche d'un paiement échelonné, ça
-    // ne correspond ni au total réel de la facture ni à ce qui est encore dû si elle n'est pas
-    // intégralement soldée. `invoiceTotalAmount` se déduit des lignes déjà présentes sur la
-    // transaction (le panier complet de la facture, cf. payPendingInvoice) ; `amountPaid` cumule
-    // tous les règlements liés à la même facture.
-    const linkedInvoiceIds = [...new Set(transactions.map((t) => t.pendingInvoiceId).filter((id): id is string => !!id))];
-    const paidByInvoice = new Map<string, number>();
-    if (linkedInvoiceIds.length > 0) {
-      const paidAgg = await prisma.financialTransaction.groupBy({
-        by: ["pendingInvoiceId"],
-        where: { pendingInvoiceId: { in: linkedInvoiceIds } },
-        _sum: { amount: true },
-      });
-      for (const row of paidAgg) {
-        if (row.pendingInvoiceId) paidByInvoice.set(row.pendingInvoiceId, row._sum.amount || 0);
-      }
-    }
-    const transactionsWithInvoiceTotals = transactions.map((t) => {
-      if (!t.pendingInvoiceId) return t;
-      const invoiceTotalAmount = ((t.items as any[]) || []).reduce((sum: number, it: any) => sum + Number(it.amount || 0), 0);
-      const amountPaid = paidByInvoice.get(t.pendingInvoiceId) ?? t.amount;
-      return {
-        ...t,
-        invoiceTotalAmount,
-        remainingDue: Math.max(0, invoiceTotalAmount - amountPaid),
-        status: t.pendingInvoice?.status,
-      };
-    });
+    const transactionsWithInvoiceTotals = await attachInvoiceTotals(transactions);
 
     return {
       success: true,
@@ -1818,8 +1712,8 @@ export async function listFinancialTransactions(filters: {
         page,
         pageSize,
         totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
-        filteredIncome: incomeAgg._sum.amount || 0,
-        filteredExpenses: expenseAgg._sum.amount || 0,
+        filteredIncome: totals.income,
+        filteredExpenses: totals.expenses,
       },
     };
   } catch (error: any) {
