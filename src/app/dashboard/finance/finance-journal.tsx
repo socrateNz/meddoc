@@ -10,19 +10,14 @@ import { Search, Printer, Loader2, RotateCcw, ChevronLeft, ChevronRight, Trendin
 import { listFinancialTransactions } from "@/actions/finance";
 import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import PaymentStatusBadge from "@/components/payment-status-badge";
+import { TRANSACTION_CATEGORY_LABELS } from "@/lib/finance-journal-export";
+import FinanceJournalExportButtons from "./finance-journal-export-buttons";
 
-// Exporté pour être réutilisé par finance-view.tsx (carte de répartition des revenus) — un seul
-// exemplaire de ces libellés, à ne pas confondre avec la CATEGORY_LABELS locale de
-// finance-view.tsx, sans rapport, qui couvre PharmacyCategory (valorisation de stock).
-export const TRANSACTION_CATEGORY_LABELS: Record<string, string> = {
-  PHARMACY_SALE: "Vente Pharmacie",
-  SERVICE_FEE: "Frais de service",
-  LAB_EXAM_FEE: "Analyses de laboratoire",
-  OPERATIONAL_EXPENSE: "Dépense opérationnelle",
-  PHARMACY_PURCHASE: "Achat Pharmacie",
-  STOCK_ADJUSTMENT: "Ajustement de stock",
-  OTHER: "Autre",
-};
+// Réexporté pour finance-view.tsx (carte de répartition des revenus) — un seul exemplaire de ces
+// libellés, défini dans la lib d'export pour être partagé avec le PDF et le classeur Excel. À ne
+// pas confondre avec la CATEGORY_LABELS locale de finance-view.tsx, sans rapport, qui couvre
+// PharmacyCategory (valorisation de stock).
+export { TRANSACTION_CATEGORY_LABELS };
 
 type TypeFilter = "" | "INCOME" | "EXPENSE";
 
@@ -35,6 +30,10 @@ interface FinanceJournalProps {
   dateFrom?: string | null;
   dateTo?: string | null;
   tzOffsetMinutes?: number;
+  // En-tête des exports PDF / Excel.
+  periodLabel: string;
+  organizationName?: string;
+  organizationLogoUrl?: string | null;
 }
 
 function formatFCFA(val: number) {
@@ -52,7 +51,16 @@ function formatDateTime(dateInput: string | Date) {
   }).format(new Date(dateInput));
 }
 
-export default function FinanceJournal({ organizationId, onSelectTransaction, dateFrom, dateTo, tzOffsetMinutes }: FinanceJournalProps) {
+export default function FinanceJournal({
+  organizationId,
+  onSelectTransaction,
+  dateFrom,
+  dateTo,
+  tzOffsetMinutes,
+  periodLabel,
+  organizationName,
+  organizationLogoUrl,
+}: FinanceJournalProps) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("");
   const [category, setCategory] = useState("ALL");
@@ -132,28 +140,41 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
           />
         </div>
 
-        <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl">
-          <button
-            type="button"
-            onClick={() => setTypeFilter("")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
-          >
-            Tous
-          </button>
-          <button
-            type="button"
-            onClick={() => setTypeFilter("INCOME")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "INCOME" ? "bg-white dark:bg-slate-900 text-emerald-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
-          >
-            Encaissements (+)
-          </button>
-          <button
-            type="button"
-            onClick={() => setTypeFilter("EXPENSE")}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "EXPENSE" ? "bg-white dark:bg-slate-900 text-rose-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
-          >
-            Dépenses (-)
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setTypeFilter("")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
+            >
+              Tous
+            </button>
+            <button
+              type="button"
+              onClick={() => setTypeFilter("INCOME")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "INCOME" ? "bg-white dark:bg-slate-900 text-emerald-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
+            >
+              Encaissements (+)
+            </button>
+            <button
+              type="button"
+              onClick={() => setTypeFilter("EXPENSE")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${typeFilter === "EXPENSE" ? "bg-white dark:bg-slate-900 text-rose-600 shadow-xs" : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"}`}
+            >
+              Dépenses (-)
+            </button>
+          </div>
+          <FinanceJournalExportButtons
+            organizationId={organizationId}
+            filters={{ search, type: typeFilter, category, minAmount, maxAmount }}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            tzOffsetMinutes={tzOffsetMinutes}
+            periodLabel={periodLabel}
+            organizationName={organizationName}
+            organizationLogoUrl={organizationLogoUrl}
+            disabled={loading || data.totalCount === 0}
+          />
         </div>
       </div>
 
