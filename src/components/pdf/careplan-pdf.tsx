@@ -187,6 +187,7 @@ export default function CarePlanPDFDocument({ patient, plan, organizationName, o
             <Text style={styles.patientName}>
               Patient : {patient.user?.lastName?.toUpperCase()} {patient.user?.firstName}
             </Text>
+            {patient.ipp ? <Text style={{ marginTop: 2, color: "#64748b", fontSize: 8 }}>IPP : {patient.ipp}</Text> : null}
             <Text style={{ marginTop: 2, color: "#64748b", fontSize: 8 }}>
               Né(e) le : {new Date(patient.dateOfBirth).toLocaleDateString("fr-FR")}
             </Text>

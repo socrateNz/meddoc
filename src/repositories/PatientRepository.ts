@@ -1,3 +1,4 @@
+import { nextIpp } from "@/lib/ipp";
 import { BaseRepository } from "./BaseRepository";
 
 export class PatientRepository extends BaseRepository {
@@ -10,8 +11,11 @@ export class PatientRepository extends BaseRepository {
     pathologies?: string[];
     allergies?: string[];
   }) {
+    // Tout nouveau patient reçoit son IPP, quel que soit le chemin de création (cf. src/lib/ipp.ts).
+    const ipp = await nextIpp();
     return this.db.patient.create({
       data: {
+        ipp,
         userId: data.userId,
         dateOfBirth: data.dateOfBirth,
         address: data.address,

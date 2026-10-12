@@ -2,6 +2,8 @@
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
+import { resolveTargetOrgId } from "@/lib/org-scope";
+import { buildReversalEntry } from "@/lib/finance-reversal";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
@@ -204,7 +206,7 @@ async function recordStockPurchaseOnce(data: {
     const activeUser = await getCurrentUser();
     await assertStockWrite(activeUser);
 
-    const targetOrgId = data.organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, data.organizationId);
     const quantity = Number(data.quantity);
     const expiry = data.expiryDate ? new Date(data.expiryDate) : null;
 
@@ -338,7 +340,7 @@ export async function getAvailableExpenseWithdrawals(organizationId?: string) {
     const activeUser = await getCurrentUser();
     await assertStockRead(activeUser);
 
-    const targetOrgId = organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, organizationId);
     const since = new Date();
     since.setDate(since.getDate() - 30);
 
@@ -542,8 +544,8 @@ export async function deletePharmacyItem(pharmacyItemId: string) {
   }
 }
 
-// Annule un achat pharmacie erroné (saisie manuelle) : décrémente le stock, supprime le lot et sa
-// dépense associée. Réservé aux lots dont AUCUNE unité n'a encore été consommée
+// Annule un achat pharmacie erroné (saisie manuelle) : décrémente le stock, supprime le lot et
+// contrepasse sa dépense associée (jamais supprimée, cf. src/lib/finance-reversal.ts). Réservé aux lots dont AUCUNE unité n'a encore été consommée
 // (remainingQuantity === quantity) — dès qu'une seule unité a été vendue, remise ou reprise dans
 // un ajustement, la reprendre spécifiquement dans ce lot devient ambigu (cf. le même choix pour
 // cancelDispense : tout-ou-rien plutôt qu'une correction partielle potentiellement fausse). Ne
@@ -559,7 +561,7 @@ export async function cancelStockPurchase(stockPurchaseId: string, reason?: stri
     z.string().min(1).parse(stockPurchaseId);
     const activeUser = await getCurrentUser();
     // COORDINATOR uniquement, volontairement plus strict que assertStockWrite (qui laisse aussi
-    // le PHARMACIST enregistrer un achat) : effacer une écriture financière déjà passée est une
+    // le PHARMACIST enregistrer un achat) : annuler une écriture financière déjà passée est une
     // décision de supervision — celui qui a saisi l'achat ne doit pas pouvoir le faire disparaître
     // seul, même pour corriger sa propre erreur.
     if (!activeUser) throw new Error("Non authentifié.");
@@ -569,7 +571,10 @@ export async function cancelStockPurchase(stockPurchaseId: string, reason?: stri
 
     const purchase = await prisma.stockPurchase.findUnique({
       where: { id: stockPurchaseId },
-      include: { pharmacyItem: { select: { name: true } }, financialTransactions: true },
+      include: {
+        pharmacyItem: { select: { name: true } },
+        financialTransactions: { include: { cashSession: { select: { status: true } } } },
+      },
     });
     if (!purchase) throw new Error("Achat introuvable.");
     if (purchase.organizationId && purchase.organizationId !== activeUser.organizationId) {
@@ -601,7 +606,16 @@ export async function cancelStockPurchase(stockPurchaseId: string, reason?: stri
           where: { absorbedByPurchaseId: t.id },
           data: { absorbedByPurchaseId: null },
         });
-        await tx.financialTransaction.delete({ where: { id: t.id } });
+        // Contrepassation plutôt que suppression : la dépense d'origine reste dans l'historique,
+        // détachée du lot supprimé ci-dessous et marquée contrepassée, et une écriture inverse
+        // l'annule — ni l'une ni l'autre ne compte plus dans les dépenses (cf. countsInKpi).
+        await tx.financialTransaction.update({
+          where: { id: t.id },
+          data: { stockPurchaseId: null, reversedAt: new Date(), reversedById: activeUser.id },
+        });
+        await tx.financialTransaction.create({
+          data: buildReversalEntry(t, { userId: activeUser.id, label: "Annulation d'achat", reason }),
+        });
       }
 
       await tx.stockPurchase.delete({ where: { id: stockPurchaseId } });
@@ -643,7 +657,7 @@ export async function getStockPurchaseHistory(
 
     const where: any = {};
     if (pharmacyItemId) where.pharmacyItemId = pharmacyItemId;
-    const targetOrgId = organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, organizationId);
     if (targetOrgId) where.organizationId = targetOrgId;
 
     // Recherche côté serveur : sans elle, le filtre ne porterait que sur la page affichée.
@@ -685,7 +699,7 @@ export async function getStockValuation(organizationId?: string) {
     const activeUser = await getCurrentUser();
     await assertStockRead(activeUser);
 
-    const targetOrgId = organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, organizationId);
     const orgFilter = targetOrgId ? { organizationId: targetOrgId } : {};
 
     const items = await prisma.pharmacyItem.findMany({ where: orgFilter });

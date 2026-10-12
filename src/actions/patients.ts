@@ -2,6 +2,7 @@
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
+import { resolveTargetOrgId } from "@/lib/org-scope";
 import { Role, Priority, IncidentStatus } from "@prisma/client";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -15,7 +16,11 @@ import {
   reassignPatientSchema,
 } from "@/validators/patients";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
+import { nextIpp } from "@/lib/ipp";
+import { technicalPatientEmail } from "@/lib/patient-identity";
 import { revalidatePath } from "next/cache";
+import { billStayToDate, closeOpenSegment } from "@/lib/hospital-stay-db";
 
 // La prise en charge clinique (créer/modifier un patient, un dossier ou un incident) est réservée
 // au personnel opérationnel de la clinique — ADMIN (holding) et PHARMACIST restent en lecture seule.
@@ -33,7 +38,7 @@ export async function createPatient(data: Parameters<typeof createPatientOnce>[0
 }
 
 async function createPatientOnce(data: {
-  email: string;
+  email?: string;
   firstName: string;
   lastName: string;
   phone?: string;
@@ -68,31 +73,44 @@ async function createPatientOnce(data: {
       targetOrgId = data.organizationId;
     }
 
-    const hashedPassword = await bcrypt.hash("patient123", 10); // default password for new patients
+    const email = data.email?.trim() || null;
+    if (email) {
+      const existingUser = await prisma.user.findUnique({ where: { email } });
+      if (existingUser) throw new Error("Un utilisateur avec cet email existe déjà.");
+    }
+
+    // IPP attribué avant la transaction (cf. nextIpp) : jamais deux fois le même numéro.
+    const ipp = await nextIpp();
+
+    // Avec e-mail : compte patient avec le mot de passe par défaut, comme avant. Sans e-mail :
+    // AUCUN compte de connexion utilisable — adresse technique dérivée de l'IPP (le modèle User
+    // exige un e-mail unique), mot de passe aléatoire jamais communiqué, compte inactif (refusé
+    // à la connexion par AuthService).
+    const hashedPassword = await bcrypt.hash(email ? "patient123" : randomBytes(32).toString("hex"), 10);
 
     const result = await prisma.$transaction(async (tx) => {
-      const existingUser = await tx.user.findUnique({
-        where: { email: data.email },
-      });
-
-      if (existingUser) {
-        throw new Error("Un utilisateur avec cet email existe déjà.");
+      if (email) {
+        // Revérifié dans la transaction : création concurrente avec le même e-mail.
+        const existingUser = await tx.user.findUnique({ where: { email } });
+        if (existingUser) throw new Error("Un utilisateur avec cet email existe déjà.");
       }
 
       const user = await tx.user.create({
         data: {
-          email: data.email,
+          email: email ?? technicalPatientEmail(ipp),
           passwordHash: hashedPassword,
           firstName: data.firstName,
           lastName: data.lastName,
           role: Role.PATIENT,
           phone: data.phone,
           organizationId: targetOrgId,
+          ...(email ? {} : { isActive: false }),
         },
       });
 
       const patient = await tx.patient.create({
         data: {
+          ipp,
           userId: user.id,
           dateOfBirth: new Date(data.dateOfBirth),
           sex: data.sex || null,
@@ -114,7 +132,7 @@ async function createPatientOnce(data: {
       "CREATE_PATIENT",
       "Patient",
       result.patient.id,
-      { email: data.email, lastName: data.lastName }
+      { ipp: result.patient.ipp, email, lastName: data.lastName, withLogin: !!email }
     );
 
     revalidatePath("/dashboard/patients");
@@ -197,7 +215,7 @@ export async function listMedicalRecords(options?: { patientId?: string; created
     if (options?.patientId) where.patientId = options.patientId;
     if (options?.createdById) where.createdById = options.createdById;
 
-    const targetOrgId = options?.organizationId || activeUser.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser, options?.organizationId);
     if (targetOrgId) {
       if (activeUser.organization?.type === "HOLDING") {
         where.patient = { OR: [{ organizationId: targetOrgId }, { organization: { parentId: targetOrgId } }] };
@@ -424,6 +442,15 @@ export async function reassignPatient(patientId: string, newOrganizationId: stri
       // ailleurs, sinon il reste marqué occupé indéfiniment (cf. assignPatientToBed).
       if (existing?.bedId) {
         await tx.bed.update({ where: { id: existing.bedId }, data: { status: "AVAILABLE" } });
+      }
+
+      // Le séjour en cours appartient à la clinique d'origine : ses nuitées dues lui sont
+      // facturées et il est clôturé. La clinique d'arrivée en ouvrira un nouveau à l'affectation
+      // d'un lit (cf. src/lib/hospital-stay-db.ts).
+      const openStay = await closeOpenSegment(tx, patientId, "CLINIC_CHANGE");
+      if (openStay) {
+        await billStayToDate(tx, { stayId: openStay.id, userId: activeUser.id });
+        await tx.hospitalStay.update({ where: { id: openStay.id }, data: { status: "CLOSED", dischargedAt: new Date() } });
       }
 
       const p = await tx.patient.update({

@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Building2, Plus, Edit, Trash2, Loader2, BedSingle, DoorOpen, UserMinus } from "lucide-react";
 import { createWard, updateWard, deleteWard, deleteRoom, deleteBed, releaseBed } from "@/actions/wards";
-import RoomDialog from "./room-dialog";
+import RoomDialog, { parseRateInput } from "./room-dialog";
 import BedDialog from "./bed-dialog";
 import AssignBedDialog from "./assign-bed-dialog";
 import { toast } from "sonner";
@@ -25,11 +25,16 @@ interface RoomsViewProps {
   currentUserRole: string;
 }
 
-function WardDialog({ clinicId, ward, onSuccess }: { clinicId: string; ward?: { id: string; name: string; code: string }; onSuccess?: () => void }) {
+function formatRate(rate: number) {
+  return Math.round(rate).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " F";
+}
+
+function WardDialog({ clinicId, ward, onSuccess }: { clinicId: string; ward?: { id: string; name: string; code: string; nightlyRate?: number | null }; onSuccess?: () => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(ward?.name || "");
   const [code, setCode] = useState(ward?.code || "");
+  const [rate, setRate] = useState(ward?.nightlyRate != null ? String(ward.nightlyRate) : "");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,17 +42,23 @@ function WardDialog({ clinicId, ward, onSuccess }: { clinicId: string; ward?: { 
       toast.error("Le nom et le code du service sont requis.");
       return;
     }
+    const nightlyRate = parseRateInput(rate);
+    if (nightlyRate === "invalid") {
+      toast.error("Tarif invalide : saisissez un montant positif en FCFA, ou laissez vide.");
+      return;
+    }
     setLoading(true);
     try {
       const res = ward
-        ? await updateWard(ward.id, { name: name.trim(), code: code.trim() })
-        : await createWard({ organizationId: clinicId, name: name.trim(), code: code.trim() });
+        ? await updateWard(ward.id, { name: name.trim(), code: code.trim(), nightlyRate })
+        : await createWard({ organizationId: clinicId, name: name.trim(), code: code.trim(), nightlyRate });
       if (res.success) {
         toast.success(ward ? "Service mis à jour." : "Service créé.");
         setOpen(false);
         if (!ward) {
           setName("");
           setCode("");
+          setRate("");
         }
         onSuccess?.();
       } else {
@@ -87,6 +98,14 @@ function WardDialog({ clinicId, ward, onSuccess }: { clinicId: string; ward?: { 
           <div className="space-y-1.5">
             <Label>Code *</Label>
             <Input required value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="ex: MATERNITY" className="rounded-xl" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Tarif de la nuitée (FCFA)</Label>
+            <Input inputMode="numeric" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="ex: 15000" className="rounded-xl" />
+            <p className="text-[11px] text-muted-foreground">
+              Appliqué à toutes les chambres du service, sauf celles qui ont leur propre tarif. Vide = séjour non facturé.
+              Un changement de tarif ne vaut que pour les nouvelles hospitalisations et les transferts.
+            </p>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Annuler</Button>
@@ -172,10 +191,13 @@ export default function RoomsView({ clinicId, wards, patients, currentUserRole }
                   <Building2 className="h-5 w-5 text-blue-500 shrink-0" />
                   <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{ward.name}</h3>
                   <Badge variant="outline" className="text-[10px] shrink-0">{ward.code}</Badge>
+                  <Badge variant="outline" className={`text-[10px] shrink-0 ${ward.nightlyRate != null ? "text-emerald-700 border-emerald-500/30 bg-emerald-500/5" : "text-slate-500"}`}>
+                    {ward.nightlyRate != null ? `${formatRate(ward.nightlyRate)} / nuit` : "Sans tarif"}
+                  </Badge>
                 </div>
                 {canStructure && (
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <RoomDialog wardId={ward.id} onSuccess={refresh} />
+                    <RoomDialog wardId={ward.id} wardNightlyRate={ward.nightlyRate} onSuccess={refresh} />
                     <WardDialog clinicId={clinicId} ward={ward} onSuccess={refresh} />
                     {ward.rooms.length === 0 && (
                       <Button
@@ -201,9 +223,15 @@ export default function RoomsView({ clinicId, wards, patients, currentUserRole }
                         <div className="flex items-center gap-2 min-w-0">
                           <DoorOpen className="h-4 w-4 text-slate-400 shrink-0" />
                           <p className="font-semibold text-sm truncate">{room.name}</p>
+                          {room.nightlyRate != null && (
+                            <Badge variant="outline" className="text-[10px] shrink-0 text-indigo-700 border-indigo-500/30 bg-indigo-500/5">
+                              {formatRate(room.nightlyRate)} / nuit
+                            </Badge>
+                          )}
                         </div>
                         {canStructure && (
                           <div className="flex items-center gap-1 shrink-0">
+                            <RoomDialog wardId={ward.id} room={room} wardNightlyRate={ward.nightlyRate} onSuccess={refresh} />
                             <BedDialog roomId={room.id} onSuccess={refresh} />
                             {room.beds.length === 0 && (
                               <Button

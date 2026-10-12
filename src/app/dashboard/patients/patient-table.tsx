@@ -31,9 +31,11 @@ import {
 import Link from "next/link";
 import { useOfflinePatients } from "@/hooks/use-offline-patients";
 import PatientBedDialog from "./patient-bed-dialog";
+import { displayPatientEmail } from "@/lib/patient-identity";
 
 export interface PatientWithUser {
   id: string;
+  ipp?: string | null;
   status?: string;
   dependencyLevel: number;
   dateOfBirth: Date | string;
@@ -186,7 +188,8 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
       if (!searchTerm.trim()) return true;
       const q = searchTerm.toLowerCase();
       const fullName = `${patient.user.lastName} ${patient.user.firstName}`.toLowerCase();
-      const email = (patient.user.email || "").toLowerCase();
+      const email = displayPatientEmail(patient.user.email).toLowerCase();
+      const ipp = (patient.ipp || "").toLowerCase();
       const phone = (patient.user.phone || "").toLowerCase();
       const blood = (patient.bloodType || "").toLowerCase();
       const pathologies = (patient.pathologies || []).join(" ").toLowerCase();
@@ -194,6 +197,7 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
 
       return (
         fullName.includes(q) ||
+        ipp.includes(q) ||
         email.includes(q) ||
         phone.includes(q) ||
         blood.includes(q) ||
@@ -243,6 +247,7 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
       "Allergies",
       "Email",
       "Téléphone",
+      "IPP",
     ];
 
     const rows = filteredPatients.map((p) => {
@@ -258,8 +263,9 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
         `"GIR ${p.dependencyLevel}"`,
         `"${(p.pathologies || []).join(", ").replace(/"/g, '""')}"`,
         `"${(p.allergies || []).join(", ").replace(/"/g, '""')}"`,
-        `"${p.user.email || ""}"`,
+        `"${displayPatientEmail(p.user.email)}"`,
         `"${p.user.phone || ""}"`,
+        `"${p.ipp || ""}"`,
       ].join(";");
     });
 
@@ -552,6 +558,7 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
                           {patient.user.lastName} {patient.user.firstName}
                         </Link>
                         <p className="text-xs text-muted-foreground">
+                          {patient.ipp && <span className="font-mono font-semibold text-foreground/70">{patient.ipp} • </span>}
                           {age} ans • {patient.sex === "M" ? "Homme" : patient.sex === "F" ? "Femme" : patient.sex || "Sexe N/R"}
                         </p>
                       </div>
@@ -710,6 +717,7 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
                             {patient.user.lastName} {patient.user.firstName}
                           </p>
                           <p className="text-xs text-muted-foreground font-normal">
+                            {patient.ipp && <span className="font-mono font-semibold text-foreground/70">{patient.ipp} • </span>}
                             {age} ans • {patient.sex === "M" ? "Homme" : patient.sex === "F" ? "Femme" : patient.sex || "N/R"}
                           </p>
                         </div>
@@ -770,7 +778,7 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
                     </TableCell>
 
                     <TableCell className="py-3 text-xs text-muted-foreground">
-                      <p>{patient.user.email}</p>
+                      {displayPatientEmail(patient.user.email) && <p>{displayPatientEmail(patient.user.email)}</p>}
                       {patient.user.phone && <p className="font-mono text-[11px]">{patient.user.phone}</p>}
                     </TableCell>
 

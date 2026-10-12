@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { resolveTargetOrgId } from "@/lib/org-scope";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
@@ -315,7 +316,7 @@ export async function listCashSessions(organizationId?: string, periodInput?: Pe
         { organization: { parentId: activeUser.organizationId } },
       ];
     } else {
-      const targetOrgId = organizationId || activeUser.organizationId;
+      const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
       if (targetOrgId) where.organizationId = targetOrgId;
     }
     const openedAt = periodCreatedAtFilter(resolvePeriod(periodInput));

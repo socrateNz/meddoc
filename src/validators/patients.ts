@@ -2,7 +2,8 @@ import { z } from "zod";
 import { Priority, IncidentStatus } from "@prisma/client";
 
 export const createPatientSchema = z.object({
-  email: z.string().email("Adresse email invalide"),
+  // Facultatif : nouveau-nés, personnes âgées, patients sans adresse e-mail (cf. createPatient).
+  email: z.union([z.literal(""), z.string().trim().email("Adresse email invalide")]).optional(),
   firstName: z.string().min(2, "Le prénom doit contenir au moins 2 caractères"),
   lastName: z.string().min(2, "Le nom doit contenir au moins 2 caractères"),
   phone: z.string().optional(),

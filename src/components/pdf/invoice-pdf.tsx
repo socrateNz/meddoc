@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
+import { displayPatientEmail } from "@/lib/patient-identity";
 
 // Styles for standard A4 Invoice
 const a4Styles = StyleSheet.create({
@@ -670,7 +671,10 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
             {transaction.patient?.user ? (
               <>
                 <Text style={a4Styles.infoText}>Nom: {transaction.patient.user.lastName} {transaction.patient.user.firstName}</Text>
-                <Text style={a4Styles.infoText}>Email: {transaction.patient.user.email}</Text>
+                {transaction.patient.ipp && <Text style={a4Styles.infoText}>IPP: {transaction.patient.ipp}</Text>}
+                {displayPatientEmail(transaction.patient.user.email) ? (
+                  <Text style={a4Styles.infoText}>Email: {displayPatientEmail(transaction.patient.user.email)}</Text>
+                ) : null}
               </>
             ) : (
               <>

@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { resolveTargetOrgId } from "@/lib/org-scope";
 import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -25,7 +26,7 @@ export async function createOrUpdateSupplier(data: {
     const activeUser = await getCurrentUser();
     await assertStockWrite(activeUser);
 
-    const targetOrgId = data.organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, data.organizationId);
 
     let supplier;
     if (data.id) {
@@ -68,7 +69,7 @@ export async function listSuppliers(organizationId?: string, options?: { page?: 
     const activeUser = await getCurrentUser();
     await assertStockRead(activeUser);
 
-    const targetOrgId = organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, organizationId);
     const where: any = { isActive: true };
     if (targetOrgId) where.organizationId = targetOrgId;
 

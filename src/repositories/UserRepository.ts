@@ -57,6 +57,8 @@ export class UserRepository extends BaseRepository {
   async findByEmail(email: string) {
     return this.db.user.findUnique({
       where: { email },
+      // Exclu globalement (cf. src/lib/db.ts) : seule la vérification à la connexion en a besoin.
+      omit: { passwordHash: false },
       include: { 
         organization: {
           include: { parent: true }

@@ -80,7 +80,7 @@ export default function NewPatientDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firstName || !lastName || !email || !dateOfBirth || !address) {
+    if (!firstName || !lastName || !dateOfBirth || !address) {
       toast.error("Veuillez remplir tous les champs obligatoires.");
       return;
     }
@@ -89,7 +89,7 @@ export default function NewPatientDialog({
       const response = await guard((idempotencyKey) => createPatient({
         firstName,
         lastName,
-        email,
+        email: email.trim() || undefined,
         phone,
         dateOfBirth,
         sex: sex || undefined,
@@ -104,7 +104,8 @@ export default function NewPatientDialog({
       if (!response) return;
 
       if (response.success) {
-        toast.success(`Patient ${firstName} ${lastName} créé avec succès.`);
+        const ipp = response.data?.patient?.ipp;
+        toast.success(`Patient ${firstName} ${lastName} créé avec succès${ipp ? ` — IPP ${ipp}` : ""}.`);
         setOpen(false);
         // Reset form
         setFirstName("");
@@ -167,15 +168,17 @@ export default function NewPatientDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email *</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="jean.dupont@email.com"
+                placeholder="Facultatif"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
               />
+              <p className="text-[11px] text-muted-foreground">
+                Sans e-mail, le dossier est créé sans compte de connexion patient.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">Téléphone</Label>

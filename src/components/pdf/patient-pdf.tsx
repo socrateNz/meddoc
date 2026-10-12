@@ -257,6 +257,7 @@ export default function PatientPDFDocument({ patient, organizationName, organiza
               <Text style={styles.value}>
                 {patient.user?.lastName?.toUpperCase()} {patient.user?.firstName}
               </Text>
+              {patient.ipp ? <Text style={styles.value}>IPP : {patient.ipp}</Text> : null}
             </View>
             <View style={styles.gridCol}>
               <Text style={styles.label}>Niveau de dépendance</Text>

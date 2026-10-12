@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { resolveTargetOrgId } from "@/lib/org-scope";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
@@ -385,7 +386,7 @@ export async function listPrescriptions(options?: {
         { organization: { parentId: activeUser.organizationId } },
       ];
     } else {
-      const targetOrgId = options?.organizationId || activeUser.organizationId;
+      const targetOrgId = await resolveTargetOrgId(activeUser, options?.organizationId);
       where.organizationId = targetOrgId ? targetOrgId : { in: [] };
     }
 

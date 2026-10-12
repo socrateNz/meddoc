@@ -79,6 +79,9 @@ enum TransactionCategory {
   OPERATIONAL_EXPENSE
   PHARMACY_PURCHASE
   STOCK_ADJUSTMENT
+  // Écriture de contrepassation (annulation d'un règlement ou d'un achat, cf.
+  // src/lib/finance-reversal.ts) — jamais saisie à la main.
+  REVERSAL
   OTHER
 }
 
@@ -228,6 +231,13 @@ model Patient {
   id     String @id @default(auto()) @map("_id") @db.ObjectId
   userId String @unique @db.ObjectId
   user   User   @relation("UserPatient", fields: [userId], references: [id])
+
+  // IPP — Identifiant Permanent du Patient (ex. IPP-2026-001248) : compteur global par année,
+  // attribué une fois pour toutes à la création (cf. src/lib/ipp.ts) et affiché sur tous les
+  // documents imprimés. Optionnel au niveau du schéma uniquement pour les dossiers antérieurs :
+  // lancer scripts/migrate-patient-ipp.mjs --apply AVANT `prisma db push`, sinon la création de l'index
+  // unique échoue (MongoDB indexe un champ absent comme null, donc en doublon).
+  ipp String? @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -801,6 +811,9 @@ model Ward {
   id             String       @id @default(auto()) @map("_id") @db.ObjectId
   name           String // Nom d'affichage: "Urgences", "Soins Intensifs", "Maternité"...
   code           String // Code unique: "EMERGENCY", "ICU", "SURGERY", "MATERNITY"...
+  // Tarif par défaut d'une nuitée d'hospitalisation dans ce service (FCFA) — une chambre peut le
+  // remplacer (Room.nightlyRate). Absent = séjour non facturé (cf. src/lib/hospital-stay.ts).
+  nightlyRate    Float?
   organizationId String       @db.ObjectId
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   rooms          Room[]
@@ -816,6 +829,8 @@ model Ward {
 model Room {
   id             String       @id @default(auto()) @map("_id") @db.ObjectId
   name           String // ex: "Chambre 12", "Box 3"
+  // Tarif propre à cette chambre (ex. VIP, chambre commune), prioritaire sur celui du service.
+  nightlyRate    Float?
   wardId         String       @db.ObjectId
   ward           Ward         @relation(fields: [wardId], references: [id], onDelete: Cascade)
   organizationId String       @db.ObjectId // dénormalisé depuis ward.organizationId — scoping direct
@@ -1250,6 +1265,20 @@ model FinancialTransaction {
   stockPurchaseId String?        @db.ObjectId
   stockPurchase   StockPurchase? @relation(fields: [stockPurchaseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  // Contrepassation (cf. src/lib/finance-reversal.ts) : une écriture n'est JAMAIS supprimée —
+  // sinon le montant attendu et l'écart des sessions de caisse déjà clôturées, recalculés à
+  // chaque lecture depuis leurs transactions, changeraient rétroactivement. À la place, une
+  // écriture inverse (catégorie REVERSAL) est créée ; un règlement annulé est en plus détaché de
+  // sa facture (pendingInvoiceId vidé, ce qui l'exclut de tous les calculs de montant réglé) tout
+  // en gardant son montant et sa session intacts.
+  // - Sur l'écriture d'origine : date/auteur de l'annulation et, pour un règlement, la facture
+  //   dont il a été détaché.
+  reversedAt            DateTime?
+  reversedById          String?   @db.ObjectId
+  reversedFromInvoiceId String?   @db.ObjectId
+  // - Sur l'écriture de contrepassation : l'écriture qu'elle annule.
+  reversalOfId          String?   @db.ObjectId
+
   createdAt DateTime @default(now())
 
   @@index([organizationId, createdAt])
@@ -1298,6 +1327,9 @@ model PendingInvoice {
 
   createdById String @db.ObjectId
   createdBy   User   @relation("PendingInvoiceCreatedBy", fields: [createdById], references: [id])
+
+  // Facture de nuitées d'hospitalisation (cf. billStayToDate, src/lib/hospital-stay-db.ts).
+  hospitalStayId String? @db.ObjectId
 
   // Dernière session ayant enregistré un paiement sur cette facture — informatif seulement.
   // Chaque paiement individuel porte son propre FinancialTransaction.cashSessionId (posé à la
@@ -1573,4 +1605,61 @@ model RoundEntry {
 
   @@unique([sessionId, patientId])
   @@index([sessionId, position])
+}
+
+// Compteurs séquentiels (ex. IPP par année, clé "ipp-2026"), incrémentés atomiquement par
+// findAndModify — cf. nextSequenceValue dans src/lib/ipp.ts. Deux créations simultanées ne
+// peuvent jamais obtenir la même valeur.
+model Counter {
+  id    String @id @default(auto()) @map("_id") @db.ObjectId
+  key   String @unique
+  value Int    @default(0)
+}
+
+// Séjour d'hospitalisation : de la première affectation d'un lit à la sortie du patient. Sert à
+// facturer les nuitées (cf. src/lib/hospital-stay.ts) : la facturation est faite « à date » et
+// peut être répétée (nightsBilled), pour que la famille puisse régler AVANT la sortie effective.
+model HospitalStay {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  patientId      String    @db.ObjectId
+  organizationId String    @db.ObjectId
+  status         String    @default("OPEN") // OPEN, CLOSED
+  admittedAt     DateTime  @default(now())
+  admittedById   String?   @db.ObjectId
+  // Nuitées déjà portées sur une facture (PendingInvoice.hospitalStayId) — une nouvelle
+  // facturation ne porte que la différence.
+  nightsBilled   Int       @default(0)
+  dischargedAt   DateTime?
+  dischargedById String?   @db.ObjectId
+  // Sortie validée malgré un reste à payer (coordinateur uniquement) : motif et montant dû.
+  dischargeOverrideReason String?
+  outstandingAtDischarge  Float?
+  bedStays       BedStay[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([patientId, status])
+  @@index([organizationId, status])
+}
+
+// Période d'occupation d'un lit au sein d'un séjour — un transfert ferme la période en cours et en
+// ouvre une nouvelle. Tarif et libellés figés à l'ouverture : modifier un tarif ou renommer une
+// chambre ensuite ne change jamais ce qui est dû pour un séjour déjà commencé.
+model BedStay {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  hospitalStayId String       @db.ObjectId
+  hospitalStay   HospitalStay @relation(fields: [hospitalStayId], references: [id], onDelete: Cascade)
+  patientId      String       @db.ObjectId
+  bedId          String       @db.ObjectId
+  bedLabel       String
+  roomName       String
+  wardName       String
+  organizationId String       @db.ObjectId
+  nightlyRate    Float        @default(0)
+  startedAt      DateTime
+  endedAt        DateTime?
+  endedReason    String? // TRANSFER, RELEASE, DISCHARGE, CLINIC_CHANGE
+
+  @@index([hospitalStayId])
+  @@index([patientId, endedAt])
 }

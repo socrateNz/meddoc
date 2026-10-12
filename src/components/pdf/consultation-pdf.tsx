@@ -211,6 +211,7 @@ export default function ConsultationPDFDocument({ patient, record, organizationN
           <View style={styles.patientGrid}>
             <View style={styles.patientCol}>
               <Text><Text style={{ fontWeight: "bold" }}>Nom complet :</Text> {patient.user?.lastName?.toUpperCase()} {patient.user?.firstName}</Text>
+              {patient.ipp ? <Text><Text style={{ fontWeight: "bold" }}>IPP :</Text> {patient.ipp}</Text> : null}
             </View>
             <View style={styles.patientCol}>
               <Text><Text style={{ fontWeight: "bold" }}>Date de Naissance :</Text> {new Date(patient.dateOfBirth).toLocaleDateString("fr-FR")} ({age} ans)</Text>

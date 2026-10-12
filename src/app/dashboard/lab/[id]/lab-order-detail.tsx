@@ -18,6 +18,7 @@ import RecordLabResultDialog from "@/app/dashboard/lab/record-lab-result-dialog"
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 import PaymentStatusBadge from "@/components/payment-status-badge";
 import { toast } from "sonner";
+import { labOrderReference, MAX_TUBE_LABELS } from "@/lib/lab-label";
 
 function formatFCFA(val: number) {
   return Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
@@ -63,6 +64,7 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
   const [sampleQuantity, setSampleQuantity] = useState("");
   const [sampleCondition, setSampleCondition] = useState("");
   const [savingSample, setSavingSample] = useState(false);
+  const [labelCopies, setLabelCopies] = useState(1);
   const [busy, setBusy] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<{ summary: string; trends: string[]; flags: string[] } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -301,6 +303,29 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
               <p><span className="text-muted-foreground">Prélevé le :</span> {order.sampleCollectedAt ? formatDateTime(order.sampleCollectedAt) : "-"} par {order.sampleCollectedBy?.firstName} {order.sampleCollectedBy?.lastName}</p>
               {order.sampleQuantity && <p><span className="text-muted-foreground">Quantité :</span> {order.sampleQuantity}</p>}
               {order.sampleCondition && <p><span className="text-muted-foreground">État :</span> {order.sampleCondition}</p>}
+              {order.status !== "CANCELLED" && (
+                <div className="flex flex-wrap items-end gap-2 pt-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="label-copies" className="text-xs">Étiquettes (une par tube)</Label>
+                    <Input
+                      id="label-copies"
+                      type="number"
+                      min={1}
+                      max={MAX_TUBE_LABELS}
+                      value={labelCopies}
+                      onChange={(e) => setLabelCopies(Math.min(MAX_TUBE_LABELS, Math.max(1, Math.floor(Number(e.target.value)) || 1)))}
+                      className="h-8 w-20 rounded-lg"
+                    />
+                  </div>
+                  <PDFDownloadButton
+                    documentName={`etiquette_${labOrderReference(order.id)}`}
+                    type="labtubelabel"
+                    data={{ order, copies: labelCopies }}
+                    buttonText="Imprimer l'étiquette du tube"
+                    className="h-8 rounded-lg"
+                  />
+                </div>
+              )}
               {order.status === "SAMPLE_COLLECTED" && canWrite && (
                 <Button size="sm" variant="outline" className="gap-1.5 rounded-lg mt-2" onClick={handleReceive} disabled={busy}>
                   <Truck className="h-3.5 w-3.5" />

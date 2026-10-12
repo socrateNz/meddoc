@@ -242,7 +242,7 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
                 </TableCell>
               </TableRow>
             ) : (
-              incidents.map((incident: Incident & { patient: Patient & { user: User } }) => (
+              incidents.map((incident: Incident & { patient: Patient & { user: Omit<User, "passwordHash"> } }) => (
                 <TableRow key={incident.id} className="hover:bg-muted/20 transition-colors">
                   <TableCell className="font-medium text-xs text-muted-foreground">
                     {formatDate(incident.createdAt)}

@@ -181,10 +181,26 @@ describe("assignPatientToBed", () => {
     const bedUpdateMany = vi.fn(async () => ({ count: 1 }));
     const bedUpdate = vi.fn(async ({ data }: any) => ({ id: "oldBed", ...data }));
     const patientUpdate = vi.fn(async ({ data }: any) => ({ id: "p1", ...data }));
-    const tx = { bed: { updateMany: bedUpdateMany, update: bedUpdate }, patient: { update: patientUpdate } };
+    const segmentClose = vi.fn(async () => ({ count: 1 }));
+    const segmentCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "seg2", ...data }));
+    const tx = {
+      bed: { updateMany: bedUpdateMany, update: bedUpdate },
+      patient: { update: patientUpdate },
+      // Séjour déjà ouvert (le patient était dans « oldBed ») : un transfert enchaîne une période.
+      hospitalStay: { findFirst: vi.fn(async () => ({ id: "stay1", patientId: "p1" })), create: vi.fn() },
+      bedStay: { updateMany: segmentClose, create: segmentCreate },
+    };
     vi.doMock("@/lib/db", () => ({
       prisma: {
-        bed: { findUnique: vi.fn(async () => ({ id: "b1", organizationId: "clinicA" })) },
+        bed: {
+          findUnique: vi.fn(async () => ({
+            id: "b1",
+            label: "B",
+            organizationId: "clinicA",
+            room: { name: "Chambre VIP", nightlyRate: 30000 },
+            ward: { name: "Médecine", nightlyRate: 15000 },
+          })),
+        },
         patient: { findUnique: vi.fn(async () => ({ organizationId: "clinicA", bedId: "oldBed" })) },
         $transaction: vi.fn(async (fn: any) => fn(tx)),
       },
@@ -203,6 +219,13 @@ describe("assignPatientToBed", () => {
     expect(bedUpdateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "b1", status: "AVAILABLE" } }));
     expect(bedUpdate).toHaveBeenCalledWith({ where: { id: "oldBed" }, data: { status: "AVAILABLE" } });
     expect(patientUpdate).toHaveBeenCalledWith({ where: { id: "p1" }, data: { bedId: "b1" } });
+    // Séjour : la période en cours est fermée (transfert) et une nouvelle s'ouvre au tarif de la
+    // chambre (prioritaire sur celui du service), figé à cet instant.
+    expect(tx.hospitalStay.create).not.toHaveBeenCalled();
+    expect(segmentClose).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ endedReason: "TRANSFER" }) }));
+    expect(segmentCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ hospitalStayId: "stay1", bedId: "b1", bedLabel: "B", roomName: "Chambre VIP", wardName: "Médecine", nightlyRate: 30000 }),
+    });
   });
 
   it("refuse l'affectation si le lit vient d'être occupé par une autre requête (course concurrente)", async () => {

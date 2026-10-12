@@ -41,6 +41,17 @@ describe("buildJournalExportRows", () => {
   });
 });
 
+describe("contrepassation dans l'export", () => {
+  it("signale un règlement contrepassé et libelle l'écriture d'annulation", () => {
+    const [original, reversal] = buildJournalExportRows([
+      tx({ reversedAt: "2026-10-12T08:00:00.000Z" }),
+      tx({ id: "rev", type: "EXPENSE", category: "REVERSAL", description: "Annulation de règlement — Vente comptant" }),
+    ]);
+    expect(original.status).toBe("Contrepassé");
+    expect(reversal).toMatchObject({ categoryLabel: "Contrepassation", signedAmount: -12500 });
+  });
+});
+
 describe("describeJournalFilters", () => {
   it("liste uniquement les filtres actifs", () => {
     expect(describeJournalFilters({ search: "", type: "", category: "ALL", minAmount: "", maxAmount: "" })).toEqual([]);

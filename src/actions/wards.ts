@@ -13,6 +13,7 @@ import {
   assignPatientToBedSchema,
 } from "@/validators/wards";
 import { revalidatePath } from "next/cache";
+import { closeOpenSegment, openBedSegment } from "@/lib/hospital-stay-db";
 
 // Consulter l'occupation (chambres/lits) est ouvert à tout le personnel clinique, y compris
 // ADMIN (holding) en lecture seule. Créer/renommer/supprimer un service, une chambre ou un lit
@@ -138,7 +139,7 @@ export async function listAvailableBeds(clinicId: string) {
 
 // --- Services (COORDINATOR uniquement) ---
 
-export async function createWard(data: { organizationId: string; name: string; code: string }) {
+export async function createWard(data: { organizationId: string; name: string; code: string; nightlyRate?: number | null }) {
   try {
     createWardSchema.parse(data);
     const activeUser = await getCurrentUser();
@@ -147,10 +148,10 @@ export async function createWard(data: { organizationId: string; name: string; c
     await assertClinicScope(data.organizationId, activeUser);
 
     const ward = await prisma.ward.create({
-      data: { name: data.name, code: data.code.toUpperCase(), organizationId: data.organizationId },
+      data: { name: data.name, code: data.code.toUpperCase(), organizationId: data.organizationId, nightlyRate: data.nightlyRate ?? null },
     });
 
-    await logAuditAction(activeUser.id, "CREATE_WARD", "Ward", ward.id, { name: data.name, code: data.code });
+    await logAuditAction(activeUser.id, "CREATE_WARD", "Ward", ward.id, { name: data.name, code: data.code, nightlyRate: data.nightlyRate ?? null });
     revalidatePath(`/dashboard/clinics/${data.organizationId}/rooms`);
     revalidatePath(`/dashboard/clinics/${data.organizationId}`);
     return { success: true, data: ward };
@@ -159,7 +160,9 @@ export async function createWard(data: { organizationId: string; name: string; c
   }
 }
 
-export async function updateWard(id: string, data: { name: string; code: string }) {
+// Un nouveau tarif ne s'applique qu'aux périodes de lit ouvertes ENSUITE : celles en cours gardent
+// le tarif figé à leur ouverture (cf. BedStay.nightlyRate).
+export async function updateWard(id: string, data: { name: string; code: string; nightlyRate?: number | null }) {
   try {
     updateWardSchema.parse({ id, ...data });
     const activeUser = await getCurrentUser();
@@ -170,9 +173,16 @@ export async function updateWard(id: string, data: { name: string; code: string 
     if (!existing) throw new Error("Service introuvable.");
     await assertClinicScope(existing.organizationId, activeUser);
 
-    const ward = await prisma.ward.update({ where: { id }, data: { name: data.name, code: data.code.toUpperCase() } });
+    const ward = await prisma.ward.update({
+      where: { id },
+      data: { name: data.name, code: data.code.toUpperCase(), ...(data.nightlyRate !== undefined ? { nightlyRate: data.nightlyRate } : {}) },
+    });
 
-    await logAuditAction(activeUser.id, "UPDATE_WARD", "Ward", id, { name: data.name, code: data.code });
+    await logAuditAction(activeUser.id, "UPDATE_WARD", "Ward", id, {
+      name: data.name,
+      code: data.code,
+      ...(data.nightlyRate !== undefined ? { previousNightlyRate: existing.nightlyRate ?? null, nightlyRate: data.nightlyRate } : {}),
+    });
     revalidatePath(`/dashboard/clinics/${existing.organizationId}/rooms`);
     return { success: true, data: ward };
   } catch (error: any) {
@@ -205,7 +215,7 @@ export async function deleteWard(id: string) {
 
 // --- Chambres (COORDINATOR uniquement) ---
 
-export async function createRoom(data: { wardId: string; name: string }) {
+export async function createRoom(data: { wardId: string; name: string; nightlyRate?: number | null }) {
   try {
     createRoomSchema.parse(data);
     const activeUser = await getCurrentUser();
@@ -217,7 +227,7 @@ export async function createRoom(data: { wardId: string; name: string }) {
     await assertClinicScope(ward.organizationId, activeUser);
 
     const room = await prisma.room.create({
-      data: { name: data.name, wardId: ward.id, organizationId: ward.organizationId },
+      data: { name: data.name, wardId: ward.id, organizationId: ward.organizationId, nightlyRate: data.nightlyRate ?? null },
     });
 
     await logAuditAction(activeUser.id, "CREATE_ROOM", "Room", room.id, { name: data.name, wardId: ward.id });
@@ -228,7 +238,7 @@ export async function createRoom(data: { wardId: string; name: string }) {
   }
 }
 
-export async function updateRoom(id: string, data: { name: string }) {
+export async function updateRoom(id: string, data: { name: string; nightlyRate?: number | null }) {
   try {
     updateRoomSchema.parse({ id, ...data });
     const activeUser = await getCurrentUser();
@@ -239,9 +249,15 @@ export async function updateRoom(id: string, data: { name: string }) {
     if (!existing) throw new Error("Chambre introuvable.");
     await assertClinicScope(existing.organizationId, activeUser);
 
-    const room = await prisma.room.update({ where: { id }, data: { name: data.name } });
+    const room = await prisma.room.update({
+      where: { id },
+      data: { name: data.name, ...(data.nightlyRate !== undefined ? { nightlyRate: data.nightlyRate } : {}) },
+    });
 
-    await logAuditAction(activeUser.id, "UPDATE_ROOM", "Room", id, { name: data.name });
+    await logAuditAction(activeUser.id, "UPDATE_ROOM", "Room", id, {
+      name: data.name,
+      ...(data.nightlyRate !== undefined ? { previousNightlyRate: existing.nightlyRate ?? null, nightlyRate: data.nightlyRate } : {}),
+    });
     revalidatePath(`/dashboard/clinics/${existing.organizationId}/rooms`);
     return { success: true, data: room };
   } catch (error: any) {
@@ -340,7 +356,10 @@ export async function assignPatientToBed(data: { patientId: string; bedId: strin
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
 
-    const bed = await prisma.bed.findUnique({ where: { id: data.bedId } });
+    const bed = await prisma.bed.findUnique({
+      where: { id: data.bedId },
+      include: { room: { select: { name: true, nightlyRate: true } }, ward: { select: { name: true, nightlyRate: true } } },
+    });
     if (!bed) throw new Error("Lit introuvable.");
     await assertClinicScope(bed.organizationId, activeUser);
 
@@ -365,6 +384,15 @@ export async function assignPatientToBed(data: { patientId: string; bedId: strin
       if (patient.bedId && patient.bedId !== data.bedId) {
         await tx.bed.update({ where: { id: patient.bedId }, data: { status: "AVAILABLE" } });
       }
+
+      // Séjour facturable : ouvre l'hospitalisation à la première affectation, ou enchaîne une
+      // nouvelle période au tarif du nouveau lit lors d'un transfert (cf. src/lib/hospital-stay.ts).
+      await openBedSegment(tx, {
+        patientId: data.patientId,
+        organizationId: bed.organizationId,
+        bed: { id: bed.id, label: bed.label, room: bed.room, ward: bed.ward },
+        userId: activeUser.id,
+      });
 
       return tx.patient.update({ where: { id: data.patientId }, data: { bedId: data.bedId } });
     });
@@ -392,10 +420,14 @@ export async function releaseBed(patientId: string) {
     if (!patient?.bedId) return { success: true, data: null };
 
     const bedId = patient.bedId;
-    const [bed] = await prisma.$transaction([
-      prisma.bed.update({ where: { id: bedId }, data: { status: "AVAILABLE" } }),
-      prisma.patient.update({ where: { id: patientId }, data: { bedId: null } }),
-    ]);
+    const bed = await prisma.$transaction(async (tx) => {
+      const freed = await tx.bed.update({ where: { id: bedId }, data: { status: "AVAILABLE" } });
+      await tx.patient.update({ where: { id: patientId }, data: { bedId: null } });
+      // Fin de la période d'occupation (correction d'affectation ou départ sans sortie formelle) :
+      // le séjour reste ouvert et ses nuits seront facturées à la sortie (cf. closeCarePlan).
+      await closeOpenSegment(tx, patientId, "RELEASE");
+      return freed;
+    });
 
     await logAuditAction(activeUser.id, "RELEASE_BED", "Patient", patientId, { bedId });
     revalidatePath(`/dashboard/clinics/${bed.organizationId}/rooms`);

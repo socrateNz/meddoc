@@ -11,14 +11,25 @@ import { toast } from "sonner";
 
 interface RoomDialogProps {
   wardId: string;
-  room?: { id: string; name: string };
+  room?: { id: string; name: string; nightlyRate?: number | null };
+  // Tarif du service, affiché comme valeur par défaut quand la chambre n'a pas le sien.
+  wardNightlyRate?: number | null;
   onSuccess?: () => void;
 }
 
-export default function RoomDialog({ wardId, room, onSuccess }: RoomDialogProps) {
+// Champ texte -> tarif : vide = pas de tarif propre (celui du service s'applique).
+export function parseRateInput(value: string): number | null | "invalid" {
+  const trimmed = value.trim().replace(/\s/g, "");
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n >= 0 ? n : "invalid";
+}
+
+export default function RoomDialog({ wardId, room, wardNightlyRate, onSuccess }: RoomDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(room?.name || "");
+  const [rate, setRate] = useState(room?.nightlyRate != null ? String(room.nightlyRate) : "");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,13 +37,23 @@ export default function RoomDialog({ wardId, room, onSuccess }: RoomDialogProps)
       toast.error("Le nom de la chambre est requis.");
       return;
     }
+    const nightlyRate = parseRateInput(rate);
+    if (nightlyRate === "invalid") {
+      toast.error("Tarif invalide : saisissez un montant positif en FCFA, ou laissez vide.");
+      return;
+    }
     setLoading(true);
     try {
-      const res = room ? await updateRoom(room.id, { name: name.trim() }) : await createRoom({ wardId, name: name.trim() });
+      const res = room
+        ? await updateRoom(room.id, { name: name.trim(), nightlyRate })
+        : await createRoom({ wardId, name: name.trim(), nightlyRate });
       if (res.success) {
         toast.success(room ? "Chambre mise à jour." : "Chambre ajoutée.");
         setOpen(false);
-        if (!room) setName("");
+        if (!room) {
+          setName("");
+          setRate("");
+        }
         onSuccess?.();
       } else {
         toast.error(res.error || "Erreur lors de l'enregistrement.");
@@ -61,12 +82,25 @@ export default function RoomDialog({ wardId, room, onSuccess }: RoomDialogProps)
             <DoorOpen className="h-5 w-5 text-blue-500" />
             {room ? "Modifier la chambre" : "Nouvelle chambre"}
           </DialogTitle>
-          <DialogDescription>{room ? "Renommez cette chambre." : "Ajoutez une chambre à ce service."}</DialogDescription>
+          <DialogDescription>{room ? "Renommez cette chambre ou modifiez son tarif." : "Ajoutez une chambre à ce service."}</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Nom de la chambre *</Label>
             <Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: Chambre 12" className="rounded-xl" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Tarif de la nuitée (FCFA)</Label>
+            <Input
+              inputMode="numeric"
+              value={rate}
+              onChange={(e) => setRate(e.target.value)}
+              placeholder={wardNightlyRate != null ? `Tarif du service : ${wardNightlyRate} FCFA` : "Aucun tarif de service"}
+              className="rounded-xl"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Laissez vide pour appliquer le tarif du service (réservez un tarif propre aux chambres VIP, par exemple).
+            </p>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Annuler</Button>

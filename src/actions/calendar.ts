@@ -78,16 +78,19 @@ function clinicPath(clinicId: string | undefined, suffix: string) {
   return clinicId ? `/dashboard/clinics/${clinicId}${suffix}` : `/dashboard${suffix}`;
 }
 
+// Mêmes formes que les requêtes ci-dessous, sans le hash du mot de passe (exclu globalement,
+// cf. src/lib/db.ts) — sinon les types déclarés ici ne correspondraient plus aux résultats.
+type UserWithoutHash = { omit: { passwordHash: true } };
 type AppointmentRow = Prisma.AppointmentGetPayload<{
-  include: { patient: { include: { user: true } }; caregiver: { include: { user: true } } };
+  include: { patient: { include: { user: UserWithoutHash } }; caregiver: { include: { user: UserWithoutHash } } };
 }>;
-type ShiftRow = Prisma.ShiftGetPayload<{ include: { user: true } }>;
+type ShiftRow = Prisma.ShiftGetPayload<{ include: { user: UserWithoutHash } }>;
 type CalendarEventRow = Prisma.CalendarEventGetPayload<Record<string, never>>;
 type CareTaskRow = Prisma.CareTaskGetPayload<{
-  include: { carePlan: { include: { patient: { include: { user: true } } } }; caregiver: { include: { user: true } } };
+  include: { carePlan: { include: { patient: { include: { user: UserWithoutHash } } } }; caregiver: { include: { user: UserWithoutHash } } };
 }>;
 type ContractRow = Prisma.ContractGetPayload<{
-  include: { patient: { include: { user: true } }; caregiver: { include: { user: true } } };
+  include: { patient: { include: { user: UserWithoutHash } }; caregiver: { include: { user: UserWithoutHash } } };
 }>;
 type StockPurchaseRow = Prisma.StockPurchaseGetPayload<{ include: { pharmacyItem: true } }>;
 

@@ -12,6 +12,7 @@ import DonutChart from "@/components/dashboard/donut-chart";
 import CountTrendChart from "@/components/dashboard/count-trend-chart";
 import WardOccupancyChart from "@/components/dashboard/ward-occupancy-chart";
 import { buildDayBuckets, buildWeekBuckets, computeStockStatus, countByBucket, startOfDay, sumByBucket } from "@/lib/dashboard-stats";
+import { COUNTS_IN_KPI_WHERE, countsInKpi } from "@/lib/finance-reversal";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ async function fetchFinanceSummary(clinicId: string) {
 
   const [todayTransactions, pharmacyItems, openSessions] = await Promise.all([
     prisma.financialTransaction.findMany({
-      where: { organizationId: clinicId, type: "INCOME", createdAt: { gte: startOfToday } },
+      where: { organizationId: clinicId, type: "INCOME", createdAt: { gte: startOfToday }, ...COUNTS_IN_KPI_WHERE },
       select: { amount: true },
     }),
     prisma.pharmacyItem.findMany({
@@ -85,7 +86,8 @@ async function fetchFinanceSummary(clinicId: string) {
 // Données des deux graphiques du coordinateur : recettes/dépenses jour par jour sur 7 jours, et
 // origine des recettes sur 30 jours. Même périmètre et mêmes règles que getFinanceSummary : une
 // dépense déjà absorbée par un achat (cf. absorbedByPurchaseId) n'est pas recomptée, sinon le
-// même argent apparaîtrait deux fois. Découpage par jour dans le fuseau du serveur, comme
+// même argent apparaîtrait deux fois ; un règlement contrepassé et son annulation non plus (cf.
+// src/lib/finance-reversal.ts). Découpage par jour dans le fuseau du serveur, comme
 // "Recettes du jour" juste au-dessus (startOfToday).
 async function fetchFinanceCharts(clinicId: string) {
   const startOfToday = new Date();
@@ -98,22 +100,22 @@ async function fetchFinanceCharts(clinicId: string) {
   const [weekTransactions, revenueByCategory] = await Promise.all([
     prisma.financialTransaction.findMany({
       where: { organizationId: clinicId, createdAt: { gte: weekStart } },
-      select: { type: true, amount: true, createdAt: true, absorbedByPurchaseId: true },
+      select: { type: true, category: true, amount: true, createdAt: true, absorbedByPurchaseId: true, reversedAt: true },
     }),
     prisma.financialTransaction.groupBy({
       by: ["category"],
-      where: { organizationId: clinicId, type: "INCOME", createdAt: { gte: monthStart } },
+      where: { organizationId: clinicId, type: "INCOME", createdAt: { gte: monthStart }, ...COUNTS_IN_KPI_WHERE },
       _sum: { amount: true },
     }),
   ]);
 
   const buckets = buildDayBuckets(weekStart, 7);
   const incomeByDay = sumByBucket(
-    weekTransactions.filter((t) => t.type === "INCOME").map((t) => ({ date: t.createdAt, value: t.amount })),
+    weekTransactions.filter((t) => t.type === "INCOME" && countsInKpi(t)).map((t) => ({ date: t.createdAt, value: t.amount })),
     buckets
   );
   const expenseByDay = sumByBucket(
-    weekTransactions.filter((t) => t.type === "EXPENSE" && !t.absorbedByPurchaseId).map((t) => ({ date: t.createdAt, value: t.amount })),
+    weekTransactions.filter((t) => t.type === "EXPENSE" && !t.absorbedByPurchaseId && countsInKpi(t)).map((t) => ({ date: t.createdAt, value: t.amount })),
     buckets
   );
 

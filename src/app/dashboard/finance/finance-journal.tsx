@@ -284,6 +284,15 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
                             Absorbée
                           </Badge>
                         )}
+                        {t.reversedAt && (
+                          <Badge
+                            variant="outline"
+                            title="Écriture annulée par une contrepassation : conservée pour l'historique de caisse, exclue des recettes et dépenses."
+                            className="text-[10px] shrink-0 bg-slate-500/10 text-slate-500 border-slate-500/20"
+                          >
+                            Contrepassé
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">

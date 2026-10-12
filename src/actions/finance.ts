@@ -4,7 +4,9 @@ import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
 import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
 import { attachInvoiceTotals, buildJournalWhere, FINANCE_READ_ROLES, getJournalTotals, JOURNAL_TRANSACTION_INCLUDE } from "@/lib/finance-journal-query";
+import { buildReversalEntry, COUNTS_IN_KPI_WHERE, countsInKpi } from "@/lib/finance-reversal";
 import { prisma } from "@/lib/db";
+import { assertOrganizationAccess, resolveTargetOrgId } from "@/lib/org-scope";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
@@ -37,6 +39,10 @@ import { z } from "zod";
 // { timeout: 20000, maxWait: 10000 } côté Prisma) NE PEUT PAS être exporté depuis ce fichier : un
 // fichier "use server" n'autorise que des exports de fonctions async — voir plutôt les page.tsx
 // qui rendent PharmacieView (dashboard/clinics/[id]/pharmacie).
+
+// Tout ticket manipulé par son identifiant doit appartenir à l'établissement de l'utilisateur
+// (cf. assertOrganizationAccess, src/lib/org-scope.ts).
+const TICKET_ACCESS_DENIED = "Non autorisé. Ce ticket n'appartient pas à votre établissement.";
 
 // ADMIN (holding) garde une vue lecture seule de la finance (KPI, journal, valorisation) ;
 // COORDINATOR seul y a un accès d'écriture directe (dépenses hors-session exceptées — voir
@@ -113,7 +119,7 @@ export async function getPharmacyItems(organizationId?: string) {
     if (!activeUser) throw new Error("Non authentifié.");
     assertPharmacyCatalogReadRole(activeUser.role);
 
-    const targetOrgId = organizationId || activeUser.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
 
     const filter: any = {};
     if (targetOrgId) {
@@ -156,7 +162,7 @@ export async function createOrUpdatePharmacyItem(data: {
     const activeUser = await getCurrentUser();
     await assertStockWrite(activeUser);
 
-    const targetOrgId = data.organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, data.organizationId);
     const nowISO = new Date().toISOString();
     const expiryISO = data.expiryDate ? new Date(data.expiryDate).toISOString() : null;
 
@@ -253,7 +259,7 @@ export async function importPharmacyItems(data: {
     const activeUser = await getCurrentUser();
     await assertStockWrite(activeUser);
 
-    const targetOrgId = data.organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, data.organizationId);
 
     const toItemData = (item: (typeof data.items)[number], stockQuantity: number, expiryDate: Date | null) => ({
       name: item.name,
@@ -525,6 +531,10 @@ async function payPendingInvoiceOnce(
     if (!session || session.status !== "OPEN") {
       throw new Error("Aucune session de caisse ouverte. Ouvrez la caisse avant d'encaisser.");
     }
+    // Ticket et caisse doivent appartenir à l'établissement de l'utilisateur (ou à une clinique de
+    // sa holding) — un identifiant d'un autre établissement ne doit jamais être encaissé.
+    await assertOrganizationAccess(activeUser, pending.organizationId, TICKET_ACCESS_DENIED);
+    await assertOrganizationAccess(activeUser, session.organizationId);
 
     payPendingInvoiceSchema.parse({ pendingInvoiceId, cashSessionId, amount, items });
 
@@ -838,6 +848,7 @@ async function dispensePendingInvoiceOnce(
       include: { prescriptions: true, labOrders: { select: { id: true, testDetails: true } } },
     });
     if (!pending) throw new Error("Facture introuvable.");
+    await assertOrganizationAccess(activeUser, pending.organizationId, TICKET_ACCESS_DENIED);
     if (pending.dispensedAt) {
       throw new Error("Les articles de cette facture ont déjà été remis.");
     }
@@ -991,6 +1002,7 @@ export async function cancelDispense(pendingInvoiceId: string, reason?: string) 
       include: { prescriptions: true, labOrders: { select: { id: true, testDetails: true } } },
     });
     if (!pending) throw new Error("Facture introuvable.");
+    await assertOrganizationAccess(activeUser, pending.organizationId, TICKET_ACCESS_DENIED);
 
     // Recette figée au moment de la commande labo (cf. dispensePendingInvoice) : jamais mutée
     // ensuite, donc pas besoin d'une relecture fraîche comme pour pending.items ci-dessous.
@@ -1116,6 +1128,7 @@ export async function closeUnpaidInvoice(pendingInvoiceId: string) {
 
     const pending = await prisma.pendingInvoice.findUnique({ where: { id: pendingInvoiceId } });
     if (!pending) throw new Error("Facture introuvable.");
+    await assertOrganizationAccess(activeUser, pending.organizationId, TICKET_ACCESS_DENIED);
     if (!["PENDING", "PARTIAL"].includes(pending.status)) {
       throw new Error("Cette facture est déjà réglée intégralement ou déjà clôturée.");
     }
@@ -1137,10 +1150,61 @@ export async function closeUnpaidInvoice(pendingInvoiceId: string) {
   }
 }
 
+// Contrepassation des règlements d'un ticket — remplace l'ancienne suppression physique
+// (deleteMany), qui modifiait rétroactivement le montant attendu et l'écart des sessions de caisse
+// déjà clôturées (recalculés à chaque lecture depuis leurs transactions, cf. getSessionSummary).
+// Pour chaque règlement encore rattaché au ticket :
+// - le règlement d'origine est conservé tel quel (montant, session, date) mais détaché du ticket
+//   (pendingInvoiceId vidé) et marqué contrepassé — il sort ainsi de tous les calculs de montant
+//   réglé, qui ne lisent que les transactions rattachées au ticket ;
+// - une écriture inverse (catégorie REVERSAL, même montant) est créée, rattachée à la session
+//   d'origine si elle est encore ouverte (le tiroir reste juste), sinon hors session et datée du
+//   jour : une session clôturée n'est jamais modifiée (cf. buildReversalEntry).
+// À appeler dans la transaction Prisma de l'appelant.
+async function reverseInvoicePayments(
+  tx: Prisma.TransactionClient,
+  params: { pendingInvoiceId: string; userId: string; reason?: string | null }
+) {
+  const payments = await tx.financialTransaction.findMany({
+    where: { pendingInvoiceId: params.pendingInvoiceId },
+    include: { cashSession: { select: { status: true } } },
+  });
+
+  let reversedAmount = 0;
+  let reversedCount = 0;
+  const now = new Date();
+  for (const payment of payments) {
+    // Détachement conditionné au rattachement encore présent : deux annulations concurrentes du
+    // même ticket ne peuvent pas contrepasser deux fois le même règlement.
+    const detached = await tx.financialTransaction.updateMany({
+      where: { id: payment.id, pendingInvoiceId: params.pendingInvoiceId },
+      data: {
+        pendingInvoiceId: null,
+        reversedAt: now,
+        reversedById: params.userId,
+        reversedFromInvoiceId: params.pendingInvoiceId,
+      },
+    });
+    if (detached.count === 0) continue;
+
+    await tx.financialTransaction.create({
+      data: buildReversalEntry(payment, {
+        userId: params.userId,
+        label: "Annulation de règlement",
+        reason: params.reason,
+        reversedFromInvoiceId: params.pendingInvoiceId,
+      }),
+    });
+    reversedAmount += payment.amount;
+    reversedCount += 1;
+  }
+  return { reversedCount, reversedAmount };
+}
+
 // Modification exceptionnelle de statut d'un ticket (ex: rectification d'une erreur de saisie) —
 // réservée au COORDINATOR et aux ADMIN. Si le statut passe à PENDING (ou si l'option d'annulation des
-// paiements est activée), tous les règlements associés à ce ticket sont supprimés pour déduire
-// le montant du solde de caisse.
+// paiements est activée), tous les règlements associés à ce ticket sont contrepassés (jamais
+// supprimés, cf. reverseInvoicePayments) pour déduire le montant du solde de caisse.
 export async function changeInvoiceStatus(data: {
   pendingInvoiceId: string;
   newStatus: "PENDING" | "PARTIAL" | "PAID" | "CANCELLED";
@@ -1162,14 +1226,18 @@ export async function changeInvoiceStatus(data: {
       include: { payments: true },
     });
     if (!pending) throw new Error("Facture introuvable.");
+    await assertOrganizationAccess(activeUser, pending.organizationId, TICKET_ACCESS_DENIED);
 
     const oldStatus = pending.status;
     const shouldWithdraw = data.withdrawPayments ?? (data.newStatus === "PENDING");
 
+    let reversal = { reversedCount: 0, reversedAmount: 0 };
     await prisma.$transaction(async (tx) => {
       if (shouldWithdraw) {
-        await tx.financialTransaction.deleteMany({
-          where: { pendingInvoiceId: data.pendingInvoiceId },
+        reversal = await reverseInvoicePayments(tx, {
+          pendingInvoiceId: data.pendingInvoiceId,
+          userId: activeUser.id,
+          reason: data.reason,
         });
       }
 
@@ -1197,6 +1265,8 @@ export async function changeInvoiceStatus(data: {
       oldStatus,
       newStatus: data.newStatus,
       withdrawPayments: shouldWithdraw,
+      reversedPayments: reversal.reversedCount,
+      reversedAmount: reversal.reversedAmount,
       reason: data.reason || null,
     });
 
@@ -1214,7 +1284,8 @@ export async function changeInvoiceStatus(data: {
 
 // Suppression temporaire exceptionnelle d'un ticket de caisse —
 // réservée au COORDINATOR et aux ADMIN.
-// Tous les règlements et liens associés (ordonnances, labo) sont nettoyés pour maintenir la cohérence.
+// Les règlements sont contrepassés (jamais supprimés, cf. reverseInvoicePayments) et les liens
+// associés (ordonnances, labo) détachés avant la suppression du ticket lui-même.
 export async function deletePendingInvoice(data: {
   pendingInvoiceId: string;
   reason?: string;
@@ -1233,11 +1304,16 @@ export async function deletePendingInvoice(data: {
       where: { id: data.pendingInvoiceId },
     });
     if (!pending) throw new Error("Facture introuvable.");
+    await assertOrganizationAccess(activeUser, pending.organizationId, TICKET_ACCESS_DENIED);
 
+    let reversal = { reversedCount: 0, reversedAmount: 0 };
     await prisma.$transaction(async (tx) => {
-      // 1. Supprimer les paiements en caisse associés (pour retirer les montants du solde de caisse)
-      await tx.financialTransaction.deleteMany({
-        where: { pendingInvoiceId: data.pendingInvoiceId },
+      // 1. Contrepasser les règlements (retire les montants du solde de caisse sans effacer
+      //    l'historique des sessions)
+      reversal = await reverseInvoicePayments(tx, {
+        pendingInvoiceId: data.pendingInvoiceId,
+        userId: activeUser.id,
+        reason: data.reason ? `ticket supprimé : ${data.reason}` : "ticket supprimé",
       });
 
       // 2. Déconnecter les ordonnances rattachées
@@ -1260,6 +1336,8 @@ export async function deletePendingInvoice(data: {
 
     await logAuditAction(activeUser.id, "DELETE_PENDING_INVOICE", "PendingInvoice", data.pendingInvoiceId, {
       deletedInvoiceId: data.pendingInvoiceId,
+      reversedPayments: reversal.reversedCount,
+      reversedAmount: reversal.reversedAmount,
       reason: data.reason || null,
     });
 
@@ -1289,7 +1367,7 @@ export async function getFinanceSummary(organizationId?: string, periodInput?: P
     if (!activeUser) throw new Error("Non authentifié.");
     assertFinanceReadRole(activeUser.role);
 
-    const targetOrgId = organizationId || activeUser.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
 
     const period = resolvePeriod(periodInput);
     const periodCreatedAt = periodCreatedAtFilter(period);
@@ -1335,7 +1413,7 @@ export async function getFinanceSummary(organizationId?: string, periodInput?: P
       // absent n'est pas un champ null, cf. fieldIsEmpty dans stock.ts).
       expenseRows = await (prisma as any).financialTransaction.findMany({
         where: { ...whereClause, type: "EXPENSE" },
-        select: { type: true, amount: true, absorbedByPurchaseId: true, createdAt: true },
+        select: { type: true, category: true, amount: true, absorbedByPurchaseId: true, reversedAt: true, createdAt: true },
       });
 
     // Fetch pharmacy items directly via raw MongoDB command to return all custom fields
@@ -1376,6 +1454,9 @@ export async function getFinanceSummary(organizationId?: string, periodInput?: P
       // la FinancialTransaction PHARMACY_PURCHASE de l'achat lui-même. L'exclure ici évite de
       // compter deux fois le même argent, cf. échange avec l'utilisateur sur ce point précis.
       if (t.absorbedByPurchaseId) continue;
+      // Contrepassation : ni le règlement annulé ni son écriture d'annulation ne sont des dépenses
+      // de l'établissement (cf. src/lib/finance-reversal.ts).
+      if (!countsInKpi(t)) continue;
       const amt = Number(t.amount || 0);
       totalExpenses += amt;
       if (t.createdAt && inToday(t.createdAt)) todayExpenses += amt;
@@ -1417,7 +1498,9 @@ export async function getFinanceSummary(organizationId?: string, periodInput?: P
     // INCOME (via groupBy), jamais depuis `transactions` ci-dessus : ce tableau est plafonné à
     // 500 lignes pour l'aperçu du tableau de bord, une clinique dépassant ce volume aurait sinon
     // une répartition tronquée et fausse.
-    const categoryWhere: any = { type: "INCOME" };
+    // Hors règlements contrepassés et écritures d'annulation (cf. src/lib/finance-reversal.ts) :
+    // un règlement annulé ne compte plus dans les recettes, comme lorsqu'il était supprimé.
+    const categoryWhere: any = { type: "INCOME", AND: [COUNTS_IN_KPI_WHERE] };
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {
       categoryWhere.OR = [
         { organizationId: activeUser.organizationId },
@@ -1683,6 +1766,8 @@ export async function listFinancialTransactions(filters: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertFinanceReadRole(activeUser.role);
+    // Valide l'organisation demandée (jamais un identifiant arbitraire) avant de construire le filtre.
+    await resolveTargetOrgId(activeUser, filters.organizationId);
 
     const page = Math.max(1, Math.floor(filters.page || 1));
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(filters.pageSize || MAX_PAGE_SIZE)));
@@ -1797,7 +1882,7 @@ async function scopeOrganizationIds(activeUser: ActiveFinanceUser, organizationI
     const children = await prisma.organization.findMany({ where: { parentId: activeUser.organizationId! }, select: { id: true } });
     return [activeUser.organizationId!, ...children.map((c) => c.id)];
   }
-  const targetOrgId = organizationId || activeUser.organizationId;
+  const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
   return targetOrgId ? [targetOrgId] : [];
 }
 
@@ -2016,7 +2101,7 @@ export async function listCaisseHistoryInvoices(
         { organization: { parentId: activeUser.organizationId } },
       ];
     } else {
-      const targetOrgId = organizationId || activeUser.organizationId;
+      const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
       if (targetOrgId) where.organizationId = targetOrgId;
     }
 

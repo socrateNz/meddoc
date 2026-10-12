@@ -16,9 +16,11 @@ import {
   Activity,
   Clock
 } from "lucide-react";
+import { displayPatientEmail } from "@/lib/patient-identity";
 
 interface Patient {
   id: string;
+  ipp?: string | null;
   user: {
     firstName: string;
     lastName: string;
@@ -175,7 +177,8 @@ export default function ChatInterface({ patients }: { patients: Patient[] }) {
             <div className="p-4 rounded-xl border bg-background/50 text-xs space-y-2 shadow-inner">
               <span className="font-semibold text-primary text-sm block">Sélection actuelle</span>
               <p><strong>Nom :</strong> {selectedPatient?.user.lastName} {selectedPatient?.user.firstName}</p>
-              <p><strong>Email :</strong> {selectedPatient?.user.email}</p>
+              {selectedPatient?.ipp && <p><strong>IPP :</strong> <span className="font-mono">{selectedPatient.ipp}</span></p>}
+              {displayPatientEmail(selectedPatient?.user.email) && <p><strong>Email :</strong> {displayPatientEmail(selectedPatient?.user.email)}</p>}
             </div>
 
             <div className="flex flex-col gap-2">

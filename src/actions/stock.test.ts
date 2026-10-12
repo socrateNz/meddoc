@@ -1326,14 +1326,21 @@ describe("cancelStockPurchase", () => {
     authState.user = coordinatorUser;
   });
 
-  it("décrémente le stock, supprime le lot et sa dépense associée, et libère un retrait absorbé", async () => {
+  it("décrémente le stock, supprime le lot, contrepasse sa dépense (sans la supprimer) et libère un retrait absorbé", async () => {
     const pharmacyItemUpdate = vi.fn(async () => ({}));
     const financialTransactionUpdateMany = vi.fn(async () => ({ count: 1 }));
+    const financialTransactionUpdate = vi.fn(async () => ({}));
+    const financialTransactionCreate = vi.fn(async ({ data }: any) => ({ id: "rev1", ...data }));
     const financialTransactionDelete = vi.fn(async () => ({}));
     const stockPurchaseDelete = vi.fn(async () => ({}));
     const tx = {
       pharmacyItem: { update: pharmacyItemUpdate },
-      financialTransaction: { updateMany: financialTransactionUpdateMany, delete: financialTransactionDelete },
+      financialTransaction: {
+        updateMany: financialTransactionUpdateMany,
+        update: financialTransactionUpdate,
+        create: financialTransactionCreate,
+        delete: financialTransactionDelete,
+      },
       stockPurchase: { delete: stockPurchaseDelete },
     };
 
@@ -1348,7 +1355,9 @@ describe("cancelStockPurchase", () => {
             totalCost: 2100000,
             batchNumber: null,
             pharmacyItem: { name: "Metronidazol" },
-            financialTransactions: [{ id: "tx1" }],
+            financialTransactions: [
+              { id: "tx1", type: "EXPENSE", amount: 2100000, description: "Achat Metronidazol", organizationId: "org1", cashSessionId: null, cashSession: null },
+            ],
           })),
         },
         $transaction: vi.fn(async (fn: any) => fn(tx)),
@@ -1364,7 +1373,23 @@ describe("cancelStockPurchase", () => {
       where: { absorbedByPurchaseId: "tx1" },
       data: { absorbedByPurchaseId: null },
     });
-    expect(financialTransactionDelete).toHaveBeenCalledWith({ where: { id: "tx1" } });
+    // La dépense d'origine n'est jamais supprimée : détachée du lot et marquée contrepassée…
+    expect(financialTransactionDelete).not.toHaveBeenCalled();
+    expect(financialTransactionUpdate).toHaveBeenCalledWith({
+      where: { id: "tx1" },
+      data: { stockPurchaseId: null, reversedAt: expect.any(Date), reversedById: "coord1" },
+    });
+    // …et annulée par une écriture inverse (recette de contrepassation, hors session).
+    expect(financialTransactionCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "INCOME",
+        category: "REVERSAL",
+        amount: 2100000,
+        reversalOfId: "tx1",
+        cashSessionId: null,
+        description: "Annulation d'achat — Achat Metronidazol (motif : erreur de saisie)",
+      }),
+    });
     expect(stockPurchaseDelete).toHaveBeenCalledWith({ where: { id: "purchase1" } });
     expect((result.data as any).warning).toBeNull();
   });

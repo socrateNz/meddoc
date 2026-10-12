@@ -74,6 +74,7 @@ import {
   formatPatientDateTime,
   type ActivityEntry,
 } from "./patient-detail-data";
+import HospitalStayCard from "./hospital-stay-card";
 
 const ACTIVITY_META: Record<ActivityEntry["category"], { icon: typeof FileText; label: string; className: string }> = {
   record: { icon: FileText, label: "Dossier", className: "text-slate-500 bg-slate-500/10" },
@@ -283,6 +284,7 @@ export default function PatientDetailView({
                 )}
               </div>
               <p className="text-muted-foreground mt-1">
+                {patient.ipp && <span className="font-mono font-semibold text-foreground/80">{patient.ipp} • </span>}
                 {calculatePatientAge(patient.dateOfBirth)} ans • {patient.sex === "M" ? "Homme" : patient.sex === "F" ? "Femme" : patient.sex || "Sexe non renseigné"} • Né(e) le {formatPatientDate(patient.dateOfBirth)}
               </p>
             </div>
@@ -306,6 +308,9 @@ export default function PatientDetailView({
           </div>
         </div>
       </div>
+
+      {/* Hospitalisation en cours (nuitées dues à date) — n'affiche rien hors hospitalisation */}
+      <HospitalStayCard patientId={patient.id} />
 
       {/* Allergies & Medical Alert Banner — critique, reste visible quel que soit l'onglet actif */}
       {patient.allergies && patient.allergies.length > 0 && (

@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button";
 import { Printer, Download, Receipt, FileText, CheckCircle2 } from "lucide-react";
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
+import { displayPatientEmail } from "@/lib/patient-identity";
 
 interface InvoiceModalProps {
   transaction: any;
@@ -336,7 +337,8 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                   {transaction.patient?.user ? (
                     <div>
                       <p className="font-bold text-slate-900">{transaction.patient.user.lastName} {transaction.patient.user.firstName}</p>
-                      <p className="text-slate-500">{transaction.patient.user.email}</p>
+                      {transaction.patient.ipp && <p className="text-slate-500 font-mono">IPP : {transaction.patient.ipp}</p>}
+                      {displayPatientEmail(transaction.patient.user.email) && <p className="text-slate-500">{displayPatientEmail(transaction.patient.user.email)}</p>}
                     </div>
                   ) : (
                     <div>

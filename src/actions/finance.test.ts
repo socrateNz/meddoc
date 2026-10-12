@@ -67,6 +67,33 @@ describe("payPendingInvoice", () => {
     expect(pharmacyItemUpdate).not.toHaveBeenCalled();
   });
 
+  it("refuse d'encaisser le ticket d'une autre clinique, sans créer de règlement", async () => {
+    authState.user = { id: "user1", role: "CASHIER", organizationId: "org1", organization: { type: "CLINIC" } };
+    const create = vi.fn();
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({
+            id: "inv9",
+            status: "PENDING",
+            organizationId: "org-autre",
+            items: [{ type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 1000, amount: 1000 }],
+          })),
+        },
+        cashSession: { findUnique: vi.fn(async () => ({ id: "sess1", status: "OPEN", organizationId: "org1" })) },
+        financialTransaction: { create },
+      },
+    }));
+    const { payPendingInvoice } = await import("./finance");
+
+    const result = await payPendingInvoice("inv9", "sess1", 1000);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Non autorisé. Ce ticket n'appartient pas à votre établissement.");
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("accepte un paiement partiel, passe la facture à PARTIAL et ne débloque pas le labo", async () => {
     const pendingInvoiceUpdate = vi.fn(async () => ({}));
     const financialTransactionCreate = vi.fn(async ({ data }: any) => ({ id: "tx1", ...data }));
@@ -1948,34 +1975,48 @@ describe("listFinancialTransactions / listCashSessions — filtre de période", 
 });
 
 describe("changeInvoiceStatus", () => {
-  it("permets au coordonnateur de remettre une facture payée à non payé (PENDING) et supprime les encaissements", async () => {
-    const coordinatorUser = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
-    authState.user = coordinatorUser;
-
-    const deleteManyTx = vi.fn(async () => ({ count: 1 }));
-    const updatePending = vi.fn(async () => ({ id: "inv1", status: "PENDING" }));
-
+  // Deux règlements : l'un encaissé sur une session encore ouverte, l'autre sur une session déjà
+  // clôturée. Mock de transaction Prisma qui enregistre les écritures sans jamais rien supprimer.
+  function reversalTx(options: { alreadyDetached?: string[] } = {}) {
+    const created: any[] = [];
+    const detached: any[] = [];
     const tx = {
-      financialTransaction: { deleteMany: deleteManyTx },
-      pendingInvoice: { update: updatePending },
+      financialTransaction: {
+        findMany: vi.fn(async () => [
+          { id: "pay-open", type: "INCOME", amount: 3000, description: "Vente comptant", patientId: "p1", customPatientName: null, customPatientPhone: null, organizationId: "org1", cashSessionId: "sess-open", cashSession: { status: "OPEN" } },
+          { id: "pay-closed", type: "INCOME", amount: 2000, description: "Acompte", patientId: "p1", customPatientName: null, customPatientPhone: null, organizationId: "org1", cashSessionId: "sess-closed", cashSession: { status: "CLOSED" } },
+        ]),
+        updateMany: vi.fn(async ({ where, data }: any) => {
+          if (options.alreadyDetached?.includes(where.id)) return { count: 0 };
+          detached.push({ where, data });
+          return { count: 1 };
+        }),
+        create: vi.fn(async ({ data }: any) => {
+          created.push(data);
+          return { id: `rev-${created.length}`, ...data };
+        }),
+        deleteMany: vi.fn(),
+        delete: vi.fn(),
+      },
+      pendingInvoice: { update: vi.fn(async () => ({ id: "inv1", status: "PENDING" })) },
     };
+    return { tx, created, detached };
+  }
+
+  it("contrepasse les règlements au lieu de les supprimer quand le coordonnateur remet la facture à non payé", async () => {
+    authState.user = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+    const { tx, created, detached } = reversalTx();
 
     vi.doMock("@/lib/db", () => ({
       prisma: {
         pendingInvoice: {
-          findUnique: vi.fn(async () => ({
-            id: "inv1",
-            status: "PAID",
-            organizationId: "org1",
-            payments: [{ id: "tx1", amount: 5000 }],
-          })),
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PAID", organizationId: "org1", payments: [] })),
         },
         $transaction: vi.fn(async (fn: any) => fn(tx)),
       },
     }));
 
     const { changeInvoiceStatus } = await import("./finance");
-
     const result = await changeInvoiceStatus({
       pendingInvoiceId: "inv1",
       newStatus: "PENDING",
@@ -1984,11 +2025,92 @@ describe("changeInvoiceStatus", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(deleteManyTx).toHaveBeenCalledWith({ where: { pendingInvoiceId: "inv1" } });
-    expect(updatePending).toHaveBeenCalledWith({
+    // Aucune transaction financière n'est physiquement supprimée.
+    expect(tx.financialTransaction.deleteMany).not.toHaveBeenCalled();
+    expect(tx.financialTransaction.delete).not.toHaveBeenCalled();
+
+    // Le règlement d'origine est détaché du ticket (sort des calculs de montant réglé) et marqué
+    // contrepassé — montant et session inchangés (ni amount ni cashSessionId dans la mise à jour).
+    expect(detached).toHaveLength(2);
+    expect(detached[0]).toEqual({
+      where: { id: "pay-open", pendingInvoiceId: "inv1" },
+      data: { pendingInvoiceId: null, reversedAt: expect.any(Date), reversedById: "coord1", reversedFromInvoiceId: "inv1" },
+    });
+    for (const d of detached) {
+      expect(d.data).not.toHaveProperty("amount");
+      expect(d.data).not.toHaveProperty("cashSessionId");
+    }
+
+    // Écriture inverse : même montant, EXPENSE / REVERSAL, session d'origine si encore
+    // ouverte, sinon hors session (la session clôturée n'est jamais modifiée).
+    expect(created).toEqual([
+      expect.objectContaining({ type: "EXPENSE", category: "REVERSAL", amount: 3000, cashSessionId: "sess-open", reversalOfId: "pay-open", recordedById: "coord1" }),
+      expect.objectContaining({ type: "EXPENSE", category: "REVERSAL", amount: 2000, cashSessionId: null, reversalOfId: "pay-closed", recordedById: "coord1" }),
+    ]);
+    expect(created[0].description).toContain("Erreur d'enregistrement caisse");
+    expect(created.every((c) => !("pendingInvoiceId" in c))).toBe(true);
+
+    expect(tx.pendingInvoice.update).toHaveBeenCalledWith({
       where: { id: "inv1" },
       data: expect.objectContaining({ status: "PENDING", paidAt: null, cashSessionId: null }),
     });
+  });
+
+  it("ne contrepasse jamais deux fois un règlement déjà détaché par une annulation concurrente", async () => {
+    authState.user = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+    const { tx, created } = reversalTx({ alreadyDetached: ["pay-open"] });
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: { findUnique: vi.fn(async () => ({ id: "inv1", status: "PAID", organizationId: "org1", payments: [] })) },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+
+    const { changeInvoiceStatus } = await import("./finance");
+    const result = await changeInvoiceStatus({ pendingInvoiceId: "inv1", newStatus: "PENDING" });
+
+    expect(result.success).toBe(true);
+    expect(created).toHaveLength(1);
+    expect(created[0].reversalOfId).toBe("pay-closed");
+  });
+
+  it("refuse de modifier le ticket d'une autre clinique, sans rien écrire", async () => {
+    authState.user = { id: "coord1", role: "COORDINATOR", organizationId: "org1", organization: { type: "CLINIC" } };
+    const transaction = vi.fn();
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: { findUnique: vi.fn(async () => ({ id: "inv9", status: "PAID", organizationId: "org-autre", payments: [] })) },
+        $transaction: transaction,
+      },
+    }));
+
+    const { changeInvoiceStatus } = await import("./finance");
+    const result = await changeInvoiceStatus({ pendingInvoiceId: "inv9", newStatus: "PENDING" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Non autorisé. Ce ticket n'appartient pas à votre établissement.");
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("ne touche à aucun règlement si l'annulation des paiements n'est pas demandée", async () => {
+    authState.user = { id: "coord1", role: "COORDINATOR", organizationId: "org1" };
+    const { tx, created } = reversalTx();
+
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: { findUnique: vi.fn(async () => ({ id: "inv1", status: "PARTIAL", organizationId: "org1", payments: [] })) },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+
+    const { changeInvoiceStatus } = await import("./finance");
+    const result = await changeInvoiceStatus({ pendingInvoiceId: "inv1", newStatus: "PAID", withdrawPayments: false });
+
+    expect(result.success).toBe(true);
+    expect(tx.financialTransaction.findMany).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
   });
 
   it("refuse la modification pour un caissier standard", async () => {
@@ -2023,8 +2145,10 @@ describe("deletePendingInvoice", () => {
     vi.resetModules();
   });
 
-  it("supprime le ticket et ses paiements associés pour un coordonnateur", async () => {
-    const deleteManyTx = vi.fn(async () => ({ count: 1 }));
+  it("contrepasse les paiements (sans les supprimer) puis supprime le ticket pour un coordonnateur", async () => {
+    const deleteManyTx = vi.fn();
+    const deleteTx = vi.fn();
+    const created: any[] = [];
     const updateManyPrescriptions = vi.fn(async () => ({ count: 1 }));
     const updateManyLabOrders = vi.fn(async () => ({ count: 1 }));
     const deleteInvoice = vi.fn(async () => ({ id: "inv1" }));
@@ -2033,11 +2157,22 @@ describe("deletePendingInvoice", () => {
     vi.doMock("@/lib/db", () => ({
       prisma: {
         pendingInvoice: {
-          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1" })),
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PAID", organizationId: "org1" })),
         },
         $transaction: vi.fn(async (cb: any) =>
           cb({
-            financialTransaction: { deleteMany: deleteManyTx },
+            financialTransaction: {
+              findMany: vi.fn(async () => [
+                { id: "pay1", type: "INCOME", amount: 5000, description: "Vente", patientId: null, customPatientName: "Client", customPatientPhone: null, organizationId: "org1", cashSessionId: "sess-closed", cashSession: { status: "CLOSED" } },
+              ]),
+              updateMany: vi.fn(async () => ({ count: 1 })),
+              create: vi.fn(async ({ data }: any) => {
+                created.push(data);
+                return { id: "rev1", ...data };
+              }),
+              deleteMany: deleteManyTx,
+              delete: deleteTx,
+            },
             prescription: { updateMany: updateManyPrescriptions },
             labOrder: { updateMany: updateManyLabOrders },
             pendingInvoice: { delete: deleteInvoice },
@@ -2054,7 +2189,12 @@ describe("deletePendingInvoice", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(deleteManyTx).toHaveBeenCalledWith({ where: { pendingInvoiceId: "inv1" } });
+    expect(deleteManyTx).not.toHaveBeenCalled();
+    expect(deleteTx).not.toHaveBeenCalled();
+    expect(created).toEqual([
+      expect.objectContaining({ type: "EXPENSE", category: "REVERSAL", amount: 5000, cashSessionId: null, reversalOfId: "pay1", customPatientName: "Client" }),
+    ]);
+    expect(created[0].description).toContain("ticket supprimé : Erreur de doublon");
     expect(deleteInvoice).toHaveBeenCalledWith({ where: { id: "inv1" } });
   });
 

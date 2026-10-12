@@ -69,7 +69,7 @@ describe("listPatientsPage", () => {
     expect(clauses).toContainEqual({ dependencyLevel: { gte: 3, lte: 4 } });
   });
 
-  it("recherche nom, e-mail, téléphone et groupe sanguin sans sous-chaîne sur les pathologies", async () => {
+  it("recherche IPP, nom, e-mail, téléphone et groupe sanguin sans sous-chaîne sur les pathologies", async () => {
     const { findMany } = mockDb();
     vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => clinicUser) }));
     const { listPatientsPage } = await import("./patient-list");
@@ -77,7 +77,8 @@ describe("listPatientsPage", () => {
     await listPatientsPage({ search: "  Mballa " });
     const clauses = (findMany.mock.calls[0][0].where as { AND: Array<{ OR?: unknown[] }> }).AND;
     const searchClause = clauses[clauses.length - 1];
-    expect(searchClause.OR).toHaveLength(5);
+    expect(searchClause.OR).toHaveLength(6);
+    expect(searchClause.OR).toContainEqual({ ipp: { contains: "Mballa", mode: "insensitive" } });
     expect(searchClause.OR).toContainEqual({ user: { lastName: { contains: "Mballa", mode: "insensitive" } } });
   });
 

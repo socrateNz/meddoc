@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { requireApiUser } from "@/lib/api-auth";
+import { canAccessOrganization } from "@/lib/org-scope";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { formatPeriodLabel } from "@/lib/finance-period";
@@ -62,15 +63,13 @@ export async function GET(req: Request) {
     // dont elle dépend.
     let organization = user.organization as { name?: string | null; logoUrl?: string | null } | null;
     if (filters.organizationId && filters.organizationId !== user.organizationId) {
-      const target = await prisma.organization.findUnique({
-        where: { id: filters.organizationId },
-        select: { name: true, logoUrl: true, parentId: true },
-      });
-      const allowed = !!target && user.organization?.type === "HOLDING" && target.parentId === user.organizationId;
-      if (!allowed) {
+      if (!(await canAccessOrganization(user, filters.organizationId))) {
         return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
       }
-      organization = target;
+      organization = await prisma.organization.findUnique({
+        where: { id: filters.organizationId },
+        select: { name: true, logoUrl: true },
+      });
     }
 
     const { baseAnd, listWhere } = buildJournalWhere(user, filters);

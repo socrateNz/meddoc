@@ -230,6 +230,7 @@ export default function PrescriptionPDFDocument({ patient, medications = [], doc
               <Text style={{ fontWeight: "bold" }}>
                 Patient : {patient?.user ? `${patient.user.lastName} ${patient.user.firstName}` : "Non spécifié"}
               </Text>
+              {patient?.ipp ? <Text>IPP : {patient.ipp}</Text> : null}
               {patient?.dateOfBirth && (
                 <Text style={{ fontSize: 9, color: "#64748b", marginTop: 2 }}>
                   Né(e) le : {new Date(patient.dateOfBirth).toLocaleDateString("fr-FR")}

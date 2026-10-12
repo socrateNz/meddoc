@@ -2,6 +2,7 @@
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
+import { resolveTargetOrgId } from "@/lib/org-scope";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
@@ -46,7 +47,7 @@ export async function listContracts(organizationId?: string, options?: { page?: 
         ],
       };
     } else {
-      const targetOrgId = organizationId || activeUser!.organizationId;
+      const targetOrgId = await resolveTargetOrgId(activeUser!, organizationId);
       if (targetOrgId) {
         whereClause.patient = { organizationId: targetOrgId };
       }

@@ -99,6 +99,7 @@ export async function listPatientsPage(options?: PatientListOptions) {
     if (term) {
       conditions.push({
         OR: [
+          { ipp: { contains: term, mode: "insensitive" } },
           { user: { firstName: { contains: term, mode: "insensitive" } } },
           { user: { lastName: { contains: term, mode: "insensitive" } } },
           { user: { email: { contains: term, mode: "insensitive" } } },

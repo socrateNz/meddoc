@@ -2,6 +2,7 @@
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
+import { resolveTargetOrgId } from "@/lib/org-scope";
 import { resolvePage } from "@/lib/pagination";
 import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -29,7 +30,7 @@ async function createPurchaseOrderOnce(data: {
     const activeUser = await getCurrentUser();
     await assertStockWrite(activeUser);
 
-    const targetOrgId = data.organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, data.organizationId);
     if (!targetOrgId) throw new Error("Impossible de déterminer l'établissement cible.");
 
     // Commander un produit bloqué par le coordinateur est refusé dès la commande, pas seulement à
@@ -205,7 +206,7 @@ export async function listPurchaseOrders(options?: { supplierId?: string; organi
     if (options?.supplierId) where.supplierId = options.supplierId;
     if (options?.status) where.status = options.status;
 
-    const targetOrgId = options?.organizationId || activeUser!.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser!, options?.organizationId);
     where.organizationId = targetOrgId ? targetOrgId : { in: [] };
 
     const { page, pageSize, skip, take } = resolvePage(options);

@@ -4,10 +4,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Download } from "lucide-react";
 import { toast } from "sonner";
+import { buildTubeLabelData, labOrderReference } from "@/lib/lab-label";
 
 interface PDFDownloadButtonProps {
   documentName: string;
-  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport" | "zreport" | "holding-invoice";
+  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport" | "labtubelabel" | "discharge" | "zreport" | "holding-invoice";
   data: any;
   buttonText?: string;
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
@@ -79,7 +80,7 @@ export default function PDFDownloadButton({
         );
       } else if (type === "labreport") {
         const QRCode = (await import("qrcode")).default;
-        const reportNumber = `LAB-${String(data.order.id).slice(-8).toUpperCase()}`;
+        const reportNumber = labOrderReference(data.order.id);
         const qrDataUrl = await QRCode.toDataURL(
           `MEDDOC-LAB|${reportNumber}|${data.order.patient?.user?.lastName || ""} ${data.order.patient?.user?.firstName || ""}`,
           { margin: 1, width: 160 }
@@ -94,6 +95,24 @@ export default function PDFDownloadButton({
             qrDataUrl={qrDataUrl}
           />
         );
+      } else if (type === "labtubelabel") {
+        // Code 128 de la référence de la demande, rendu en image dans le navigateur (même
+        // approche que le QR code du compte-rendu ci-dessus).
+        const label = buildTubeLabelData(data.order);
+        const { toCanvas } = await import("bwip-js/browser");
+        const canvas = document.createElement("canvas");
+        toCanvas(canvas, { bcid: "code128", text: label.reference, scale: 3, height: 10, includetext: false });
+        const LabTubeLabelPDFDocument = (await import("./lab-tube-label-pdf")).default;
+        element = (
+          <LabTubeLabelPDFDocument
+            label={label}
+            barcodeDataUrl={canvas.toDataURL("image/png")}
+            copies={data.copies}
+          />
+        );
+      } else if (type === "discharge") {
+        const DischargePDFDocument = (await import("./discharge-pdf")).default;
+        element = <DischargePDFDocument bulletin={data.bulletin} />;
       } else if (type === "zreport") {
         const ZReportPDFDocument = (await import("./z-report-pdf")).default;
         element = (

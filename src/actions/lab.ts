@@ -3,6 +3,7 @@
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { resolveTargetOrgId } from "@/lib/org-scope";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
@@ -260,7 +261,7 @@ async function labOrderScope(activeUser: ActiveLabUser, options: LabOrderListOpt
       ],
     });
   } else {
-    const targetOrgId = options.organizationId || activeUser.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser, options.organizationId);
     conditions.push({ organizationId: targetOrgId ? targetOrgId : { in: [] } });
   }
 
@@ -629,7 +630,7 @@ export async function listLabTests(organizationId?: string, options?: { page?: n
     if (!activeUser) throw new Error("Non authentifié.");
     assertLabReadRole(activeUser.role);
 
-    const targetOrgId = organizationId || activeUser.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
     const where: any = { isActive: true };
     if (targetOrgId) where.organizationId = targetOrgId;
 
@@ -667,7 +668,7 @@ export async function createOrUpdateLabTest(data: {
     if (!activeUser) throw new Error("Non authentifié.");
     if (activeUser.role !== "COORDINATOR") throw new Error("Non autorisé. Réservé aux coordinateurs.");
 
-    const targetOrgId = data.organizationId || activeUser.organizationId;
+    const targetOrgId = await resolveTargetOrgId(activeUser, data.organizationId);
 
     let labTest;
     if (data.id) {

@@ -13,6 +13,7 @@ export const TRANSACTION_CATEGORY_LABELS: Record<string, string> = {
   OPERATIONAL_EXPENSE: "Dépense opérationnelle",
   PHARMACY_PURCHASE: "Achat Pharmacie",
   STOCK_ADJUSTMENT: "Ajustement de stock",
+  REVERSAL: "Contrepassation",
   OTHER: "Autre",
 };
 
@@ -36,6 +37,7 @@ export interface JournalTransaction {
   pendingInvoice?: { status: string } | null;
   absorbedByPurchaseId?: string | null;
   remainingDue?: number;
+  reversedAt?: string | Date | null;
 }
 
 export interface JournalExportRow {
@@ -67,7 +69,9 @@ function paymentStatusLabel(t: JournalTransaction): string | null {
 export function buildJournalExportRows(transactions: JournalTransaction[]): JournalExportRow[] {
   return transactions.map((t) => {
     const isIncome = t.type === "INCOME";
-    const status = [paymentStatusLabel(t), t.absorbedByPurchaseId ? "Absorbée" : null].filter(Boolean).join(" · ");
+    const status = [paymentStatusLabel(t), t.absorbedByPurchaseId ? "Absorbée" : null, t.reversedAt ? "Contrepassé" : null]
+      .filter(Boolean)
+      .join(" · ");
     const amount = Math.abs(Number(t.amount) || 0);
     return {
       id: t.id,

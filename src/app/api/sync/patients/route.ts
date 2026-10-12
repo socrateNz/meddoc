@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { getOrgScopeWhere } from "@/lib/org-scope";
+import { displayPatientEmail } from "@/lib/patient-identity";
 
 // Lecture seule pour la réplication RxDB Phase 1 — aucune écriture de Patient hors-ligne,
 // les modifications passent toujours par les Server Actions existantes (createPatient,
@@ -30,7 +31,8 @@ function toReplicatedDoc(patient: {
     id: patient.id,
     firstName: patient.user.firstName,
     lastName: patient.user.lastName,
-    email: patient.user.email,
+    // Adresse technique d'un patient sans e-mail (cf. src/lib/patient-identity.ts) : jamais exposée.
+    email: displayPatientEmail(patient.user.email),
     address: patient.address,
     allergies: patient.allergies,
     pathologies: patient.pathologies,
