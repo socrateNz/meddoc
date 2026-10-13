@@ -137,12 +137,40 @@ export async function middleware(request: NextRequest) {
     const { payload } = await jwtVerify(token!, JWT_SECRET);
     const role = payload.role as string;
 
+    // Accueil d'un utilisateur de clinique : sa clinique. Redirigé ICI, avant tout rendu, plutôt
+    // que par le redirect() de src/app/dashboard/page.tsx : /dashboard a un loading.tsx, la page
+    // est donc déjà en streaming (200) quand ce redirect() arrive, et Next doit alors recharger
+    // toute la page côté navigateur — rechargement qui déclenche l'erreur React #310 (« Rendered
+    // more hooks… ») dans le routeur de Next, visible quelques secondes à chaque connexion.
+    const home =
+      payload.organizationType === 'CLINIC' && payload.organizationId
+        ? `/dashboard/clinics/${payload.organizationId as string}`
+        : '/dashboard';
+    const redirectTo = (path: string) => {
+      const res = NextResponse.redirect(new URL(path, request.url));
+      if (newAccessToken) {
+        res.cookies.set({
+          name: 'token',
+          value: newAccessToken,
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 15,
+          path: '/',
+        });
+      }
+      return withSecurityHeaders(res);
+    };
+    if (pathname === '/dashboard' && home !== '/dashboard') {
+      return redirectTo(home);
+    }
+
     // RBAC: Filtrage des pages en fonction du rôle, quel que soit le préfixe
     // (/dashboard/<section> pour une holding, /dashboard/clinics/<id>/<section> pour une clinique)
     const sectionMatch = pathname.match(/^\/dashboard\/(?:clinics\/[^/]+\/)?([^/]+)/);
     const section = sectionMatch?.[1];
     if (section && restrictedSections[section] && !restrictedSections[section].includes(role)) {
-      return withSecurityHeaders(NextResponse.redirect(new URL('/dashboard', request.url)));
+      return redirectTo(home);
     }
 
     const requestHeaders = new Headers(request.headers);
