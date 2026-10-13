@@ -23,11 +23,14 @@ export default function NewPatientDialog({
   holdingId = "", 
   clinics = [],
   defaultOrganizationId = "",
+  onCreated,
 }: { 
   isHoldingAdmin?: boolean;
   holdingId?: string;
   clinics?: {id: string, name: string}[];
   defaultOrganizationId?: string;
+  // Appelé avec le patient créé (ex. l'accueil le sélectionne aussitôt pour l'enregistrer en file).
+  onCreated?: (patient: { id: string; name: string; ipp: string | null }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const { submitting: loading, guard } = useSubmitGuard();
@@ -106,6 +109,9 @@ export default function NewPatientDialog({
       if (response.success) {
         const ipp = response.data?.patient?.ipp;
         toast.success(`Patient ${firstName} ${lastName} créé avec succès${ipp ? ` — IPP ${ipp}` : ""}.`);
+        if (response.data?.patient) {
+          onCreated?.({ id: response.data.patient.id, name: `${lastName} ${firstName}`, ipp: ipp ?? null });
+        }
         setOpen(false);
         // Reset form
         setFirstName("");

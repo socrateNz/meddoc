@@ -1663,3 +1663,32 @@ model BedStay {
   @@index([hospitalStayId])
   @@index([patientId, endedAt])
 }
+
+// Passage à l'accueil (étape C2 de l'audit d'évolution) : arrivée d'un patient, ticket du jour,
+// orientation et suivi dans la file d'attente jusqu'à sa prise en charge (cf. src/lib/visits.ts).
+model Visit {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String    @db.ObjectId
+  patientId      String    @db.ObjectId
+  // Jour de la clinique (AAAA-MM-JJ, fuseau de Douala) et numéro de ticket de ce jour (1, 2...) —
+  // compteur atomique par clinique et par jour (Counter « visit-<clinique>-<jour> »).
+  visitDate      String
+  ticketNumber   Int
+  destination    String // CONSULTATION, LAB, PHARMACY, NURSING, EMERGENCY, ADMINISTRATIVE
+  priority       String    @default("NORMAL") // NORMAL, URGENT
+  reason         String?
+  // Médecin souhaité pour une consultation (facultatif : sinon le premier disponible).
+  assignedToId   String?   @db.ObjectId
+  status         String    @default("WAITING") // WAITING, CALLED, IN_PROGRESS, DONE, CANCELLED
+  arrivedAt      DateTime  @default(now())
+  calledAt       DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdById    String    @db.ObjectId
+  handledById    String?   @db.ObjectId
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organizationId, visitDate, status])
+  @@index([patientId, visitDate])
+}

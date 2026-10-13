@@ -6,8 +6,9 @@
 // séjour (entré et sorti le même jour = 1). Les minuits sont ceux du fuseau de la clinique, jamais
 // celui du serveur (UTC sur Vercel).
 
-// Fuseau des cliniques (Cameroun, UTC+1 sans heure d'été). Surchargé par CLINIC_TIMEZONE.
-export const CLINIC_TIMEZONE = process.env.CLINIC_TIMEZONE || "Africa/Douala";
+import { CLINIC_TIMEZONE } from "@/lib/clinic-day";
+
+export { CLINIC_TIMEZONE };
 
 // Tarif applicable : celui de la chambre s'il est renseigné, sinon celui du service, sinon 0
 // (séjour non facturé).

@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Stethoscope,
+  Ticket,
   Building2,
   Server,
   Wallet,
@@ -119,6 +120,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/medecin`,
         icon: HeartPulse,
         roles: ['MEDECIN'],
+        section: "Clinique",
+      },
+      {
+        name: "Accueil & file d'attente",
+        href: `/dashboard/clinics/${activeClinicId}/accueil`,
+        icon: Ticket,
+        // Garder en phase avec la section « accueil » de src/middleware.ts.
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'CASHIER', 'PHARMACIST'],
         section: "Clinique",
       },
       {

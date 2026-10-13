@@ -22,6 +22,9 @@ const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password', '/api
 // patients/team/finance/contracts — il reste dans la liste pour pouvoir consulter.
 const restrictedSections: Record<string, string[]> = {
   patients: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+  // Accueil & file d'attente (cf. src/actions/visits.ts) : pas de rôle dédié, tenu par le personnel
+  // du guichet ; garder en phase avec src/app/dashboard/sidebar.tsx.
+  accueil: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'CASHIER', 'PHARMACIST'],
   team: ['ADMIN', 'COORDINATOR'],
   incidents: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
