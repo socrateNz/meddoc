@@ -8,6 +8,7 @@ import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { resolvePage } from "@/lib/pagination";
+import { computeLabOrderStatus, isCriticalValue } from "@/lib/lab-rules";
 import {
   createLabOrderSchema,
   updateLabOrderStatusSchema,
@@ -108,20 +109,8 @@ async function priceLabTests<T extends { id: string; name: string; basePrice: nu
 // (jamais en arrière). Appelé après chaque saisie/validation de résultat.
 async function advanceOrderStatus(labOrderId: string) {
   const order = await prisma.labOrder.findUnique({ where: { id: labOrderId }, include: { results: true } });
-  if (!order || order.status === "CANCELLED" || order.status === "DELIVERED") return;
-
-  const allTestsHaveResult = order.tests.every((t) => order.results.some((r) => r.testName === t));
-  const allTestsValidated = order.tests.every((t) => order.results.some((r) => r.testName === t && r.validatedAt));
-
-  let nextStatus = order.status;
-  if (allTestsValidated && order.results.length > 0) {
-    nextStatus = "VALIDATED";
-  } else if (allTestsHaveResult) {
-    nextStatus = "TO_VALIDATE";
-  } else if (order.results.length > 0 && ["PRESCRIBED", "SAMPLE_COLLECTED", "RECEIVED_AT_LAB"].includes(order.status)) {
-    nextStatus = "IN_ANALYSIS";
-  }
-
+  if (!order) return;
+  const nextStatus = computeLabOrderStatus(order);
   if (nextStatus !== order.status) {
     await prisma.labOrder.update({ where: { id: labOrderId }, data: { status: nextStatus } });
   }
@@ -484,17 +473,9 @@ async function recordLabResultOnce(data: {
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
 
     // Détection de valeur critique par correspondance avec le catalogue.
-    let isAbnormal = !!data.isAbnormal;
     const catalogTest = await findMatchingLabTest(data.testName, order.organizationId);
-    const numericValue = parseFloat(data.value);
-    let isCritical = false;
-    if (catalogTest && !isNaN(numericValue)) {
-      if ((catalogTest.criticalLow != null && numericValue < catalogTest.criticalLow) ||
-          (catalogTest.criticalHigh != null && numericValue > catalogTest.criticalHigh)) {
-        isAbnormal = true;
-        isCritical = true;
-      }
-    }
+    const isCritical = isCriticalValue(catalogTest, data.value);
+    const isAbnormal = !!data.isAbnormal || isCritical;
 
     const derivedReferenceRange =
       data.referenceRange ||

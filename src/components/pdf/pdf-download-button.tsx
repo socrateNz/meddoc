@@ -8,7 +8,7 @@ import { buildTubeLabelData, labOrderReference } from "@/lib/lab-label";
 
 interface PDFDownloadButtonProps {
   documentName: string;
-  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport" | "labtubelabel" | "discharge" | "radiologyreport" | "zreport" | "holding-invoice";
+  type: "patient" | "consultation" | "careplan" | "invoice" | "prescription" | "labreport" | "labtubelabel" | "discharge" | "radiologyreport" | "operativereport" | "zreport" | "holding-invoice";
   data: any;
   buttonText?: string;
   variant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
@@ -113,6 +113,9 @@ export default function PDFDownloadButton({
       } else if (type === "radiologyreport") {
         const RadiologyReportPDFDocument = (await import("./radiology-report-pdf")).default;
         element = <RadiologyReportPDFDocument data={data.report} />;
+      } else if (type === "operativereport") {
+        const OperativeReportPDFDocument = (await import("./operative-report-pdf")).default;
+        element = <OperativeReportPDFDocument data={data.report} />;
       } else if (type === "discharge") {
         const DischargePDFDocument = (await import("./discharge-pdf")).default;
         element = <DischargePDFDocument bulletin={data.bulletin} />;

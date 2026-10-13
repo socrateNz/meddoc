@@ -142,28 +142,28 @@ model Organization {
   // (nombre de tranches prévues, ex: 3, 6, 12) ; nextPaymentDate est la date de la prochaine
   // échéance à régler (tranche suivante, ou date d'échéance du paiement intégral s'il n'a pas
   // encore été réglé) — affichée sur la facture téléchargeable (holding-invoice-pdf.tsx).
-  paymentPlan      PaymentPlan @default(FULL)
+  paymentPlan       PaymentPlan @default(FULL)
   installmentsCount Int?
-  nextPaymentDate  DateTime?
+  nextPaymentDate   DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  roundSessions RoundSession[]
 
   @@index([parentId])
-  roundSessions RoundSession[]
 }
 
 model User {
-  id                     String   @id @default(auto()) @map("_id") @db.ObjectId
-  email                  String   @unique
+  id                     String    @id @default(auto()) @map("_id") @db.ObjectId
+  email                  String    @unique
   passwordHash           String
   firstName              String
   lastName               String
   role                   Role
   phone                  String?
   avatarUrl              String?
-  isActive               Boolean  @default(true)
-  requiresPasswordChange Boolean  @default(false)
+  isActive               Boolean   @default(true)
+  requiresPasswordChange Boolean   @default(false)
   // Horodatage du dernier "battement" envoyé par le navigateur (cf. heartbeat(), appelée toutes
   // les ~45s par PresenceHeartbeat tant qu'un onglet du dashboard reste ouvert) — sert à dériver
   // un statut "En ligne / Récemment / Hors ligne" pour les indicateurs de présence de la
@@ -174,9 +174,9 @@ model User {
   lastActiveAt           DateTime?
   // Types de Notification (ex: "INCIDENT", "APPOINTMENT") que l'utilisateur a
   // désactivés depuis Paramètres > Notifications. Vide = tout est affiché.
-  mutedNotificationTypes String[] @default([])
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  mutedNotificationTypes String[]  @default([])
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   patientProfile     Patient?            @relation("UserPatient")
   familyProfile      FamilyMember?       @relation("UserFamily")
@@ -186,9 +186,9 @@ model User {
   auditLogs                    AuditLog[]
   messagesSent                 Message[]                 @relation("Sender")
   conversations                ConversationParticipant[]
-  channelsCreated               Conversation[]            @relation("ConversationCreatedBy")
+  channelsCreated              Conversation[]            @relation("ConversationCreatedBy")
   notifications                Notification[]
-  pushSubscriptions             PushSubscription[]
+  pushSubscriptions            PushSubscription[]
   aiConversations              AIConversation[]
   vitalsRecorded               VitalSign[]               @relation("RecordedVitals")
   financialTransactions        FinancialTransaction[]    @relation("RecordedTransactions")
@@ -215,16 +215,16 @@ model User {
   prescriptionsDispensed       Prescription[]            @relation("PrescriptionDispensedBy")
   shiftsAssigned               Shift[]                   @relation("ShiftAssignee")
   shiftsCreated                Shift[]                   @relation("ShiftCreatedBy")
-  calendarEvents                CalendarEvent[]           @relation("UserCalendarEvents")
+  calendarEvents               CalendarEvent[]           @relation("UserCalendarEvents")
 
-  organizationId String?       @db.ObjectId
-  organization   Organization? @relation(fields: [organizationId], references: [id])
-
-  @@index([organizationId])
-  @@index([organizationId, role])
+  organizationId      String?        @db.ObjectId
+  organization        Organization?  @relation(fields: [organizationId], references: [id])
   roundsStarted       RoundSession[] @relation("RoundStartedBy")
   roundsClosed        RoundSession[] @relation("RoundClosedBy")
   roundEntriesVisited RoundEntry[]   @relation("RoundEntryVisitedBy")
+
+  @@index([organizationId])
+  @@index([organizationId, role])
 }
 
 model Patient {
@@ -284,10 +284,10 @@ model Patient {
   // Dossier partagé dans un fil de messagerie (cf. Message.sharedPatientId) — jamais inclus par
   // défaut nulle part, uniquement rattaché pour que Prisma connaisse l'inverse de la relation.
   sharedInMessages   Message[]
+  roundEntries       RoundEntry[]        @relation("RoundPatient")
 
   @@index([organizationId])
   @@index([organizationId, updatedAt])
-  roundEntries RoundEntry[] @relation("RoundPatient")
 }
 
 model FamilyMember {
@@ -555,11 +555,11 @@ model LabTest {
 
   // Tarif propre de l'examen, indépendant de tout produit consommé (prix de VENTE facturé au
   // patient).
-  basePrice Float @default(0)
+  basePrice   Float @default(0)
   // Coût propre de l'examen (réactifs/consommables non suivis en stock pharmacie, temps
   // technique, etc.) — distinct de basePrice qui est le prix de VENTE. Sert uniquement au calcul
   // de la marge (Finance > répartition du bénéfice), jamais facturé tel quel au patient.
-  baseCost Float @default(0)
+  baseCost    Float @default(0)
   // Recette de produits consommés à chaque réalisation de l'examen : [{ pharmacyItemId, name,
   // quantity }]. Remplace l'ancien pharmacyItemId obligatoire (fusionné ici — cf. script de
   // migration scripts/migrate-lab-test-consumables.mjs) ET les anciens "consommables annexes" :
@@ -744,16 +744,16 @@ model Shift {
 // un rappel personnel reste personnel, contrairement aux autres sources agrégées sur le
 // calendrier (cf. src/actions/calendar.ts).
 model CalendarEvent {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String   @db.ObjectId
-  user        User     @relation("UserCalendarEvents", fields: [userId], references: [id])
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String    @db.ObjectId
+  user        User      @relation("UserCalendarEvents", fields: [userId], references: [id])
   title       String
   description String?
   startAt     DateTime
   endAt       DateTime?
-  allDay      Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  allDay      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([userId, startAt])
 }
@@ -808,22 +808,22 @@ model AIMessage {
 }
 
 model Ward {
-  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  id             String         @id @default(auto()) @map("_id") @db.ObjectId
   name           String // Nom d'affichage: "Urgences", "Soins Intensifs", "Maternité"...
   code           String // Code unique: "EMERGENCY", "ICU", "SURGERY", "MATERNITY"...
   // Tarif par défaut d'une nuitée d'hospitalisation dans ce service (FCFA) — une chambre peut le
   // remplacer (Room.nightlyRate). Absent = séjour non facturé (cf. src/lib/hospital-stay.ts).
   nightlyRate    Float?
-  organizationId String       @db.ObjectId
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String         @db.ObjectId
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   rooms          Room[]
   beds           Bed[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  roundSessions  RoundSession[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
-  roundSessions RoundSession[]
 }
 
 model Room {
@@ -1217,9 +1217,9 @@ model FinancialTransaction {
   // repli, seule option pour elles.
   items Json?
 
-  patientId String?  @db.ObjectId
-  patient   Patient? @relation(fields: [patientId], references: [id])
-  customPatientName String? // Nom du client/patient saisi manuellement à la caisse si non inscrit
+  patientId          String?  @db.ObjectId
+  patient            Patient? @relation(fields: [patientId], references: [id])
+  customPatientName  String? // Nom du client/patient saisi manuellement à la caisse si non inscrit
   customPatientPhone String? // Numéro de téléphone du client/patient saisi manuellement
 
   pharmacyItemId String?       @db.ObjectId
@@ -1252,8 +1252,8 @@ model FinancialTransaction {
   // dans getFinanceSummary : seul le coût réel de l'achat (PHARMACY_PURCHASE) compte, pour ne
   // jamais compter deux fois le même argent — le retrait n'était qu'un transfert de caisse vers
   // l'achat, pas une dépense propre à l'établissement.
-  absorbedByPurchaseId String?               @db.ObjectId
-  absorbedByPurchase   FinancialTransaction? @relation("ExpenseAbsorbedByPurchase", fields: [absorbedByPurchaseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  absorbedByPurchaseId String?                @db.ObjectId
+  absorbedByPurchase   FinancialTransaction?  @relation("ExpenseAbsorbedByPurchase", fields: [absorbedByPurchaseId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   absorbedExpenses     FinancialTransaction[] @relation("ExpenseAbsorbedByPurchase")
 
   // Lien direct vers le lot StockPurchase que cette dépense PHARMACY_PURCHASE finance (posé
@@ -1308,9 +1308,9 @@ model PendingInvoice {
   // sinon rien n'apparaît dans la file d'attente pharmacie et le stock n'est jamais décrémenté
   // (cf. createCaisseSale). Les créations liées à un patient réel (ordonnance, labo,
   // consultation) continuent de toujours renseigner patientId.
-  patientId String?  @db.ObjectId
-  patient   Patient? @relation(fields: [patientId], references: [id])
-  customPatientName String? // Nom du client/patient saisi manuellement à la caisse si non inscrit
+  patientId          String?  @db.ObjectId
+  patient            Patient? @relation(fields: [patientId], references: [id])
+  customPatientName  String? // Nom du client/patient saisi manuellement à la caisse si non inscrit
   customPatientPhone String? // Numéro de téléphone du client/patient saisi manuellement
 
   medicalRecordId String?        @db.ObjectId
@@ -1345,18 +1345,18 @@ model PendingInvoice {
   // reste à payer = somme(items.amount) − cette somme.
   payments FinancialTransaction[]
 
-  createdAt   DateTime  @default(now())
-  paidAt      DateTime? // posé uniquement au moment où le solde atteint zéro (status -> PAID)
+  createdAt                 DateTime  @default(now())
+  paidAt                    DateTime? // posé uniquement au moment où le solde atteint zéro (status -> PAID)
   // Posé uniquement quand TOUTES les lignes PHARMACY du panier sont intégralement remises (plus
   // aucun reste sur aucune ligne) ET que les consommables labo, s'il y en a, sont réglés — jamais
   // sur une remise partielle. Cf. dispensePendingInvoice et labConsumablesDispensedAt ci-dessous.
-  dispensedAt DateTime?
+  dispensedAt               DateTime?
   // Les consommables labo (réactifs d'un examen) sont tout-ou-rien, indépendamment de la
   // progression ligne par ligne du panier pharmacie : un examen se réalise en une fois. Posé à la
   // toute première remise effectuée sur cette facture, quelle que soit la ligne médicament
   // choisie ce jour-là — jamais redécompté ensuite.
   labConsumablesDispensedAt DateTime?
-  finalizedAt DateTime? // Historique (pré-caisse) — non écrit par le nouveau flux, cf. paidAt
+  finalizedAt               DateTime? // Historique (pré-caisse) — non écrit par le nouveau flux, cf. paidAt
 
   // Posés par closeUnpaidInvoice (ticket à crédit/acompte dont on renonce à recouvrer le solde) —
   // cf. commentaire sur `status` ci-dessus.
@@ -1620,23 +1620,23 @@ model Counter {
 // facturer les nuitées (cf. src/lib/hospital-stay.ts) : la facturation est faite « à date » et
 // peut être répétée (nightsBilled), pour que la famille puisse régler AVANT la sortie effective.
 model HospitalStay {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
-  patientId      String    @db.ObjectId
-  organizationId String    @db.ObjectId
-  status         String    @default("OPEN") // OPEN, CLOSED
-  admittedAt     DateTime  @default(now())
-  admittedById   String?   @db.ObjectId
+  id                      String    @id @default(auto()) @map("_id") @db.ObjectId
+  patientId               String    @db.ObjectId
+  organizationId          String    @db.ObjectId
+  status                  String    @default("OPEN") // OPEN, CLOSED
+  admittedAt              DateTime  @default(now())
+  admittedById            String?   @db.ObjectId
   // Nuitées déjà portées sur une facture (PendingInvoice.hospitalStayId) — une nouvelle
   // facturation ne porte que la différence.
-  nightsBilled   Int       @default(0)
-  dischargedAt   DateTime?
-  dischargedById String?   @db.ObjectId
+  nightsBilled            Int       @default(0)
+  dischargedAt            DateTime?
+  dischargedById          String?   @db.ObjectId
   // Sortie validée malgré un reste à payer (coordinateur uniquement) : motif et montant dû.
   dischargeOverrideReason String?
   outstandingAtDischarge  Float?
-  bedStays       BedStay[]
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  bedStays                BedStay[]
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   @@index([patientId, status])
   @@index([organizationId, status])
@@ -1799,4 +1799,148 @@ model EmergencyTriage {
 
   @@index([visitId, triagedAt])
   @@index([organizationId, triagedAt])
+}
+
+// --- Étape E1 de l'audit d'évolution : bloc opératoire (cf. src/actions/surgery.ts) ---
+
+// Salle d'opération — distincte des chambres d'hospitalisation (Room) : on y programme des
+// interventions, on n'y affecte pas de lit.
+model OperatingRoom {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String   @db.ObjectId
+  name           String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+}
+
+// Intervention programmée : SCHEDULED → IN_PROGRESS → COMPLETED (ou CANCELLED). La check-list de
+// sécurité (3 temps, cf. src/lib/surgery.ts) conditionne le début et la fin ; le compte-rendu
+// opératoire est exigé pour clore. Facturée à la programmation (forfait), comme l'imagerie.
+model SurgeryCase {
+  id                 String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId     String    @db.ObjectId
+  patientId          String    @db.ObjectId
+  operatingRoomId    String    @db.ObjectId
+  procedure          String
+  indication         String?
+  laterality         String    @default("NA") // LEFT, RIGHT, BILATERAL, NA
+  anesthesiaType     String // GENERAL, LOCOREGIONAL, LOCAL, SEDATION
+  priority           String    @default("SCHEDULED") // SCHEDULED, URGENT
+  scheduledStart     DateTime
+  scheduledEnd       DateTime
+  surgeonId          String    @db.ObjectId
+  anesthetistId      String?   @db.ObjectId
+  scrubNurseId       String?   @db.ObjectId
+  fee                Float     @default(0)
+  pendingInvoiceId   String?   @db.ObjectId
+  status             String    @default("SCHEDULED")
+  // { SIGN_IN | TIME_OUT | SIGN_OUT: { answers: { <item>: "YES" | "NA" }, notes, checkedById, checkedAt } }
+  checklist          Json?
+  actualStart        DateTime?
+  actualEnd          DateTime?
+  operativeReport    String?
+  complications      String?
+  postOpInstructions String?
+  reportedById       String?   @db.ObjectId
+  reportedAt         DateTime?
+  createdById        String    @db.ObjectId
+  cancelledById      String?   @db.ObjectId
+  cancelledAt        DateTime?
+  cancelReason       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([organizationId, scheduledStart])
+  @@index([operatingRoomId, scheduledStart])
+  @@index([surgeonId, scheduledStart])
+  @@index([patientId, scheduledStart])
+}
+
+// --- Étape E2 : banque de sang / hémovigilance (cf. src/actions/blood-bank.ts) ---
+
+// Poche de produit sanguin reçue du centre de transfusion : AVAILABLE → RESERVED (pour un patient,
+// après contrôles de compatibilité) → TRANSFUSED, ou DISCARDED (périmée, abîmée...).
+model BloodUnit {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String    @db.ObjectId
+  unitNumber     String // numéro de l'étiquette de la poche
+  product        String // RBC (CGR), PLASMA (PFC), PLATELETS, WHOLE_BLOOD
+  aboGroup       String // A, B, AB, O
+  rhesus         String // POS, NEG
+  volumeMl       Int?
+  collectedAt    DateTime?
+  expiresAt      DateTime
+  source         String?
+  price          Float     @default(0)
+  status         String    @default("AVAILABLE")
+  receivedById   String    @db.ObjectId
+  discardReason  String?
+  discardedById  String?   @db.ObjectId
+  discardedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([organizationId, unitNumber])
+  @@index([organizationId, status, expiresAt])
+}
+
+// Transfusion d'une poche à un patient, tracée de bout en bout : contrôles pré-transfusionnels
+// (groupage, RAI, cross-match) à la réservation, contrôle ultime au lit au début, surveillance et
+// effets indésirables à la fin. RESERVED → IN_PROGRESS → COMPLETED, ou CANCELLED avant le début.
+model Transfusion {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId   String    @db.ObjectId
+  patientId        String    @db.ObjectId
+  bloodUnitId      String    @db.ObjectId
+  indication       String
+  patientAboGroup  String
+  patientRhesus    String
+  antibodyScreen   String // RAI (Coombs indirect) : NEGATIVE, POSITIVE
+  crossmatch       String // COMPATIBLE, NOT_REQUIRED (plasma, plaquettes)
+  requestedById    String    @db.ObjectId
+  status           String    @default("RESERVED")
+  bedsideCheckById String?   @db.ObjectId
+  startedAt        DateTime?
+  preVitals        String?
+  endedAt          DateTime?
+  completedById    String?   @db.ObjectId
+  postVitals       String?
+  reaction         String? // NONE, FEVER, ALLERGIC, HEMOLYTIC, TRALI, TACO, OTHER
+  reactionDetails  String?
+  incidentId       String?   @db.ObjectId
+  pendingInvoiceId String?   @db.ObjectId
+  cancelledById    String?   @db.ObjectId
+  cancelledAt      DateTime?
+  cancelReason     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([organizationId, createdAt])
+  @@index([patientId, createdAt])
+  @@index([bloodUnitId])
+}
+
+// --- Étape E3 : interopérabilité HL7 v2 / FHIR R4 (cf. src/lib/integration-auth.ts) ---
+
+// Système externe autorisé (automate de laboratoire, logiciel tiers) : clé d'API propre à une
+// clinique, dont seule l'empreinte SHA-256 est conservée — la clé n'est affichée qu'une fois.
+model IntegrationClient {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String    @db.ObjectId
+  name           String
+  scopes         String[] // fhir:read, hl7:lab
+  keyPrefix      String
+  keyHash        String    @unique
+  isActive       Boolean   @default(true)
+  createdById    String    @db.ObjectId
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  revokedById    String?   @db.ObjectId
+  createdAt      DateTime  @default(now())
+
+  @@index([organizationId])
 }

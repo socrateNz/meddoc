@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, Building2, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ClinicSettingsForm from "./settings-form";
+import IntegrationsCard from "./integrations-card";
+import { listIntegrationClients } from "@/actions/integrations";
 
 export default async function ClinicSettingsPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -41,6 +43,9 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
     redirect("/dashboard/clinics");
   }
 
+  // Le super-admin n'a pas accès aux clés d'une clinique (listIntegrationClients le refuse).
+  const integrationsRes = isSuperAdmin ? null : await listIntegrationClients(clinic.id);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -60,8 +65,9 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
         </div>
       </div>
 
-      <div className="max-w-3xl">
+      <div className="max-w-3xl space-y-6">
         <ClinicSettingsForm clinic={{ id: clinic.id, name: clinic.name, logoUrl: clinic.logoUrl }} readOnly={!canEdit} />
+        {integrationsRes?.success && <IntegrationsCard clinicId={clinic.id} clients={integrationsRes.data} canManage={integrationsRes.canManage} />}
       </div>
     </div>
   );

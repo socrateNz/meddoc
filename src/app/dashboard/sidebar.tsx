@@ -20,6 +20,8 @@ import {
   Ticket,
   ScanLine,
   Siren,
+  Scissors,
+  Droplet,
   Building2,
   Server,
   Wallet,
@@ -138,6 +140,24 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Siren,
         iconClassName: "text-red-500",
         // Garder en phase avec la section « urgences » de src/middleware.ts.
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
+      },
+      {
+        name: "Bloc opératoire",
+        href: `/dashboard/clinics/${activeClinicId}/bloc`,
+        icon: Scissors,
+        iconClassName: "text-teal-600",
+        // Garder en phase avec la section « bloc » de src/middleware.ts.
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
+      },
+      {
+        name: "Banque de sang",
+        href: `/dashboard/clinics/${activeClinicId}/banque-sang`,
+        icon: Droplet,
+        iconClassName: "text-red-600",
+        // Garder en phase avec la section « banque-sang » de src/middleware.ts.
         roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
         section: "Clinique",
       },

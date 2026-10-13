@@ -32,6 +32,9 @@ const restrictedSections: Record<string, string[]> = {
   imagerie: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   // Tableau des urgences et tri (cf. src/actions/triage.ts).
   urgences: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  // Bloc opératoire et banque de sang (cf. src/actions/surgery.ts, src/actions/blood-bank.ts).
+  bloc: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  'banque-sang': ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   rooms: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   // Ronde médicale : l'équipe qui visite les patients hospitalisés (cf. src/lib/rounds.ts ROUND_ROLES).
   ronde: ['COORDINATOR', 'MEDECIN', 'CAREGIVER'],
@@ -84,6 +87,12 @@ export async function middleware(request: NextRequest) {
   // Routes appelées par des services externes (cron) avec leur propre secret
   // partagé plutôt qu'un cookie de session — voir CRON_SECRET dans .env.example.
   if (pathname.startsWith('/api/cron/')) {
+    return withSecurityHeaders(NextResponse.next());
+  }
+
+  // Interopérabilité (FHIR, HL7) : systèmes externes authentifiés par clé d'API dans la route
+  // elle-même (cf. src/lib/integration-auth.ts), jamais par cookie de session.
+  if (pathname.startsWith('/api/fhir/') || pathname.startsWith('/api/hl7/')) {
     return withSecurityHeaders(NextResponse.next());
   }
 
