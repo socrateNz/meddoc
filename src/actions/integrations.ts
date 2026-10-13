@@ -8,6 +8,7 @@ import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import { INTEGRATION_SCOPES, generateIntegrationKey } from "@/lib/integration-keys";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Clés d'API des systèmes externes (étape E3) : créées et révoquées par le coordinateur de la
 // clinique, consultables par l'admin de holding. La clé n'est renvoyée qu'une fois, à la création.
@@ -17,6 +18,7 @@ const MANAGE_ROLES = ["COORDINATOR"];
 async function requireUser(roles: string[]) {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
+  assertUserModule(activeUser, "INTEROPERABILITE");
   if (!roles.includes(activeUser.role)) throw new Error("Non autorisé. Les intégrations sont gérées par le coordinateur de la clinique.");
   return activeUser;
 }
@@ -57,6 +59,8 @@ export async function createIntegrationClient(data: z.input<typeof createSchema>
     const activeUser = await requireUser(MANAGE_ROLES);
     await assertClinicScope(input.clinicId, activeUser);
 
+    // Automate de laboratoire : uniquement si le module Laboratoire est dans la licence.
+    if (input.scopes.includes("hl7:lab")) assertUserModule(activeUser, "LABORATOIRE");
     const { key, prefix, hash } = generateIntegrationKey();
     const client = await prisma.integrationClient.create({
       data: { organizationId: input.clinicId, name: input.name, scopes: [...new Set(input.scopes)], keyPrefix: prefix, keyHash: hash, createdById: activeUser.id },

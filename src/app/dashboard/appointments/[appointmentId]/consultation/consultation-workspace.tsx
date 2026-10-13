@@ -21,6 +21,7 @@ import { Loader2, FileText, Activity, Stethoscope, Pill, Plus, Trash2, Search, X
 import { Input } from "@/components/ui/input";
 import { searchIcd10Codes, type Icd10Code } from "@/lib/icd10-codes";
 import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
+import { useModules } from "@/components/modules-provider";
 import VitalSignsDialog from "@/app/dashboard/patients/[id]/vital-signs-dialog";
 
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
@@ -79,8 +80,14 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
   // Laboratoire
   const [renewingId, setRenewingId] = useState<string | null>(null);
 
+  // Modules de la licence : onglet Laboratoire et dictée IA masqués s'ils sont inactifs.
+  const enabledModules = useModules();
+  const hasLab = enabledModules.includes("LABORATOIRE");
+  const hasAi = enabledModules.includes("IA");
+
   const { data: labOrders = [], isLoading: labLoading } = useQuery({
     queryKey: ["labOrders", patient.id],
+    enabled: hasLab,
     queryFn: async () => {
       const res = await listLabOrders({ patientId: patient.id });
       if (!res.success) throw new Error(res.error);
@@ -378,10 +385,12 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                 <Pill className="h-4 w-4" />
                 Ordonnances
               </TabsTrigger>
-              <TabsTrigger value="lab" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
-                <FlaskConical className="h-4 w-4" />
-                Laboratoire
-              </TabsTrigger>
+              {hasLab && (
+                <TabsTrigger value="lab" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+                  <FlaskConical className="h-4 w-4" />
+                  Laboratoire
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="history" className="space-y-4">
@@ -425,7 +434,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
             </TabsContent>
 
             <TabsContent value="notes" className="space-y-4">
-              {!isCompleted && (
+              {!isCompleted && hasAi && (
                 <Card className="border-violet-200/60 dark:border-violet-900/40 bg-violet-50/30 dark:bg-violet-950/10">
                   <CardContent className="py-4 flex items-center justify-between gap-4 flex-wrap">
                     <div>

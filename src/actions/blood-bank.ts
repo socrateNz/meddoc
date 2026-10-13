@@ -28,6 +28,7 @@ import {
   type BloodProduct,
   type Rhesus,
 } from "@/lib/blood-bank";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Banque de sang (étape E2 de l'audit d'évolution), sans rôle dédié : le personnel soignant
 // réceptionne et détruit les poches et pose les transfusions ; le médecin (ou le coordinateur)
@@ -41,6 +42,7 @@ const ADMINISTER_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 async function requireUser(roles: string[], message = "Non autorisé.") {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
+  assertUserModule(activeUser, "BANQUE_SANG");
   if (!roles.includes(activeUser.role)) throw new Error(message);
   return activeUser;
 }

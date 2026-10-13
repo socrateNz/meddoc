@@ -7,11 +7,13 @@ import { toErrorMessage } from "@/lib/utils";
 import { resolvePage } from "@/lib/pagination";
 import { assertClinicScope } from "@/lib/clinic-scope";
 import { ROUND_ROLES, ageFrom, canRunRound, cleanRoundText, isRoundDecision, isValidRoundDay, type RoundDecision } from "@/lib/rounds";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Accès à la ronde : rôle soignant, et clinique du périmètre de l'utilisateur.
 async function requireRoundUser(clinicId: string) {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
+  assertUserModule(activeUser, "HOSPITALISATION");
   if (!canRunRound(activeUser.role)) {
     throw new Error("Non autorisé. La ronde est réservée à l'équipe médicale.");
   }

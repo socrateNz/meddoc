@@ -10,6 +10,8 @@ import { toast } from "sonner";
 import { listPatientsPage } from "@/actions/patient-list";
 import { registerVisit } from "@/actions/visits";
 import { VISIT_DESTINATIONS, VISIT_DESTINATION_LABELS, type VisitDestination } from "@/lib/visits";
+import { VISIT_DESTINATION_MODULE } from "@/lib/modules";
+import { useModules } from "@/components/modules-provider";
 import NewPatientDialog from "@/app/dashboard/patients/new-patient-dialog";
 
 type FoundPatient = { id: string; name: string; ipp: string | null };
@@ -29,6 +31,9 @@ export default function RegisterVisitDialog({
   onRegistered: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const modules = useModules();
+  // Orientations des seuls services inclus dans la licence.
+  const destinations = VISIT_DESTINATIONS.filter((d) => !VISIT_DESTINATION_MODULE[d] || modules.includes(VISIT_DESTINATION_MODULE[d]!));
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<FoundPatient[]>([]);
   const [searching, setSearching] = useState(false);
@@ -178,7 +183,7 @@ export default function RegisterVisitDialog({
             <div className="space-y-1.5">
               <Label htmlFor="destination">Orientation *</Label>
               <select id="destination" value={destination} onChange={(e) => setDestination(e.target.value as VisitDestination)} className={selectClass}>
-                {VISIT_DESTINATIONS.map((d) => (
+                {destinations.map((d) => (
                   <option key={d} value={d}>
                     {VISIT_DESTINATION_LABELS[d]}
                   </option>

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { getOrganizationModules } from "@/lib/modules-server";
+import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
 import { extractIntegrationKey, hashIntegrationKey, type IntegrationScope } from "@/lib/integration-keys";
 
 export type IntegrationClientRecord = { id: string; organizationId: string; name: string; createdById: string; scopes: string[] };
@@ -17,6 +19,10 @@ export async function authenticateIntegration(
   const client = await prisma.integrationClient.findUnique({ where: { keyHash: hashIntegrationKey(key) } });
   if (!client || !client.isActive || client.revokedAt) return { response: onError(401, "Clé d'API invalide ou révoquée.") };
   if (!client.scopes.includes(scope)) return { response: onError(403, `Cette clé n'a pas la portée « ${scope} ».`) };
+  // Modules de la licence : l'interopérabilité, et le laboratoire pour les automates (HL7).
+  const modules = await getOrganizationModules(client.organizationId);
+  const missing = !modules.includes("INTEROPERABILITE") ? "INTEROPERABILITE" : scope === "hl7:lab" && !modules.includes("LABORATOIRE") ? "LABORATOIRE" : null;
+  if (missing) return { response: onError(403, MODULE_DISABLED_MESSAGE(missing)) };
 
   // Trace d'utilisation (au plus une écriture par minute et par clé).
   if (!client.lastUsedAt || Date.now() - client.lastUsedAt.getTime() > 60000) {

@@ -8,6 +8,7 @@ import { toErrorMessage } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import { MAX_FILE_BYTES, MEDICAL_FILE_CATEGORIES, belongsToPatientFolder, isAllowedFormat } from "@/lib/medical-files";
 import { destroyUploadedResource, fetchUploadedResource, signPatientUpload } from "@/lib/medical-files-server";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Fichiers médicaux (étape D de l'audit d'évolution) — documents scannés du dossier patient et
 // clichés d'imagerie, stockés sur Cloudinary sans URL publique (cf. src/lib/medical-files-server.ts).
@@ -74,6 +75,8 @@ export async function attachMedicalFile(data: z.input<typeof attachSchema>) {
       if (record?.patientId !== input.patientId) throw new Error("Document du dossier invalide pour ce patient.");
     }
     if (input.radiologyOrderId) {
+      // Cliché d'imagerie : module Imagerie de la licence.
+      assertUserModule(activeUser, "IMAGERIE");
       const order = await prisma.radiologyOrder.findUnique({ where: { id: input.radiologyOrderId }, select: { patientId: true, status: true } });
       if (order?.patientId !== input.patientId) throw new Error("Examen d'imagerie invalide pour ce patient.");
       // Un compte-rendu validé porte sur des clichés précis : on n'en ajoute plus ensuite.

@@ -17,6 +17,8 @@ import {
   nextVisitStatus,
   type VisitAction,
 } from "@/lib/visits";
+import { assertUserModule } from "@/lib/modules-server";
+import { VISIT_DESTINATION_MODULE } from "@/lib/modules";
 
 // Accueil & file d'attente (étape C2 de l'audit d'évolution). Pas de rôle dédié : l'accueil est
 // tenu par le personnel déjà présent au guichet. ADMIN (holding) consulte en lecture seule.
@@ -47,8 +49,12 @@ export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
     const input = registerVisitSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "ACCUEIL");
     if (!VISIT_FRONT_DESK_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
     await assertClinicScope(input.clinicId, activeUser);
+    // Orientation vers un service dont le module n'est pas dans la licence : refusée.
+    const destinationModule = VISIT_DESTINATION_MODULE[input.destination];
+    if (destinationModule) assertUserModule(activeUser, destinationModule);
 
     const patient = await prisma.patient.findUnique({ where: { id: input.patientId }, select: { organizationId: true } });
     if (!patient || patient.organizationId !== input.clinicId) {
@@ -106,6 +112,7 @@ export async function listTodayVisits(clinicId: string) {
     z.string().min(1).parse(clinicId);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "ACCUEIL");
     if (!VISIT_READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
     await assertClinicScope(clinicId, activeUser);
 
@@ -158,6 +165,7 @@ export async function updateVisitStatus(data: { visitId: string; action: VisitAc
     z.object({ visitId: z.string().min(1), action: z.enum(["CALL", "START", "COMPLETE", "CANCEL", "REQUEUE"]) }).parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "ACCUEIL");
 
     const visit = await prisma.visit.findUnique({ where: { id: data.visitId } });
     if (!visit) throw new Error("Passage introuvable.");

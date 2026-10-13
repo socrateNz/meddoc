@@ -34,6 +34,7 @@ import {
 } from "@/lib/finance-period";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { assertUserModule } from "@/lib/modules-server";
 
 // maxDuration (limite de durée Vercel pour dispensePendingInvoice/cancelDispense, déjà à
 // { timeout: 20000, maxWait: 10000 } côté Prisma) NE PEUT PAS être exporté depuis ce fichier : un
@@ -117,6 +118,7 @@ export async function getPharmacyItems(organizationId?: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "PHARMACIE");
     assertPharmacyCatalogReadRole(activeUser.role);
 
     const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
@@ -665,6 +667,9 @@ async function createCaisseSaleOnce(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertRegisterOperateRole(activeUser.role);
+    // Vente de produits (lignes PHARMACY) : module « Pharmacie & stock » de la licence ; les
+    // prestations (SERVICE, LAB) relèvent du socle (caisse).
+    if (data.items.some((item) => item.type === "PHARMACY")) assertUserModule(activeUser, "PHARMACIE");
 
     const session = await prisma.cashSession.findUnique({ where: { id: data.cashSessionId } });
     if (!session || session.status !== "OPEN") {
@@ -841,6 +846,7 @@ async function dispensePendingInvoiceOnce(
     dispensePendingInvoiceSchema.parse({ pendingInvoiceId, referenceCode, lines });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "PHARMACIE");
     assertPharmacyDispenseRole(activeUser.role);
 
     const pending = await prisma.pendingInvoice.findUnique({
@@ -991,6 +997,7 @@ export async function cancelDispense(pendingInvoiceId: string, reason?: string) 
     cancelDispenseSchema.parse({ pendingInvoiceId, reason });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "PHARMACIE");
 
     const allowedRoles = ["COORDINATOR"];
     if (!allowedRoles.includes(activeUser.role)) {
@@ -1973,6 +1980,7 @@ export async function listPharmacyDispenseQueue(organizationId?: string, options
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "PHARMACIE");
     assertPharmacyCatalogReadRole(activeUser.role);
 
     const { page, pageSize } = resolvePage(options);
@@ -1998,6 +2006,7 @@ export async function listPharmacyDispenseHistory(organizationId?: string, optio
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "PHARMACIE");
     assertPharmacyCatalogReadRole(activeUser.role);
 
     const { page, pageSize } = resolvePage(options);

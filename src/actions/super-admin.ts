@@ -9,6 +9,8 @@ import { createHoldingSchema, updateHoldingSubscriptionSchema } from "@/validato
 import { revalidatePath } from "next/cache";
 import bcrypt from "bcrypt";
 import { Role, SubscriptionPlan, SubscriptionStatus, PaymentFrequency, PaymentPlan } from "@prisma/client";
+import { z } from "zod";
+import { MODULE_KEYS, PLAN_MODULES, disabledModulesFor, enabledModulesFrom, withRequirements, type ModuleKey } from "@/lib/modules";
 
 export async function getHoldings(options?: { page?: number; pageSize?: number }) {
   try {
@@ -120,6 +122,8 @@ export async function createHolding(data: {
           type: "HOLDING",
           plan: data.plan,
           subscriptionStatus: "TRIALING",
+          // Modules de la licence préréglés par le plan (ajustables ensuite, cf. updateHoldingModules).
+          disabledModules: disabledModulesFor(PLAN_MODULES[data.plan] ?? [...MODULE_KEYS]),
           licenseExpiresAt: data.licenseExpiresAt,
           paymentAmount: data.paymentAmount ?? null,
           paymentFrequency: data.paymentFrequency ?? null,
@@ -391,5 +395,84 @@ export async function getSuperAdminOverview() {
     };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de la vue d'ensemble.") };
+  }
+}
+
+// --- Modules de la licence (cf. src/lib/modules.ts, Audit/ANALYSE_MODULES_LICENCE.md) ---
+
+// Travail en cours dans les cliniques de la holding qui rend la désactivation d'un module
+// dangereuse : bloquante (séjours facturés à la nuitée, transfusion en cours) ou à confirmer.
+async function moduleDeactivationImpact(organizationIds: string[], modules: ModuleKey[]) {
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  const inOrgs = { organizationId: { in: organizationIds } };
+  for (const key of modules) {
+    if (key === "HOSPITALISATION") {
+      const open = await prisma.hospitalStay.count({ where: { ...inOrgs, status: "OPEN" } });
+      if (open) blockers.push(`${open} séjour(s) d'hospitalisation en cours : clôturez-les (sortie) avant de retirer le module.`);
+    } else if (key === "BANQUE_SANG") {
+      const [running, reserved] = await Promise.all([
+        prisma.transfusion.count({ where: { ...inOrgs, status: "IN_PROGRESS" } }),
+        prisma.transfusion.count({ where: { ...inOrgs, status: "RESERVED" } }),
+      ]);
+      if (running) blockers.push(`${running} transfusion(s) en cours.`);
+      if (reserved) warnings.push(`${reserved} poche(s) réservée(s) pour des patients.`);
+    } else if (key === "BLOC") {
+      const n = await prisma.surgeryCase.count({ where: { ...inOrgs, status: { in: ["SCHEDULED", "IN_PROGRESS"] } } });
+      if (n) warnings.push(`${n} intervention(s) programmée(s) ou en cours au bloc.`);
+    } else if (key === "LABORATOIRE") {
+      const n = await prisma.labOrder.count({ where: { ...inOrgs, status: { notIn: ["VALIDATED", "DELIVERED", "CANCELLED"] } } });
+      if (n) warnings.push(`${n} demande(s) d'analyse non terminée(s).`);
+    } else if (key === "IMAGERIE") {
+      const n = await prisma.radiologyOrder.count({ where: { ...inOrgs, status: { in: ["PRESCRIBED", "PERFORMED", "REPORTED"] } } });
+      if (n) warnings.push(`${n} examen(s) d'imagerie non validé(s).`);
+    }
+  }
+  return { blockers, warnings };
+}
+
+const modulesSchema = z.object({
+  holdingId: z.string().min(1),
+  enabledModules: z.array(z.enum(MODULE_KEYS)),
+  confirm: z.boolean().optional(),
+});
+
+// Seul le SUPER_ADMIN choisit les modules d'une holding. Les prérequis sont ajoutés d'office
+// (URGENCES entraîne ACCUEIL). Une désactivation avec du travail en cours est refusée (bloquant)
+// ou demande une confirmation explicite (avertissements renvoyés sans rien enregistrer).
+export async function updateHoldingModules(data: z.input<typeof modulesSchema>) {
+  try {
+    const input = modulesSchema.parse(data);
+    const user = await getCurrentUser();
+    if (!user || user.role !== "SUPER_ADMIN") throw new Error("Non autorisé.");
+
+    const holding = await prisma.organization.findUnique({
+      where: { id: input.holdingId },
+      select: { id: true, type: true, name: true, disabledModules: true, children: { select: { id: true } } },
+    });
+    if (!holding || holding.type !== "HOLDING") throw new Error("Holding introuvable.");
+
+    const before = enabledModulesFrom(holding.disabledModules);
+    const after = withRequirements(input.enabledModules);
+    const removed = before.filter((k) => !after.includes(k));
+    const { blockers, warnings } = await moduleDeactivationImpact([holding.id, ...holding.children.map((c) => c.id)], removed);
+    if (blockers.length) throw new Error(`Désactivation impossible — ${blockers.join(" ")}`);
+    if (warnings.length && !input.confirm) {
+      return { success: false as const, needsConfirmation: true as const, warnings };
+    }
+
+    const disabledModules = disabledModulesFor(after);
+    await prisma.organization.update({ where: { id: holding.id }, data: { disabledModules } });
+    await logAuditAction(user.id, "UPDATE_HOLDING_MODULES", "Organization", holding.id, {
+      name: holding.name,
+      enabled: after,
+      removed,
+      added: after.filter((k) => !before.includes(k)),
+      warnings,
+    });
+    revalidatePath("/dashboard/holdings");
+    return { success: true as const, data: { enabledModules: after } };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de la mise à jour des modules.") };
   }
 }

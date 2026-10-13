@@ -10,6 +10,7 @@ import { toErrorMessage } from "@/lib/utils";
 import { resolvePage } from "@/lib/pagination";
 import { revalidatePath } from "next/cache";
 import { RADIOLOGY_MODALITIES, nextRadiologyStatus, snapshotExams, type RadiologyAction, type RadiologyExamSnapshot } from "@/lib/radiology";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Imagerie médicale (étape D1 de l'audit d'évolution) — mêmes rôles que le laboratoire, sans rôle
 // dédié : prescription et compte-rendu par le médecin (ou le coordinateur), réalisation et envoi
@@ -24,6 +25,7 @@ const CATALOG_ROLES = ["COORDINATOR"];
 async function requireUser(roles: string[], message = "Non autorisé.") {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
+  assertUserModule(activeUser, "IMAGERIE");
   if (!roles.includes(activeUser.role)) throw new Error(message);
   return activeUser;
 }

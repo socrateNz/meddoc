@@ -6,10 +6,14 @@ const state = vi.hoisted(() => ({
   report: { imported: 1, updated: 0, issues: [] as string[], rejectedOrders: 0 },
   audit: vi.fn(),
   importer: vi.fn(),
+  disabledModules: [] as string[],
 }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: { integrationClient: { findUnique: async () => state.client, update: async () => ({}) } },
+  prisma: {
+    integrationClient: { findUnique: async () => state.client, update: async () => ({}) },
+    organization: { findUnique: async () => ({ type: "CLINIC", disabledModules: state.disabledModules, parent: null }) },
+  },
 }));
 vi.mock("@/lib/hl7-import", () => ({ importOruResults: async (...args: unknown[]) => (state.importer(...args), state.report) }));
 vi.mock("@/middlewares/auditLogger", () => ({ logAuditAction: state.audit }));
@@ -27,6 +31,7 @@ beforeEach(() => {
   state.report = { imported: 1, updated: 0, issues: [], rejectedOrders: 0 };
   state.audit.mockClear();
   state.importer.mockClear();
+  state.disabledModules = [];
 });
 
 describe("POST /api/hl7/oru", () => {
@@ -52,6 +57,16 @@ describe("POST /api/hl7/oru", () => {
     const res = await post(ORU);
     expect(res.status).toBe(403);
     expect(await msa(res)).toMatch(/^MSA\|AR\|/);
+    expect(state.importer).not.toHaveBeenCalled();
+  });
+
+  it("refuse une clé si l'interopérabilité ou le laboratoire n'est pas dans la licence", async () => {
+    state.disabledModules = ["LABORATOIRE"];
+    const res = await post(ORU);
+    expect(res.status).toBe(403);
+    expect(await msa(res)).toMatch(/Laboratoire.*licence/);
+    state.disabledModules = ["INTEROPERABILITE"];
+    expect((await post(ORU)).status).toBe(403);
     expect(state.importer).not.toHaveBeenCalled();
   });
 

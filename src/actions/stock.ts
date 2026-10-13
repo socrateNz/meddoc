@@ -15,6 +15,7 @@ import { buildInventoryReport } from "@/lib/inventory-report";
 import { recordStockPurchaseSchema, saveInventoryCountsSchema, setPharmacyItemSaleBlockSchema } from "@/validators/stock";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { assertUserModule } from "@/lib/modules-server";
 
 // maxDuration (limite de durée Vercel pour les Server Actions définies ici, cf. saveInventoryCounts/
 // completeInventoryCount) NE PEUT PAS être exporté depuis ce fichier : un fichier "use server"
@@ -30,6 +31,8 @@ const STOCK_WRITE_ROLES = ["COORDINATOR", "PHARMACIST"];
 // évite toute divergence entre fichiers).
 export async function assertStockRead(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
+  // Stock, fournisseurs et bons de commande : module « Pharmacie & stock » de la licence.
+  assertUserModule(activeUser, "PHARMACIE");
   if (!STOCK_READ_ROLES.includes(activeUser.role)) {
     throw new Error("Non autorisé.");
   }
@@ -47,6 +50,7 @@ function fieldIsEmpty(field: string): any {
 
 export async function assertStockWrite(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
+  assertUserModule(activeUser, "PHARMACIE");
   if (!STOCK_WRITE_ROLES.includes(activeUser.role)) {
     throw new Error("Non autorisé. Réservé aux coordinateurs et pharmaciens.");
   }

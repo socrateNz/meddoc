@@ -13,6 +13,7 @@ import CountTrendChart from "@/components/dashboard/count-trend-chart";
 import WardOccupancyChart from "@/components/dashboard/ward-occupancy-chart";
 import { buildDayBuckets, buildWeekBuckets, computeStockStatus, countByBucket, startOfDay, sumByBucket } from "@/lib/dashboard-stats";
 import { COUNTS_IN_KPI_WHERE, countsInKpi } from "@/lib/finance-reversal";
+import { modulesOfUser } from "@/lib/modules-server";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +21,14 @@ function formatFCFA(amount: number) {
   return Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
 }
 
-async function fetchWardsAndStaff(clinicId: string) {
+async function fetchWardsAndStaff(clinicId: string, withWards: boolean) {
   const [staffMembers, wardsResult] = await Promise.all([
     prisma.user.findMany({
       where: { organizationId: clinicId, role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR"] } },
       take: 3,
     }),
-    getOrCreateClinicWards(clinicId),
+    // Sans le module Hospitalisation, aucun service n'est lu (ni créé par défaut).
+    withWards ? getOrCreateClinicWards(clinicId) : Promise.resolve({ success: true, wards: [] }),
   ]);
   const wards = wardsResult.success ? wardsResult.wards || [] : [];
 
@@ -242,6 +244,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   if (!user) {
     redirect("/login");
   }
+  const hasHospitalisation = modulesOfUser(user).includes("HOSPITALISATION");
 
   const isHoldingAdmin = user.role === "ADMIN" && user.organization?.type === "HOLDING";
   const isClinicUser = user.organizationId === params.id;
@@ -307,7 +310,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     operationsCharts,
     dispensingTrend,
   ] = await Promise.all([
-    showWardsAndStaff ? fetchWardsAndStaff(clinic.id) : Promise.resolve({ staffMembers: [] as any[], wardsWithOccupancy: [] as any[] }),
+    showWardsAndStaff ? fetchWardsAndStaff(clinic.id, hasHospitalisation) : Promise.resolve({ staffMembers: [] as any[], wardsWithOccupancy: [] as any[] }),
     isCoordinator || isCashier ? fetchFinanceSummary(clinic.id) : Promise.resolve({ todayIncome: 0, cashBalance: 0, lowStockCount: 0 }),
     isPharmacist ? fetchPharmacyOverview(clinic.id) : Promise.resolve({ queueCount: 0, dispensedTodayCount: 0, lowStockCount: 0 }),
     isCoordinator || isCaregiver ? prisma.incident.count({ where: { status: "OPEN", patient: { organizationId: clinic.id } } }) : Promise.resolve(0),
@@ -637,6 +640,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
       {showWardsAndStaff && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8 animate-fade-up" style={{ animationDelay: "200ms" } as React.CSSProperties}>
           {/* Bed Occupancy Card */}
+          {hasHospitalisation && (
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex items-center justify-between border-b pb-4 mb-4">
               <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
@@ -660,6 +664,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
               ]}
             />
           </div>
+          )}
 
           {/* On-Duty Staff Card */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">

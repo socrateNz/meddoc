@@ -10,6 +10,7 @@ import { requirePermission } from "@/lib/permissions";
 import { resolvePage } from "@/lib/pagination";
 import { createContractSchema, updateContractStatusSchema } from "@/validators/contracts";
 import { revalidatePath } from "next/cache";
+import { assertUserModule } from "@/lib/modules-server";
 
 const CONTRACT_READ_ROLES = ["ADMIN", "COORDINATOR"];
 const CONTRACT_WRITE_ROLES = ["COORDINATOR"];
@@ -18,6 +19,7 @@ const CONTRACT_WRITE_ROLES = ["COORDINATOR"];
 // COORDINATOR (le véritable gestionnaire RH de sa clinique) peut les créer/modifier.
 async function assertContractRead(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
+  assertUserModule(activeUser, "CONTRATS_AIDANTS");
   if (!CONTRACT_READ_ROLES.includes(activeUser.role)) {
     throw new Error("Non autorisé.");
   }
@@ -25,6 +27,7 @@ async function assertContractRead(activeUser: any) {
 
 async function assertContractWrite(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
+  assertUserModule(activeUser, "CONTRATS_AIDANTS");
   if (!CONTRACT_WRITE_ROLES.includes(activeUser.role)) {
     throw new Error("Non autorisé. Réservé aux coordinateurs.");
   }

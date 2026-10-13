@@ -15,6 +15,7 @@ import PatientTable from "@/app/dashboard/patients/patient-table";
 import { listPatientsPage } from "@/actions/patient-list";
 import { keepQuery } from "@/components/ui/pagination-nav";
 import { EMPTY_PATIENT_PAGE, patientListOptions } from "@/app/dashboard/patients/patient-list-params";
+import { modulesOfUser } from "@/lib/modules-server";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -48,6 +49,8 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
   if (!currentUser) {
     redirect("/login");
   }
+  // Encarts du laboratoire masqués si le module n'est pas dans la licence.
+  const hasLab = modulesOfUser(currentUser).includes("LABORATOIRE");
   // Défense en profondeur : le middleware (restrictedSections.medecin) gate déjà cette route,
   // ce contrôle évite juste qu'un autre rôle clinique atterrisse ici via un lien direct.
   if (currentUser.role !== "MEDECIN") {
@@ -136,6 +139,7 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
             <div className="text-3xl font-extrabold">{patientsPage.total}</div>
           </CardContent>
         </Card>
+        {hasLab && (
         <Card className="rounded-2xl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs uppercase tracking-wider font-bold text-slate-400">Résultats labo en attente</CardTitle>
@@ -145,6 +149,7 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
             <div className={`text-3xl font-extrabold ${pendingLabCount > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}>{pendingLabCount}</div>
           </CardContent>
         </Card>
+        )}
         <Card className="rounded-2xl">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xs uppercase tracking-wider font-bold text-slate-400">Notes cliniques rédigées</CardTitle>
@@ -226,6 +231,7 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Résultats labo récents/en attente */}
+        {hasLab && (
         <Card className="rounded-2xl">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <div>
@@ -255,6 +261,7 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Notes cliniques / historique de consultations */}
         <Card className="rounded-2xl">

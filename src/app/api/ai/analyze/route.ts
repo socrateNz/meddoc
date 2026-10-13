@@ -3,6 +3,8 @@ import { AiService } from "@/services/AiService";
 import { requireApiUser } from "@/lib/api-auth";
 import { verifyPatientAccess } from "@/lib/auth";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
+import { modulesOfUser } from "@/lib/modules-server";
+import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
 
 export async function POST(req: Request) {
   try {
@@ -11,6 +13,9 @@ export async function POST(req: Request) {
 
     const auth = await requireApiUser(["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"]);
     if ("response" in auth) return auth.response;
+    if (!modulesOfUser(auth.user).includes("IA")) {
+      return NextResponse.json({ error: MODULE_DISABLED_MESSAGE("IA") }, { status: 403 });
+    }
 
     const { patientId } = await req.json();
 

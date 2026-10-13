@@ -135,6 +135,11 @@ model Organization {
   maxUsers           Int                @default(10)
   isActive           Boolean            @default(true) // Permet à un ADMIN (holding) de suspendre une clinique
 
+  // Modules de la licence DÉSACTIVÉS pour cette holding (cf. src/lib/modules.ts) — liste vide =
+  // tous les modules. Renseigné sur la holding uniquement, par le SUPER_ADMIN ; les cliniques
+  // héritent des modules de leur holding.
+  disabledModules String[] @default([])
+
   paymentAmount    Float? // Tarif actuel (FCFA), éditable à tout moment
   paymentFrequency PaymentFrequency?
 

@@ -21,6 +21,7 @@ import {
   surgeryTransition,
   validatePhaseAnswers,
 } from "@/lib/surgery";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Bloc opératoire (étape E1 de l'audit d'évolution), sans rôle dédié : le médecin (chirurgien ou
 // anesthésiste) ou le coordinateur programme et opère ; l'infirmier(e) — panseuse — signe la
@@ -36,6 +37,7 @@ const NURSE_ROLES = ["CAREGIVER"];
 async function requireUser(roles: string[], message = "Non autorisé.") {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
+  assertUserModule(activeUser, "BLOC");
   if (!roles.includes(activeUser.role)) throw new Error(message);
   return activeUser;
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useModules } from "@/components/modules-provider";
 import { usePathname, useParams, useRouter } from "next/navigation";
 import { 
   Activity, 
@@ -67,6 +68,7 @@ interface SidebarProps {
 export default function Sidebar({ currentUser, unreadCounts, clinics = [], superAdminAlerts }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+  const enabledModules = useModules();
   const params = useParams();
   const router = useRouter();
 
@@ -128,6 +130,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Accueil & file d'attente",
+        module: "ACCUEIL",
         href: `/dashboard/clinics/${activeClinicId}/accueil`,
         icon: Ticket,
         // Garder en phase avec la section « accueil » de src/middleware.ts.
@@ -136,6 +139,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Urgences",
+        module: "URGENCES",
         href: `/dashboard/clinics/${activeClinicId}/urgences`,
         icon: Siren,
         iconClassName: "text-red-500",
@@ -145,6 +149,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Bloc opératoire",
+        module: "BLOC",
         href: `/dashboard/clinics/${activeClinicId}/bloc`,
         icon: Scissors,
         iconClassName: "text-teal-600",
@@ -154,6 +159,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Banque de sang",
+        module: "BANQUE_SANG",
         href: `/dashboard/clinics/${activeClinicId}/banque-sang`,
         icon: Droplet,
         iconClassName: "text-red-600",
@@ -188,6 +194,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Laboratoire",
+        module: "LABORATOIRE",
         href: `/dashboard/clinics/${activeClinicId}/lab`,
         icon: FlaskConical,
         count: unreadCounts?.lab || 0,
@@ -197,6 +204,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Imagerie",
+        module: "IMAGERIE",
         href: `/dashboard/clinics/${activeClinicId}/imagerie`,
         icon: ScanLine,
         // Garder en phase avec la section « imagerie » de src/middleware.ts.
@@ -205,6 +213,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Chambres & Lits",
+        module: "HOSPITALISATION",
         href: `/dashboard/clinics/${activeClinicId}/rooms`,
         icon: BedDouble,
         roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
@@ -212,6 +221,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Ronde médicale",
+        module: "HOSPITALISATION",
         href: `/dashboard/clinics/${activeClinicId}/ronde`,
         icon: Stethoscope,
         roles: ['COORDINATOR', 'MEDECIN', 'CAREGIVER'],
@@ -219,6 +229,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Assistant Clinique IA",
+        module: "IA",
         href: `/dashboard/clinics/${activeClinicId}/ai-assistant`,
         icon: Sparkles,
         iconClassName: "text-violet-500",
@@ -236,6 +247,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Pharmacie",
+        module: "PHARMACIE",
         href: `/dashboard/clinics/${activeClinicId}/pharmacie`,
         icon: PackageSearch,
         roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
@@ -250,6 +262,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Contrats aidants",
+        module: "CONTRATS_AIDANTS",
         href: `/dashboard/clinics/${activeClinicId}/contracts`,
         icon: FileSignature,
         roles: ['ADMIN', 'COORDINATOR'],
@@ -288,6 +301,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
     ] : [
       {
         name: "Laboratoire",
+        module: "LABORATOIRE",
         href: "/dashboard/lab",
         icon: FlaskConical,
         count: unreadCounts?.lab || 0,
@@ -304,6 +318,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Pharmacie",
+        module: "PHARMACIE",
         href: "/dashboard/pharmacie",
         icon: PackageSearch,
         roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
@@ -318,6 +333,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       },
       {
         name: "Contrats aidants",
+        module: "CONTRATS_AIDANTS",
         href: "/dashboard/contracts",
         icon: FileSignature,
         roles: ['ADMIN', 'COORDINATOR'],
@@ -456,6 +472,8 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
     const filteredNavItems = navItems.filter((item: any) => {
       if (!currentUser) return !item.roles;
       if (item.roles && !item.roles.includes(currentUser.role)) return false;
+      // Module hors licence de l'établissement (cf. src/lib/modules.ts) : entrée masquée.
+      if (item.module && !enabledModules.includes(item.module)) return false;
       if (item.isHoldingOnly && currentUser.organization?.type !== 'HOLDING') return false;
       return true;
     });

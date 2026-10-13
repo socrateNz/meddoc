@@ -7,6 +7,7 @@ import NewPatientDialog from "@/app/dashboard/patients/new-patient-dialog";
 import { EMPTY_PATIENT_PAGE, patientListOptions } from "@/app/dashboard/patients/patient-list-params";
 
 import PatientTable from "@/app/dashboard/patients/patient-table";
+import { modulesOfUser } from "@/lib/modules-server";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -70,7 +71,7 @@ export default async function ClinicPatientsPage({ params, searchParams }: PageP
         pathname={`/dashboard/clinics/${clinicId}/patients`}
         clinicId={clinicId}
         organizationId={clinicId}
-        canAssignBed={["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role)}
+        canAssignBed={["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role) && modulesOfUser(activeUser).includes("HOSPITALISATION")}
       />
 
       <CacheWriter

@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Edit, Loader2, Eye, FileDown, Crown, Building2, Users, Activity, UserX, UserCheck, Trash2, KeyRound, Copy, Check } from "lucide-react";
+import { MoreHorizontal, Edit, Loader2, Eye, FileDown, Crown, Building2, Users, Activity, UserX, UserCheck, Trash2, KeyRound, Copy, Check, Blocks } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SubscriptionPlan, SubscriptionStatus, PaymentFrequency, PaymentPlan } from "@prisma/client";
 import { updateHoldingSubscription, deactivateHolding, reactivateHolding, deleteHolding, resetHoldingAdminPassword } from "@/actions/super-admin";
 import { toast } from "sonner";
+import HoldingModulesDialog from "./holding-modules-dialog";
 
 const PLAN_LABELS: Record<string, string> = {
   TRIAL: "Essai (Trial)",
@@ -75,11 +76,13 @@ interface HoldingActionsMenuProps {
     paymentPlan?: PaymentPlan;
     installmentsCount?: number | null;
     nextPaymentDate?: Date | string | null;
+    disabledModules?: string[] | null;
   };
 }
 
 export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps) {
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showModulesDialog, setShowModulesDialog] = useState(false);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -253,6 +256,10 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
               <Edit className="h-4 w-4 mr-2" />
               Modifier
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setShowModulesDialog(true)} className="cursor-pointer">
+              <Blocks className="h-4 w-4 mr-2" />
+              Modules de la licence
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={handleDownloadReceipt} disabled={downloading} className="cursor-pointer">
               {downloading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileDown className="h-4 w-4 mr-2" />}
               Télécharger le reçu
@@ -279,6 +286,8 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {showModulesDialog && <HoldingModulesDialog holding={holding} open={showModulesDialog} onOpenChange={setShowModulesDialog} />}
 
       <Dialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
         <DialogContent className="sm:max-w-[425px]">

@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { getOrganizationModules } from "@/lib/modules-server";
 
 // Anciennement déclenché par un setInterval démarré au chargement de
 // src/lib/db.ts — retiré car incompatible avec un déploiement serverless
@@ -187,6 +188,17 @@ export async function sendAppointmentReminders(now: Date) {
   }
 }
 
+// Alertes de stock : seulement pour les établissements dont la licence inclut le module
+// « Pharmacie & stock » (cf. src/lib/modules.ts). Mémorisé le temps d'un passage du planificateur.
+function pharmacyModuleChecker() {
+  const memo = new Map<string, Promise<boolean>>();
+  return (organizationId: string | null) => {
+    if (!organizationId) return Promise.resolve(false);
+    if (!memo.has(organizationId)) memo.set(organizationId, getOrganizationModules(organizationId).then((m) => m.includes("PHARMACIE")));
+    return memo.get(organizationId)!;
+  };
+}
+
 async function checkExpiringStock(now: Date) {
   try {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -210,7 +222,9 @@ async function checkExpiringStock(now: Date) {
     if (earliestByItem.size === 0) return;
     const { appEvents } = await import("./events");
 
+    const hasPharmacy = pharmacyModuleChecker();
     for (const lot of earliestByItem.values()) {
+      if (!(await hasPharmacy(lot.organizationId))) continue;
       const title = `Expiration proche : ${lot.pharmacyItem!.name}`;
       // Dédoublonnage quotidien (même pattern que sendDailyAgenda) : au plus une alerte par jour.
       const existingNotification = await prisma.notification.findFirst({
@@ -241,7 +255,9 @@ async function checkLowStock(now: Date) {
 
     const { appEvents } = await import("./events");
 
+    const hasPharmacy = pharmacyModuleChecker();
     for (const item of belowThreshold) {
+      if (!(await hasPharmacy(item.organizationId))) continue;
       const title = `Rupture de stock : ${item.name}`;
       const existingNotification = await prisma.notification.findFirst({
         where: { title, createdAt: { gte: startOfToday } },

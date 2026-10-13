@@ -75,6 +75,8 @@ import {
   type ActivityEntry,
 } from "./patient-detail-data";
 import HospitalStayCard from "./hospital-stay-card";
+import { useModules } from "@/components/modules-provider";
+import type { ModuleKey } from "@/lib/modules";
 import PatientDocumentsCard from "./patient-documents-card";
 import PatientRadiologyPanel from "./patient-radiology-panel";
 
@@ -164,7 +166,10 @@ export default function PatientDetailView({
   const activeCarePlan = patient.carePlans.find((cp: any) => cp.status === "ACTIVE");
   const isDischarged = patient.status === "DISCHARGED" || (patient.carePlans.length > 0 && !activeCarePlan);
   const patientFullName = `${patient.user.firstName} ${patient.user.lastName}`;
-  const showMaternityTab = patient.sex === "F" || pregnanciesPage.total > 0;
+  // Onglets et encarts des modules de la licence (cf. src/lib/modules.ts) : masqués si inactifs.
+  const enabledModules = useModules();
+  const hasModule = (key: ModuleKey) => enabledModules.includes(key);
+  const showMaternityTab = hasModule("MATERNITE") && (patient.sex === "F" || pregnanciesPage.total > 0);
 
   // `patient` reste typé `any` (comme le reste de ce composant, cf. patient.carePlans.map((cp: any)
   // => ...) plus bas) : le cast explicite évite que l'inférence générique de findNextAppointment
@@ -312,7 +317,7 @@ export default function PatientDetailView({
       </div>
 
       {/* Hospitalisation en cours (nuitées dues à date) — n'affiche rien hors hospitalisation */}
-      <HospitalStayCard patientId={patient.id} />
+      {hasModule("HOSPITALISATION") && <HospitalStayCard patientId={patient.id} />}
 
       {/* Allergies & Medical Alert Banner — critique, reste visible quel que soit l'onglet actif */}
       {patient.allergies && patient.allergies.length > 0 && (
@@ -363,18 +368,22 @@ export default function PatientDetailView({
           >
             Ordonnances ({prescriptionsPage.total})
           </TabsTrigger>
-          <TabsTrigger
-            value="lab"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            Laboratoire ({labOrdersPage.total})
-          </TabsTrigger>
-          <TabsTrigger
-            value="imagery"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            Imagerie
-          </TabsTrigger>
+          {hasModule("LABORATOIRE") && (
+            <TabsTrigger
+              value="lab"
+              className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
+            >
+              Laboratoire ({labOrdersPage.total})
+            </TabsTrigger>
+          )}
+          {hasModule("IMAGERIE") && (
+            <TabsTrigger
+              value="imagery"
+              className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
+            >
+              Imagerie
+            </TabsTrigger>
+          )}
           {showMaternityTab && (
             <TabsTrigger
               value="maternity"
@@ -402,13 +411,15 @@ export default function PatientDetailView({
           >
             Incidents ({patient.incidents.length})
           </TabsTrigger>
-          <TabsTrigger
-            value="ai"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            <BrainCircuit className="h-4 w-4 text-indigo-500" />
-            Analyse IA
-          </TabsTrigger>
+          {hasModule("IA") && (
+            <TabsTrigger
+              value="ai"
+              className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
+            >
+              <BrainCircuit className="h-4 w-4 text-indigo-500" />
+              Analyse IA
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Onglet Aperçu — résumé + fil d'activité croisant tous les autres onglets */}

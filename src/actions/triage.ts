@@ -10,6 +10,7 @@ import { revalidatePath } from "next/cache";
 import { clinicDateKey } from "@/lib/clinic-day";
 import { formatTicket, ACTIVE_VISIT_STATUSES } from "@/lib/visits";
 import { VITAL_BOUNDS, compareEmergency, isPlausibleBloodPressure } from "@/lib/triage";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Tri des urgences (étape D2 de l'audit d'évolution) sur les passages de l'accueil orientés
 // « Urgences ». Tri par le personnel soignant ; lecture aussi pour l'admin de holding.
@@ -46,6 +47,7 @@ export async function triageVisit(data: z.input<typeof triageSchema>) {
     const input = triageSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "URGENCES");
     if (!TRIAGE_ROLES.includes(activeUser.role)) throw new Error("Non autorisé. Le tri est réservé au personnel soignant.");
 
     const visit = await prisma.visit.findUnique({ where: { id: input.visitId } });
@@ -112,6 +114,7 @@ export async function listEmergencyBoard(clinicId: string) {
     z.string().min(1).parse(clinicId);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "URGENCES");
     if (!READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
     await assertClinicScope(clinicId, activeUser);
 

@@ -7,6 +7,7 @@ import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import { stayInvoiceLines, stayNightsToDate } from "@/lib/hospital-stay";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Séjour d'hospitalisation en cours d'un patient (cf. src/lib/hospital-stay.ts) : consultation par
 // le personnel clinique, correction de la date d'entrée par le coordinateur.
@@ -18,6 +19,7 @@ export async function getOpenStaySummary(patientId: string) {
     z.string().min(1).parse(patientId);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "HOSPITALISATION");
     if (!STAY_READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
     if (!(await verifyPatientAccess(patientId, activeUser))) throw new Error("Non autorisé.");
 
@@ -62,6 +64,7 @@ export async function correctStayAdmission(data: { stayId: string; admittedAt: s
     z.object({ stayId: z.string().min(1), admittedAt: z.string().min(1) }).parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "HOSPITALISATION");
     if (!STAY_CORRECT_ROLES.includes(activeUser.role)) throw new Error("Non autorisé. Réservé aux coordinateurs.");
 
     const admittedAt = new Date(data.admittedAt);

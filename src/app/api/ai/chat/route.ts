@@ -3,6 +3,8 @@ import { AiRAGService, RateLimitError, ServiceUnavailableError } from "@/service
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
+import { modulesOfUser } from "@/lib/modules-server";
+import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,6 +15,9 @@ export async function POST(req: NextRequest) {
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
+    if (!modulesOfUser(currentUser).includes("IA")) {
+      return NextResponse.json({ error: MODULE_DISABLED_MESSAGE("IA") }, { status: 403 });
     }
 
     const userId = currentUser.id;

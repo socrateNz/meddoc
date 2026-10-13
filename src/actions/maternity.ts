@@ -13,6 +13,7 @@ import {
   updatePregnancyStatusSchema,
 } from "@/validators/maternity";
 import { revalidatePath } from "next/cache";
+import { assertUserModule } from "@/lib/modules-server";
 
 // Consulter le suivi de maternité est ouvert à tout le personnel clinique, y compris ADMIN
 // (holding) en lecture seule. Créer/modifier une grossesse, une visite prénatale ou un
@@ -59,6 +60,7 @@ async function createPregnancyOnce(data: {
     createPregnancySchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
     assertMaternityWriteRole(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
@@ -93,6 +95,7 @@ export async function listPregnancies(patientId: string, options?: { page?: numb
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
     assertMaternityReadRole(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
@@ -137,6 +140,7 @@ async function addPrenatalVisitOnce(data: {
     addPrenatalVisitSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
     assertMaternityWriteRole(activeUser.role);
 
     const pregnancy = await prisma.pregnancy.findUnique({ where: { id: data.pregnancyId } });
@@ -194,6 +198,7 @@ async function recordDeliveryOnce(data: {
     recordDeliverySchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
     assertMaternityWriteRole(activeUser.role);
 
     const pregnancy = await prisma.pregnancy.findUnique({ where: { id: data.pregnancyId } });
@@ -249,6 +254,7 @@ export async function updatePregnancyStatus(pregnancyId: string, status: "MISCAR
     updatePregnancyStatusSchema.parse({ pregnancyId, status });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
     assertMaternityWriteRole(activeUser.role);
 
     const pregnancy = await prisma.pregnancy.findUnique({ where: { id: pregnancyId } });

@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
+import { modulesOfUser } from "@/lib/modules-server";
+import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
 
 // Lecture seule pour la réplication RxDB du catalogue d'examens (cf. src/lib/offline-db.ts) —
 // mêmes rôles que listLabTests (src/actions/lab.ts, assertLabReadRole), aucune écriture possible
@@ -37,6 +39,9 @@ export async function GET(req: NextRequest) {
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+    }
+    if (!modulesOfUser(currentUser).includes("LABORATOIRE")) {
+      return NextResponse.json({ error: MODULE_DISABLED_MESSAGE("LABORATOIRE") }, { status: 403 });
     }
     if (!OFFLINE_READ_ROLES.includes(currentUser.role)) {
       return NextResponse.json({ error: "Non autorisé." }, { status: 403 });

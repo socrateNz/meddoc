@@ -5,6 +5,7 @@ import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { assertUserModule } from "@/lib/modules-server";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -16,6 +17,7 @@ export async function transcribeConsultationAudio(audioBase64: string, mimeType:
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "IA");
     if (!CLINICAL_WRITE_ROLES.includes(activeUser.role)) {
       throw new Error("Non autorisé.");
     }
@@ -85,6 +87,7 @@ export async function generateAIAnalysis(patientId: string) {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
+    assertUserModule(activeUser, "IA");
     if (!CLINICAL_WRITE_ROLES.includes(activeUser.role)) {
       throw new Error("Non autorisé.");
     }

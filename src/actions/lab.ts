@@ -18,6 +18,7 @@ import {
 } from "@/validators/lab";
 import { revalidatePath } from "next/cache";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { assertUserModule, modulesOfUser } from "@/lib/modules-server";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -85,10 +86,12 @@ async function findMatchingLabTest(testName: string, organizationId: string | nu
 // cache sur LabTest — cf. LabOrder.testDetails, qui fige ce prix au moment de CETTE commande
 // précise). Un seul aller-retour pharmacyItem.findMany, quel que soit le nombre de
 // tests/consommables du lot.
-async function priceLabTests<T extends { id: string; name: string; basePrice: number; baseCost?: number; consumables: any }>(labTests: T[]) {
+// Sans le module « Pharmacie & stock », les consommables ne sont ni facturés ni décomptés (le stock
+// et la remise pharmacie n'existent pas pour cet établissement).
+async function priceLabTests<T extends { id: string; name: string; basePrice: number; baseCost?: number; consumables: any }>(labTests: T[], includeConsumables = true) {
   const allIds = new Set<string>();
   for (const t of labTests) {
-    for (const c of (t.consumables as { pharmacyItemId: string; name: string; quantity: number }[] | null) || []) {
+    for (const c of includeConsumables ? (t.consumables as { pharmacyItemId: string; name: string; quantity: number }[] | null) || [] : []) {
       allIds.add(c.pharmacyItemId);
     }
   }
@@ -96,7 +99,7 @@ async function priceLabTests<T extends { id: string; name: string; basePrice: nu
   const priceMap = new Map(products.map((p) => [p.id, p.unitPrice]));
 
   return labTests.map((t) => {
-    const consumables = ((t.consumables as { pharmacyItemId: string; name: string; quantity: number }[] | null) || []).map((c) => ({
+    const consumables = (includeConsumables ? (t.consumables as { pharmacyItemId: string; name: string; quantity: number }[] | null) || [] : []).map((c) => ({
       ...c,
       unitPrice: priceMap.get(c.pharmacyItemId) ?? 0,
     }));
@@ -133,6 +136,7 @@ async function createLabOrderOnce(data: {
     createLabOrderSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabOrderRole(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
@@ -147,7 +151,7 @@ async function createLabOrderOnce(data: {
     // Résout le catalogue pour chaque examen avant création : le prix (base + produits
     // consommés) et la facturation en dépendent.
     const catalogTests = await Promise.all(data.tests.map((t) => findMatchingLabTest(t, organizationId)));
-    const priced = await priceLabTests(catalogTests.filter((t): t is NonNullable<typeof t> => !!t));
+    const priced = await priceLabTests(catalogTests.filter((t): t is NonNullable<typeof t> => !!t), modulesOfUser(activeUser).includes("PHARMACIE"));
     const pricedByName = new Map(priced.map((t) => [t.name.toLowerCase(), t]));
 
     // Facturation automatique et instantané du tarif/de la recette : chaque examen catalogué
@@ -290,6 +294,7 @@ export async function listLabOrders(options?: LabOrderListOptions) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabReadRole(activeUser.role);
 
     const conditions = await labOrderScope(activeUser, options ?? {});
@@ -327,6 +332,7 @@ export async function getLabOrderStats(options?: { organizationId?: string; orde
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabReadRole(activeUser.role);
 
     const scope = await labOrderScope(activeUser, { organizationId: options?.organizationId, orderedById: options?.orderedById });
@@ -354,6 +360,7 @@ export async function getLabOrder(labOrderId: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabReadRole(activeUser.role);
 
     const order = await prisma.labOrder.findUnique({
@@ -389,6 +396,7 @@ export async function collectSample(data: {
     collectSampleSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabOperateRole(activeUser.role);
 
     const order = await prisma.labOrder.findUnique({ where: { id: data.labOrderId } });
@@ -428,6 +436,7 @@ export async function receiveAtLab(labOrderId: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabOperateRole(activeUser.role);
 
     const order = await prisma.labOrder.findUnique({ where: { id: labOrderId } });
@@ -463,6 +472,7 @@ async function recordLabResultOnce(data: {
     recordLabResultSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabOperateRole(activeUser.role);
 
     const order = await prisma.labOrder.findUnique({ where: { id: data.labOrderId } });
@@ -530,6 +540,7 @@ export async function validateLabResult(resultId: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabValidateRole(activeUser.role);
 
     const result = await prisma.labResult.findUnique({ where: { id: resultId }, include: { labOrder: true } });
@@ -561,6 +572,7 @@ export async function markDelivered(labOrderId: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabOperateRole(activeUser.role);
 
     const order = await prisma.labOrder.findUnique({ where: { id: labOrderId } });
@@ -583,6 +595,7 @@ export async function updateLabOrderStatus(labOrderId: string, status: "PRESCRIB
     updateLabOrderStatusSchema.parse({ labOrderId, status });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabOperateRole(activeUser.role);
 
     const existing = await prisma.labOrder.findUnique({ where: { id: labOrderId } });
@@ -609,6 +622,7 @@ export async function listLabTests(organizationId?: string, options?: { page?: n
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     assertLabReadRole(activeUser.role);
 
     const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
@@ -624,7 +638,7 @@ export async function listLabTests(organizationId?: string, options?: { page?: n
       prisma.labTest.findMany({ where, orderBy: { name: "asc" }, skip, take }),
       prisma.labTest.count({ where }),
     ]);
-    return { success: true as const, data: await priceLabTests(labTests), total, page, pageSize };
+    return { success: true as const, data: await priceLabTests(labTests, modulesOfUser(activeUser).includes("PHARMACIE")), total, page, pageSize };
   } catch (error: any) {
     return { success: false as const, error: error.message || "Erreur lors du chargement du catalogue." };
   }
@@ -647,6 +661,7 @@ export async function createOrUpdateLabTest(data: {
     createOrUpdateLabTestSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     if (activeUser.role !== "COORDINATOR") throw new Error("Non autorisé. Réservé aux coordinateurs.");
 
     const targetOrgId = await resolveTargetOrgId(activeUser, data.organizationId);
@@ -696,6 +711,7 @@ export async function deactivateLabTest(id: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
     if (activeUser.role !== "COORDINATOR") throw new Error("Non autorisé. Réservé aux coordinateurs.");
 
     const labTest = await prisma.labTest.update({ where: { id }, data: { isActive: false } });
@@ -713,6 +729,8 @@ export async function analyzeLabResults(labOrderId: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
+    assertUserModule(activeUser, "IA");
     assertLabAiRole(activeUser.role);
 
     const order = await prisma.labOrder.findUnique({

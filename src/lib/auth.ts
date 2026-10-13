@@ -74,10 +74,13 @@ export const getCurrentUser = cache(async function getCurrentUser() {
             logoUrl: true,
             subscriptionStatus: true,
             licenseExpiresAt: true,
+            // Modules de la licence (cf. src/lib/modules.ts) : portés par la holding.
+            disabledModules: true,
             parent: {
               select: {
                 subscriptionStatus: true,
                 licenseExpiresAt: true,
+                disabledModules: true,
               }
             }
           }

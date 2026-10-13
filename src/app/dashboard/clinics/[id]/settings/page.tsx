@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import ClinicSettingsForm from "./settings-form";
 import IntegrationsCard from "./integrations-card";
 import { listIntegrationClients } from "@/actions/integrations";
+import { modulesOfUser } from "@/lib/modules-server";
+import { MODULES, MODULE_KEYS } from "@/lib/modules";
 
 export default async function ClinicSettingsPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
@@ -43,8 +45,9 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
     redirect("/dashboard/clinics");
   }
 
-  // Le super-admin n'a pas accès aux clés d'une clinique (listIntegrationClients le refuse).
-  const integrationsRes = isSuperAdmin ? null : await listIntegrationClients(clinic.id);
+  // Le super-admin n'a pas accès aux clés d'une clinique (listIntegrationClients le refuse) ; la carte
+  // n'existe que si le module Interopérabilité est dans la licence.
+  const integrationsRes = isSuperAdmin || !modulesOfUser(currentUser).includes("INTEROPERABILITE") ? null : await listIntegrationClients(clinic.id);
 
   return (
     <div className="space-y-6">
@@ -67,6 +70,25 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
 
       <div className="max-w-3xl space-y-6">
         <ClinicSettingsForm clinic={{ id: clinic.id, name: clinic.name, logoUrl: clinic.logoUrl }} readOnly={!canEdit} />
+        {!isSuperAdmin && (
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/50 p-5 space-y-3">
+            <div>
+              <h2 className="font-semibold">Modules de la licence</h2>
+              <p className="text-xs text-muted-foreground">Fixés par l&apos;équipe MedDoc pour votre holding. Pour en ajouter, contactez-la.</p>
+            </div>
+            <ul className="grid sm:grid-cols-2 gap-1.5 text-sm">
+              {MODULE_KEYS.map((key) => {
+                const on = modulesOfUser(currentUser).includes(key);
+                return (
+                  <li key={key} className={`flex items-center gap-2 ${on ? "" : "text-muted-foreground line-through"}`}>
+                    <span className={`h-2 w-2 rounded-full ${on ? "bg-emerald-500" : "bg-slate-300"}`} />
+                    {MODULES[key].label}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
         {integrationsRes?.success && <IntegrationsCard clinicId={clinic.id} clients={integrationsRes.data} canManage={integrationsRes.canManage} />}
       </div>
     </div>

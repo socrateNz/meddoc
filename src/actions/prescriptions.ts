@@ -14,6 +14,7 @@ import {
   createPrescriptionTemplateSchema,
   updatePrescriptionSchema,
 } from "@/validators/prescriptions";
+import { assertUserModule } from "@/lib/modules-server";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -423,6 +424,8 @@ export async function sendPrescriptionToPharmacy(prescriptionId: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    // Sans pharmacie interne, l'ordonnance est seulement imprimée.
+    assertUserModule(activeUser, "PHARMACIE");
     assertPrescriptionWriteRole(activeUser.role);
 
     const prescription = await prisma.prescription.findUnique({ where: { id: prescriptionId }, include: { items: true } });

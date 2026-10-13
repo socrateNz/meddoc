@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
+import { modulesOfUser } from "@/lib/modules-server";
+import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
 
 // Lecture seule pour la réplication RxDB du catalogue pharmacie (cf. src/lib/offline-db.ts) —
 // composer un panier de caisse hors-ligne (nom, prix, dernier stock connu) sans pouvoir rien
@@ -44,6 +46,9 @@ export async function GET(req: NextRequest) {
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
+    }
+    if (!modulesOfUser(currentUser).includes("PHARMACIE")) {
+      return NextResponse.json({ error: MODULE_DISABLED_MESSAGE("PHARMACIE") }, { status: 403 });
     }
     if (!OFFLINE_READ_ROLES.includes(currentUser.role)) {
       return NextResponse.json({ error: "Non autorisé." }, { status: 403 });
