@@ -28,6 +28,10 @@ const restrictedSections: Record<string, string[]> = {
   team: ['ADMIN', 'COORDINATOR'],
   incidents: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  // Imagerie (cf. src/actions/radiology.ts) : mêmes rôles que le laboratoire.
+  imagerie: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  // Tableau des urgences et tri (cf. src/actions/triage.ts).
+  urgences: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   rooms: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   // Ronde médicale : l'équipe qui visite les patients hospitalisés (cf. src/lib/rounds.ts ROUND_ROLES).
   ronde: ['COORDINATOR', 'MEDECIN', 'CAREGIVER'],

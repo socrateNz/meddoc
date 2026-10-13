@@ -18,6 +18,8 @@ import {
   X,
   Stethoscope,
   Ticket,
+  ScanLine,
+  Siren,
   Building2,
   Server,
   Wallet,
@@ -131,6 +133,15 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         section: "Clinique",
       },
       {
+        name: "Urgences",
+        href: `/dashboard/clinics/${activeClinicId}/urgences`,
+        icon: Siren,
+        iconClassName: "text-red-500",
+        // Garder en phase avec la section « urgences » de src/middleware.ts.
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
+      },
+      {
         name: "Patients",
         href: `/dashboard/clinics/${activeClinicId}/patients`,
         icon: Users,
@@ -161,6 +172,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: FlaskConical,
         count: unreadCounts?.lab || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
+      },
+      {
+        name: "Imagerie",
+        href: `/dashboard/clinics/${activeClinicId}/imagerie`,
+        icon: ScanLine,
+        // Garder en phase avec la section « imagerie » de src/middleware.ts.
         roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
         section: "Clinique",
       },

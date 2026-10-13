@@ -1680,6 +1680,10 @@ model Visit {
   // Médecin souhaité pour une consultation (facultatif : sinon le premier disponible).
   assignedToId   String?   @db.ObjectId
   status         String    @default("WAITING") // WAITING, CALLED, IN_PROGRESS, DONE, CANCELLED
+  // Dernier niveau de tri CIMU (1 = vitale immédiate … 5 = non urgent) d'un passage aux urgences —
+  // recopié depuis EmergencyTriage pour ordonner le tableau des urgences.
+  triageLevel    Int?
+  triagedAt      DateTime?
   arrivedAt      DateTime  @default(now())
   calledAt       DateTime?
   startedAt      DateTime?
@@ -1691,4 +1695,108 @@ model Visit {
 
   @@index([organizationId, visitDate, status])
   @@index([patientId, visitDate])
+}
+
+// Fichier médical stocké sur Cloudinary (étape D de l'audit d'évolution) : document scanné du
+// dossier patient ou cliché d'imagerie. Toujours en type « authenticated » (jamais d'URL publique) :
+// la base ne garde que l'identifiant Cloudinary, et chaque consultation passe par
+// /api/files/[id], qui vérifie l'accès au patient puis délivre un lien valable quelques minutes.
+model MedicalFile {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId   String    @db.ObjectId
+  patientId        String    @db.ObjectId
+  category         String // SCANNED_DOCUMENT, RADIOLOGY_IMAGE
+  title            String?
+  publicId         String    @unique
+  resourceType     String // "image" (images et PDF chez Cloudinary) ou "raw"
+  format           String
+  bytes            Int
+  originalName     String
+  uploadedById     String    @db.ObjectId
+  medicalRecordId  String?   @db.ObjectId
+  radiologyOrderId String?   @db.ObjectId
+  // Retrait du dossier : le fichier est conservé (traçabilité médico-légale), seulement masqué.
+  deletedAt        DateTime?
+  deletedById      String?   @db.ObjectId
+  createdAt        DateTime  @default(now())
+
+  @@index([patientId, createdAt])
+  @@index([radiologyOrderId])
+}
+
+// Catalogue des examens d'imagerie d'une clinique (étape D1 de l'audit d'évolution).
+model RadiologyExam {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String   @db.ObjectId
+  name           String
+  modality       String // XRAY, ULTRASOUND, CT, MRI, ECG, MAMMOGRAPHY, OTHER
+  basePrice      Float    @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, isActive])
+}
+
+// Demande d'examen d'imagerie : prescrit → réalisé (clichés via MedicalFile) → compte-rendu
+// rédigé → validé. Facturée à la prescription, au tarif du catalogue figé dans `exams` (cf.
+// src/actions/radiology.ts) — comme le laboratoire.
+model RadiologyOrder {
+  id                 String    @id @default(auto()) @map("_id") @db.ObjectId
+  patientId          String    @db.ObjectId
+  organizationId     String    @db.ObjectId
+  medicalRecordId    String?   @db.ObjectId
+  // Instantané des examens prescrits : [{ examId, name, modality, price }].
+  exams              Json
+  clinicalIndication String?
+  priority           String    @default("ROUTINE") // ROUTINE, URGENT
+  status             String    @default("PRESCRIBED") // PRESCRIBED, PERFORMED, REPORTED, VALIDATED, CANCELLED
+  pendingInvoiceId   String?   @db.ObjectId
+  orderedById        String    @db.ObjectId
+  performedById      String?   @db.ObjectId
+  performedAt        DateTime?
+  performedNotes     String?
+  report             String?
+  conclusion         String?
+  reportedById       String?   @db.ObjectId
+  reportedAt         DateTime?
+  validatedById      String?   @db.ObjectId
+  validatedAt        DateTime?
+  cancelledById      String?   @db.ObjectId
+  cancelledAt        DateTime?
+  cancelReason       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([organizationId, createdAt])
+  @@index([patientId, createdAt])
+}
+
+// Fiche de tri des urgences (étape D2 de l'audit d'évolution), échelle CIMU à 5 niveaux (cf.
+// src/lib/triage.ts). Un patient peut être retrié (aggravation) : chaque fiche est conservée, la
+// plus récente fait foi (et est recopiée sur Visit.triageLevel). Les constantes alimentent aussi
+// le dossier du patient (VitalSign) ; fréquence respiratoire et Glasgow, absents de VitalSign,
+// restent ici.
+model EmergencyTriage {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  visitId          String   @db.ObjectId
+  patientId        String   @db.ObjectId
+  organizationId   String   @db.ObjectId
+  level            Int
+  chiefComplaint   String
+  temperature      Float?
+  bloodPressure    String?
+  heartRate        Int?
+  respiratoryRate  Int?
+  oxygenSaturation Int?
+  bloodSugar       Float?
+  painScore        Int?
+  glasgow          Int?
+  notes            String?
+  vitalSignId      String?  @db.ObjectId
+  triagedById      String   @db.ObjectId
+  triagedAt        DateTime @default(now())
+
+  @@index([visitId, triagedAt])
+  @@index([organizationId, triagedAt])
 }

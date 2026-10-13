@@ -25,15 +25,17 @@ export function appendSecurityHeaders(headers: Headers) {
   // vérifié en testant réellement un téléchargement de PDF en conditions réelles, qui restait
   // bloqué indéfiniment ("ça cale sur génération") sans cette entrée, le fetch et le worker
   // WASM étant tous deux silencieusement bloqués par le CSP.
+  // https://api.cloudinary.com : envoi direct navigateur → Cloudinary des fichiers médicaux
+  // (documents scannés, clichés d'imagerie), signé par le serveur — cf. src/lib/medical-files-server.ts.
   const connectSrc = process.env.NEXT_PUBLIC_SENTRY_DSN
-    ? "connect-src 'self' data: https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io;"
-    : "connect-src 'self' data:;";
+    ? "connect-src 'self' data: https://api.cloudinary.com https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io;"
+    : "connect-src 'self' data: https://api.cloudinary.com;";
 
   headers.set(
     "Content-Security-Policy",
     // worker-src 'self' blob: : même moteur PDF, qui exécute ensuite ce WASM dans un Web Worker
     // instancié depuis un blob: URL — sans worker-src explicite, le navigateur retombe sur
     // script-src (qui n'autorise pas blob:) et bloque la création du worker.
-    `default-src 'self'; ${scriptSrc} style-src 'self' 'unsafe-inline'; img-src 'self' data: https://res.cloudinary.com; worker-src 'self' blob:; ${connectSrc}`
+    `default-src 'self'; ${scriptSrc} style-src 'self' 'unsafe-inline'; img-src 'self' data: https://res.cloudinary.com https://api.cloudinary.com; worker-src 'self' blob:; ${connectSrc}`
   );
 }

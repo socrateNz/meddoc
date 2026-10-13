@@ -75,6 +75,8 @@ import {
   type ActivityEntry,
 } from "./patient-detail-data";
 import HospitalStayCard from "./hospital-stay-card";
+import PatientDocumentsCard from "./patient-documents-card";
+import PatientRadiologyPanel from "./patient-radiology-panel";
 
 const ACTIVITY_META: Record<ActivityEntry["category"], { icon: typeof FileText; label: string; className: string }> = {
   record: { icon: FileText, label: "Dossier", className: "text-slate-500 bg-slate-500/10" },
@@ -366,6 +368,12 @@ export default function PatientDetailView({
             className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
           >
             Laboratoire ({labOrdersPage.total})
+          </TabsTrigger>
+          <TabsTrigger
+            value="imagery"
+            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
+          >
+            Imagerie
           </TabsTrigger>
           {showMaternityTab && (
             <TabsTrigger
@@ -667,6 +675,8 @@ export default function PatientDetailView({
             {canWrite && !isDischarged && <AddRecordDialog patientId={patient.id} />}
           </div>
 
+          <PatientDocumentsCard patientId={patient.id} canWrite={canWrite && !isDischarged} />
+
           {patient.medicalRecords.length === 0 ? (
             <div className="border border-dashed rounded-xl p-12 text-center bg-card">
               <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-4" />
@@ -728,6 +738,13 @@ export default function PatientDetailView({
             pageParam="rxPage"
             itemLabel="ordonnance"
           />
+        </TabsContent>
+
+        {/* Tab Content: Imagerie (chargé à l'ouverture de l'onglet) */}
+        <TabsContent value="imagery" className="pt-6">
+          {patient.organizationId && (
+            <PatientRadiologyPanel patientId={patient.id} clinicId={patient.organizationId} canOrder={canOrderLab && !isDischarged} />
+          )}
         </TabsContent>
 
         {/* Tab Content: Laboratoire */}
