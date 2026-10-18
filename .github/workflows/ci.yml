@@ -80,5 +80,7 @@ jobs:
           # Empreintes (publiques, sans risque) pour vérifier les secrets sans les révéler.
           echo "Clé de déploiement : $(ssh-keygen -lf ~/.ssh/deploiement 2>&1)"
           echo "Identité du serveur attendue : $(ssh-keygen -lf ~/.ssh/known_hosts 2>&1)"
+          # Retire les espaces et retours à la ligne collés par erreur avec l'adresse du serveur.
+          HOTE=$(printf '%s' "$VPS_HOST" | tr -d '[:space:]')
           ssh -i ~/.ssh/deploiement -o IdentitiesOnly=yes -o BatchMode=yes -o ServerAliveInterval=30 \
-            "etarcosdev@${VPS_HOST}" "${GITHUB_SHA}"
+            "etarcosdev@${HOTE}" "${GITHUB_SHA}"
