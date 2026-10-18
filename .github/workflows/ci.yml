@@ -1,4 +1,4 @@
-name: CI
+name: CI et déploiement
 
 on:
   push:
@@ -23,27 +23,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Mêmes versions que sur le VPS de production (pnpm 10.18.3, Node 24) :
+      # on teste exactement ce qui sera déployé.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.3
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: "npm"
+          node-version: 24
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Generate Prisma client
-        run: npx prisma generate
+        run: pnpm exec prisma generate
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: pnpm exec tsc --noEmit
 
       - name: Run tests
-        run: npm run test
+        run: pnpm test
 
       - name: Build
-        run: npm run build
+        run: pnpm build
 
       - name: Lint (non-blocking — dette technique préexistante à traiter séparément)
-        run: npm run lint
+        run: pnpm lint
         continue-on-error: true
+
+  # Déploiement sur le VPS, uniquement pour un push sur main et seulement si le job `ci` a réussi.
+  # La clé SSH confiée à GitHub ne peut rien faire d'autre que lancer le script de déploiement du
+  # serveur (commande forcée dans ~/.ssh/authorized_keys) ; on lui transmet le commit testé ici.
+  deployer:
+    name: Déploiement sur le VPS
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploiement-production
+      cancel-in-progress: false
+    steps:
+      - name: Déployer le commit testé
+        env:
+          VPS_DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VPS_DEPLOY_KEY" > ~/.ssh/deploiement
+          chmod 600 ~/.ssh/deploiement
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploiement -o IdentitiesOnly=yes -o BatchMode=yes -o ServerAliveInterval=30 \
+            "etarcosdev@${VPS_HOST}" "${GITHUB_SHA}"
