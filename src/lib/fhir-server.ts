@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { publicOrigin } from "@/lib/request-origin";
 import { authenticateIntegration, type IntegrationClientRecord } from "@/lib/integration-auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
@@ -16,8 +17,7 @@ export function fhirError(status: number, code: Parameters<typeof operationOutco
 }
 
 export function fhirBaseUrl(req: Request) {
-  const url = new URL(req.url);
-  return `${url.origin}/api/fhir`;
+  return `${publicOrigin(req)}/api/fhir`;
 }
 
 export async function withFhirClient(req: Request, handler: (client: IntegrationClientRecord) => Promise<Response>): Promise<Response> {
