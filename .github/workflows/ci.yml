@@ -77,5 +77,8 @@ jobs:
           printf '%s\n' "$VPS_DEPLOY_KEY" > ~/.ssh/deploiement
           chmod 600 ~/.ssh/deploiement
           printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # Empreintes (publiques, sans risque) pour vérifier les secrets sans les révéler.
+          echo "Clé de déploiement : $(ssh-keygen -lf ~/.ssh/deploiement 2>&1)"
+          echo "Identité du serveur attendue : $(ssh-keygen -lf ~/.ssh/known_hosts 2>&1)"
           ssh -i ~/.ssh/deploiement -o IdentitiesOnly=yes -o BatchMode=yes -o ServerAliveInterval=30 \
             "etarcosdev@${VPS_HOST}" "${GITHUB_SHA}"
