@@ -7,6 +7,9 @@ import { z } from "zod";
 
 export async function POST(req: Request) {
   const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
+  // Retenu dès la lecture du corps pour le journal d'un échec : relire la requête dans after()
+  // est impossible, son corps a déjà été consommé (req.clone() lève alors « unusable »).
+  let attemptedEmail: string | null = null;
   try {
     const limitCheck = await rateLimit(ip, 5, 60000);
     if (!limitCheck.success) {
@@ -41,6 +44,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
+    if (body && typeof body.email === "string") attemptedEmail = body.email;
     const data = loginSchema.parse(body);
 
     const result = await AuthService.login(data);
@@ -103,11 +107,10 @@ export async function POST(req: Request) {
     // ne doit pas retarder la réponse d'erreur renvoyée à l'utilisateur.
     after(async () => {
       try {
-        const body = await req.clone().json().catch(() => null);
-        if (body && body.email) {
+        if (attemptedEmail) {
           const { prisma } = await import("@/lib/db");
           const { logAuditAction } = await import("@/middlewares/auditLogger");
-          const user = await prisma.user.findUnique({ where: { email: body.email } });
+          const user = await prisma.user.findUnique({ where: { email: attemptedEmail } });
           if (user) {
             await logAuditAction(
               user.id,

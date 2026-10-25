@@ -139,17 +139,26 @@ function ProfitBreakdownCard({
   profit,
   footer,
   formatFCFA,
+  rows,
+  profitLabel = "Bénéfice",
 }: {
   icon: React.ComponentType<{ className?: string }>;
   color: string;
   label: React.ReactNode;
-  revenue: number;
-  cost: number;
+  revenue?: number;
+  cost?: number;
   profit: number;
   footer: React.ReactNode;
   formatFCFA: (val: number) => string;
+  // Lignes affichées au-dessus du bénéfice — par défaut prix de vente puis prix d'achat.
+  rows?: { label: React.ReactNode; value: number }[];
+  profitLabel?: string;
 }) {
   const theme = COLOR_THEME[color] || COLOR_THEME.slate;
+  const lines = rows ?? [
+    { label: "Prix de vente total", value: revenue ?? 0 },
+    { label: "Prix d'achat total", value: cost ?? 0 },
+  ];
   return (
     <Card className={theme.cardClass}>
       <div className={theme.iconOverlayClass}>
@@ -162,16 +171,14 @@ function ProfitBreakdownCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-0 space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">Prix de vente total</span>
-          <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(revenue)}</span>
-        </div>
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-slate-500 dark:text-slate-400 font-medium">Prix d&apos;achat total</span>
-          <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(cost)}</span>
-        </div>
+        {lines.map((line, i) => (
+          <div key={i} className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 dark:text-slate-400 font-medium">{line.label}</span>
+            <span className="font-semibold text-slate-700 dark:text-slate-300">{formatFCFA(line.value)}</span>
+          </div>
+        ))}
         <div className="flex items-center justify-between pt-1.5 border-t border-slate-200/60 dark:border-slate-800/60">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Bénéfice</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{profitLabel}</span>
           <span className={`text-xl font-extrabold ${color === "rose" ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
             {formatFCFA(profit)}
           </span>
@@ -443,14 +450,39 @@ export default function FinanceView({ summary, organizationId, organizationName,
           rentabilité d'un coup d'œil ; l'icône reste propre à chaque catégorie. */}
       {summary.profitByCategory && summary.profitByCategory.length > 0 && (() => {
         const totalProfit = summary.profitByCategory.reduce((sum, c) => sum + c.profit, 0);
+        // « Ce que la clinique a gagné » d'un coup d'œil (demande d'un propriétaire) : somme des
+        // marges simples par catégorie (médicament = ventes − achats de la période), soit les
+        // mêmes chiffres que les cartes de chaque catégorie ci-après.
+        const earnedSources = summary.profitByCategory.map((c) => ({
+          category: c.category,
+          label: TRANSACTION_CATEGORY_LABELS[c.category] || c.category,
+          profit: c.profit,
+          todayProfit: c.todayProfit,
+        }));
+        const totalEarned = totalProfit;
+        const todayEarned = earnedSources.reduce((sum, c) => sum + c.todayProfit, 0);
         return (
           <div className="space-y-2 animate-fade-up">
             <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300">
               <Coins className="h-4 w-4 text-emerald-500" />
               Répartition du bénéfice
-              <span className="text-xs font-normal text-slate-400">— total : {formatFCFA(totalProfit)}</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <ProfitBreakdownCard
+                icon={Coins}
+                color={totalEarned < 0 ? "rose" : "emerald"}
+                label="Bénéfice total"
+                rows={earnedSources.map((c) => ({ label: c.label, value: c.profit }))}
+                profit={totalEarned}
+                profitLabel="Gagné sur la période"
+                formatFCFA={formatFCFA}
+                footer={
+                  <>
+                    Somme des bénéfices de chaque catégorie (médicament : ventes − achats de la période).
+                    {todayEarned !== 0 && <> · {todayEarned > 0 ? "+" : ""}{formatFCFA(todayEarned)} auj.</>}
+                  </>
+                }
+              />
               {(() => {
                 const baseCards = summary.profitByCategory.map((c) => {
                   const marginRate = c.revenue > 0 ? Math.round((c.profit / c.revenue) * 100) : 0;
@@ -512,8 +544,11 @@ export default function FinanceView({ summary, organizationId, organizationName,
                       icon={CATEGORY_ICON["PHARMACY_SALE"] || PieChart}
                       color={soldIsNegative ? "rose" : "emerald"}
                       label="Bénéfice sur ventes réalisées"
-                      revenue={pharmacyEntry.revenue}
-                      cost={soldCost}
+                      rows={[
+                        { label: "Prix de vente total", value: pharmacyEntry.revenue },
+                        { label: "Prix d'achat des unités vendues", value: soldCost },
+                        ...(valuation ? [{ label: "Valeur du stock en rayon (prix d'achat)", value: valuation.totalCostValue }] : []),
+                      ]}
                       profit={soldProfit}
                       formatFCFA={formatFCFA}
                       footer={
