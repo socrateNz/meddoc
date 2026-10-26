@@ -2,9 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const activeUser = { id: "user1", role: "CASHIER", organizationId: "org1" };
 
+// Un seul mock de getCurrentUser, dont chaque test règle la valeur : enregistrer un second
+// vi.doMock("@/lib/auth") par-dessus celui du beforeEach ne l'emporte pas toujours (la CI gardait
+// parfois l'utilisateur connecté dans les tests « non authentifié »).
+const getCurrentUser = vi.fn();
+
 beforeEach(() => {
   vi.resetModules();
-  vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => activeUser) }));
+  getCurrentUser.mockReset();
+  getCurrentUser.mockResolvedValue(activeUser);
+  vi.doMock("@/lib/auth", () => ({ getCurrentUser }));
 });
 
 describe("subscribeToPush", () => {
@@ -51,7 +58,7 @@ describe("subscribeToPush", () => {
   });
 
   it("refuse si non authentifié", async () => {
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => null) }));
+    getCurrentUser.mockResolvedValue(null);
     vi.doMock("@/lib/db", () => ({ prisma: { pushSubscription: { upsert: vi.fn() } } }));
     const { subscribeToPush } = await import("./push");
 
@@ -74,7 +81,7 @@ describe("unsubscribeFromPush", () => {
   });
 
   it("refuse si non authentifié", async () => {
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => null) }));
+    getCurrentUser.mockResolvedValue(null);
     vi.doMock("@/lib/db", () => ({ prisma: { pushSubscription: { deleteMany: vi.fn() } } }));
     const { unsubscribeFromPush } = await import("./push");
 
