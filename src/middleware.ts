@@ -17,6 +17,9 @@ const REFRESH_SECRET = new TextEncoder().encode(requireEnv('JWT_REFRESH_SECRET')
 // Routes publiques qui ne nécessitent pas d'authentification
 const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password', '/api/health'];
 
+// Comptes usagers (patient, proche) : accueil sur /dashboard, jamais sur l'espace clinique.
+const PORTAL_ROLES = ['PATIENT', 'FAMILY'];
+
 // RBAC par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...)
 // ADMIN (holding) est laissé en lecture seule par les pages/actions elles-mêmes sur
 // patients/team/finance/contracts — il reste dans la liste pour pouvoir consulter.
@@ -142,8 +145,11 @@ export async function middleware(request: NextRequest) {
     // est donc déjà en streaming (200) quand ce redirect() arrive, et Next doit alors recharger
     // toute la page côté navigateur — rechargement qui déclenche l'erreur React #310 (« Rendered
     // more hooks… ») dans le routeur de Next, visible quelques secondes à chaque connexion.
+    // Patients et familles en sont exclus : l'espace clinique est réservé au personnel (cf.
+    // clinics/[id]/layout.tsx, qui les renvoie vers /dashboard) — les y envoyer d'ici faisait
+    // boucler les deux redirections à l'infini.
     const home =
-      payload.organizationType === 'CLINIC' && payload.organizationId
+      payload.organizationType === 'CLINIC' && payload.organizationId && !PORTAL_ROLES.includes(role)
         ? `/dashboard/clinics/${payload.organizationId as string}`
         : '/dashboard';
     const redirectTo = (path: string) => {

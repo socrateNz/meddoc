@@ -591,6 +591,8 @@ async function main() {
   const freeBeds = {};
   for (const w of WARDS) {
     let ward = await prisma.ward.findUnique({ where: { organizationId_code: { organizationId: clinicId, code: w.code } } });
+    // Service déjà créé par la clinique sous un autre code (ex. « Urgences » en EMERGENCY).
+    if (!ward) ward = await prisma.ward.findFirst({ where: { organizationId: clinicId, name: { equals: w.name, mode: "insensitive" } } });
     if (!ward) ward = track("Ward", await prisma.ward.create({ data: { name: w.name, code: w.code, nightlyRate: w.rate, organizationId: clinicId } }));
     wards[w.code] = ward;
     for (const [roomName, bedCount, roomRate] of w.rooms) {
@@ -612,12 +614,13 @@ async function main() {
   }
 
   // --- Planning des gardes (semaine en cours) -------------------------------------------------
-  const shiftPlan = [
-    [doc, "Consultations", "07:30", "15:30"], [gyn, "Consultations prénatales", "08:00", "14:00"], [surgeon, "Bloc opératoire", "07:00", "15:00"],
-    [anesth, "Bloc opératoire", "07:00", "15:00"], [nurse1, "Garde de jour", "07:00", "19:00"], [nurse2, "Garde de nuit", "19:00", "07:00"],
-    [midwife, "Garde maternité", "07:00", "19:00"], [labTech, "Laboratoire", "07:00", "15:00"], [pharmacist, "Pharmacie", "08:00", "17:00"], [cashier, "Caisse", "07:30", "16:30"],
-  ];
+  // Les gardes seulement (pas les horaires de jour de chacun) : un planning lisible au calendrier.
+  const onCall = [doc, gyn, surgeon, anesth];
   for (let d = -3; d <= 4; d++) {
+    const shiftPlan = [
+      [nurse1, "Garde de jour", "07:00", "19:00"], [nurse2, "Garde de nuit", "19:00", "07:00"],
+      [midwife, "Garde maternité", "07:00", "19:00"], [onCall[(d + 3) % onCall.length], "Astreinte médicale", "18:00", "08:00"],
+    ];
     for (const [user, title, start, end] of shiftPlan) {
       const startAt = at(d, start);
       let endAt = at(d, end);

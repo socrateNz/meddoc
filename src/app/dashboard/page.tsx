@@ -39,6 +39,29 @@ function formatTime(date: Date | string) {
   return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(date));
 }
 
+// Accueil des comptes patient et famille. L'espace dédié (dossier résumé, rendez-vous, messagerie)
+// n'existe pas encore : cette page les accueille sans rien exposer d'autre.
+function PortalHome({ firstName, clinicName }: { firstName: string; clinicName: string | null }) {
+  return (
+    <div className="flex flex-1 items-center justify-center p-8">
+      <Card className="w-full max-w-lg rounded-2xl text-center">
+        <CardHeader>
+          <div className="mx-auto mb-2 rounded-full bg-sky-500/10 p-3">
+            <HeartPulse className="h-8 w-8 text-sky-600" />
+          </div>
+          <CardTitle className="text-xl">{getGreeting(new Date())}, {firstName}</CardTitle>
+          <CardDescription>
+            Votre espace patient et famille{clinicName ? ` de ${clinicName}` : ""} est en cours de préparation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Pour toute question sur un rendez-vous ou un séjour, contactez directement la clinique.
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function getGreeting(date: Date): string {
   const hour = date.getHours();
   if (hour < 12) return "Bonjour";
@@ -51,6 +74,15 @@ export default async function DashboardPage() {
 
   if (!currentUser) {
     redirect("/login");
+  }
+
+  // Patients et proches : jamais le tableau de bord de l'établissement (données de tous les
+  // patients), ni l'espace clinique, réservé au personnel — leur propre accueil, ici même.
+  if (currentUser.role === "PATIENT" || currentUser.role === "FAMILY") {
+    const clinic = currentUser.organizationId
+      ? await prisma.organization.findUnique({ where: { id: currentUser.organizationId }, select: { name: true } })
+      : null;
+    return <PortalHome firstName={currentUser.firstName} clinicName={clinic?.name ?? null} />;
   }
 
   if (currentUser.organization?.type === "CLINIC") {
