@@ -82,6 +82,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Page d'accueil publique : seule page où le pixel Facebook est autorisé (cf. facebook-pixel.tsx).
+  if (pathname === '/') {
+    const response = NextResponse.next();
+    appendSecurityHeaders(response.headers, { marketing: true });
+    return response;
+  }
+
   // Si c'est une route publique
   if (publicPaths.includes(pathname) || pathname.startsWith('/reset-password')) {
     return withSecurityHeaders(NextResponse.next());

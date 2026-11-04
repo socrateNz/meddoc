@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import FacebookPixel, { trackLead } from "@/components/facebook-pixel";
 import {
   ArrowRight,
   Activity,
@@ -144,6 +145,7 @@ export default function LandingPage() {
       });
       const data = await res.json();
       if (res.ok) {
+        trackLead();
         setStatus({ type: "success", msg: data.message });
         setFormData({ name: "", email: "", subject: "", message: "" });
       } else {
@@ -220,6 +222,7 @@ export default function LandingPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <FacebookPixel />
 
       {/* ─── Navbar ──────────────────────────────────────────────────────── */}
       <header
@@ -716,7 +719,7 @@ export default function LandingPage() {
 
                 <div className="space-y-4">
                   {[
-                    { icon: Mail, label: "etarcos3@gmail.com", href: "mailto:etarcos3@gmail.com" },
+                    { icon: Mail, label: "contact@tacynt.com", href: "mailto:contact@tacynt.com" },
                     { icon: Phone, label: "+237 656 954 474 / +237 694 854 474" },
                     { icon: MapPin, label: "Douala, Cameroun" },
                   ].map(({ icon: Icon, label, href }) => (
@@ -855,9 +858,9 @@ export default function LandingPage() {
             {/* Contact */}
             <div className="space-y-3">
               <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4">Contact</p>
-              <a href="mailto:etarcos3@gmail.com" className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors">
+              <a href="mailto:contact@tacynt.com" className="flex items-center gap-2 text-sm text-slate-400 hover:text-white transition-colors">
                 <Mail className="h-3.5 w-3.5 text-blue-400" />
-                etarcos3@gmail.com
+                contact@tacynt.com
               </a>
               <div className="flex items-center gap-2 text-sm text-slate-400">
                 <Phone className="h-3.5 w-3.5 text-blue-400" />

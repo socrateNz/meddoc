@@ -1189,7 +1189,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            <Link href="mailto:support@meddoc.health">
+            <Link href="mailto:contact@tacynt.com">
               <Button className="rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all">
                 Contacter le Support
               </Button>

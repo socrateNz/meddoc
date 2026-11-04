@@ -1,4 +1,7 @@
-export function appendSecurityHeaders(headers: Headers) {
+// marketing : page d'accueil publique uniquement — autorise le pixel Facebook (script, image de
+// suivi, envoi des événements). Jamais pour l'espace connecté (données de patients).
+export function appendSecurityHeaders(headers: Headers, options: { marketing?: boolean } = {}) {
+  const fb = options.marketing ? " https://connect.facebook.net https://www.facebook.com" : "";
   headers.set("X-Frame-Options", "DENY");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -15,8 +18,8 @@ export function appendSecurityHeaders(headers: Headers) {
   // téléchargement de PDF contre un build de production local (next build && next start).
   const isDev = process.env.NODE_ENV !== "production";
   const scriptSrc = isDev
-    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval';"
-    : "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval';";
+    ? `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'${fb};`
+    : `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${fb};`;
 
   // Élargit connect-src pour l'ingestion Sentry uniquement si un DSN client
   // est configuré (sinon Sentry.init() est désactivé et rien n'est envoyé).
@@ -28,14 +31,14 @@ export function appendSecurityHeaders(headers: Headers) {
   // https://api.cloudinary.com : envoi direct navigateur → Cloudinary des fichiers médicaux
   // (documents scannés, clichés d'imagerie), signé par le serveur — cf. src/lib/medical-files-server.ts.
   const connectSrc = process.env.NEXT_PUBLIC_SENTRY_DSN
-    ? "connect-src 'self' data: https://api.cloudinary.com https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io;"
-    : "connect-src 'self' data: https://api.cloudinary.com;";
+    ? `connect-src 'self' data: https://api.cloudinary.com https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io${fb};`
+    : `connect-src 'self' data: https://api.cloudinary.com${fb};`;
 
   headers.set(
     "Content-Security-Policy",
     // worker-src 'self' blob: : même moteur PDF, qui exécute ensuite ce WASM dans un Web Worker
     // instancié depuis un blob: URL — sans worker-src explicite, le navigateur retombe sur
     // script-src (qui n'autorise pas blob:) et bloque la création du worker.
-    `default-src 'self'; ${scriptSrc} style-src 'self' 'unsafe-inline'; img-src 'self' data: https://res.cloudinary.com https://api.cloudinary.com; worker-src 'self' blob:; ${connectSrc}`
+    `default-src 'self'; ${scriptSrc} style-src 'self' 'unsafe-inline'; img-src 'self' data: https://res.cloudinary.com https://api.cloudinary.com${fb}; worker-src 'self' blob:; ${connectSrc}`
   );
 }
