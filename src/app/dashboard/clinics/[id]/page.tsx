@@ -259,6 +259,10 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
   if (user.role === "MEDECIN") {
     redirect(`/dashboard/clinics/${params.id}/medecin`);
   }
+  // Le comptable n'a pas de tableau de bord clinique (données médicales) : sa page est la comptabilité.
+  if (user.role === "COMPTABLE") {
+    redirect(`/dashboard/clinics/${params.id}/comptabilite`);
+  }
 
   // ADMIN (holding)/SUPER_ADMIN : consultation en lecture seule. COORDINATOR : administre
   // totalement sa clinique. CAREGIVER/PHARMACIST : vue adaptée à leurs responsabilités propres.

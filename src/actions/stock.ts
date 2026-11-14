@@ -1,5 +1,6 @@
 "use server";
 
+import { accountSafely, accountTransaction } from "@/lib/accounting/postings";
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { resolveTargetOrgId } from "@/lib/org-scope";
@@ -22,7 +23,7 @@ import { assertUserModule } from "@/lib/modules-server";
 // n'autorise que des exports de fonctions async — voir plutôt les page.tsx qui rendent
 // InventoryPanel (dashboard/clinics/[id]/pharmacie, dashboard/clinics/[id]/finance, etc.).
 
-const STOCK_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST"];
+const STOCK_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST", "COMPTABLE"];
 const STOCK_WRITE_ROLES = ["COORDINATOR", "PHARMACIST"];
 
 // ADMIN (holding) garde une vue lecture seule du stock/pharmacie ; seuls COORDINATOR
@@ -316,6 +317,8 @@ async function recordStockPurchaseOnce(data: {
 
       return { purchase, transaction, pharmacyItemId: itemId };
     });
+
+    await accountSafely("Achat de stock", result.transaction.organizationId, () => accountTransaction(result.transaction.id));
 
     await logAuditAction(activeUser!.id, "RECORD_STOCK_PURCHASE", "PharmacyItem", result.pharmacyItemId, {
       quantity,
@@ -623,6 +626,13 @@ export async function cancelStockPurchase(stockPurchaseId: string, reason?: stri
       }
 
       await tx.stockPurchase.delete({ where: { id: stockPurchaseId } });
+    });
+
+    await accountSafely("Annulation d'achat", purchase.organizationId, async () => {
+      for (const t of purchase.financialTransactions) {
+        const reversals = await prisma.financialTransaction.findMany({ where: { reversalOfId: t.id }, select: { id: true } });
+        for (const r of reversals) await accountTransaction(r.id);
+      }
     });
 
     await logAuditAction(activeUser!.id, "CANCEL_STOCK_PURCHASE", "StockPurchase", stockPurchaseId, {

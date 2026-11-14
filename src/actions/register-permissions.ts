@@ -15,7 +15,7 @@ export function assertRegisterOperateRole(role: string) {
 // Consulter les caisses (et leur état) — ouvert à ADMIN (holding, lecture seule) en plus des
 // rôles qui opèrent réellement la caisse. Partagé par registers.ts et finance.ts (ex: la liste
 // des tickets impayés est visible par les mêmes rôles qui peuvent régler un paiement).
-export const REGISTER_READ_ROLES = ["ADMIN", "COORDINATOR", "CASHIER", "PHARMACIST"];
+export const REGISTER_READ_ROLES = ["ADMIN", "COORDINATOR", "CASHIER", "PHARMACIST", "COMPTABLE"];
 
 export function assertRegisterReadRole(role: string) {
   if (!REGISTER_READ_ROLES.includes(role)) throw new Error("Non autorisé.");

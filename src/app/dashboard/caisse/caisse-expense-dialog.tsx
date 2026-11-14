@@ -8,6 +8,12 @@ import { Label } from "@/components/ui/label";
 import { MinusCircle, Loader2, Info } from "lucide-react";
 import { recordExpense } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
+import { EXPENSE_CATEGORIES, WITHDRAWAL_CATEGORIES, type CashOutCategory } from "@/lib/accounting/plan";
+
+// Catégories proposées à la caisse : une vraie dépense (compte de charge) ou un retrait qui n'en est
+// pas une (propriétaire, banque, avance...) et n'entre donc pas dans le résultat.
+const CHARGE_OPTIONS = Object.entries(EXPENSE_CATEGORIES).map(([value, c]) => ({ value, label: c.label }));
+const WITHDRAWAL_OPTIONS = Object.entries(WITHDRAWAL_CATEGORIES).map(([value, c]) => ({ value, label: c.label }));
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -22,12 +28,12 @@ interface CaisseExpenseDialogProps {
 
 export default function CaisseExpenseDialog({ cashSessionId, organizationId, onSuccess }: CaisseExpenseDialogProps) {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState({ description: "", amount: "" });
+  const [data, setData] = useState({ description: "", amount: "", category: "other" as CashOutCategory });
   const { submitting: loading, guard } = useSubmitGuard();
   const [msg, setMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const resetForm = () => {
-    setData({ description: "", amount: "" });
+    setData({ description: "", amount: "", category: "other" });
     setMsg(null);
   };
 
@@ -36,7 +42,7 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
     setMsg(null);
     try {
       const res = await guard((idempotencyKey) =>
-        recordExpense({ cashSessionId, description: data.description, amount: Number(data.amount), organizationId, idempotencyKey })
+        recordExpense({ cashSessionId, description: data.description, amount: Number(data.amount), category: data.category, organizationId, idempotencyKey })
       );
       if (!res) return;
       if (res.success) {
@@ -76,6 +82,26 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
           <div className="space-y-1.5">
             <Label htmlFor="expenseDescription">Motif du retrait / dépense *</Label>
             <Input id="expenseDescription" required placeholder="ex: Achat fournitures de bureau..." value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} className="rounded-xl" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="expenseCategory">Catégorie *</Label>
+            <select
+              id="expenseCategory"
+              value={data.category}
+              onChange={(e) => setData({ ...data, category: e.target.value as CashOutCategory })}
+              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
+            >
+              <optgroup label="Dépenses (charges)">
+                {CHARGE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Retraits qui ne sont pas des charges">
+                {WITHDRAWAL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </optgroup>
+            </select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="expenseAmount">Montant du retrait (FCFA) *</Label>

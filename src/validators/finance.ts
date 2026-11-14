@@ -53,6 +53,7 @@ export const recordExpenseSchema = z.object({
   description: z.string().min(1, "Le motif est requis"),
   amount: z.number().positive("Le montant doit être supérieur à zéro"),
   organizationId: z.string().optional(),
+  category: z.string().optional(),
 });
 
 // items n'est fourni que pour le tout premier règlement d'une facture encore PENDING (le
@@ -63,6 +64,7 @@ export const payPendingInvoiceSchema = z.object({
   cashSessionId: z.string().min(1, "Aucune session de caisse ouverte."),
   amount: z.number().positive("Le montant réglé doit être supérieur à zéro"),
   items: z.array(invoiceItemSchema).min(1, "Le panier de facturation est vide").optional(),
+  paymentMethod: z.enum(["CASH", "MOBILE", "CARD", "TRANSFER", "CHEQUE", "OTHER"]).optional(),
 });
 
 export const createCaisseSaleSchema = z.object({
@@ -76,6 +78,7 @@ export const createCaisseSaleSchema = z.object({
   // comportement actuel inchangé (paiement intégral immédiat). Inférieur au total = vente à
   // crédit / paiement partiel : le solde restera dû sur la PendingInvoice créée.
   amountReceived: z.number().min(0).optional(),
+  paymentMethod: z.enum(["CASH", "MOBILE", "CARD", "TRANSFER", "CHEQUE", "OTHER"]).optional(),
 });
 
 export const updateInvoicePatientInfoSchema = z.object({

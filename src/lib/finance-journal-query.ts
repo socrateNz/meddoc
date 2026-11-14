@@ -10,7 +10,7 @@ type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 // un export reproduit exactement la sélection affichée, filtres et totaux compris.
 
 // ADMIN (holding) en lecture seule, COORDINATOR en écriture — cf. src/actions/finance.ts.
-export const FINANCE_READ_ROLES = ["ADMIN", "COORDINATOR"];
+export const FINANCE_READ_ROLES = ["ADMIN", "COORDINATOR", "COMPTABLE"];
 
 export interface JournalFilters {
   organizationId?: string;

@@ -34,6 +34,8 @@ export interface OfflineActionPayloadMap {
     // Clé d'idempotence de la soumission d'origine : le rejeu la renvoie telle quelle, pour qu'un
     // paiement déjà reçu par le serveur (réponse perdue) ne soit pas encaissé une seconde fois.
     idempotencyKey: Parameters<typeof payPendingInvoice>[4];
+    // Moyen de règlement (facultatif : les paiements mis en file avant son ajout sont en espèces).
+    paymentMethod?: Parameters<typeof payPendingInvoice>[5];
   };
 }
 
@@ -253,7 +255,8 @@ async function dispatch(action: PendingOfflineAction): Promise<{ success: boolea
         action.payload.cashSessionId,
         action.payload.amount,
         action.payload.items,
-        action.payload.idempotencyKey
+        action.payload.idempotencyKey,
+        action.payload.paymentMethod
       );
     }
   }

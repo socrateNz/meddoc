@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import PaymentMethodSelect from "./payment-method-select";
+import type { PaymentMethod } from "@/lib/accounting/plan";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +70,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
   // intégral) ; baissé, il ouvre une vente à crédit / un paiement partiel.
   const [amountReceivedInput, setAmountReceivedInput] = useState("0");
   const [amountTouched, setAmountTouched] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
 
   const [addItemMode, setAddItemMode] = useState<"PHARMACY" | "SERVICE">(mode === "pay" ? "SERVICE" : "PHARMACY");
   const [addPharmacyItemId, setAddPharmacyItemId] = useState("");
@@ -82,6 +85,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
     setAddServiceAmount("");
     setMsg(null);
     setAmountTouched(false);
+    setPaymentMethod("CASH");
     if (mode === "sale") {
       setCartItems([]);
       setCartPatientId("");
@@ -183,7 +187,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       }));
 
       const isPay = mode === "pay" && !!pendingInvoice;
-      const payPayload = isPay ? { pendingInvoiceId: pendingInvoice!.id, cashSessionId, amount: amountReceived, items } : null;
+      const payPayload = isPay ? { pendingInvoiceId: pendingInvoice!.id, cashSessionId, amount: amountReceived, items, paymentMethod } : null;
       const salePayload = !isPay
         ? {
             cashSessionId,
@@ -193,6 +197,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
             customPatientPhone: customPatientPhoneInput.trim() || undefined,
             organizationId,
             amountReceived,
+            paymentMethod,
           }
         : null;
 
@@ -202,7 +207,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       const result = await guard((idempotencyKey) =>
         isPay
           ? submitOrQueueOffline({
-              action: () => payPendingInvoice(payPayload!.pendingInvoiceId, payPayload!.cashSessionId, payPayload!.amount, payPayload!.items, idempotencyKey),
+              action: () => payPendingInvoice(payPayload!.pendingInvoiceId, payPayload!.cashSessionId, payPayload!.amount, payPayload!.items, idempotencyKey, payPayload!.paymentMethod),
               queueType: "CAISSE_PAY",
               payload: { ...payPayload!, idempotencyKey },
               label: `Paiement — ${patientName}`,
@@ -463,6 +468,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                   className="h-9 w-32 text-sm font-bold text-right rounded-xl"
                 />
               </div>
+              {amountReceived > 0 && <PaymentMethodSelect value={paymentMethod} onChange={setPaymentMethod} />}
               {remainingAfterPayment > 0 && (
                 <p className="text-xs font-semibold text-amber-600 dark:text-amber-500">
                   Vente à crédit — reste à payer : {formatFCFA(remainingAfterPayment)}

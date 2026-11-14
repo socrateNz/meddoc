@@ -15,6 +15,7 @@ enum Role {
   CAREGIVER
   PHARMACIST
   CASHIER
+  COMPTABLE // comptabilité de la clinique (journaux, états, clôture) — aucun accès médical
   FAMILY
   PATIENT
 }
@@ -139,6 +140,15 @@ model Organization {
   // tous les modules. Renseigné sur la holding uniquement, par le SUPER_ADMIN ; les cliniques
   // héritent des modules de leur holding.
   disabledModules String[] @default([])
+
+  // Comptabilité (cf. src/lib/accounting) — renseignés sur la clinique, qui est la « structure »
+  // comptable. accountingLockedUntil : aucune écriture datée de ce jour (AAAA-MM-JJ) ou d'avant.
+  // accountingSeq : simple compteur incrémenté au début de chaque transaction de comptabilisation,
+  // pour que deux comptabilisations simultanées d'une même clinique entrent en conflit (l'une est
+  // relancée) au lieu de produire deux numéros identiques ou deux écritures pour un même document.
+  // Facultatif : les cliniques existantes ne l'ont pas (un champ requis absent ne se lit pas).
+  accountingLockedUntil String?
+  accountingSeq         Int?
 
   paymentAmount    Float? // Tarif actuel (FCFA), éditable à tout moment
   paymentFrequency PaymentFrequency?
@@ -1222,6 +1232,14 @@ model FinancialTransaction {
   // repli, seule option pour elles.
   items Json?
 
+  // Moyen de règlement (cf. src/lib/accounting/plan.ts, PAYMENT_METHODS) : CASH, MOBILE, CARD,
+  // TRANSFER, CHEQUE, OTHER. Détermine le compte de trésorerie (571, 552, 521, 513) de l'écriture
+  // comptable. Absent sur les règlements antérieurs : ils sont passés en caisse, donc en espèces.
+  paymentMethod   String?
+  // Catégorie d'une dépense de caisse (cf. EXPENSE_CATEGORIES) : son compte de charge. Absente sur
+  // les dépenses antérieures : « other » (658, charges diverses).
+  expenseCategory String?
+
   patientId          String?  @db.ObjectId
   patient            Patient? @relation(fields: [patientId], references: [id])
   customPatientName  String? // Nom du client/patient saisi manuellement à la caisse si non inscrit
@@ -1948,4 +1966,80 @@ model IntegrationClient {
   createdAt      DateTime  @default(now())
 
   @@index([organizationId])
+}
+
+// --- Comptabilité SYSCOHADA (cf. src/lib/accounting, spécification « module Comptabilité ») ---
+// Une seule source de vérité : les lignes d'écriture. Tous les états financiers sont des sommes de
+// AccountingLine, jamais des requêtes sur les factures ou les paiements. Montants en FCFA entiers
+// (Int64), écritures immuables (une correction = une contrepassation), une seule écriture par
+// document source. Écrites uniquement par postEntry (src/lib/accounting/engine.ts).
+
+model AccountingEntry {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String   @db.ObjectId // la clinique (la « structure » comptable)
+  journal        String // VE, AC, TR, OD, AN
+  number         String // VE-2026-00001, continu par clinique, journal et année
+  entryDate      String // AAAA-MM-JJ, jour civil à l'heure de Douala, figé à la création
+  label          String
+  reference      String?
+  sourceType     String // MANUAL, CONSULTATION, PAYMENT, EXPENSE, REVERSAL, DEPRECIATION...
+  sourceId       String?  @db.ObjectId
+  // Clé d'idempotence, toujours renseignée : « <clinique>:<type>:<id du document> », ou
+  // « <clinique>:MANUAL:<id de l'écriture> » sans document. Un index unique sur un champ facultatif
+  // refuserait plusieurs valeurs absentes sous MongoDB (cf. Patient.ipp) : d'où ce champ obligatoire.
+  sourceKey      String   @unique
+  reversalOf     String?  @db.ObjectId
+  createdById    String?  @db.ObjectId
+  createdAt      DateTime @default(now())
+
+  lines AccountingLine[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, entryDate])
+  @@index([organizationId, sourceType, sourceId])
+}
+
+model AccountingLine {
+  id                  String          @id @default(auto()) @map("_id") @db.ObjectId
+  entryId             String          @db.ObjectId
+  entry               AccountingEntry @relation(fields: [entryId], references: [id])
+  // Recopiés de l'en-tête : les états agrègent les lignes sans jointure.
+  organizationId      String          @db.ObjectId
+  journal             String
+  entryDate           String
+  account             String // ^[1-8][0-9]{1,11}$
+  label               String
+  debit               BigInt          @default(0) // exactement un des deux > 0
+  credit              BigInt          @default(0)
+  supplierId          String?         @db.ObjectId // tiers fournisseur (401)
+  customerId          String?         @db.ObjectId // tiers client : patient (411) ou organisme (4111)
+  bankStatementLineId String?         @db.ObjectId
+  closing             Boolean         @default(false) // écriture de clôture ou son annulation
+
+  @@index([organizationId, entryDate])
+  @@index([organizationId, account, entryDate])
+  @@index([entryId])
+}
+
+model AccountingCounter {
+  id             String @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String @db.ObjectId
+  journal        String
+  year           Int
+  lastNumber     Int    @default(0)
+
+  @@unique([organizationId, journal, year])
+}
+
+// Sous-comptes propres à une clinique (ex. 5211 « Banque Afriland »), en plus du plan standard.
+model AccountingAccount {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String   @db.ObjectId
+  number         String
+  label          String
+  parent         String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, number])
 }

@@ -22,7 +22,7 @@ export async function getTeamMembers(options?: { page?: number; pageSize?: numbe
   const { page, pageSize, skip, take } = resolvePage(options);
 
   const whereClause: any = {
-    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] },
+    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "COMPTABLE", "ADMIN"] },
   };
 
   if (activeUser.organization?.type === "HOLDING") {
@@ -113,8 +113,8 @@ export async function createTeamMember(data: any) {
 
     if (activeUser.role === "COORDINATOR") {
       // Le coordinateur ne recrute que pour sa propre clinique, jamais un autre coordinateur ou un admin.
-      if (!["CAREGIVER", "PHARMACIST", "MEDECIN", "CASHIER"].includes(role)) {
-        throw new Error("Un coordinateur ne peut ajouter que des médecins, des infirmier(e)s, des pharmaciens ou des caissier(ère)s.");
+      if (!["CAREGIVER", "PHARMACIST", "MEDECIN", "CASHIER", "COMPTABLE"].includes(role)) {
+        throw new Error("Un coordinateur ne peut ajouter que des médecins, des infirmier(e)s, des pharmaciens, des caissier(ère)s ou des comptables.");
       }
       targetOrgId = activeUser.organizationId;
     } else if (activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING") {
@@ -191,7 +191,7 @@ export async function createTeamMember(data: any) {
 // (holding) ne gère plus que les coordinateurs de ses cliniques enfants (désignation/remplacement).
 async function assertCanManageStaffMember(activeUser: any, target: { role: string; organizationId: string | null }) {
   if (activeUser.role === "COORDINATOR") {
-    if (target.organizationId !== activeUser.organizationId || !["CAREGIVER", "PHARMACIST", "MEDECIN", "CASHIER"].includes(target.role)) {
+    if (target.organizationId !== activeUser.organizationId || !["CAREGIVER", "PHARMACIST", "MEDECIN", "CASHIER", "COMPTABLE"].includes(target.role)) {
       throw new Error("Vous ne pouvez gérer que le personnel (médecin, infirmier(e), pharmacien ou caissier(ère)) de votre clinique.");
     }
     return;
@@ -371,7 +371,7 @@ export async function getClinicTeam(clinicId: string, options?: { page?: number;
   const { page, pageSize, skip, take } = resolvePage(options);
   const clinicMembers = {
     organizationId: clinicId,
-    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "ADMIN"] as Role[] },
+    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "COMPTABLE", "ADMIN"] as Role[] },
   };
   const [members, total] = await Promise.all([
   prisma.user.findMany({

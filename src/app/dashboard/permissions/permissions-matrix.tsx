@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { togglePermissionRole } from "@/actions/permissions";
 
-const ROLES = ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "FAMILY", "PATIENT"] as const;
+const ROLES = ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "COMPTABLE", "FAMILY", "PATIENT"] as const;
 
 const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Super Admin",
@@ -16,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   CAREGIVER: "Infirmier(e)",
   PHARMACIST: "Pharmacien(ne)",
   CASHIER: "Caissier(ère)",
+  COMPTABLE: "Comptable",
   FAMILY: "Famille",
   PATIENT: "Patient",
 };

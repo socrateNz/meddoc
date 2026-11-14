@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Receipt, Loader2, Printer } from "lucide-react";
 import { payPendingInvoice } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
+import PaymentMethodSelect from "./payment-method-select";
+import type { PaymentMethod } from "@/lib/accounting/plan";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -35,6 +37,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
   const [amountInput, setAmountInput] = useState(String(remainingDue));
   const { submitting: loading, guard } = useSubmitGuard();
   const [msg, setMsg] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
 
   const patientName = pendingInvoice.patient?.user
     ? `${pendingInvoice.patient.user.lastName} ${pendingInvoice.patient.user.firstName}`
@@ -49,7 +52,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
     }
     setMsg(null);
     try {
-      const res = await guard((idempotencyKey) => payPendingInvoice(pendingInvoice.id, cashSessionId, amount, undefined, idempotencyKey));
+      const res = await guard((idempotencyKey) => payPendingInvoice(pendingInvoice.id, cashSessionId, amount, undefined, idempotencyKey, paymentMethod));
       if (!res) return;
       if (res.success) {
         setOpen(false);
@@ -118,6 +121,8 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
               autoFocus
             />
           </div>
+
+          <PaymentMethodSelect value={paymentMethod} onChange={setPaymentMethod} id="installmentPaymentMethod" />
 
           <Button onClick={handleSubmit} disabled={loading || amount <= 0} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
             {loading ? (

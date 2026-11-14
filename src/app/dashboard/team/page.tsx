@@ -63,6 +63,7 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
           if (member.role === "ADMIN") roleLabel = "Administrateur";
           if (member.role === "PHARMACIST") roleLabel = "Pharmacien(ne)";
           if (member.role === "CASHIER") roleLabel = "Caissier(ère)";
+          if (member.role === "COMPTABLE") roleLabel = "Comptable";
 
           const specialty = isCaregiver
             ? member.caregiverProfile.specialties?.[0] || (member.role === "MEDECIN" ? "Médecin" : "Soignant")

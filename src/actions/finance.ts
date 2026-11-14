@@ -4,6 +4,8 @@ import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
 import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
 import { attachInvoiceTotals, buildJournalWhere, FINANCE_READ_ROLES, getJournalTotals, JOURNAL_TRANSACTION_INCLUDE } from "@/lib/finance-journal-query";
+import { accountSafely, accountTransaction, postInvoiceWriteOff, reverseDeletedInvoiceSale, accountingEnabled } from "@/lib/accounting/postings";
+import { PAYMENT_METHODS, isCashOutCategory } from "@/lib/accounting/plan";
 import { buildReversalEntry, COUNTS_IN_KPI_WHERE, countsInKpi } from "@/lib/finance-reversal";
 import { prisma } from "@/lib/db";
 import { assertOrganizationAccess, resolveTargetOrgId } from "@/lib/org-scope";
@@ -348,7 +350,7 @@ export async function recordExpense(data: Parameters<typeof recordExpenseOnce>[0
   return runIdempotent("recordExpense", idempotencyKey, payload, () => recordExpenseOnce(payload));
 }
 
-async function recordExpenseOnce(data: { cashSessionId: string; description: string; amount: number; organizationId?: string }) {
+async function recordExpenseOnce(data: { cashSessionId: string; description: string; amount: number; organizationId?: string; category?: string }) {
   try {
     recordExpenseSchema.parse(data);
     const activeUser = await getCurrentUser();
@@ -371,8 +373,21 @@ async function recordExpenseOnce(data: { cashSessionId: string; description: str
         recordedById: activeUser.id,
         organizationId: session.organizationId,
         cashSessionId: session.id,
+        paymentMethod: "CASH",
+        expenseCategory: isCashOutCategory(data.category) ? data.category : "other",
       },
     });
+
+    // « Une dépense n'existe pas sans son écriture » : si la comptabilité est active et que
+    // l'écriture échoue, la dépense saisie est retirée et l'erreur affichée.
+    if (await accountingEnabled(session.organizationId)) {
+      try {
+        await accountTransaction(transaction.id);
+      } catch (accountingError) {
+        await prisma.financialTransaction.delete({ where: { id: transaction.id } });
+        throw accountingError;
+      }
+    }
 
     await logAuditAction(activeUser.id, "RECORD_EXPENSE", "FinancialTransaction", transaction.id);
     revalidatePath(`/dashboard/clinics/${session.organizationId}/caisse`);
@@ -492,13 +507,14 @@ export async function payPendingInvoice(
   cashSessionId: Parameters<typeof payPendingInvoiceOnce>[1],
   amount: Parameters<typeof payPendingInvoiceOnce>[2],
   items?: Parameters<typeof payPendingInvoiceOnce>[3],
-  idempotencyKey?: string
+  idempotencyKey?: string,
+  paymentMethod?: string
 ) {
   return runIdempotent(
     "payPendingInvoice",
     idempotencyKey,
-    { pendingInvoiceId, cashSessionId, amount, items },
-    () => payPendingInvoiceOnce(pendingInvoiceId, cashSessionId, amount, items)
+    { pendingInvoiceId, cashSessionId, amount, items, paymentMethod },
+    () => payPendingInvoiceOnce(pendingInvoiceId, cashSessionId, amount, items, paymentMethod)
   );
 }
 
@@ -513,7 +529,8 @@ async function payPendingInvoiceOnce(
     quantity: number;
     unitPrice: number;
     amount: number;
-  }>
+  }>,
+  paymentMethod?: string
 ) {
   try {
     const activeUser = await getCurrentUser();
@@ -594,8 +611,10 @@ async function payPendingInvoiceOnce(
         organizationId: pending.organizationId,
         cashSessionId: session.id,
         pendingInvoiceId,
+        paymentMethod: normalizePaymentMethod(paymentMethod),
       },
     });
+    await accountSafely("Encaissement", pending.organizationId, () => accountTransaction(transaction.id));
 
     const newAlreadyPaid = alreadyPaid + amount;
     const nowFullyPaid = newAlreadyPaid >= totalAmount - EPS;
@@ -661,6 +680,7 @@ async function createCaisseSaleOnce(data: {
   customPatientPhone?: string;
   organizationId?: string;
   amountReceived?: number;
+  paymentMethod?: string;
 }) {
   try {
     createCaisseSaleSchema.parse(data);
@@ -729,8 +749,10 @@ async function createCaisseSaleOnce(data: {
         organizationId: targetOrgId,
         cashSessionId: session.id,
         pendingInvoiceId: pendingInvoice.id,
+        paymentMethod: normalizePaymentMethod(data.paymentMethod),
       },
     });
+    await accountSafely("Vente au comptoir", targetOrgId, () => accountTransaction(transaction.id));
 
     await logAuditAction(activeUser.id, "CREATE_CAISSE_SALE", "FinancialTransaction", transaction.id);
     revalidatePath(`/dashboard/clinics/${targetOrgId}/caisse`);
@@ -1144,6 +1166,7 @@ export async function closeUnpaidInvoice(pendingInvoiceId: string) {
       where: { id: pendingInvoiceId },
       data: { status: "CANCELLED", closedAt: new Date(), closedById: activeUser.id },
     });
+    await accountSafely("Créance abandonnée", pending.organizationId, () => postInvoiceWriteOff(pendingInvoiceId));
 
     await logAuditAction(activeUser.id, "CLOSE_UNPAID_INVOICE", "PendingInvoice", pendingInvoiceId);
     revalidatePath(`/dashboard/clinics/${pending.organizationId}/caisse`);
@@ -1155,6 +1178,20 @@ export async function closeUnpaidInvoice(pendingInvoiceId: string) {
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la clôture du ticket.") };
   }
+}
+
+// Moyen de règlement reçu du client, ramené à une valeur connue (espèces par défaut).
+function normalizePaymentMethod(method: string | undefined | null): string {
+  return method && (PAYMENT_METHODS as readonly string[]).includes(method) ? method : "CASH";
+}
+
+// Comptabilise les contrepassations de règlements d'un ticket (cf. reverseInvoicePayments).
+async function accountInvoiceReversals(pendingInvoiceId: string) {
+  const reversals = await prisma.financialTransaction.findMany({
+    where: { category: "REVERSAL", reversedFromInvoiceId: pendingInvoiceId },
+    select: { id: true },
+  });
+  for (const r of reversals) await accountTransaction(r.id);
 }
 
 // Contrepassation des règlements d'un ticket — remplace l'ancienne suppression physique
@@ -1268,6 +1305,11 @@ export async function changeInvoiceStatus(data: {
       });
     });
 
+    await accountSafely("Changement de statut d'un ticket", pending.organizationId, async () => {
+      await accountInvoiceReversals(data.pendingInvoiceId);
+      if (data.newStatus === "CANCELLED") await postInvoiceWriteOff(data.pendingInvoiceId);
+    });
+
     await logAuditAction(activeUser.id, "CHANGE_INVOICE_STATUS", "PendingInvoice", data.pendingInvoiceId, {
       oldStatus,
       newStatus: data.newStatus,
@@ -1340,6 +1382,14 @@ export async function deletePendingInvoice(data: {
         where: { id: data.pendingInvoiceId },
       });
     });
+
+    if (pending.organizationId) {
+      const orgId = pending.organizationId;
+      await accountSafely("Suppression d'un ticket", orgId, async () => {
+        await accountInvoiceReversals(data.pendingInvoiceId);
+        await reverseDeletedInvoiceSale(orgId, data.pendingInvoiceId);
+      });
+    }
 
     await logAuditAction(activeUser.id, "DELETE_PENDING_INVOICE", "PendingInvoice", data.pendingInvoiceId, {
       deletedInvoiceId: data.pendingInvoiceId,

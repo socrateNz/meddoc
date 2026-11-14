@@ -27,6 +27,7 @@ import {
   Server,
   Wallet,
   BookOpen,
+  BookOpenCheck,
   ScrollText,
   FileSignature,
   ShieldCheck,
@@ -257,7 +258,15 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         name: "Finance",
         href: `/dashboard/clinics/${activeClinicId}/finance`,
         icon: Wallet,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: ['ADMIN', 'COORDINATOR', 'COMPTABLE'],
+        section: "Finance",
+      },
+      {
+        name: "Comptabilité",
+        module: "COMPTABILITE",
+        href: `/dashboard/clinics/${activeClinicId}/comptabilite`,
+        icon: BookOpenCheck,
+        roles: ['ADMIN', 'COORDINATOR', 'COMPTABLE'],
         section: "Finance",
       },
       {
@@ -295,7 +304,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         name: "Manuel d'utilisation",
         href: `/dashboard/clinics/${activeClinicId}/manual`,
         icon: BookOpen,
-        roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'FAMILY', 'PATIENT'],
+        roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'COMPTABLE', 'FAMILY', 'PATIENT'],
         section: "Autres",
       },
     ] : [

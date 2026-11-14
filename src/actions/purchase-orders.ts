@@ -11,6 +11,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createPurchaseOrderSchema, receivePurchaseOrderLinesSchema } from "@/validators/purchase-orders";
 import { assertStockRead, assertStockWrite, applyStockReceipt } from "@/actions/stock";
+import { accountSafely, accountTransaction } from "@/lib/accounting/postings";
 import { assertItemPurchasable, assertPharmacyItemsPurchasable } from "@/lib/pharmacy-sale-block";
 
 export async function createPurchaseOrder(data: Parameters<typeof createPurchaseOrderOnce>[0] & IdempotentInput) {
@@ -122,6 +123,7 @@ export async function receivePurchaseOrderLines(
       }
     }
 
+    const receivedTransactionIds: string[] = [];
     await prisma.$transaction(async (tx) => {
       for (const receipt of receipts) {
         const line = order.lines.find((l) => l.id === receipt.lineId);
@@ -156,7 +158,7 @@ export async function receivePurchaseOrderLines(
           itemName = item?.name || line.newItemName || "Article";
         }
 
-        await applyStockReceipt(tx, {
+        const receipt_ = await applyStockReceipt(tx, {
           pharmacyItemId,
           itemName,
           quantity: qty,
@@ -168,6 +170,7 @@ export async function receivePurchaseOrderLines(
           organizationId: order.organizationId,
           cashSessionId,
         });
+        receivedTransactionIds.push(receipt_.transaction.id);
 
         await tx.purchaseOrderLine.update({
           where: { id: line.id },
@@ -184,6 +187,10 @@ export async function receivePurchaseOrderLines(
         where: { id: purchaseOrderId },
         data: { status: newStatus, receivedAt: allReceived ? new Date() : order.receivedAt },
       });
+    });
+
+    await accountSafely("Réception de commande", order.organizationId, async () => {
+      for (const id of receivedTransactionIds) await accountTransaction(id);
     });
 
     await logAuditAction(activeUser!.id, "RECEIVE_PURCHASE_ORDER", "PurchaseOrder", purchaseOrderId, { receipts });

@@ -33,7 +33,7 @@ const formSchema = z.object({
   lastName: z.string().min(2, "Nom trop court"),
   email: z.string().email("Email invalide"),
   phone: z.string().optional(),
-  role: z.enum(["MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "COORDINATOR"]),
+  role: z.enum(["MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "COMPTABLE", "COORDINATOR"]),
   specialties: z.string().optional(),
   licenseNumber: z.string().optional(),
   organizationId: z.string().optional(),
@@ -44,6 +44,7 @@ const ROLE_OPTIONS = [
   { value: "CAREGIVER", label: "Infirmier(e)" },
   { value: "PHARMACIST", label: "Pharmacien(ne)" },
   { value: "CASHIER", label: "Caissier(ère)" },
+  { value: "COMPTABLE", label: "Comptable" },
 ];
 
 // Un admin de holding ne fait plus que désigner le coordinateur d'une clinique ;

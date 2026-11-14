@@ -54,7 +54,9 @@ const restrictedSections: Record<string, string[]> = {
   // session, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
   caisse: ['ADMIN', 'COORDINATOR', 'CASHIER', 'PHARMACIST'],
   pharmacie: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
-  finance: ['ADMIN', 'COORDINATOR'],
+  finance: ['ADMIN', 'COORDINATOR', 'COMPTABLE'],
+  // Comptabilité (cf. src/lib/accounting) : le comptable et le coordinateur, la holding en lecture.
+  comptabilite: ['ADMIN', 'COORDINATOR', 'COMPTABLE'],
   contracts: ['ADMIN', 'COORDINATOR'],
   permissions: ['ADMIN'],
   'audit-log': ['ADMIN'],
@@ -155,10 +157,12 @@ export async function middleware(request: NextRequest) {
     // Patients et familles en sont exclus : l'espace clinique est réservé au personnel (cf.
     // clinics/[id]/layout.tsx, qui les renvoie vers /dashboard) — les y envoyer d'ici faisait
     // boucler les deux redirections à l'infini.
-    const home =
+    const clinicHome =
       payload.organizationType === 'CLINIC' && payload.organizationId && !PORTAL_ROLES.includes(role)
         ? `/dashboard/clinics/${payload.organizationId as string}`
-        : '/dashboard';
+        : null;
+    // Le comptable n'a pas de tableau de bord clinique : il arrive directement sur la comptabilité.
+    const home = clinicHome ? (role === 'COMPTABLE' ? `${clinicHome}/comptabilite` : clinicHome) : '/dashboard';
     const redirectTo = (path: string) => {
       const res = NextResponse.redirect(new URL(path, request.url));
       if (newAccessToken) {

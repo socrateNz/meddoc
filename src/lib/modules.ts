@@ -20,6 +20,7 @@ export const MODULE_KEYS = [
   "IA",
   "CONTRATS_AIDANTS",
   "INTEROPERABILITE",
+  "COMPTABILITE",
 ] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
@@ -58,6 +59,13 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
   IA: { key: "IA", label: "Intelligence artificielle", description: "Assistant clinique et analyses IA (dossier, résultats, consultation).", requires: [], routeSegments: ["ai-assistant"] },
   CONTRATS_AIDANTS: { key: "CONTRATS_AIDANTS", label: "Contrats aidants", description: "Contrats et suivi des aidants à domicile.", requires: [], routeSegments: ["contracts"] },
   INTEROPERABILITE: { key: "INTEROPERABILITE", label: "Interopérabilité HL7 / FHIR", description: "Clés d'API, automates de laboratoire (HL7), export FHIR.", requires: [], routeSegments: [] },
+  COMPTABILITE: {
+    key: "COMPTABILITE",
+    label: "Comptabilité",
+    description: "Comptabilité SYSCOHADA : écritures automatiques, journaux, balance, grand livre, états.",
+    requires: [],
+    routeSegments: ["comptabilite"],
+  },
 };
 
 // Préréglages des plans de licence : modules ACTIVÉS par chaque plan (le SUPER_ADMIN peut ensuite
