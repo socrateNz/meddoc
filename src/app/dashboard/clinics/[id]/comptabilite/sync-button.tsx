@@ -15,7 +15,17 @@ export default function SyncButton({ organizationId, missing }: { organizationId
 
   const run = async () => {
     setBusy(true);
-    const res = await generateMissingEntries(organizationId);
+    let res: Awaited<ReturnType<typeof generateMissingEntries>>;
+    try {
+      res = await generateMissingEntries(organizationId);
+    } catch {
+      // Réponse jamais reçue (délai dépassé côté serveur web, connexion coupée...). Le travail déjà
+      // fait est conservé : relancer reprend sans doublon.
+      setBusy(false);
+      toast.error("La génération n'a pas pu aller jusqu'au bout (délai dépassé ou connexion coupée). Ce qui a été fait est conservé : recliquez pour continuer.", { duration: 15000 });
+      router.refresh();
+      return;
+    }
     setBusy(false);
     if (!res.success) {
       toast.error(res.error);
