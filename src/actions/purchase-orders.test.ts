@@ -16,7 +16,7 @@ describe("purchase-orders — produit bloqué par le coordinateur", () => {
 
   beforeEach(() => {
     vi.resetModules();
-    applyStockReceipt = vi.fn(async () => ({}));
+    applyStockReceipt = vi.fn(async () => ({ transaction: { id: "tx1" } }));
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
     vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorUser) }));
