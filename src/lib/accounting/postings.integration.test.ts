@@ -33,6 +33,7 @@ describe.skipIf(!url)("écritures automatiques (base réelle)", async () => {
     await prisma.accountingLine.deleteMany({ where: { organizationId: org } });
     await prisma.accountingEntry.deleteMany({ where: { id: { in: entries.map((e) => e.id) } } });
     await prisma.accountingCounter.deleteMany({ where: { organizationId: org } });
+    await prisma.financialTransaction.updateMany({ where: { organizationId: org }, data: { absorbedByPurchaseId: null, reversalOfId: null } });
     await prisma.financialTransaction.deleteMany({ where: { organizationId: org } });
     await prisma.pendingInvoice.deleteMany({ where: { organizationId: org } });
     await prisma.user.delete({ where: { id: user } });
@@ -177,6 +178,29 @@ describe.skipIf(!url)("écritures automatiques (base réelle)", async () => {
     expect(balance(l, "421")).toBe(20000);
     expect(balance(l, "471")).toBe(balance(before, "471")); // inchangé : la sortie classée est soldée par son règlement
     expect(dashboard(l, year).expenses).toBe(expensesBefore);
+  });
+
+  it("achats de stock : pas de dette fournisseur (caisse, retrait rattaché, ou payé par le propriétaire)", async () => {
+    const before = await lines();
+    const purchase = (amount: number, extra: Record<string, unknown> = {}) =>
+      prisma.financialTransaction.create({
+        data: { type: "EXPENSE", category: "PHARMACY_PURCHASE", amount, description: "Achat pharmacie : Paracétamol", recordedById: user, organizationId: org, createdAt: day("2026-07-01"), ...extra },
+      });
+    // Financement externe (argent du propriétaire) : fournisseur soldé, apport du propriétaire.
+    const external = await purchase(30000);
+    await accountTransaction(external.id);
+    // Payé en partie par un retrait déjà saisi (10 000), le reste par le propriétaire (5 000).
+    const linked = await purchase(15000);
+    const withdrawal = await prisma.financialTransaction.create({
+      data: { type: "EXPENSE", category: "OPERATIONAL_EXPENSE", amount: 10000, description: "Retrait pour achat", recordedById: user, organizationId: org, paymentMethod: "CASH", absorbedByPurchaseId: linked.id, createdAt: day("2026-07-01") },
+    });
+    await accountTransaction(withdrawal.id);
+    await accountTransaction(linked.id);
+    const l = await lines();
+    expect(balance(l, "401")).toBe(balance(before, "401"));
+    expect(balance(l, "601") - balance(before, "601")).toBe(45000);
+    expect(balance(l, "104") - balance(before, "104")).toBe(-35000);
+    expect(balance(l, "571") - balance(before, "571")).toBe(-10000);
   });
 
   it("rattrapage : relancé deux fois, il ne crée rien de plus ; la balance reste équilibrée", async () => {

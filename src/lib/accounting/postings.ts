@@ -315,10 +315,31 @@ async function postStockPurchase(tx: Tx) {
   }
   // Retraits de caisse rattachés après coup à cet achat : leur charge provisoire est
   // contrepassée (leur règlement reste, il solde le fournisseur de l'achat).
-  const absorbed = await prisma.financialTransaction.findMany({ where: { absorbedByPurchaseId: tx.id }, select: { id: true } });
+  const absorbed = await prisma.financialTransaction.findMany({ where: { absorbedByPurchaseId: tx.id }, select: { id: true, amount: true } });
   for (const expense of absorbed) {
     const charge = await prisma.accountingEntry.findFirst({ where: { organizationId: tx.organizationId!, sourceType: "EXPENSE", sourceId: expense.id } });
     if (charge) results.push(await reverseEntry(charge.id, { date: tx.createdAt, reason: "retrait rattaché à un achat de stock" }));
+  }
+  // MedDoc ne connaît pas l'achat à crédit : un achat ni payé par la caisse ni par un retrait
+  // (« financement externe : virement, argent personnel », réception de commande) est réglé hors
+  // caisse, par le propriétaire. Le fournisseur est soldé, le montant est un apport du propriétaire.
+  const external = tx.cashSessionId ? 0 : roundAmount(tx.amount - absorbed.reduce((s, e) => s + e.amount, 0));
+  if (external > 0) {
+    results.push(
+      await postEntry({
+        organizationId: tx.organizationId!,
+        journal: "OD",
+        date: tx.createdAt,
+        label: `Achat réglé hors caisse (propriétaire) — ${tx.description}`.slice(0, 250),
+        sourceType: "STOCK_PURCHASE_EXTERNAL",
+        sourceId: tx.id,
+        createdById: tx.recordedById,
+        lines: [
+          { account: "401", debit: external },
+          { account: "104", credit: external },
+        ],
+      })
+    );
   }
   return results;
 }
