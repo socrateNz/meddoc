@@ -122,7 +122,7 @@ export default async function AccountingPage({ params, searchParams }: { params:
 
       {tab === "journal" && <JournalTab clinicId={clinicId} sp={sp} periodInput={periodInput} base={base} query={query} />}
       {tab === "balance" && <BalanceTab clinicId={clinicId} periodInput={periodInput} base={base} query={query} />}
-      {tab === "grand-livre" && <LedgerTab clinicId={clinicId} account={one(sp.compte) ?? "571"} periodInput={periodInput} base={base} query={query} />}
+      {tab === "grand-livre" && <LedgerTab clinicId={clinicId} account={one(sp.compte) ?? "571"} page={Number(one(sp.page)) || 1} periodInput={periodInput} base={base} query={query} />}
 
       {tab === "sorties" && <WithdrawalsTab clinicId={clinicId} periodInput={periodInput} canWrite={canWrite} flow={flow} />}
 
@@ -146,6 +146,19 @@ export default async function AccountingPage({ params, searchParams }: { params:
               </div>
             ))}
           </div>
+          {o.suspense !== 0 && (
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-300/60 bg-amber-50/60 p-4 text-sm dark:border-amber-700/50 dark:bg-amber-900/10">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+              <div>
+                <p className="font-medium">À régulariser (compte d&apos;attente 471) {at} : {fcfa(o.suspense)}</p>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Règlements annulés hors caisse : MedDoc ne les a pas sortis du tiroir. Si l&apos;argent a été rendu au patient (ou si
+                  une sortie a servi à compenser, ex. « Annulation de règlement »), classez cette sortie dans l&apos;onglet « Sorties de
+                  caisse » en « Remboursement / correction d&apos;un règlement annulé ».
+                </p>
+              </div>
+            </div>
+          )}
           <p className="text-[11px] text-slate-400">Résultat de l&apos;exercice selon le compte de résultat ({flow}) : {fcfa(o.income.result)}.</p>
         </section>
       )}
@@ -201,10 +214,31 @@ async function WithdrawalsTab({ clinicId, periodInput, canWrite, flow }: { clini
 
 type TabProps = { clinicId: string; periodInput: { from?: string; to?: string }; base: string; query: (extra: Record<string, string>) => string };
 
+// Pagination : page 1 = les plus récentes.
+function Pager({ page, pages, total, unit, href }: { page: number; pages: number; total: number; unit: string; href: (page: number) => string }) {
+  if (pages <= 1) return <p className="text-xs text-slate-500">{total} {unit}</p>;
+  const link = (p: number, label: string, disabled: boolean) =>
+    disabled ? (
+      <span className="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-300 dark:border-slate-800 dark:text-slate-600">{label}</span>
+    ) : (
+      <Link href={href(p)} className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold hover:bg-slate-100 dark:border-slate-700 dark:hover:bg-slate-800">{label}</Link>
+    );
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {link(1, "« Plus récentes", page === 1)}
+      {link(page - 1, "‹ Précédente", page === 1)}
+      <span className="text-xs text-slate-500">Page {page} / {pages} — {total} {unit}</span>
+      {link(page + 1, "Suivante ›", page === pages)}
+      {link(pages, "Plus anciennes »", page === pages)}
+    </div>
+  );
+}
+
 async function JournalTab({ clinicId, sp, periodInput, base, query }: TabProps & { sp: SearchParams }) {
   const journal = one(sp.journal) ?? "ALL";
-  const res = await getAccountingJournal(clinicId, periodInput, journal);
+  const res = await getAccountingJournal(clinicId, periodInput, journal, Number(one(sp.page)) || 1);
   if (!res.success) return <p className="text-sm text-rose-600">{res.error}</p>;
+  const pager = <Pager page={res.data.page} pages={res.data.pages} total={res.data.total} unit="écriture(s), les plus récentes d'abord" href={(p) => `${base}${query({ tab: "journal", journal, page: String(p) })}`} />;
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap gap-1">
@@ -215,7 +249,7 @@ async function JournalTab({ clinicId, sp, periodInput, base, query }: TabProps &
         ))}
       </div>
       {res.data.entries.length === 0 && <p className="text-sm text-muted-foreground">Aucune écriture sur la période.</p>}
-      {res.data.truncated && <p className="text-xs text-amber-600">Seules les 300 écritures les plus récentes sont affichées : réduisez la période.</p>}
+      {pager}
       <div className="space-y-3">
         {res.data.entries.map((e) => (
           <div key={e.id} className="rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
@@ -241,6 +275,7 @@ async function JournalTab({ clinicId, sp, periodInput, base, query }: TabProps &
           </div>
         ))}
       </div>
+      {pager}
     </section>
   );
 }
@@ -301,10 +336,11 @@ async function BalanceTab({ clinicId, periodInput, base, query }: TabProps) {
   );
 }
 
-async function LedgerTab({ clinicId, account, periodInput, base, query }: TabProps & { account: string }) {
-  const res = await getAccountingLedger(clinicId, account, periodInput);
+async function LedgerTab({ clinicId, account, page, periodInput, base, query }: TabProps & { account: string; page: number }) {
+  const res = await getAccountingLedger(clinicId, account, periodInput, page);
   if (!res.success) return <p className="text-sm text-rose-600">{res.error}</p>;
   const l = res.data;
+  const pager = <Pager page={l.page} pages={l.pages} total={l.total} unit="ligne(s), les plus récentes d'abord" href={(p) => `${base}${query({ tab: "grand-livre", compte: account, page: String(p) })}`} />;
   return (
     <section className="space-y-3">
       <form action={base} className="flex flex-wrap items-end gap-2">
@@ -318,6 +354,7 @@ async function LedgerTab({ clinicId, account, periodInput, base, query }: TabPro
         <button className="h-9 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900">Voir</button>
       </form>
       <p className="text-sm font-semibold">{account} — {accountLabel(account)}</p>
+      {pager}
       <div className="overflow-x-auto rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
@@ -331,10 +368,12 @@ async function LedgerTab({ clinicId, account, periodInput, base, query }: TabPro
             </tr>
           </thead>
           <tbody>
-            <tr className="bg-slate-50/60 dark:bg-slate-800/30">
-              <td className="px-3 py-1.5" colSpan={5}>Solde d&apos;ouverture au {fr(l.period.from)}</td>
-              <td className="px-3 py-1.5 text-right font-semibold">{amount(l.opening) || "0"}</td>
-            </tr>
+            {l.page === 1 && (
+              <tr className="bg-slate-50/60 dark:bg-slate-800/30">
+                <td className="px-3 py-1.5" colSpan={5}>Solde au {fr(l.period.to)}</td>
+                <td className="px-3 py-1.5 text-right font-semibold">{amount(l.closing) || "0"}</td>
+              </tr>
+            )}
             {l.rows.map((r, i) => (
               <tr key={i} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-3 py-1.5">{fr(r.entryDate)}</td>
@@ -345,6 +384,12 @@ async function LedgerTab({ clinicId, account, periodInput, base, query }: TabPro
                 <td className="px-3 py-1.5 text-right font-semibold">{amount(r.running) || "0"}</td>
               </tr>
             ))}
+            {l.page === l.pages && (
+              <tr className="bg-slate-50/60 dark:bg-slate-800/30">
+                <td className="px-3 py-1.5" colSpan={5}>Solde d&apos;ouverture au {fr(l.period.from)}</td>
+                <td className="px-3 py-1.5 text-right font-semibold">{amount(l.opening) || "0"}</td>
+              </tr>
+            )}
           </tbody>
           <tfoot className="border-t-2 border-slate-300 font-bold dark:border-slate-600">
             <tr>
@@ -356,6 +401,7 @@ async function LedgerTab({ clinicId, account, periodInput, base, query }: TabPro
           </tfoot>
         </table>
       </div>
+      {pager}
     </section>
   );
 }

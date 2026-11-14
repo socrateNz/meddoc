@@ -17,6 +17,8 @@ export interface PostEntryInput {
   sourceId?: string | null;
   reversalOf?: string | null;
   createdById?: string | null;
+  // Instant réel du document ; par défaut `date` quand c'est un instant (et non un simple jour).
+  occurredAt?: Date | null;
   lines: LineInput[];
 }
 
@@ -98,6 +100,7 @@ export async function postEntry(input: PostEntryInput, client: Client = prisma):
             reference: input.reference ?? null,
             sourceType,
             sourceId: input.sourceId ?? null,
+            occurredAt: input.occurredAt ?? (input.date instanceof Date ? input.date : null),
             sourceKey,
             reversalOf: input.reversalOf ?? null,
             createdById: input.createdById ?? null,
@@ -170,13 +173,14 @@ export async function reverseEntry(
 export async function loadReportLines(organizationId: string, to: string, client: Client = prisma): Promise<ReportLine[]> {
   const rows = await client.accountingLine.findMany({
     where: { organizationId, entryDate: { lte: to } },
-    include: { entry: { select: { number: true } } },
+    include: { entry: { select: { number: true, occurredAt: true } } },
     orderBy: [{ entryDate: "asc" }],
   });
   return rows.map((l) => ({
     entryId: l.entryId,
     entryNumber: l.entry.number,
     entryDate: l.entryDate,
+    occurredAt: l.entry.occurredAt ? l.entry.occurredAt.toISOString() : null,
     journal: l.journal,
     account: l.account,
     label: l.label,

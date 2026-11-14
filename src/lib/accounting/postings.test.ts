@@ -74,7 +74,7 @@ describe("comptes de trésorerie et de charges", () => {
     expect(classificationEntry("ownerDraw", 50000, "471")).toEqual({ journal: "OD", lines: [{ account: "104", debit: 50000 }, { account: "471", credit: 50000 }] });
     expect(classificationEntry("electricity", 2000, "401")).toEqual({ journal: "AC", lines: [{ account: "6052", debit: 2000 }, { account: "401", credit: 2000 }] });
     // Versement en banque : virement interne par 581.
-    expect(classificationEntry("bankDeposit", 100000, "471").lines).toEqual([
+    expect(classificationEntry("bankDeposit", 100000, "471")?.lines).toEqual([
       { account: "581", debit: 100000 },
       { account: "471", credit: 100000 },
       { account: "521", debit: 100000 },

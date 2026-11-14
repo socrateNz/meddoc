@@ -1991,6 +1991,10 @@ model AccountingEntry {
   reversalOf     String?  @db.ObjectId
   createdById    String?  @db.ObjectId
   createdAt      DateTime @default(now())
+  // Instant réel du document comptabilisé (heure du règlement, de la sortie de caisse...) : ordonne
+  // les écritures d'une même journée dans le journal et le grand livre. createdAt ne convient pas :
+  // un rattrapage crée des centaines d'écritures au même moment.
+  occurredAt     DateTime?
 
   lines AccountingLine[]
 

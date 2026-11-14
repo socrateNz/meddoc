@@ -8,7 +8,7 @@ import { assertOrganizationModule } from "@/lib/modules-server";
 import { toErrorMessage } from "@/lib/utils";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { loadReportLines } from "@/lib/accounting/engine";
-import { balanceSheet, dashboard, incomeStatement, integrityChecks, ledger, trialBalance, vatReturn, type Period } from "@/lib/accounting/reports";
+import { balance, balanceSheet, dashboard, incomeStatement, integrityChecks, ledger, trialBalance, vatReturn, type Period } from "@/lib/accounting/reports";
 import { reclassifyExpense, syncAccounting } from "@/lib/accounting/postings";
 import { DATE_PATTERN } from "@/lib/accounting/rules";
 import { clinicDateKey } from "@/lib/clinic-day";
@@ -76,6 +76,8 @@ export async function getAccountingOverview(organizationId: string, periodInput?
         vat: vatReturn(lines, period),
         sheet: { totalAssets: sheet.totalAssets, totalLiabilities: sheet.totalLiabilities, balanced: sheet.balanced },
         checks: { ...checks, balanceSheetBalanced: sheet.balanced, missingEntries },
+        // Compte d'attente 471 : annulations de règlement faites hors caisse, pas encore régularisées.
+        suspense: -balance(lines, "471", (l) => l.entryDate <= period.to),
         entryCount: new Set(lines.map((l) => l.entryId)).size,
       },
     };
@@ -84,19 +86,28 @@ export async function getAccountingOverview(organizationId: string, periodInput?
   }
 }
 
-export async function getAccountingJournal(organizationId: string, periodInput?: Partial<Period>, journal?: string) {
+const ACCOUNTING_PAGE_SIZE = 50;
+const pageOf = (page?: number) => (Number.isInteger(page) && page! > 0 ? page! : 1);
+
+// Journal, les plus récentes d'abord, par pages de 50 écritures.
+export async function getAccountingJournal(organizationId: string, periodInput?: Partial<Period>, journal?: string, pageInput?: number) {
   try {
     await authorize(organizationId);
     const period = resolve(periodInput);
+    const where = {
+      organizationId,
+      entryDate: { gte: period.from, lte: period.to },
+      ...(journal && journal !== "ALL" ? { journal } : {}),
+    };
+    const total = await prisma.accountingEntry.count({ where });
+    const pages = Math.max(1, Math.ceil(total / ACCOUNTING_PAGE_SIZE));
+    const page = Math.min(pageOf(pageInput), pages);
     const entries = await prisma.accountingEntry.findMany({
-      where: {
-        organizationId,
-        entryDate: { gte: period.from, lte: period.to },
-        ...(journal && journal !== "ALL" ? { journal } : {}),
-      },
+      where,
       include: { lines: true },
-      orderBy: [{ entryDate: "desc" }, { number: "desc" }],
-      take: 300,
+      orderBy: [{ entryDate: "desc" }, { occurredAt: "desc" }, { number: "desc" }],
+      skip: (page - 1) * ACCOUNTING_PAGE_SIZE,
+      take: ACCOUNTING_PAGE_SIZE,
     });
     const reversed = new Set(
       (await prisma.accountingEntry.findMany({ where: { organizationId, reversalOf: { in: entries.map((e) => e.id) } }, select: { reversalOf: true } })).map((e) => e.reversalOf)
@@ -105,7 +116,9 @@ export async function getAccountingJournal(organizationId: string, periodInput?:
       success: true as const,
       data: {
         period,
-        truncated: entries.length === 300,
+        page,
+        pages,
+        total,
         entries: entries.map((e) => ({
           id: e.id,
           number: e.number,
@@ -136,13 +149,21 @@ export async function getAccountingTrialBalance(organizationId: string, periodIn
   }
 }
 
-export async function getAccountingLedger(organizationId: string, account: string, periodInput?: Partial<Period>) {
+// Grand livre d'un compte : solde progressif calculé dans l'ordre réel, affiché les plus récentes
+// d'abord, par pages de 50 lignes.
+export async function getAccountingLedger(organizationId: string, account: string, periodInput?: Partial<Period>, pageInput?: number) {
   try {
     await authorize(organizationId);
     if (!/^[1-8][0-9]{0,11}$/.test(account)) throw new Error("Compte invalide.");
     const period = resolve(periodInput);
     const lines = await loadReportLines(organizationId, period.to);
-    return { success: true as const, data: { period, ...ledger(lines, account, period) } };
+    const full = ledger(lines, account, period);
+    const total = full.rows.length;
+    const pages = Math.max(1, Math.ceil(total / ACCOUNTING_PAGE_SIZE));
+    const page = Math.min(pageOf(pageInput), pages);
+    const newestFirst = [...full.rows].reverse();
+    const rows = newestFirst.slice((page - 1) * ACCOUNTING_PAGE_SIZE, page * ACCOUNTING_PAGE_SIZE);
+    return { success: true as const, data: { period, ...full, rows, page, pages, total } };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Impossible de charger le grand livre.") };
   }

@@ -15,6 +15,12 @@ import { revalidatePath } from "next/cache";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { periodCreatedAtFilter, resolvePeriod, type PeriodInput } from "@/lib/finance-period";
 import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
+import { isDrawerCash, postCashSessions } from "@/lib/accounting/cash-sessions";
+import { accountSafely } from "@/lib/accounting/postings";
+import { PAYMENT_METHODS } from "@/lib/accounting/plan";
+
+// Moyens de paiement qui n'arrivent pas dans le tiroir : exclus des espèces attendues.
+const NON_CASH_METHODS = PAYMENT_METHODS.filter((m) => m !== "CASH");
 
 // Créer/désactiver une caisse physique est une opération structurelle réservée au coordinateur
 // (même périmètre que src/actions/wards.ts). Ouvrir/fermer une session et encaisser reste
@@ -160,6 +166,8 @@ export async function openRegisterSession(data: { registerId: string; openingFlo
       throw err;
     }
 
+    await accountSafely("Ouverture de caisse", register.organizationId, () => postCashSessions(register.organizationId, data.registerId));
+
     await logAuditAction(activeUser.id, "OPEN_CASH_SESSION", "CashSession", session.id, {
       registerId: data.registerId,
       openingFloat: data.openingFloat,
@@ -243,7 +251,7 @@ export async function getSessionSummary(sessionId: string, options?: { page?: nu
     // éventuellement en plusieurs tranches).
     const sessionFilter = { cashSessionId: sessionId };
     const { page, pageSize, skip, take } = resolvePage(options);
-    const [incomeSum, expenseSum, transactions, transactionsTotal] = await Promise.all([
+    const [incomeSum, expenseSum, transactions, transactionsTotal, nonCashIncomeSum] = await Promise.all([
       prisma.financialTransaction.aggregate({ where: { ...sessionFilter, type: "INCOME" }, _sum: { amount: true } }),
       prisma.financialTransaction.aggregate({ where: { ...sessionFilter, type: "EXPENSE" }, _sum: { amount: true } }),
       prisma.financialTransaction.findMany({
@@ -257,11 +265,13 @@ export async function getSessionSummary(sessionId: string, options?: { page?: nu
         take,
       }),
       prisma.financialTransaction.count({ where: sessionFilter }),
+      prisma.financialTransaction.aggregate({ where: { ...sessionFilter, type: "INCOME", paymentMethod: { in: NON_CASH_METHODS } }, _sum: { amount: true } }),
     ]);
 
     const totalIncome = incomeSum._sum.amount ?? 0;
     const totalExpenses = expenseSum._sum.amount ?? 0;
-    const expectedAmount = session.openingFloat + totalIncome - totalExpenses;
+    // Le tiroir ne contient que les espèces : Mobile Money, carte, virement, chèque n'y sont pas.
+    const expectedAmount = session.openingFloat + totalIncome - (nonCashIncomeSum._sum.amount ?? 0) - totalExpenses;
     const variance = session.countedAmount != null ? session.countedAmount - expectedAmount : null;
 
     // PENDING (rien reçu) et PARTIAL (acompte reçu) comptent toutes deux comme "en attente de
@@ -330,7 +340,7 @@ export async function listCashSessions(organizationId?: string, periodInput?: Pe
           register: { select: { name: true } },
           openedBy: { select: { firstName: true, lastName: true } },
           closedBy: { select: { firstName: true, lastName: true } },
-          transactions: { select: { type: true, amount: true } },
+          transactions: { select: { type: true, amount: true, paymentMethod: true } },
         },
         orderBy: { openedAt: "desc" },
         skip,
@@ -342,11 +352,14 @@ export async function listCashSessions(organizationId?: string, periodInput?: Pe
     const data = sessions.map((s) => {
       let totalIncome = 0;
       let totalExpenses = 0;
+      let nonCashIncome = 0;
       for (const t of s.transactions) {
-        if (t.type === "INCOME") totalIncome += t.amount;
-        else totalExpenses += t.amount;
+        if (t.type === "INCOME") {
+          totalIncome += t.amount;
+          if (!isDrawerCash(t.paymentMethod)) nonCashIncome += t.amount;
+        } else totalExpenses += t.amount;
       }
-      const expectedAmount = s.openingFloat + totalIncome - totalExpenses;
+      const expectedAmount = s.openingFloat + totalIncome - nonCashIncome - totalExpenses;
       const variance = s.countedAmount != null ? s.countedAmount - expectedAmount : null;
       return {
         id: s.id,
@@ -389,7 +402,7 @@ export async function closeRegisterSession(data: { sessionId: string; countedAmo
     let totalIncome = 0;
     let totalExpenses = 0;
     for (const t of transactions) {
-      if (t.type === "INCOME") totalIncome += t.amount;
+      if (t.type === "INCOME" && isDrawerCash(t.paymentMethod)) totalIncome += t.amount;
       else if (t.type === "EXPENSE") totalExpenses += t.amount;
     }
     const expectedAmount = session.openingFloat + totalIncome - totalExpenses;
@@ -409,6 +422,8 @@ export async function closeRegisterSession(data: { sessionId: string; countedAmo
     // Libère le verrou posé par openRegisterSession — sans ça, la caisse resterait bloquée en
     // "hasOpenSession: true" indéfiniment et personne ne pourrait plus jamais la rouvrir.
     await prisma.cashRegister.update({ where: { id: session.registerId }, data: { hasOpenSession: false } });
+
+    await accountSafely("Fermeture de caisse", session.organizationId, () => postCashSessions(session.organizationId, session.registerId));
 
     await logAuditAction(activeUser.id, "CLOSE_CASH_SESSION", "CashSession", data.sessionId, {
       countedAmount: data.countedAmount,

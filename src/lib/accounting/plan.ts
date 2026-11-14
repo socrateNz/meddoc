@@ -90,6 +90,7 @@ export const CHART_OF_ACCOUNTS: Record<string, string> = {
   "7062": "Actes, soins, examens, imagerie, laboratoire",
   "7063": "Hospitalisation",
   "707": "Produits accessoires",
+  "758": "Produits divers (excédents de caisse)",
 };
 
 // Libellé d'un compte : le plus long préfixe connu (5211 → « Banques » à défaut d'un sous-compte).
@@ -172,6 +173,9 @@ export const WITHDRAWAL_CATEGORIES = {
   salaryAdvance: { label: "Avance sur salaire", account: "421", transfer: false },
   supplierPayment: { label: "Paiement d'un fournisseur (achat déjà saisi)", account: "401", transfer: false },
   loanRepayment: { label: "Remboursement d'emprunt", account: "162", transfer: false },
+  // Argent rendu au patient (ou sortie qui compense) après une annulation de règlement faite hors
+  // caisse : solde le compte d'attente 471 de cette annulation.
+  regularization: { label: "Remboursement / correction d'un règlement annulé", account: "471", transfer: false },
 } as const;
 export type WithdrawalCategory = keyof typeof WITHDRAWAL_CATEGORIES;
 // Compte d'attente entre le classement d'un retrait non-charge et son règlement par la caisse.

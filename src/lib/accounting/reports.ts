@@ -6,6 +6,7 @@ export interface ReportLine {
   entryId: string;
   entryNumber?: string;
   entryDate: string;
+  occurredAt?: string | null; // instant réel du document (ISO), ordonne une même journée
   journal: string;
   account: string;
   label: string;
@@ -87,6 +88,15 @@ export function dashboard(lines: ReportLine[], period: Period): Dashboard {
   };
 }
 
+// Ordre réel : jour, puis heure du document, puis numéro.
+export function chronological(a: ReportLine, b: ReportLine) {
+  return (
+    a.entryDate.localeCompare(b.entryDate) ||
+    (a.occurredAt ?? "").localeCompare(b.occurredAt ?? "") ||
+    (a.entryNumber ?? "").localeCompare(b.entryNumber ?? "")
+  );
+}
+
 // --- Grand livre d'un compte (§ 8.3) -----------------------------------------------------------
 export interface LedgerRow extends ReportLine {
   running: number;
@@ -94,9 +104,7 @@ export interface LedgerRow extends ReportLine {
 export function ledger(lines: ReportLine[], account: string, period: Period) {
   const mine = lines.filter((l) => l.account.startsWith(account));
   const opening = mine.filter((l) => l.entryDate < period.from).reduce((s, l) => s + l.debit - l.credit, 0);
-  const rows = mine
-    .filter((l) => inPeriod(l, period))
-    .sort((a, b) => a.entryDate.localeCompare(b.entryDate) || (a.entryNumber ?? "").localeCompare(b.entryNumber ?? ""));
+  const rows = mine.filter((l) => inPeriod(l, period)).sort(chronological);
   let running = opening;
   const withRunning: LedgerRow[] = rows.map((l) => ({ ...l, running: (running += l.debit - l.credit) }));
   const debit = rows.reduce((s, l) => s + l.debit, 0);

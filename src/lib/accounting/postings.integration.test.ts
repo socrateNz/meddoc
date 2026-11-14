@@ -175,7 +175,7 @@ describe.skipIf(!url)("écritures automatiques (base réelle)", async () => {
     await accountTransaction(w2.id);
     l = await lines();
     expect(balance(l, "421")).toBe(20000);
-    expect(balance(l, "471")).toBe(0);
+    expect(balance(l, "471")).toBe(balance(before, "471")); // inchangé : la sortie classée est soldée par son règlement
     expect(dashboard(l, year).expenses).toBe(expensesBefore);
   });
 

@@ -14,6 +14,7 @@ import { prisma } from "@/lib/db";
 import { clinicDateKey } from "@/lib/clinic-day";
 import { getOrganizationModules } from "@/lib/modules-server";
 import { postEntry, reverseEntry, type PostEntryResult } from "./engine";
+import { CASH_ACCOUNT, isDrawerCash, postCashSessions } from "./cash-sessions";
 import {
   EXPENSE_CATEGORIES,
   PAYMENT_METHOD_ACCOUNT,
@@ -105,8 +106,10 @@ export function expenseAccounts(category: string | null | undefined): { account:
 //   retrait non-charge    D 104, 421, 401, 162 / C counterpart  (journal OD, hors résultat)
 //   versement banque/MoMo D 581 / C counterpart, D 521|552 / C 581 (virement interne : ce n'est
 //                         pas un encaissement, cf. dashboard)
-export function classificationEntry(category: string | null | undefined, amount: number, counterpart: string): { journal: Journal; lines: LineInput[] } {
+// null : rien à classer (la sortie solde directement sa contrepartie, ex. régularisation sur 471).
+export function classificationEntry(category: string | null | undefined, amount: number, counterpart: string): { journal: Journal; lines: LineInput[] } | null {
   const { account, charge, transfer } = expenseAccounts(category);
+  if (account === counterpart) return null;
   if (transfer) {
     return {
       journal: "OD",
@@ -196,6 +199,7 @@ export async function postInvoiceSale(invoiceId: string): Promise<PostEntryResul
     sourceType: "INVOICE",
     sourceId: invoice.id,
     createdById: firstPayment.recordedById,
+    occurredAt: new Date(firstPayment.createdAt.getTime() - 1),
     lines,
   });
 }
@@ -242,7 +246,8 @@ async function postExpense(tx: Tx) {
   // Un retrait de caisse rattaché à un achat de stock n'est pas une charge : il règle le
   // fournisseur de cet achat (la charge est l'achat lui-même, cf. postStockPurchase).
   const payee = tx.absorbedByPurchaseId ? "401" : counterpart;
-  if (!tx.absorbedByPurchaseId) {
+  const classification = tx.absorbedByPurchaseId ? null : classificationEntry(tx.expenseCategory, tx.amount, counterpart);
+  if (classification) {
     results.push(
       await postEntry({
         organizationId: tx.organizationId!,
@@ -251,7 +256,7 @@ async function postExpense(tx: Tx) {
         sourceType: "EXPENSE",
         sourceId: tx.id,
         createdById: tx.recordedById,
-        ...classificationEntry(tx.expenseCategory, tx.amount, counterpart),
+        ...classification,
       })
     );
   }
@@ -260,7 +265,7 @@ async function postExpense(tx: Tx) {
       organizationId: tx.organizationId!,
       journal: "TR",
       date: tx.createdAt,
-      label: `Règlement — ${tx.description}`.slice(0, 250),
+      label: `Sortie de caisse — ${tx.description}`.slice(0, 250),
       sourceType: "EXPENSE_PAYMENT",
       sourceId: tx.id,
       createdById: tx.recordedById,
@@ -318,6 +323,50 @@ async function postStockPurchase(tx: Tx) {
   return results;
 }
 
+// Annulation d'un règlement en espèces faite hors séance de caisse (par le coordinateur) : MedDoc
+// ne la sort pas du tiroir (espèces attendues inchangées). L'argent rendu, s'il l'est, passe par une
+// sortie de caisse classée « Remboursement / correction d'un règlement annulé ». D'ici là, le
+// montant attend sur le 471.
+export function offDrawerReversal(reversal: { cashSessionId: string | null }, originalPaymentMethod: string | null) {
+  return !reversal.cashSessionId && isDrawerCash(originalPaymentMethod);
+}
+
+// Corrige les annulations hors caisse comptabilisées avant cette règle (contre la caisse 571) :
+// contrepassation, puis la bonne écriture contre le 471.
+async function fixOffDrawerReversals(organizationId: string) {
+  const reversals = await prisma.financialTransaction.findMany({
+    where: { organizationId, category: "REVERSAL", cashSessionId: null, amount: { gt: 0 } },
+    select: { id: true, createdAt: true, recordedById: true },
+  });
+  const out: PostEntryResult[] = [];
+  for (const r of reversals) {
+    const entry = await prisma.accountingEntry.findFirst({ where: { organizationId, sourceType: "PAYMENT_REVERSAL", sourceId: r.id }, include: { lines: true } });
+    const cash = entry?.lines.find((l) => l.account === CASH_ACCOUNT && l.credit > BigInt(0));
+    if (!entry || !cash) continue;
+    const reversal = await reverseEntry(entry.id, { date: r.createdAt, reason: "annulation faite hors caisse : l'argent n'est pas sorti du tiroir", createdById: r.recordedById });
+    out.push(reversal);
+    out.push(
+      await postEntry({
+        organizationId,
+        journal: "OD",
+        date: r.createdAt,
+        label: `${entry.label} (hors caisse — à régulariser)`.slice(0, 250),
+        reference: entry.reference,
+        sourceType: "PAYMENT_REVERSAL_FIX",
+        sourceId: reversal.id,
+        createdById: r.recordedById,
+        lines: entry.lines.map((l) => ({
+          account: l.account === CASH_ACCOUNT ? WITHDRAWAL_SUSPENSE_ACCOUNT : l.account,
+          debit: Number(l.debit),
+          credit: Number(l.credit),
+          customerId: l.customerId,
+        })),
+      })
+    );
+  }
+  return out;
+}
+
 // Contrepassation MedDoc (catégorie REVERSAL) : un règlement annulé remet la créance du patient ;
 // une dépense ou un achat annulé contrepasse ses écritures.
 async function postReversal(tx: Tx) {
@@ -328,21 +377,40 @@ async function postReversal(tx: Tx) {
     if (original.amount <= 0) return [];
     const invoiceId = original.pendingInvoiceId ?? original.reversedFromInvoiceId;
     const sale = await postPayment(original as Tx);
+    const off = offDrawerReversal(tx, original.paymentMethod);
     // Vente au comptant sans ticket : on contrepasse la vente elle-même.
-    if (!invoiceId) return [await reverseEntry(sale.id, { date: tx.createdAt, reason: "annulation dans MedDoc", createdById: tx.recordedById })];
+    if (!invoiceId && !off) return [await reverseEntry(sale.id, { date: tx.createdAt, reason: "annulation dans MedDoc", createdById: tx.recordedById })];
+    if (!invoiceId) {
+      const saleLine = (await prisma.accountingLine.findMany({ where: { entryId: sale.id } })).find((l) => l.credit > BigInt(0));
+      return [
+        await postEntry({
+          organizationId: original.organizationId,
+          journal: "OD",
+          date: tx.createdAt,
+          label: "Annulation de vente faite hors caisse — à régulariser",
+          sourceType: "PAYMENT_REVERSAL",
+          sourceId: tx.id,
+          createdById: tx.recordedById,
+          lines: [
+            { account: saleLine?.account ?? "707", debit: original.amount },
+            { account: WITHDRAWAL_SUSPENSE_ACCOUNT, credit: original.amount },
+          ],
+        }),
+      ];
+    }
     return [
       await postEntry({
         organizationId: original.organizationId,
         journal: "TR",
         date: tx.createdAt,
-        label: `Annulation de règlement${invoiceId ? ` ${ticketRef(invoiceId)}` : ""}`,
-        reference: invoiceId ? ticketRef(invoiceId) : null,
+        label: `Annulation de règlement ${ticketRef(invoiceId)}${off ? " (hors caisse — à régulariser)" : ""}`,
+        reference: ticketRef(invoiceId),
         sourceType: "PAYMENT_REVERSAL",
         sourceId: tx.id,
         createdById: tx.recordedById,
         lines: [
           { account: "411", debit: original.amount, customerId: original.patientId },
-          { account: treasuryAccount(original.paymentMethod), credit: original.amount },
+          { account: off ? WITHDRAWAL_SUSPENSE_ACCOUNT : treasuryAccount(original.paymentMethod), credit: original.amount },
         ],
       }),
     ];
@@ -385,20 +453,26 @@ export async function reclassifyExpense(transactionId: string, category: string,
   if (!counterpart) throw new Error("Règlement comptable de cette sortie introuvable.");
 
   const current = await currentClassification(orgId, tx.id);
-  let reversalId = current.pendingReversalId;
+  let reversalId: string | null = current.pendingReversalId;
   if (current.entry) {
     reversalId = (await reverseEntry(current.entry.id, { date: tx.createdAt, reason: "reclassement", createdById })).id;
   }
-  if (!reversalId) throw new Error("Classement comptable de cette sortie introuvable.");
-  const posted = await postEntry({
-    organizationId: orgId,
-    date: tx.createdAt,
-    label: `Reclassement — ${tx.description}`.slice(0, 250),
-    sourceType: "EXPENSE_RECLASS",
-    sourceId: reversalId,
-    createdById,
-    ...classificationEntry(category, tx.amount, counterpart),
-  });
+  const classification = classificationEntry(category, tx.amount, counterpart);
+  if (classification && !reversalId) {
+    // Sortie jamais classée (régularisation sur 471) : son premier classement porte son propre id.
+    reversalId = tx.id;
+  }
+  const posted = classification
+    ? await postEntry({
+        organizationId: orgId,
+        date: tx.createdAt,
+        label: `Reclassement — ${tx.description}`.slice(0, 250),
+        sourceType: reversalId === tx.id ? "EXPENSE" : "EXPENSE_RECLASS",
+        sourceId: reversalId,
+        createdById,
+        ...classification,
+      })
+    : null;
   await prisma.financialTransaction.update({ where: { id: tx.id }, data: { expenseCategory: category } });
   return posted;
 }
@@ -493,7 +567,59 @@ export async function syncAccounting(organizationId: string): Promise<SyncReport
   for (const id of saleIds.filter((id) => !alive.has(id))) {
     await attempt(`Ticket supprimé ${ticketRef(id)}`, async () => [await reverseDeletedInvoiceSale(organizationId, id)]);
   }
+
+  // 4. Annulations faites hors caisse comptabilisées autrefois contre la caisse.
+  await attempt("Annulations hors caisse", () => fixOffDrawerReversals(organizationId));
+
+  // 5. Séances de caisse : fond initial, écarts à la fermeture, argent sorti entre deux séances.
+  await attempt("Séances de caisse", () => postCashSessions(organizationId));
+
+  // 6. Écritures passées avant l'ajout de l'heure réelle : on la complète (simple métadonnée de tri).
+  await attempt("Heure des écritures", async () => {
+    await backfillOccurredAt(organizationId);
+    return [];
+  });
   return report;
+}
+
+// Complète l'heure réelle (occurredAt) des écritures qui ne l'ont pas, et renomme « Règlement — »
+// en « Sortie de caisse — » sur les sorties de caisse. Ni les montants ni les comptes ne changent.
+async function backfillOccurredAt(organizationId: string) {
+  const entries = await prisma.accountingEntry.findMany({
+    where: { organizationId, occurredAt: { isSet: false } },
+    select: { id: true, sourceType: true, sourceId: true, entryDate: true, createdAt: true, label: true },
+  });
+  if (!entries.length) return;
+  const ids = [...new Set(entries.map((e) => e.sourceId).filter((id): id is string => !!id))];
+  const txs = await prisma.financialTransaction.findMany({ where: { id: { in: ids } }, select: { id: true, createdAt: true } });
+  const txTime = new Map(txs.map((t) => [t.id, t.createdAt]));
+  const invoiceIds = entries.filter((e) => e.sourceType === "INVOICE" && e.sourceId).map((e) => e.sourceId!);
+  const firstPayments = invoiceIds.length
+    ? await prisma.financialTransaction.findMany({
+        where: { OR: [{ pendingInvoiceId: { in: invoiceIds } }, { reversedFromInvoiceId: { in: invoiceIds } }], type: "INCOME" },
+        select: { pendingInvoiceId: true, reversedFromInvoiceId: true, createdAt: true },
+      })
+    : [];
+  const saleTime = new Map<string, Date>();
+  for (const p of firstPayments) {
+    const id = p.pendingInvoiceId ?? p.reversedFromInvoiceId;
+    if (!id) continue;
+    const t = new Date(p.createdAt.getTime() - 1);
+    if (!saleTime.has(id) || t < saleTime.get(id)!) saleTime.set(id, t);
+  }
+  // À défaut : l'instant de création s'il tombe le jour de l'écriture, sinon la fin de cette journée.
+  const fallback = (e: (typeof entries)[number]) => (dayOf(e.createdAt) === e.entryDate ? e.createdAt : new Date(`${e.entryDate}T22:59:59.000Z`));
+  for (let i = 0; i < entries.length; i += 50) {
+    await Promise.all(
+      entries.slice(i, i + 50).map(async (e) => {
+        const occurredAt = (e.sourceId && (e.sourceType === "INVOICE" ? saleTime.get(e.sourceId) : txTime.get(e.sourceId))) || fallback(e);
+        const relabel = e.sourceType === "EXPENSE_PAYMENT" && e.label.startsWith("Règlement — ");
+        const label = relabel ? `Sortie de caisse — ${e.label.slice("Règlement — ".length)}` : e.label;
+        await prisma.accountingEntry.update({ where: { id: e.id }, data: { occurredAt, label } });
+        if (relabel) await prisma.accountingLine.updateMany({ where: { entryId: e.id, label: e.label }, data: { label } });
+      })
+    );
+  }
 }
 
 export const todayKey = () => dayOf(new Date());
