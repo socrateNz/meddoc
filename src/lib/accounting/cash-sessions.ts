@@ -124,8 +124,18 @@ export async function postCashSessions(organizationId: string, registerId?: stri
     })),
     movements
   );
+  // Déjà passées : sautées sans ouvrir de transaction (rattrapage rapide).
+  const existing = new Set(
+    (
+      await prisma.accountingEntry.findMany({
+        where: { organizationId, sourceType: { in: ["CASH_OPENING", "CASH_VARIANCE", "CASH_HANDOVER"] } },
+        select: { sourceType: true, sourceId: true },
+      })
+    ).map((e) => `${e.sourceType}:${e.sourceId}`)
+  );
   const results: PostEntryResult[] = [];
   for (const e of entries) {
+    if (existing.has(`${e.sourceType}:${e.sourceId}`)) continue;
     results.push(await postEntry({ organizationId, journal: e.sourceType === "CASH_HANDOVER" || e.sourceType === "CASH_OPENING" ? "OD" : "TR", date: e.date, label: e.label, sourceType: e.sourceType, sourceId: e.sourceId, lines: e.lines }));
   }
   return results;

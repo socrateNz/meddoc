@@ -364,6 +364,9 @@ async function fixOffDrawerReversals(organizationId: string) {
     const entry = await prisma.accountingEntry.findFirst({ where: { organizationId, sourceType: "PAYMENT_REVERSAL", sourceId: r.id }, include: { lines: true } });
     const cash = entry?.lines.find((l) => l.account === CASH_ACCOUNT && l.credit > BigInt(0));
     if (!entry || !cash) continue;
+    // Déjà corrigée (contrepassée puis repassée contre le 471) : rien à refaire.
+    const done = await prisma.accountingEntry.findFirst({ where: { organizationId, reversalOf: entry.id }, select: { id: true } });
+    if (done && (await prisma.accountingEntry.findFirst({ where: { organizationId, sourceType: "PAYMENT_REVERSAL_FIX", sourceId: done.id }, select: { id: true } }))) continue;
     const reversal = await reverseEntry(entry.id, { date: r.createdAt, reason: "annulation faite hors caisse : l'argent n'est pas sorti du tiroir", createdById: r.recordedById });
     out.push(reversal);
     out.push(
@@ -569,24 +572,54 @@ export async function syncAccounting(organizationId: string): Promise<SyncReport
     }
   };
 
+  // Écritures déjà passées, chargées en une fois : un document dont la DERNIÈRE écriture existe est
+  // entièrement comptabilisé (chaque fonction passe ses écritures dans un ordre fixe) et n'est pas
+  // retraité. Sans ce tri, chaque rattrapage revérifiait des milliers de documents un par un.
+  const posted = await prisma.accountingEntry.findMany({
+    where: { organizationId, sourceType: { in: ["PAYMENT", "EXPENSE_PAYMENT", "STOCK_PURCHASE", "STOCK_PURCHASE_PAYMENT", "STOCK_PURCHASE_EXTERNAL", "PAYMENT_REVERSAL", "INVOICE", "INVOICE_WRITE_OFF", "INVOICE_DELETED"] } },
+    select: { id: true, sourceType: true, sourceId: true },
+  });
+  const done = new Set(posted.map((e) => `${e.sourceType}:${e.sourceId}`));
+  const has = (type: string, id: string) => done.has(`${type}:${id}`);
+  const skip = () => {
+    report.existing++;
+  };
+
   // 1. Toutes les écritures financières, dans l'ordre chronologique (ventes avant règlements).
   const transactions = await prisma.financialTransaction.findMany({
-    where: { organizationId, amount: { gt: 0 } },
-    select: { id: true, description: true },
+    where: { organizationId, amount: { gt: 0 }, category: { in: ["SERVICE_FEE", "PHARMACY_SALE", "LAB_EXAM_FEE", "OTHER", "OPERATIONAL_EXPENSE", "PHARMACY_PURCHASE", "REVERSAL"] } },
+    select: { id: true, type: true, category: true, cashSessionId: true, description: true },
     orderBy: { createdAt: "asc" },
   });
-  for (const t of transactions) await attempt(`Mouvement « ${t.description.slice(0, 60)} »`, () => accountTransaction(t.id));
+  for (const t of transactions) {
+    const complete =
+      t.category === "REVERSAL"
+        ? has("PAYMENT_REVERSAL", t.id)
+        : t.type === "INCOME"
+          ? has("PAYMENT", t.id)
+          : t.category === "OPERATIONAL_EXPENSE"
+            ? has("EXPENSE_PAYMENT", t.id)
+            : has("STOCK_PURCHASE", t.id) && has(t.cashSessionId ? "STOCK_PURCHASE_PAYMENT" : "STOCK_PURCHASE_EXTERNAL", t.id);
+    if (complete) skip();
+    else await attempt(`Mouvement « ${t.description.slice(0, 60)} »`, () => accountTransaction(t.id));
+  }
 
   // 2. Restes dus abandonnés.
   const cancelled = await prisma.pendingInvoice.findMany({ where: { organizationId, status: "CANCELLED" }, select: { id: true } });
-  for (const inv of cancelled) await attempt(`Ticket ${ticketRef(inv.id)}`, async () => [await postInvoiceWriteOff(inv.id)]);
+  for (const inv of cancelled) {
+    if (has("INVOICE_WRITE_OFF", inv.id)) skip();
+    else await attempt(`Ticket ${ticketRef(inv.id)}`, async () => [await postInvoiceWriteOff(inv.id)]);
+  }
 
-  // 3. Ventes comptabilisées dont le ticket a depuis été supprimé.
-  const sales = await prisma.accountingEntry.findMany({ where: { organizationId, sourceType: "INVOICE" }, select: { sourceId: true } });
+  // 3. Ventes comptabilisées dont le ticket a depuis été supprimé (contrepassation : INVOICE_DELETED,
+  // sourceId = l'écriture de vente).
+  const sales = await prisma.accountingEntry.findMany({ where: { organizationId, sourceType: "INVOICE" }, select: { id: true, sourceId: true } });
   const saleIds = sales.map((s) => s.sourceId).filter((id): id is string => !!id);
   const alive = new Set((await prisma.pendingInvoice.findMany({ where: { id: { in: saleIds } }, select: { id: true } })).map((i) => i.id));
-  for (const id of saleIds.filter((id) => !alive.has(id))) {
-    await attempt(`Ticket supprimé ${ticketRef(id)}`, async () => [await reverseDeletedInvoiceSale(organizationId, id)]);
+  for (const sale of sales) {
+    if (!sale.sourceId || alive.has(sale.sourceId)) continue;
+    if (has("INVOICE_DELETED", sale.id)) skip();
+    else await attempt(`Ticket supprimé ${ticketRef(sale.sourceId)}`, async () => [await reverseDeletedInvoiceSale(organizationId, sale.sourceId!)]);
   }
 
   // 4. Annulations faites hors caisse comptabilisées autrefois contre la caisse.
