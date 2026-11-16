@@ -9,6 +9,7 @@ import { Receipt, Loader2, Printer } from "lucide-react";
 import { payPendingInvoice } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import PaymentMethodSelect from "./payment-method-select";
+import { DispenseNowCheckbox, dispenseAfterPayment } from "./dispense-now";
 import type { PaymentMethod } from "@/lib/accounting/plan";
 
 function formatFCFA(val: number) {
@@ -27,12 +28,15 @@ interface RecordPaymentDialogProps {
     customPatientPhone?: string | null;
   };
   onSuccess: (transaction: any) => void;
+  // Pharmacien qui encaisse et ticket dont des médicaments restent à remettre.
+  canDispense?: boolean;
 }
 
 // Ajoute une tranche sur une facture déjà PARTIAL — le panier est verrouillé depuis le premier
 // règlement (cf. payPendingInvoice), seul le montant de CE paiement reste à saisir.
-export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onSuccess }: RecordPaymentDialogProps) {
+export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onSuccess, canDispense = false }: RecordPaymentDialogProps) {
   const [open, setOpen] = useState(false);
+  const [dispenseNow, setDispenseNow] = useState(true);
   const remainingDue = Math.max(0, pendingInvoice.invoiceTotalAmount - pendingInvoice.amountPaid);
   const [amountInput, setAmountInput] = useState(String(remainingDue));
   const { submitting: loading, guard } = useSubmitGuard();
@@ -63,6 +67,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
         (txn as any).remainingDue = (res.data as any)?.remainingDue;
         onSuccess(txn);
         setAmountInput(String(remainingDue));
+        if (canDispense && dispenseNow) await dispenseAfterPayment(pendingInvoice.id);
       } else {
         setMsg(res.error || "Erreur lors de l'encaissement.");
       }
@@ -123,6 +128,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
           </div>
 
           <PaymentMethodSelect value={paymentMethod} onChange={setPaymentMethod} id="installmentPaymentMethod" />
+          {canDispense && <DispenseNowCheckbox checked={dispenseNow} onChange={setDispenseNow} id="installmentDispenseNow" />}
 
           <Button onClick={handleSubmit} disabled={loading || amount <= 0} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
             {loading ? (

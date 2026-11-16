@@ -126,7 +126,23 @@ async function WithdrawalsTab({ clinicId, periodInput, canWrite, flow }: { clini
         <span>Charges : <strong className="text-rose-600">{fcfa(charges)}</strong></span>
         <span>Retraits hors charges : <strong>{fcfa(others)}</strong></span>
       </div>
-      <div className="overflow-x-auto rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
+      {/* Mobile : une carte par sortie */}
+      <div className="space-y-2 md:hidden">
+        {items.map((i) => (
+          <div key={i.id} className="rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 space-y-2 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs text-slate-500">{fr(i.date)}</p>
+                <p className="break-words text-sm font-medium">{i.description}</p>
+              </div>
+              <p className="shrink-0 text-sm font-bold">{fcfa(i.amount)}</p>
+            </div>
+            <WithdrawalCategorySelect organizationId={clinicId} transactionId={i.id} value={i.category} disabled={!canWrite} />
+          </div>
+        ))}
+        {!items.length && <p className="p-6 text-center text-sm text-slate-400">Aucune sortie de caisse sur la période.</p>}
+      </div>
+      <div className="hidden overflow-x-auto md:block rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase text-slate-500">
             <tr>
@@ -291,10 +307,10 @@ async function JournalTab({ clinicId, sp, periodInput, base, query }: TabProps &
               <tbody>
                 {e.lines.map((l, i) => (
                   <tr key={i} className="border-b border-slate-50 last:border-0 dark:border-slate-800/50">
-                    <td className="w-20 px-4 py-1.5 font-mono">{l.account}</td>
-                    <td className="py-1.5 text-slate-500">{accountLabel(l.account)}</td>
-                    <td className="w-32 py-1.5 text-right font-medium">{amount(l.debit)}</td>
-                    <td className="w-32 px-4 py-1.5 text-right font-medium">{amount(l.credit)}</td>
+                    <td className="w-14 px-3 py-1.5 align-top font-mono sm:w-20 sm:px-4">{l.account}</td>
+                    <td className="break-words py-1.5 align-top text-slate-500">{accountLabel(l.account)}</td>
+                    <td className="w-20 whitespace-nowrap py-1.5 pl-2 text-right align-top font-medium sm:w-32">{amount(l.debit)}</td>
+                    <td className="w-20 whitespace-nowrap px-3 py-1.5 text-right align-top font-medium sm:w-32 sm:px-4">{amount(l.credit)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -316,7 +332,33 @@ async function BalanceTab({ clinicId, periodInput, base, query }: TabProps) {
       <p className={`text-xs font-semibold ${b.balanced ? "text-emerald-600" : "text-rose-600"}`}>
         {b.balanced ? "Balance équilibrée sur chaque colonne." : "Balance déséquilibrée : vérifiez la santé de la compta."}
       </p>
-      <div className="overflow-x-auto rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
+      {/* Mobile : une ligne par compte avec ses mouvements et son solde */}
+      <div className="divide-y divide-slate-100 md:hidden rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 dark:divide-slate-800">
+        {b.rows.map((r) => {
+          const solde = r.closingDebit - r.closingCredit;
+          return (
+            <Link key={r.account} href={`${base}${query({ tab: "grand-livre", compte: r.account })}`} className="block p-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="min-w-0 text-sm">
+                  <span className="font-mono font-semibold text-blue-600">{r.account}</span>{" "}
+                  <span className="text-slate-500">{accountLabel(r.account)}</span>
+                </p>
+                <p className="shrink-0 text-right text-sm font-bold">
+                  {amount(Math.abs(solde)) || "0"}
+                  <span className="block text-[10px] font-medium text-slate-400">{solde > 0 ? "débiteur" : solde < 0 ? "créditeur" : "soldé"}</span>
+                </p>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Débits {amount(r.debit) || "0"} · Crédits {amount(r.credit) || "0"}
+              </p>
+            </Link>
+          );
+        })}
+        <div className="p-3 text-xs font-bold">
+          Totaux — débits {amount(b.totals.debit) || "0"} · crédits {amount(b.totals.credit) || "0"}
+        </div>
+      </div>
+      <div className="hidden overflow-x-auto md:block rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
             <tr>
@@ -374,15 +416,53 @@ async function LedgerTab({ clinicId, account, page, periodInput, base, query }: 
         <input type="hidden" name="tab" value="grand-livre" />
         <input type="hidden" name="du" value={l.period.from} />
         <input type="hidden" name="au" value={l.period.to} />
-        <label className="text-xs font-medium text-slate-500">
+        <label className="flex-1 text-xs font-medium text-slate-500 sm:flex-none">
           Compte (ou préfixe : 5 = toute la trésorerie)
-          <input name="compte" defaultValue={account} className="mt-1 block h-9 w-48 rounded-xl border border-input bg-background px-3 font-mono text-sm" />
+          <input name="compte" defaultValue={account} className="mt-1 block h-9 w-full rounded-xl sm:w-48 border border-input bg-background px-3 font-mono text-sm" />
         </label>
         <button className="h-9 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white dark:bg-white dark:text-slate-900">Voir</button>
       </form>
       <p className="text-sm font-semibold">{account} — {accountLabel(account)}</p>
       {pager}
-      <div className="overflow-x-auto rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
+      {/* Mobile : une carte par ligne, le solde bien visible */}
+      <div className="divide-y divide-slate-100 md:hidden rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 dark:divide-slate-800">
+        {l.page === 1 && (
+          <div className="flex items-center justify-between bg-slate-50/60 p-3 text-sm font-semibold dark:bg-slate-800/30">
+            <span>Solde au {fr(l.period.to)}</span>
+            <span>{amount(l.closing) || "0"}</span>
+          </div>
+        )}
+        {l.rows.map((r, i) => (
+          <div key={i} className="space-y-1.5 p-3">
+            <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+              <span>{fr(r.entryDate)}</span>
+              <span className="font-mono">{r.entryNumber}</span>
+            </div>
+            <p className="break-words text-sm leading-snug">{r.label}</p>
+            <div className="flex items-end justify-between gap-2 text-sm">
+              <span className={r.debit ? "font-semibold text-emerald-600" : "font-semibold text-rose-600"}>
+                {r.debit ? `+ ${amount(r.debit)}` : `− ${amount(r.credit)}`}
+                <span className="ml-1 text-[10px] font-medium text-slate-400">{r.debit ? "débit" : "crédit"}</span>
+              </span>
+              <span className="text-right font-bold">
+                <span className="mr-1 text-[10px] font-medium text-slate-400">solde</span>
+                {amount(r.running) || "0"}
+              </span>
+            </div>
+          </div>
+        ))}
+        {l.page === l.pages && (
+          <div className="flex items-center justify-between bg-slate-50/60 p-3 text-sm font-semibold dark:bg-slate-800/30">
+            <span>Solde d&apos;ouverture au {fr(l.period.from)}</span>
+            <span>{amount(l.opening) || "0"}</span>
+          </div>
+        )}
+        <div className="space-y-0.5 p-3 text-xs font-bold">
+          <p>Totaux de la période : débits {amount(l.debit) || "0"} · crédits {amount(l.credit) || "0"}</p>
+          <p>Solde final : {amount(l.closing) || "0"}</p>
+        </div>
+      </div>
+      <div className="hidden overflow-x-auto md:block rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
         <table className="w-full text-xs">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
             <tr>

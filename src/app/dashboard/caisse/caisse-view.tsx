@@ -134,6 +134,10 @@ export default function CaisseView({
   // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
   const canOperate = currentUserRole === "COORDINATOR" || currentUserRole === "CASHIER" || currentUserRole === "PHARMACIST";
   const canManageRegisters = currentUserRole === "COORDINATOR";
+  // Caissière qui est aussi pharmacienne : peut remettre les médicaments dès l'encaissement.
+  const canDispense = currentUserRole === "PHARMACIST";
+  const hasUndispensedPharmacy = (inv: any) =>
+    !inv.dispensedAt && ((inv.items as any[]) || []).some((i) => i.type === "PHARMACY" && (Number(i.dispensedQuantity) || 0) < Number(i.quantity));
   const canManageStatus = currentUserRole === "COORDINATOR" || currentUserRole === "ADMIN" || currentUserRole === "SUPER_ADMIN";
 
   const selectedRegister = registers.find((r) => r.id === selectedRegisterId) || null;
@@ -388,7 +392,7 @@ export default function CaisseView({
 
                   {canOperate && (
                     <div className="flex flex-wrap gap-3">
-                      <CaisseCartDialog mode="sale" cashSessionId={selectedRegister.openSession.id} pharmacyItems={pharmacyItems} patients={patients} organizationId={organizationId} onSuccess={handleMutationSuccess} />
+                      <CaisseCartDialog mode="sale" cashSessionId={selectedRegister.openSession.id} pharmacyItems={pharmacyItems} patients={patients} organizationId={organizationId} onSuccess={handleMutationSuccess} canDispense={canDispense} />
                       <CaisseExpenseDialog cashSessionId={selectedRegister.openSession.id} organizationId={organizationId} onSuccess={handleMutationSuccess} />
                     </div>
                   )}
@@ -550,9 +554,10 @@ export default function CaisseView({
                             cashSessionId={openSessionId}
                             pendingInvoice={{ id: inv.id, invoiceTotalAmount, amountPaid: inv.amountPaid, patient: inv.patient, customPatientName: inv.customPatientName, customPatientPhone: inv.customPatientPhone }}
                             onSuccess={handleMutationSuccess}
+                            canDispense={canDispense && hasUndispensedPharmacy(inv)}
                           />
                         ) : (
-                          <CaisseCartDialog mode="pay" cashSessionId={openSessionId} pharmacyItems={pharmacyItems} pendingInvoice={inv} onSuccess={handleMutationSuccess} />
+                          <CaisseCartDialog mode="pay" cashSessionId={openSessionId} pharmacyItems={pharmacyItems} pendingInvoice={inv} onSuccess={handleMutationSuccess} canDispense={canDispense && hasUndispensedPharmacy(inv)} />
                         )
                       )}
                       {/* Ne nécessite pas de caisse ouverte : aucun mouvement d'argent, simple
@@ -772,6 +777,7 @@ export default function CaisseView({
                                   customPatientPhone: inv.customPatientPhone,
                                 }}
                                 onSuccess={handleMutationSuccess}
+                                canDispense={canDispense && hasUndispensedPharmacy(inv)}
                               />
                             ) : (
                               <CaisseCartDialog
@@ -780,6 +786,7 @@ export default function CaisseView({
                                 pharmacyItems={pharmacyItems}
                                 pendingInvoice={inv}
                                 onSuccess={handleMutationSuccess}
+                                canDispense={canDispense && hasUndispensedPharmacy(inv)}
                               />
                             )
                           )}

@@ -859,6 +859,31 @@ export async function dispensePendingInvoice(
   );
 }
 
+// Remise directe depuis la caisse, juste après la vente ou l'encaissement, quand la personne qui
+// encaisse est aussi celle qui remet (caissière-pharmacienne) : tous les médicaments restant à
+// remettre sur le ticket sortent du stock, sans aller sur la page Pharmacie. Même contrôle que la
+// remise pharmacie (rôle pharmacien, module Pharmacie, stock suffisant, lots) ; la référence n'est
+// pas redemandée puisqu'elle vient d'être imprimée par la même personne. Valable aussi pour une
+// vente à crédit : la remise ne dépend pas du paiement.
+export async function dispenseAtCashier(pendingInvoiceId: string) {
+  try {
+    z.string().min(1).parse(pendingInvoiceId);
+    const pending = await prisma.pendingInvoice.findUnique({ where: { id: pendingInvoiceId }, select: { id: true, items: true, dispensedAt: true } });
+    if (!pending) throw new Error("Facture introuvable.");
+    if (pending.dispensedAt) return { success: true as const, data: { alreadyDispensed: true } };
+    const lines = ((pending.items as any[]) || [])
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.type === "PHARMACY")
+      .map(({ item, index }) => ({ index, quantity: Math.max(0, Number(item.quantity) - (Number(item.dispensedQuantity) || 0)) }))
+      .filter((l) => l.quantity > 0);
+    if (lines.length === 0) return { success: true as const, data: { alreadyDispensed: true } };
+    const res = await dispensePendingInvoiceOnce(pendingInvoiceId, String(pending.id).slice(-6).toUpperCase(), lines);
+    return res.success ? { success: true as const, data: { alreadyDispensed: false } } : { success: false as const, error: res.error as string };
+  } catch (error: any) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de la remise des médicaments.") };
+  }
+}
+
 async function dispensePendingInvoiceOnce(
   pendingInvoiceId: string,
   referenceCode: string,

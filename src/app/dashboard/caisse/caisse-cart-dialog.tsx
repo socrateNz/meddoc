@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PaymentMethodSelect from "./payment-method-select";
+import { DispenseNowCheckbox, dispenseAfterPayment } from "./dispense-now";
 import type { PaymentMethod } from "@/lib/accounting/plan";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -42,10 +43,13 @@ interface CaisseCartDialogProps {
     medicalRecord?: { title: string } | null;
   };
   onSuccess: (transaction: any) => void;
+  // Pharmacien qui encaisse : peut remettre les médicaments directement (cf. dispense-now.tsx).
+  canDispense?: boolean;
 }
 
-export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, patients = [], organizationId, pendingInvoice, onSuccess }: CaisseCartDialogProps) {
+export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, patients = [], organizationId, pendingInvoice, onSuccess, canDispense = false }: CaisseCartDialogProps) {
   const [open, setOpen] = useState(false);
+  const [dispenseNow, setDispenseNow] = useState(true);
   const [cartItems, setCartItems] = useState<CartItem[]>(() =>
     mode === "pay" && pendingInvoice
       ? (pendingInvoice.items || []).map((it: any, i: number) => ({
@@ -259,6 +263,9 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       };
       onSuccess(txn);
       resetForm();
+      if (canDispense && dispenseNow && items.some((i) => i.type === "PHARMACY")) {
+        await dispenseAfterPayment(isPay ? pendingInvoice!.id : result.data?.pendingInvoice?.id);
+      }
     } catch (err: any) {
       setMsg({ type: "error", text: err.message || "Erreur de connexion." });
     }
@@ -469,6 +476,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                 />
               </div>
               {amountReceived > 0 && <PaymentMethodSelect value={paymentMethod} onChange={setPaymentMethod} />}
+              {canDispense && cartItems.some((i) => i.type === "PHARMACY") && <DispenseNowCheckbox checked={dispenseNow} onChange={setDispenseNow} id={`dispenseNow-${mode}`} />}
               {remainingAfterPayment > 0 && (
                 <p className="text-xs font-semibold text-amber-600 dark:text-amber-500">
                   Vente à crédit — reste à payer : {formatFCFA(remainingAfterPayment)}

@@ -584,6 +584,59 @@ describe("payPendingInvoice — produits dont la vente est bloquée", () => {
   });
 });
 
+describe("dispenseAtCashier — remise directe à la caisse", () => {
+  function setup(items: any[], user = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" }) {
+    authState.user = user;
+    const pharmacyItemUpdate = vi.fn(async () => ({}));
+    const pendingInvoiceUpdate = vi.fn(async () => ({}));
+    const tx = {
+      pharmacyItem: {
+        findMany: vi.fn(async () => [{ id: "item1", name: "Paracétamol", stockQuantity: 10, reorderLevel: 5 }]),
+        update: pharmacyItemUpdate,
+      },
+      stockPurchase: { findMany: vi.fn(async () => []) },
+      pendingInvoice: {
+        findUnique: vi.fn(async () => ({ items: structuredClone(items), dispensedAt: null, labConsumablesDispensedAt: null, status: "PENDING" })),
+        update: pendingInvoiceUpdate,
+      },
+      prescription: { update: vi.fn(async () => ({})) },
+    };
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pendingInvoice: {
+          findUnique: vi.fn(async () => ({ id: "inv1", status: "PENDING", organizationId: "org1", items, dispensedAt: null, prescriptions: [], labOrders: [] })),
+        },
+        $transaction: vi.fn(async (fn: any) => fn(tx)),
+      },
+    }));
+    return { pharmacyItemUpdate, pendingInvoiceUpdate };
+  }
+
+  it("remet tout le reste des médicaments, même sur un ticket non payé (vente à crédit), sans redemander la référence", async () => {
+    const { pharmacyItemUpdate, pendingInvoiceUpdate } = setup([
+      { type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 3, unitPrice: 500, amount: 1500, dispensedQuantity: 1 },
+      { type: "SERVICE", description: "Consultation", quantity: 1, unitPrice: 2000, amount: 2000 },
+    ]);
+    const { dispenseAtCashier } = await import("./finance");
+    const result = await dispenseAtCashier("inv1");
+    expect(result.success).toBe(true);
+    expect(pharmacyItemUpdate).toHaveBeenCalledWith({ where: { id: "item1" }, data: { stockQuantity: { decrement: 2 } } });
+    expect(pendingInvoiceUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ dispensedAt: expect.any(Date) }) }));
+  });
+
+  it("refuse un caissier qui n'est pas pharmacien", async () => {
+    const { pharmacyItemUpdate } = setup([{ type: "PHARMACY", pharmacyItemId: "item1", description: "Paracétamol", quantity: 1, unitPrice: 500, amount: 500 }], {
+      id: "c1",
+      role: "CASHIER",
+      organizationId: "org1",
+    });
+    const { dispenseAtCashier } = await import("./finance");
+    const result = await dispenseAtCashier("inv1");
+    expect(result.success).toBe(false);
+    expect(pharmacyItemUpdate).not.toHaveBeenCalled();
+  });
+});
+
 describe("dispensePendingInvoice", () => {
   it("décrémente le stock, incrémente dispensedQuantity et pose dispensedAt pour un PHARMACIST", async () => {
     const pharmacistUser = { id: "pharma1", role: "PHARMACIST", organizationId: "org1" };
