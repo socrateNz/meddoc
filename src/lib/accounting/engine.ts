@@ -191,3 +191,85 @@ export async function loadReportLines(organizationId: string, to: string, client
     closing: l.closing,
   }));
 }
+
+// --- Lectures rapides pour les écrans -------------------------------------------------------------
+// Les états (tableau de bord, balance, bilan, résultat, TVA) ne dépendent que des totaux par compte :
+// avant la période, et pendant la période (écritures de clôture à part). MongoDB les calcule en une
+// agrégation et renvoie quelques dizaines de « lignes de totaux », que les fonctions pures de
+// reports.ts traitent comme des lignes ordinaires. Évite de charger des milliers de lignes.
+const num = (v: unknown) => Number((v as { $numberLong?: string } | null)?.$numberLong ?? v ?? 0);
+const oid = (id: string) => ({ $oid: id });
+export const BEFORE_PERIOD_DATE = "0000-01-01";
+
+export async function loadAccountTotals(organizationId: string, period: { from: string; to: string }): Promise<ReportLine[]> {
+  const rows = (await prisma.accountingLine.aggregateRaw({
+    pipeline: [
+      { $match: { organizationId: oid(organizationId), entryDate: { $lte: period.to } } },
+      {
+        $group: {
+          _id: { account: "$account", before: { $lt: ["$entryDate", period.from] }, closing: "$closing" },
+          debit: { $sum: { $toLong: "$debit" } },
+          credit: { $sum: { $toLong: "$credit" } },
+        },
+      },
+    ],
+  })) as unknown as { _id: { account: string; before: boolean; closing: boolean }; debit: unknown; credit: unknown }[];
+  return rows.map((r) => ({
+    entryId: "",
+    entryDate: r._id.before ? BEFORE_PERIOD_DATE : period.from,
+    journal: "",
+    account: r._id.account,
+    label: "",
+    debit: num(r.debit),
+    credit: num(r.credit),
+    closing: !!r._id.closing,
+  }));
+}
+
+// Contrôles d'intégrité calculés par MongoDB (écritures déséquilibrées, lignes invalides, totaux).
+export async function loadIntegrity(organizationId: string, to: string) {
+  const [res] = (await prisma.accountingLine.aggregateRaw({
+    pipeline: [
+      { $match: { organizationId: oid(organizationId), entryDate: { $lte: to } } },
+      { $addFields: { d: { $toLong: "$debit" }, c: { $toLong: "$credit" } } },
+      {
+        $facet: {
+          unbalanced: [{ $group: { _id: "$entryId", s: { $sum: { $subtract: ["$d", "$c"] } } } }, { $match: { s: { $ne: 0 } } }, { $count: "n" }],
+          invalid: [{ $match: { $expr: { $or: [{ $lt: ["$d", 0] }, { $lt: ["$c", 0] }, { $eq: [{ $gt: ["$d", 0] }, { $gt: ["$c", 0] }] }] } } }, { $count: "n" }],
+          totals: [{ $group: { _id: null, d: { $sum: "$d" }, c: { $sum: "$c" } } }],
+        },
+      },
+    ],
+  })) as unknown as { unbalanced: { n: number }[]; invalid: { n: number }[]; totals: { d: unknown; c: unknown }[] }[];
+  const totals = res?.totals[0];
+  return {
+    unbalancedEntries: res?.unbalanced[0]?.n ?? 0,
+    invalidLines: res?.invalid[0]?.n ?? 0,
+    globalBalanced: num(totals?.d) === num(totals?.c),
+  };
+}
+
+// Lignes d'un compte (ou d'un préfixe) pour le grand livre, avec numéro et heure de leur écriture.
+export async function loadAccountLines(organizationId: string, account: string, to: string): Promise<ReportLine[]> {
+  const rows = await prisma.accountingLine.findMany({
+    where: { organizationId, account: { startsWith: account }, entryDate: { lte: to } },
+    select: { entryId: true, entryDate: true, journal: true, account: true, label: true, debit: true, credit: true, closing: true },
+  });
+  const entries = await prisma.accountingEntry.findMany({
+    where: { id: { in: [...new Set(rows.map((r) => r.entryId))] } },
+    select: { id: true, number: true, occurredAt: true },
+  });
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  return rows.map((l) => ({
+    entryId: l.entryId,
+    entryNumber: byId.get(l.entryId)?.number,
+    entryDate: l.entryDate,
+    occurredAt: byId.get(l.entryId)?.occurredAt?.toISOString() ?? null,
+    journal: l.journal,
+    account: l.account,
+    label: l.label,
+    debit: Number(l.debit),
+    credit: Number(l.credit),
+    closing: l.closing,
+  }));
+}

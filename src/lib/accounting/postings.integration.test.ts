@@ -10,8 +10,8 @@ describe.skipIf(!url)("écritures automatiques (base réelle)", async () => {
   if (url) process.env.DATABASE_URL = url;
   const { prisma } = await import("@/lib/db");
   const { accountTransaction, postInvoiceWriteOff, reclassifyExpense, reverseDeletedInvoiceSale, syncAccounting } = await import("./postings");
-  const { loadReportLines } = await import("./engine");
-  const { balance, dashboard, trialBalance } = await import("./reports");
+  const { loadReportLines, loadAccountTotals, loadIntegrity, loadAccountLines } = await import("./engine");
+  const { balance, balanceSheet, dashboard, incomeStatement, integrityChecks, ledger, trialBalance } = await import("./reports");
 
   let org: string;
   let user: string;
@@ -209,5 +209,20 @@ describe.skipIf(!url)("écritures automatiques (base réelle)", async () => {
     const second = await syncAccounting(org);
     expect(second.created).toBe(0);
     expect(trialBalance(await lines(), { from: "2026-01-01", to: "2026-12-31" }).balanced).toBe(true);
+  });
+
+  it("lectures rapides (totaux agrégés par MongoDB) = calcul sur toutes les lignes", async () => {
+    for (const period of [{ from: "2026-01-01", to: "2026-12-31" }, { from: "2026-03-12", to: "2026-05-02" }]) {
+      const full = await loadReportLines(org, period.to);
+      const totals = await loadAccountTotals(org, period);
+      expect(dashboard(totals, period)).toEqual(dashboard(full, period));
+      expect(trialBalance(totals, period)).toEqual(trialBalance(full, period));
+      expect(balanceSheet(totals, period.to)).toEqual(balanceSheet(full, period.to));
+      expect(incomeStatement(totals, period)).toEqual(incomeStatement(full, period));
+      expect(await loadIntegrity(org, period.to)).toEqual(integrityChecks(full));
+      const a = ledger(full, "5", period);
+      const b = ledger(await loadAccountLines(org, "5", period.to), "5", period);
+      expect([b.opening, b.closing, b.rows.length]).toEqual([a.opening, a.closing, a.rows.length]);
+    }
   });
 });

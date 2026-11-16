@@ -7,8 +7,8 @@ import { assertOrganizationAccess } from "@/lib/org-scope";
 import { assertOrganizationModule } from "@/lib/modules-server";
 import { toErrorMessage } from "@/lib/utils";
 import { logAuditAction } from "@/middlewares/auditLogger";
-import { loadReportLines } from "@/lib/accounting/engine";
-import { balance, balanceSheet, dashboard, incomeStatement, integrityChecks, ledger, trialBalance, vatReturn, type Period } from "@/lib/accounting/reports";
+import { loadAccountLines, loadAccountTotals, loadIntegrity } from "@/lib/accounting/engine";
+import { balance, balanceSheet, dashboard, incomeStatement, ledger, trialBalance, vatReturn, type Period } from "@/lib/accounting/reports";
 import { reclassifyExpense, syncAccounting } from "@/lib/accounting/postings";
 import { DATE_PATTERN } from "@/lib/accounting/rules";
 import { clinicDateKey } from "@/lib/clinic-day";
@@ -53,16 +53,37 @@ async function countMissingEntries(organizationId: string) {
   return transactions.filter((t) => !posted.has(t.id)).length;
 }
 
+// En-tête commun à tous les onglets : léger (aucun calcul d'état).
+export async function getAccountingHeader(organizationId: string, periodInput?: Partial<Period>) {
+  try {
+    await authorize(organizationId);
+    const period = resolve(periodInput);
+    const [org, missingEntries, entryCount] = await Promise.all([
+      prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true, accountingLockedUntil: true } }),
+      countMissingEntries(organizationId),
+      prisma.accountingEntry.count({ where: { organizationId, entryDate: { lte: period.to } } }),
+    ]);
+    return {
+      success: true as const,
+      data: { period, clinicName: org?.name ?? "", lockedUntil: org?.accountingLockedUntil ?? null, missingEntries, entryCount },
+    };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Impossible de charger la comptabilité.") };
+  }
+}
+
+// Tableau de bord et santé : états calculés sur les totaux par compte (agrégés par MongoDB).
 export async function getAccountingOverview(organizationId: string, periodInput?: Partial<Period>) {
   try {
     await authorize(organizationId);
     const period = resolve(periodInput);
-    const [lines, org, missingEntries] = await Promise.all([
-      loadReportLines(organizationId, period.to),
+    const [lines, org, missingEntries, checks, entryCount] = await Promise.all([
+      loadAccountTotals(organizationId, period),
       prisma.organization.findUnique({ where: { id: organizationId }, select: { name: true, accountingLockedUntil: true } }),
       countMissingEntries(organizationId),
+      loadIntegrity(organizationId, period.to),
+      prisma.accountingEntry.count({ where: { organizationId, entryDate: { lte: period.to } } }),
     ]);
-    const checks = integrityChecks(lines);
     const sheet = balanceSheet(lines, period.to);
     const income = incomeStatement(lines, period);
     return {
@@ -78,7 +99,7 @@ export async function getAccountingOverview(organizationId: string, periodInput?
         checks: { ...checks, balanceSheetBalanced: sheet.balanced, missingEntries },
         // Compte d'attente 471 : annulations de règlement faites hors caisse, pas encore régularisées.
         suspense: -balance(lines, "471", (l) => l.entryDate <= period.to),
-        entryCount: new Set(lines.map((l) => l.entryId)).size,
+        entryCount,
       },
     };
   } catch (error) {
@@ -142,7 +163,7 @@ export async function getAccountingTrialBalance(organizationId: string, periodIn
   try {
     await authorize(organizationId);
     const period = resolve(periodInput);
-    const lines = await loadReportLines(organizationId, period.to);
+    const lines = await loadAccountTotals(organizationId, period);
     return { success: true as const, data: { period, ...trialBalance(lines, period) } };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Impossible de charger la balance.") };
@@ -156,7 +177,7 @@ export async function getAccountingLedger(organizationId: string, account: strin
     await authorize(organizationId);
     if (!/^[1-8][0-9]{0,11}$/.test(account)) throw new Error("Compte invalide.");
     const period = resolve(periodInput);
-    const lines = await loadReportLines(organizationId, period.to);
+    const lines = await loadAccountLines(organizationId, account, period.to);
     const full = ledger(lines, account, period);
     const total = full.rows.length;
     const pages = Math.max(1, Math.ceil(total / ACCOUNTING_PAGE_SIZE));
@@ -193,8 +214,15 @@ export async function getCashWithdrawals(organizationId: string, periodInput?: P
   try {
     await authorize(organizationId);
     const period = resolve(periodInput);
+    // Jours civils de Douala (UTC+1) → instants, pour filtrer en base.
     const rows = await prisma.financialTransaction.findMany({
-      where: { organizationId, type: "EXPENSE", category: "OPERATIONAL_EXPENSE", amount: { gt: 0 } },
+      where: {
+        organizationId,
+        type: "EXPENSE",
+        category: "OPERATIONAL_EXPENSE",
+        amount: { gt: 0 },
+        createdAt: { gte: new Date(`${period.from}T00:00:00+01:00`), lte: new Date(`${period.to}T23:59:59.999+01:00`) },
+      },
       select: { id: true, amount: true, description: true, createdAt: true, expenseCategory: true, absorbedByPurchaseId: true, reversedAt: true },
       orderBy: { createdAt: "desc" },
     });

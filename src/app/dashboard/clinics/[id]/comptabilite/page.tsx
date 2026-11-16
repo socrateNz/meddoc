@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
-import { getAccountingJournal, getAccountingLedger, getAccountingOverview, getAccountingTrialBalance, getCashWithdrawals } from "@/actions/accounting";
+import { getAccountingJournal, getAccountingHeader, getAccountingLedger, getAccountingOverview, getAccountingTrialBalance, getCashWithdrawals } from "@/actions/accounting";
 import { accountLabel, isWithdrawalCategory, JOURNALS } from "@/lib/accounting/plan";
 import SyncButton from "./sync-button";
 import WithdrawalCategorySelect from "./withdrawal-category-select";
@@ -44,18 +45,17 @@ export default async function AccountingPage({ params, searchParams }: { params:
 
   const tab = (TABS.find((t) => t.key === one(sp.tab))?.key ?? "tableau") as (typeof TABS)[number]["key"];
   const periodInput = { from: one(sp.du), to: one(sp.au) };
-  const overview = await getAccountingOverview(clinicId, periodInput);
-  if (!overview.success) {
-    return <div className="p-8 text-sm text-rose-600">{overview.error}</div>;
+  const header = await getAccountingHeader(clinicId, periodInput);
+  if (!header.success) {
+    return <div className="p-8 text-sm text-rose-600">{header.error}</div>;
   }
-  const o = overview.data;
+  const o = header.data;
   const p = o.period;
   const canWrite = ["COMPTABLE", "COORDINATOR"].includes(user.role);
   const base = `/dashboard/clinics/${clinicId}/comptabilite`;
   const query = (extra: Record<string, string>) => `?${new URLSearchParams({ du: p.from, au: p.to, ...extra }).toString()}`;
   const flow = `du ${fr(p.from)} au ${fr(p.to)}`;
   const at = `au ${fr(p.to)}`;
-  const d = o.dashboard;
 
   return (
     <div className="space-y-6">
@@ -67,7 +67,7 @@ export default async function AccountingPage({ params, searchParams }: { params:
             {o.lockedUntil ? ` Période verrouillée jusqu'au ${fr(o.lockedUntil)}.` : ""}
           </p>
         </div>
-        {canWrite && <SyncButton organizationId={clinicId} missing={o.checks.missingEntries} />}
+        {canWrite && <SyncButton organizationId={clinicId} missing={o.missingEntries} />}
       </div>
 
       <form className="flex flex-wrap items-end gap-3" action={base}>
@@ -93,75 +93,18 @@ export default async function AccountingPage({ params, searchParams }: { params:
         ))}
       </nav>
 
-      {tab === "tableau" && (
-        <div className="space-y-6">
-          <section className="space-y-2">
-            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Activité — {flow}</h2>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Kpi label="Chiffre d'affaires" value={d.revenue} hint={`Ventes comptabilisées (comptes 70x), ${flow}`} tone="blue" />
-              <Kpi label="Charges" value={d.expenses} hint={`Comptes 6x, ${flow}`} tone="rose" />
-              <Kpi label="Résultat" value={d.result} hint={`Produits − charges, ${flow}`} tone={d.result >= 0 ? "emerald" : "rose"} />
-              <Kpi label="Encaissements" value={d.cashIn} hint={`Argent reçu (débits des 5x hors virements internes), ${flow} — ce n'est pas le CA`} />
-            </div>
-          </section>
-          <section className="space-y-2">
-            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Trésorerie, dettes et créances — {at}</h2>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Kpi label="Caisse" value={d.cash} hint={`Solde du compte 571 ${at}`} />
-              <Kpi label="Mobile Money" value={d.mobileMoney} hint={`Solde du compte 552 ${at}`} />
-              <Kpi label="Banque" value={d.bank} hint={`Solde du compte 521 ${at}`} />
-              <Kpi label="Chèques à encaisser" value={d.cheques} hint={`Solde du compte 513 ${at}`} />
-              <Kpi label="Créances patients" value={d.patientReceivables} hint={`Restes dus par les patients (411) ${at}`} />
-              <Kpi label="Créances tiers payant" value={d.thirdPartyReceivables} hint={`Organismes de prise en charge (4111) ${at}`} />
-              <Kpi label="Dettes fournisseurs" value={d.supplierDebt} hint={`Achats non réglés (401) ${at}`} tone="rose" />
-              <Kpi label="TVA nette" value={o.vat.net} hint={`Collectée − déductible, ${flow} (actes médicaux exonérés)`} />
-            </div>
-          </section>
-        </div>
+      {(tab === "tableau" || tab === "sante") && (
+        <Suspense key={`${tab}-${p.from}-${p.to}`} fallback={<TabLoading />}>
+          <OverviewTab tab={tab} clinicId={clinicId} periodInput={periodInput} flow={flow} at={at} />
+        </Suspense>
       )}
 
-      {tab === "journal" && <JournalTab clinicId={clinicId} sp={sp} periodInput={periodInput} base={base} query={query} />}
-      {tab === "balance" && <BalanceTab clinicId={clinicId} periodInput={periodInput} base={base} query={query} />}
-      {tab === "grand-livre" && <LedgerTab clinicId={clinicId} account={one(sp.compte) ?? "571"} page={Number(one(sp.page)) || 1} periodInput={periodInput} base={base} query={query} />}
+      {tab === "journal" && <Suspense key={`j-${one(sp.journal)}-${one(sp.page)}-${p.from}-${p.to}`} fallback={<TabLoading />}><JournalTab clinicId={clinicId} sp={sp} periodInput={periodInput} base={base} query={query} /></Suspense>}
+      {tab === "balance" && <Suspense key={`b-${p.from}-${p.to}`} fallback={<TabLoading />}><BalanceTab clinicId={clinicId} periodInput={periodInput} base={base} query={query} /></Suspense>}
+      {tab === "grand-livre" && <Suspense key={`g-${one(sp.compte)}-${one(sp.page)}-${p.from}-${p.to}`} fallback={<TabLoading />}><LedgerTab clinicId={clinicId} account={one(sp.compte) ?? "571"} page={Number(one(sp.page)) || 1} periodInput={periodInput} base={base} query={query} /></Suspense>}
 
-      {tab === "sorties" && <WithdrawalsTab clinicId={clinicId} periodInput={periodInput} canWrite={canWrite} flow={flow} />}
+      {tab === "sorties" && <Suspense key={`s-${p.from}-${p.to}`} fallback={<TabLoading />}><WithdrawalsTab clinicId={clinicId} periodInput={periodInput} canWrite={canWrite} flow={flow} /></Suspense>}
 
-      {tab === "sante" && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Contrôles d&apos;intégrité — chacun doit être au vert</h2>
-          <div className="divide-y rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
-            {[
-              { ok: o.checks.unbalancedEntries === 0, label: "Chaque écriture est équilibrée (Σ débits = Σ crédits)", detail: `${o.checks.unbalancedEntries} écriture(s) déséquilibrée(s)` },
-              { ok: o.checks.globalBalanced, label: "Total des débits = total des crédits", detail: "Écart global" },
-              { ok: o.checks.invalidLines === 0, label: "Aucune ligne à 0, avec débit et crédit, ou non entière", detail: `${o.checks.invalidLines} ligne(s) invalide(s)` },
-              { ok: o.checks.balanceSheetBalanced, label: `Bilan : total actif = total passif ${at}`, detail: `${fcfa(o.sheet.totalAssets)} contre ${fcfa(o.sheet.totalLiabilities)}` },
-              { ok: o.checks.missingEntries === 0, label: "Tout document réglé a son écriture", detail: `${o.checks.missingEntries} document(s) sans écriture — bouton « Générer les écritures manquantes »` },
-            ].map((c) => (
-              <div key={c.label} className="flex items-start gap-3 p-4 text-sm">
-                {c.ok ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600" />}
-                <div>
-                  <p className="font-medium">{c.label}</p>
-                  {!c.ok && <p className="text-xs text-rose-600">{c.detail}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-          {o.suspense !== 0 && (
-            <div className="flex items-start gap-3 rounded-2xl border border-amber-300/60 bg-amber-50/60 p-4 text-sm dark:border-amber-700/50 dark:bg-amber-900/10">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
-              <div>
-                <p className="font-medium">À régulariser (compte d&apos;attente 471) {at} : {fcfa(o.suspense)}</p>
-                <p className="text-xs text-slate-600 dark:text-slate-400">
-                  Règlements annulés hors caisse : MedDoc ne les a pas sortis du tiroir. Si l&apos;argent a été rendu au patient (ou si
-                  une sortie a servi à compenser, ex. « Annulation de règlement »), classez cette sortie dans l&apos;onglet « Sorties de
-                  caisse » en « Remboursement / correction d&apos;un règlement annulé ».
-                </p>
-              </div>
-            </div>
-          )}
-          <p className="text-[11px] text-slate-400">Résultat de l&apos;exercice selon le compte de résultat ({flow}) : {fcfa(o.income.result)}.</p>
-        </section>
-      )}
     </div>
   );
 }
@@ -209,6 +152,90 @@ async function WithdrawalsTab({ clinicId, periodInput, canWrite, flow }: { clini
         </table>
       </div>
     </section>
+  );
+}
+
+function TabLoading() {
+  return (
+    <div className="space-y-3" aria-busy="true" aria-label="Chargement">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-24 animate-pulse rounded-2xl bg-slate-200/60 dark:bg-slate-800/60" />
+        ))}
+      </div>
+      <div className="h-64 animate-pulse rounded-2xl bg-slate-200/60 dark:bg-slate-800/60" />
+    </div>
+  );
+}
+
+async function OverviewTab({ tab, clinicId, periodInput, flow, at }: { tab: "tableau" | "sante"; clinicId: string; periodInput: { from?: string; to?: string }; flow: string; at: string }) {
+  const overview = await getAccountingOverview(clinicId, periodInput);
+  if (!overview.success) return <p className="text-sm text-rose-600">{overview.error}</p>;
+  const o = overview.data;
+  const d = o.dashboard;
+  if (tab === "tableau") {
+    return (
+        <div className="space-y-6">
+          <section className="space-y-2">
+            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Activité — {flow}</h2>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Kpi label="Chiffre d'affaires" value={d.revenue} hint={`Ventes comptabilisées (comptes 70x), ${flow}`} tone="blue" />
+              <Kpi label="Charges" value={d.expenses} hint={`Comptes 6x, ${flow}`} tone="rose" />
+              <Kpi label="Résultat" value={d.result} hint={`Produits − charges, ${flow}`} tone={d.result >= 0 ? "emerald" : "rose"} />
+              <Kpi label="Encaissements" value={d.cashIn} hint={`Argent reçu (débits des 5x hors virements internes), ${flow} — ce n'est pas le CA`} />
+            </div>
+          </section>
+          <section className="space-y-2">
+            <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Trésorerie, dettes et créances — {at}</h2>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Kpi label="Caisse" value={d.cash} hint={`Solde du compte 571 ${at}`} />
+              <Kpi label="Mobile Money" value={d.mobileMoney} hint={`Solde du compte 552 ${at}`} />
+              <Kpi label="Banque" value={d.bank} hint={`Solde du compte 521 ${at}`} />
+              <Kpi label="Chèques à encaisser" value={d.cheques} hint={`Solde du compte 513 ${at}`} />
+              <Kpi label="Créances patients" value={d.patientReceivables} hint={`Restes dus par les patients (411) ${at}`} />
+              <Kpi label="Créances tiers payant" value={d.thirdPartyReceivables} hint={`Organismes de prise en charge (4111) ${at}`} />
+              <Kpi label="Dettes fournisseurs" value={d.supplierDebt} hint={`Achats non réglés (401) ${at}`} tone="rose" />
+              <Kpi label="TVA nette" value={o.vat.net} hint={`Collectée − déductible, ${flow} (actes médicaux exonérés)`} />
+            </div>
+          </section>
+        </div>
+    );
+  }
+  return (
+        <section className="space-y-2">
+          <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300">Contrôles d&apos;intégrité — chacun doit être au vert</h2>
+          <div className="divide-y rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
+            {[
+              { ok: o.checks.unbalancedEntries === 0, label: "Chaque écriture est équilibrée (Σ débits = Σ crédits)", detail: `${o.checks.unbalancedEntries} écriture(s) déséquilibrée(s)` },
+              { ok: o.checks.globalBalanced, label: "Total des débits = total des crédits", detail: "Écart global" },
+              { ok: o.checks.invalidLines === 0, label: "Aucune ligne à 0, avec débit et crédit, ou non entière", detail: `${o.checks.invalidLines} ligne(s) invalide(s)` },
+              { ok: o.checks.balanceSheetBalanced, label: `Bilan : total actif = total passif ${at}`, detail: `${fcfa(o.sheet.totalAssets)} contre ${fcfa(o.sheet.totalLiabilities)}` },
+              { ok: o.checks.missingEntries === 0, label: "Tout document réglé a son écriture", detail: `${o.checks.missingEntries} document(s) sans écriture — bouton « Générer les écritures manquantes »` },
+            ].map((c) => (
+              <div key={c.label} className="flex items-start gap-3 p-4 text-sm">
+                {c.ok ? <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 shrink-0 text-rose-600" />}
+                <div>
+                  <p className="font-medium">{c.label}</p>
+                  {!c.ok && <p className="text-xs text-rose-600">{c.detail}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+          {o.suspense !== 0 && (
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-300/60 bg-amber-50/60 p-4 text-sm dark:border-amber-700/50 dark:bg-amber-900/10">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+              <div>
+                <p className="font-medium">À régulariser (compte d&apos;attente 471) {at} : {fcfa(o.suspense)}</p>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Règlements annulés hors caisse : MedDoc ne les a pas sortis du tiroir. Si l&apos;argent a été rendu au patient (ou si
+                  une sortie a servi à compenser, ex. « Annulation de règlement »), classez cette sortie dans l&apos;onglet « Sorties de
+                  caisse » en « Remboursement / correction d&apos;un règlement annulé ».
+                </p>
+              </div>
+            </div>
+          )}
+          <p className="text-[11px] text-slate-400">Résultat de l&apos;exercice selon le compte de résultat ({flow}) : {fcfa(o.income.result)}.</p>
+        </section>
   );
 }
 
