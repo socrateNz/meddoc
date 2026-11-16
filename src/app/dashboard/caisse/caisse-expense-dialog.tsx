@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import SearchableSelect from "@/components/ui/searchable-select";
 import { MinusCircle, Loader2, Info } from "lucide-react";
 import { recordExpense } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
@@ -12,8 +13,11 @@ import { EXPENSE_CATEGORIES, WITHDRAWAL_CATEGORIES, type CashOutCategory } from 
 
 // Catégories proposées à la caisse : une vraie dépense (compte de charge) ou un retrait qui n'en est
 // pas une (propriétaire, banque, avance...) et n'entre donc pas dans le résultat.
-const CHARGE_OPTIONS = Object.entries(EXPENSE_CATEGORIES).map(([value, c]) => ({ value, label: c.label }));
-const WITHDRAWAL_OPTIONS = Object.entries(WITHDRAWAL_CATEGORIES).map(([value, c]) => ({ value, label: c.label }));
+// Liste avec recherche : la ligne sous chaque choix indique s'il compte dans le résultat.
+const CATEGORY_OPTIONS = [
+  ...Object.entries(EXPENSE_CATEGORIES).map(([value, c]) => ({ value, label: c.label, description: "Dépense (charge)" })),
+  ...Object.entries(WITHDRAWAL_CATEGORIES).map(([value, c]) => ({ value, label: c.label, description: "Retrait — n'est pas une charge" })),
+];
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -63,7 +67,7 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
         <MinusCircle className="h-4 w-4" />
         Nouvelle dépense
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[440px] rounded-2xl">
+      <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto rounded-2xl p-4 sm:max-w-[440px] sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl text-rose-600 dark:text-rose-400">
             <MinusCircle className="h-5 w-5" />
@@ -81,31 +85,22 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label htmlFor="expenseDescription">Motif du retrait / dépense *</Label>
-            <Input id="expenseDescription" required placeholder="ex: Achat fournitures de bureau..." value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} className="rounded-xl" />
+            <Input id="expenseDescription" required placeholder="ex: Achat fournitures de bureau..." value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })} className="h-11 text-base sm:h-9 sm:text-sm rounded-xl" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="expenseCategory">Catégorie *</Label>
-            <select
+            <SearchableSelect
               id="expenseCategory"
               value={data.category}
-              onChange={(e) => setData({ ...data, category: e.target.value as CashOutCategory })}
-              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm"
-            >
-              <optgroup label="Dépenses (charges)">
-                {CHARGE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Retraits qui ne sont pas des charges">
-                {WITHDRAWAL_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </optgroup>
-            </select>
+              onValueChange={(val) => { if (val) setData({ ...data, category: val as CashOutCategory }); }}
+              placeholder="-- Rechercher une catégorie --"
+              emptyText="Aucune catégorie trouvée."
+              options={CATEGORY_OPTIONS}
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="expenseAmount">Montant du retrait (FCFA) *</Label>
-            <Input id="expenseAmount" type="number" min="1" required placeholder="ex: 2000" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} className="rounded-xl" />
+            <Input id="expenseAmount" type="number" min="1" required placeholder="ex: 2000" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} className="h-11 text-base sm:h-9 sm:text-sm rounded-xl" />
           </div>
           <p className="flex items-start gap-1.5 text-[11px] text-slate-400">
             <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -113,9 +108,9 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
             depuis Pharmacie → Achats en répondant « Non » à « Prélever sur une caisse ouverte ? »
             — l&apos;argent a déjà été sorti ici, une seconde déduction compterait la dépense deux fois.
           </p>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Annuler</Button>
-            <Button type="submit" disabled={loading} className="bg-rose-600 hover:bg-rose-700 text-white rounded-xl">
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="h-11 rounded-xl sm:h-9">Annuler</Button>
+            <Button type="submit" disabled={loading} className="h-12 bg-rose-600 hover:bg-rose-700 text-white rounded-xl sm:h-9">
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <MinusCircle className="h-4 w-4 mr-2" />}
               Valider le retrait (-{data.amount ? formatFCFA(Number(data.amount)) : "0 FCFA"})
             </Button>
