@@ -52,7 +52,7 @@ export default function SearchableSelect({
         <Combobox.Input
           id={id}
           placeholder={placeholder}
-          className="w-full h-9 pl-2.5 pr-14 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full h-11 sm:h-9 pl-2.5 pr-14 text-base sm:text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
         />
         <Combobox.Clear className="absolute right-7 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
           <X className="h-3.5 w-3.5" />
@@ -71,7 +71,7 @@ export default function SearchableSelect({
                   key={item.value}
                   value={item}
                   disabled={item.disabled}
-                  className="px-2.5 py-1.5 text-xs rounded-lg cursor-pointer text-slate-700 dark:text-slate-300 data-[highlighted]:bg-blue-50 dark:data-[highlighted]:bg-blue-950/30 data-[selected]:font-semibold data-[selected]:text-slate-900 dark:data-[selected]:text-white data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed"
+                  className="px-2.5 py-2.5 sm:py-1.5 text-sm sm:text-xs rounded-lg cursor-pointer text-slate-700 dark:text-slate-300 data-[highlighted]:bg-blue-50 dark:data-[highlighted]:bg-blue-950/30 data-[selected]:font-semibold data-[selected]:text-slate-900 dark:data-[selected]:text-white data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed"
                 >
                   <div>{item.label}</div>
                   {item.description && <div className="text-[10px] text-slate-400">{item.description}</div>}

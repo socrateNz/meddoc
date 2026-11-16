@@ -10,9 +10,9 @@ import { dispenseAtCashier } from "@/actions/finance";
 export function DispenseNowCheckbox({ checked, onChange, id = "dispenseNow" }: { checked: boolean; onChange: (v: boolean) => void; id?: string }) {
   return (
     <label htmlFor={id} className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-emerald-200/60 bg-emerald-50/60 p-3 text-xs dark:border-emerald-900/40 dark:bg-emerald-950/20">
-      <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-4 w-4 accent-emerald-600" />
+      <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-600 sm:h-4 sm:w-4" />
       <span>
-        <span className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-400">
+        <span className="flex items-center gap-1.5 text-sm sm:text-xs font-bold text-emerald-700 dark:text-emerald-400">
           <PackageCheck className="h-3.5 w-3.5" />
           Médicaments remis au patient maintenant
         </span>

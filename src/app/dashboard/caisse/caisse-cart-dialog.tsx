@@ -288,7 +288,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
           Encaisser
         </DialogTrigger>
       )}
-      <DialogContent className="sm:max-w-[760px] max-h-[90vh] overflow-y-auto rounded-2xl">
+      <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto rounded-2xl p-4 sm:max-w-[760px] sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl text-blue-600 dark:text-blue-400">
             <ShoppingCart className="h-5 w-5" />
@@ -301,21 +301,21 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 pt-2">
+        <div className="space-y-4 pt-1 sm:space-y-6 sm:pt-2">
           {msg && (
             <div className={`p-3 text-xs font-medium rounded-xl border ${msg.type === "success" ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/30" : "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/30"}`}>
               {msg.text}
             </div>
           )}
 
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 space-y-4">
+          <div className="p-3 sm:p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 space-y-3 sm:space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-200/60 dark:border-slate-800/60 pb-2">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Ajouter un article :</span>
-              <div className="flex gap-1 ml-auto">
-                <button type="button" onClick={() => setAddItemMode("PHARMACY")} className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${addItemMode === "PHARMACY" ? "bg-blue-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
+              <span className="hidden text-xs font-bold text-slate-500 uppercase tracking-wider sm:inline">Ajouter un article :</span>
+              <div className="grid w-full grid-cols-2 gap-1 sm:ml-auto sm:flex sm:w-auto">
+                <button type="button" onClick={() => setAddItemMode("PHARMACY")} className={`px-3 py-2 sm:py-1 text-sm sm:text-xs font-semibold rounded-lg transition-all ${addItemMode === "PHARMACY" ? "bg-blue-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
                   + Médicament
                 </button>
-                <button type="button" onClick={() => setAddItemMode("SERVICE")} className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${addItemMode === "SERVICE" ? "bg-emerald-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
+                <button type="button" onClick={() => setAddItemMode("SERVICE")} className={`px-3 py-2 sm:py-1 text-sm sm:text-xs font-semibold rounded-lg transition-all ${addItemMode === "SERVICE" ? "bg-emerald-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
                   + Autres frais
                 </button>
               </div>
@@ -323,8 +323,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
             <form onSubmit={handleAddToCart} className="space-y-3">
               {addItemMode === "PHARMACY" ? (
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                  <div className="sm:col-span-7 space-y-1">
+                <div className="grid grid-cols-3 sm:grid-cols-12 gap-3 items-end">
+                  <div className="col-span-3 sm:col-span-7 space-y-1">
                     <Label htmlFor="addPharmacyItemId" className="text-xs">Médicament en stock *</Label>
                     <SearchableSelect
                       id="addPharmacyItemId"
@@ -342,7 +342,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                       }))}
                     />
                   </div>
-                  <div className="sm:col-span-2 space-y-1">
+                  <div className="col-span-1 sm:col-span-2 space-y-1">
                     <Label htmlFor="addPharmacyQty" className="text-xs">Qté *</Label>
                     <Input
                       id="addPharmacyQty"
@@ -356,25 +356,25 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                           setAddPharmacyQty(1);
                         }
                       }}
-                      className="h-9 text-xs rounded-xl"
+                      className="h-11 text-base sm:h-9 sm:text-xs rounded-xl"
                     />
                   </div>
-                  <div className="sm:col-span-3">
-                    <Button type="submit" disabled={!addPharmacyItemId} className="w-full h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs">+ Ajouter au Panier</Button>
+                  <div className="col-span-2 sm:col-span-3">
+                    <Button type="submit" disabled={!addPharmacyItemId} className="w-full h-11 sm:h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs">+ Ajouter au Panier</Button>
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                  <div className="sm:col-span-6 space-y-1">
+                <div className="grid grid-cols-2 sm:grid-cols-12 gap-3 items-end">
+                  <div className="col-span-2 sm:col-span-6 space-y-1">
                     <Label htmlFor="addServiceDesc" className="text-xs">Motif / Description de l&apos;acte *</Label>
-                    <Input id="addServiceDesc" required placeholder="ex: Frais de consultation" value={addServiceDesc} onChange={(e) => setAddServiceDesc(e.target.value)} className="h-9 text-xs rounded-xl" />
+                    <Input id="addServiceDesc" required placeholder="ex: Frais de consultation" value={addServiceDesc} onChange={(e) => setAddServiceDesc(e.target.value)} className="h-11 text-base sm:h-9 sm:text-xs rounded-xl" />
                   </div>
-                  <div className="sm:col-span-3 space-y-1">
+                  <div className="col-span-1 sm:col-span-3 space-y-1">
                     <Label htmlFor="addServiceAmount" className="text-xs">Montant (FCFA) *</Label>
-                    <Input id="addServiceAmount" type="number" min="1" required placeholder="5000" value={addServiceAmount} onChange={(e) => setAddServiceAmount(e.target.value)} className="h-9 text-xs rounded-xl" />
+                    <Input id="addServiceAmount" type="number" min="1" required placeholder="5000" value={addServiceAmount} onChange={(e) => setAddServiceAmount(e.target.value)} className="h-11 text-base sm:h-9 sm:text-xs rounded-xl" />
                   </div>
-                  <div className="sm:col-span-3">
-                    <Button type="submit" disabled={!addServiceDesc.trim() || !addServiceAmount} className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs">+ Ajouter au Panier</Button>
+                  <div className="col-span-1 sm:col-span-3">
+                    <Button type="submit" disabled={!addServiceDesc.trim() || !addServiceAmount} className="w-full h-11 sm:h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs">+ Ajouter au Panier</Button>
                   </div>
                 </div>
               )}
@@ -382,7 +382,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
           </div>
 
           <div className="rounded-xl border border-slate-200/80 dark:border-slate-800/80 overflow-hidden text-xs">
-            <div className="grid grid-cols-12 bg-slate-100 dark:bg-slate-800/80 p-2.5 font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider text-[10px]">
+            <div className="hidden sm:grid grid-cols-12 bg-slate-100 dark:bg-slate-800/80 p-2.5 font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider text-[10px]">
               <div className="col-span-5">Désignation</div>
               <div className="col-span-2 text-center">Qté</div>
               <div className="col-span-2 text-right">P.U (FCFA)</div>
@@ -393,20 +393,24 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
               <div className="p-8 text-center text-slate-400 font-medium">Le panier est vide.</div>
             ) : (
               cartItems.map((item) => (
-                <div key={item.id} className={`grid grid-cols-12 p-3 font-medium border-t border-slate-100 dark:border-slate-800 items-center ${item.amount <= 0 ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}`}>
-                  <div className="col-span-5 font-semibold text-slate-900 dark:text-white">
+                <div key={item.id} className={`grid grid-cols-[1fr_auto] sm:grid-cols-12 gap-x-2 gap-y-1 p-3 font-medium border-t first:border-t-0 sm:first:border-t border-slate-100 dark:border-slate-800 items-center ${item.amount <= 0 ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}`}>
+                  {/* Mobile : designation + corbeille, puis qte x P.U et total */}
+                  <div className="min-w-0 break-words text-sm sm:text-xs sm:col-span-5 font-semibold text-slate-900 dark:text-white">
                     <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-[9px] font-bold rounded ${item.type === "PHARMACY" ? "bg-blue-500/10 text-blue-600" : "bg-emerald-500/10 text-emerald-600"}`}>
                       {item.type === "PHARMACY" ? "Pharma" : "Acte"}
                     </span>
                     {item.description}
                   </div>
-                  <div className="col-span-2 text-center">{item.quantity}</div>
-                  <div className="col-span-2 text-right">{formatFCFA(item.unitPrice)}</div>
-                  <div className={`col-span-2 text-right font-bold ${item.amount <= 0 ? "text-amber-600" : "text-slate-900 dark:text-white"}`}>
+                  <div className="col-start-1 row-start-2 text-slate-500 sm:hidden">
+                    {item.quantity} × {formatFCFA(item.unitPrice)}
+                  </div>
+                  <div className="hidden sm:block sm:col-span-2 text-center">{item.quantity}</div>
+                  <div className="hidden sm:block sm:col-span-2 text-right">{formatFCFA(item.unitPrice)}</div>
+                  <div className={`col-start-2 row-start-2 sm:row-start-auto sm:col-start-auto sm:col-span-2 text-sm sm:text-xs text-right font-bold ${item.amount <= 0 ? "text-amber-600" : "text-slate-900 dark:text-white"}`}>
                     {item.amount <= 0 ? "À définir" : formatFCFA(item.amount)}
                   </div>
-                  <div className="col-span-1 text-center">
-                    <button type="button" onClick={() => handleRemove(item.id)} className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all" title="Supprimer">
+                  <div className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto sm:col-span-1 text-right sm:text-center">
+                    <button type="button" onClick={() => handleRemove(item.id)} className="p-2 sm:p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all" title="Supprimer">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
@@ -415,9 +419,10 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
             )}
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          {/* Deux colonnes égales : client à gauche, encaissement à droite ; la remise en dessous. */}
+          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
             {mode === "sale" && (
-              <div className="flex-1 max-w-md space-y-2">
+              <div className="min-w-0 space-y-2">
                 <div className="space-y-1">
                   <Label htmlFor="cartPatientId" className="text-xs">Patient inscrit (Optionnel)</Label>
                   <SearchableSelect
@@ -433,7 +438,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                   />
                 </div>
                 {!cartPatientId && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label htmlFor="customPatientNameInput" className="text-xs">Nom du client (Manuel)</Label>
                       <Input
@@ -441,7 +446,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                         value={customPatientNameInput}
                         onChange={(e) => setCustomPatientNameInput(e.target.value)}
                         placeholder="ex: M. Yao Alain"
-                        className="h-8 text-xs rounded-xl"
+                        className="h-11 text-base sm:h-9 sm:text-xs rounded-xl"
                       />
                     </div>
                     <div className="space-y-1">
@@ -451,19 +456,19 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                         value={customPatientPhoneInput}
                         onChange={(e) => setCustomPatientPhoneInput(e.target.value)}
                         placeholder="ex: 07 00 00 00 00"
-                        className="h-8 text-xs rounded-xl"
+                        className="h-11 text-base sm:h-9 sm:text-xs rounded-xl"
                       />
                     </div>
                   </div>
                 )}
               </div>
             )}
-            <div className="text-right ml-auto space-y-2">
-              <div>
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Total du panier</span>
+            <div className="min-w-0 space-y-2 rounded-2xl border border-slate-200/70 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-900/40 sm:col-start-2">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total du panier</span>
                 <span className="text-2xl font-extrabold text-slate-800 dark:text-slate-200">{formatFCFA(grandTotal)}</span>
               </div>
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="amountReceived" className="text-xs whitespace-nowrap">Montant reçu maintenant</Label>
                 <Input
                   id="amountReceived"
@@ -472,26 +477,30 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                   max={grandTotal}
                   value={amountReceivedDisplay}
                   onChange={(e) => { setAmountTouched(true); setAmountReceivedInput(e.target.value); }}
-                  className="h-9 w-32 text-sm font-bold text-right rounded-xl"
+                  className="h-11 w-36 text-base font-bold text-right rounded-xl sm:h-9 sm:text-sm"
                 />
               </div>
               {amountReceived > 0 && <PaymentMethodSelect value={paymentMethod} onChange={setPaymentMethod} />}
-              {canDispense && cartItems.some((i) => i.type === "PHARMACY") && <DispenseNowCheckbox checked={dispenseNow} onChange={setDispenseNow} id={`dispenseNow-${mode}`} />}
               {remainingAfterPayment > 0 && (
-                <p className="text-xs font-semibold text-amber-600 dark:text-amber-500">
+                <p className="text-right text-xs font-semibold text-amber-600 dark:text-amber-500">
                   Vente à crédit — reste à payer : {formatFCFA(remainingAfterPayment)}
                 </p>
               )}
             </div>
           </div>
 
-          <Button onClick={handleValidate} disabled={loading || cartItems.length === 0} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
+          {canDispense && cartItems.some((i) => i.type === "PHARMACY") && <DispenseNowCheckbox checked={dispenseNow} onChange={setDispenseNow} id={`dispenseNow-${mode}`} />}
+
+          {/* Mobile : bouton Encaisser toujours visible en bas de la fenetre */}
+          <div className="sticky -bottom-4 -mx-4 border-t border-slate-200/70 bg-background/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 dark:border-slate-800">
+          <Button onClick={handleValidate} disabled={loading || cartItems.length === 0} className="w-full h-12 sm:h-auto bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
             {loading ? (
               <><Loader2 className="h-4 w-4 animate-spin mr-2" />Encaissement...</>
             ) : (
               <><Printer className="h-4 w-4 mr-2" />Encaisser & imprimer le ticket ({formatFCFA(amountReceived)})</>
             )}
           </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

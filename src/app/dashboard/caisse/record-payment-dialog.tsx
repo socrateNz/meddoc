@@ -82,7 +82,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
         <Receipt className="h-3.5 w-3.5" />
         Régler un paiement
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[420px] rounded-2xl">
+      <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto rounded-2xl p-4 sm:max-w-[420px] sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg text-blue-600 dark:text-blue-400">
             <Receipt className="h-5 w-5" />
@@ -122,7 +122,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
               max={remainingDue}
               value={amountInput}
               onChange={(e) => setAmountInput(e.target.value)}
-              className="h-10 text-sm font-bold rounded-xl"
+              className="h-11 text-base font-bold rounded-xl sm:h-10 sm:text-sm"
               autoFocus
             />
           </div>
@@ -130,7 +130,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
           <PaymentMethodSelect value={paymentMethod} onChange={setPaymentMethod} id="installmentPaymentMethod" />
           {canDispense && <DispenseNowCheckbox checked={dispenseNow} onChange={setDispenseNow} id="installmentDispenseNow" />}
 
-          <Button onClick={handleSubmit} disabled={loading || amount <= 0} className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
+          <Button onClick={handleSubmit} disabled={loading || amount <= 0} className="w-full h-12 sm:h-auto bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
             {loading ? (
               <><Loader2 className="h-4 w-4 animate-spin mr-2" />Encaissement...</>
             ) : (

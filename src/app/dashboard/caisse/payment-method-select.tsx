@@ -15,13 +15,13 @@ export default function PaymentMethodSelect({
   id?: string;
 }) {
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center justify-between gap-2">
       <Label htmlFor={id} className="text-xs whitespace-nowrap">Moyen de paiement</Label>
       <select
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value as PaymentMethod)}
-        className="h-9 rounded-xl border border-input bg-background px-3 text-sm"
+        className="h-11 w-36 rounded-xl border border-input bg-background px-3 text-base sm:h-9 sm:text-sm"
       >
         {PAYMENT_METHODS.map((m) => (
           <option key={m} value={m}>
