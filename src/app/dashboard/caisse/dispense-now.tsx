@@ -9,14 +9,15 @@ import { dispenseAtCashier } from "@/actions/finance";
 // après l'enregistrement de l'argent. Cochée par défaut pour un pharmacien.
 export function DispenseNowCheckbox({ checked, onChange, id = "dispenseNow" }: { checked: boolean; onChange: (v: boolean) => void; id?: string }) {
   return (
-    <label htmlFor={id} className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-emerald-200/60 bg-emerald-50/60 p-3 text-xs dark:border-emerald-900/40 dark:bg-emerald-950/20">
-      <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-600 sm:h-4 sm:w-4" />
+    <label htmlFor={id} className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-emerald-200/60 bg-emerald-50/60 px-3 py-2 text-xs sm:items-start sm:py-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+      <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-5 w-5 shrink-0 accent-emerald-600 sm:mt-0.5 sm:h-4 sm:w-4" />
       <span>
         <span className="flex items-center gap-1.5 text-sm sm:text-xs font-bold text-emerald-700 dark:text-emerald-400">
           <PackageCheck className="h-3.5 w-3.5" />
           Médicaments remis au patient maintenant
         </span>
-        <span className="mt-0.5 block text-slate-500">
+        {/* Explication masquée sur mobile : la case reste compacte dans la barre du bas. */}
+        <span className="mt-0.5 hidden text-slate-500 sm:block">
           Le stock est mis à jour tout de suite, sans passer par la page Pharmacie. Possible aussi pour une vente à crédit.
         </span>
       </span>

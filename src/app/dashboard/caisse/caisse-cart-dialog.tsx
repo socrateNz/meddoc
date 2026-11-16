@@ -489,10 +489,9 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
             </div>
           </div>
 
+          {/* Mobile : remise + bouton Encaisser toujours visibles en bas de la fenêtre */}
+          <div className="sticky -bottom-4 -mx-4 space-y-2 border-t border-slate-200/70 bg-background/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:space-y-4 sm:border-0 sm:bg-transparent sm:p-0 dark:border-slate-800">
           {canDispense && cartItems.some((i) => i.type === "PHARMACY") && <DispenseNowCheckbox checked={dispenseNow} onChange={setDispenseNow} id={`dispenseNow-${mode}`} />}
-
-          {/* Mobile : bouton Encaisser toujours visible en bas de la fenetre */}
-          <div className="sticky -bottom-4 -mx-4 border-t border-slate-200/70 bg-background/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 dark:border-slate-800">
           <Button onClick={handleValidate} disabled={loading || cartItems.length === 0} className="w-full h-12 sm:h-auto bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
             {loading ? (
               <><Loader2 className="h-4 w-4 animate-spin mr-2" />Encaissement...</>
