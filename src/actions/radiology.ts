@@ -11,6 +11,7 @@ import { resolvePage } from "@/lib/pagination";
 import { revalidatePath } from "next/cache";
 import { RADIOLOGY_MODALITIES, nextRadiologyStatus, snapshotExams, type RadiologyAction, type RadiologyExamSnapshot } from "@/lib/radiology";
 import { assertUserModule } from "@/lib/modules-server";
+import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
 
 // Imagerie médicale (étape D1 de l'audit d'évolution) — mêmes rôles que le laboratoire, sans rôle
 // dédié : prescription et compte-rendu par le médecin (ou le coordinateur), réalisation et envoi
@@ -99,18 +100,25 @@ const orderSchema = z.object({
   clinicalIndication: z.string().trim().max(1000).optional(),
   priority: z.enum(["ROUTINE", "URGENT"]).default("ROUTINE"),
   medicalRecordId: z.string().min(1).optional(),
+  prenatalVisitId: z.string().min(1).optional(),
 });
 
 export async function createRadiologyOrder(data: z.input<typeof orderSchema>) {
   try {
     const input = orderSchema.parse(data);
-    const activeUser = await requireUser(ORDER_ROLES, "Non autorisé. Seul un médecin ou un coordinateur peut prescrire un examen d'imagerie.");
+    // Sage-femme / infirmier(e) : seulement depuis une consultation prénatale (échographie de
+    // grossesse), comme pour le bilan biologique (cf. createLabOrder).
+    const activeUser = await requireUser(
+      input.prenatalVisitId ? [...ORDER_ROLES, "CAREGIVER"] : ORDER_ROLES,
+      "Non autorisé. Seul un médecin ou un coordinateur peut prescrire un examen d'imagerie."
+    );
     if (!(await verifyPatientAccess(input.patientId, activeUser))) {
       throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
     }
     const patient = await prisma.patient.findUnique({ where: { id: input.patientId }, select: { organizationId: true } });
     if (!patient?.organizationId) throw new Error("Patient introuvable.");
     const organizationId = patient.organizationId;
+    if (input.prenatalVisitId) await assertPrenatalVisitOfPatient(input.prenatalVisitId, input.patientId);
 
     // Examens du catalogue de LA clinique du patient, actifs uniquement.
     const exams = await prisma.radiologyExam.findMany({ where: { id: { in: input.examIds }, organizationId, isActive: true } });
@@ -135,6 +143,7 @@ export async function createRadiologyOrder(data: z.input<typeof orderSchema>) {
           patientId: input.patientId,
           organizationId,
           medicalRecordId: input.medicalRecordId || null,
+          prenatalVisitId: input.prenatalVisitId || null,
           exams: snapshot as unknown as Prisma.InputJsonValue,
           clinicalIndication: input.clinicalIndication || null,
           priority: input.priority,

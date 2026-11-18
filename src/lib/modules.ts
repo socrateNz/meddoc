@@ -55,7 +55,7 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
     requires: [],
     routeSegments: ["pharmacie"],
   },
-  MATERNITE: { key: "MATERNITE", label: "Maternité", description: "Grossesses, consultations prénatales, accouchements, nouveau-nés.", requires: [], routeSegments: [] },
+  MATERNITE: { key: "MATERNITE", label: "Maternité", description: "Grossesses, consultations prénatales, accouchements, nouveau-nés.", requires: [], routeSegments: ["maternite"] },
   IA: { key: "IA", label: "Intelligence artificielle", description: "Assistant clinique et analyses IA (dossier, résultats, consultation).", requires: [], routeSegments: ["ai-assistant"] },
   CONTRATS_AIDANTS: { key: "CONTRATS_AIDANTS", label: "Contrats aidants", description: "Contrats et suivi des aidants à domicile.", requires: [], routeSegments: ["contracts"] },
   INTEROPERABILITE: { key: "INTEROPERABILITE", label: "Interopérabilité HL7 / FHIR", description: "Clés d'API, automates de laboratoire (HL7), export FHIR.", requires: [], routeSegments: [] },

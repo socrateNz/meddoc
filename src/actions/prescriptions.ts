@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
+import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
 import { resolveTargetOrgId } from "@/lib/org-scope";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -165,6 +166,7 @@ export async function createPrescription(data: {
   templateId?: string;
   items: PrescriptionItemInput[];
   notes?: string;
+  prenatalVisitId?: string;
 }) {
   try {
     createPrescriptionSchema.parse(data);
@@ -176,6 +178,7 @@ export async function createPrescription(data: {
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
 
     const patient = await prisma.patient.findUnique({ where: { id: data.patientId }, select: { organizationId: true } });
+    if (data.prenatalVisitId) await assertPrenatalVisitOfPatient(data.prenatalVisitId, data.patientId);
 
     const prescription = await prisma.prescription.create({
       data: {
@@ -183,6 +186,7 @@ export async function createPrescription(data: {
         prescribedById: activeUser.id,
         medicalRecordId: data.medicalRecordId || null,
         appointmentId: data.appointmentId || null,
+        prenatalVisitId: data.prenatalVisitId || null,
         organizationId: patient?.organizationId || null,
         templateId: data.templateId || null,
         notes: data.notes || null,

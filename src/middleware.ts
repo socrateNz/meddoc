@@ -33,6 +33,8 @@ const restrictedSections: Record<string, string[]> = {
   lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   // Imagerie (cf. src/actions/radiology.ts) : mêmes rôles que le laboratoire.
   imagerie: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+  // Maternité : suivi des CPN de la clinique (cf. src/actions/maternity.ts listPrenatalFollowUp).
+  maternite: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   // Tableau des urgences et tri (cf. src/actions/triage.ts).
   urgences: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
   // Bloc opératoire et banque de sang (cf. src/actions/surgery.ts, src/actions/blood-bank.ts).

@@ -17,6 +17,7 @@ export const createPrescriptionSchema = z.object({
   templateId: z.string().optional(),
   items: z.array(prescriptionItemSchema).min(1, "Au moins un médicament requis"),
   notes: z.string().optional(),
+  prenatalVisitId: z.string().optional(),
 });
 
 export const renewPrescriptionSchema = z.object({

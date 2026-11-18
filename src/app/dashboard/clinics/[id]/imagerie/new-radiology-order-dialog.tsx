@@ -18,7 +18,24 @@ function formatFCFA(v: number) {
 
 // Prescription d'examens d'imagerie depuis le catalogue de la clinique du patient — facture créée
 // à la caisse dès la prescription (cf. createRadiologyOrder).
-export default function NewRadiologyOrderDialog({ patientId, clinicId, onCreated }: { patientId: string; clinicId: string; onCreated?: () => void }) {
+export default function NewRadiologyOrderDialog({
+  patientId,
+  clinicId,
+  onCreated,
+  prenatalVisitId,
+  triggerLabel,
+  preferModality,
+}: {
+  patientId: string;
+  clinicId: string;
+  onCreated?: () => void;
+  // Visite prénatale d'origine (échographie de grossesse) : l'examen y est rattaché.
+  prenatalVisitId?: string;
+  // Bouton compact (ligne de visite) au lieu du bouton bleu.
+  triggerLabel?: string;
+  // Modalité à présenter en premier (ex. ULTRASOUND depuis la maternité).
+  preferModality?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [exams, setExams] = useState<Exam[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -30,12 +47,14 @@ export default function NewRadiologyOrderDialog({ patientId, clinicId, onCreated
     if (!open) return;
     let cancelled = false;
     listRadiologyExams(clinicId).then((res) => {
-      if (!cancelled) setExams(res.success ? res.data : []);
+      if (cancelled) return;
+      const list: Exam[] = res.success ? res.data : [];
+      setExams(preferModality ? [...list.filter((e) => e.modality === preferModality), ...list.filter((e) => e.modality !== preferModality)] : list);
     });
     return () => {
       cancelled = true;
     };
-  }, [open, clinicId]);
+  }, [open, clinicId, preferModality]);
 
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const total = (exams || []).filter((e) => selected.includes(e.id)).reduce((sum, e) => sum + e.basePrice, 0);
@@ -52,6 +71,7 @@ export default function NewRadiologyOrderDialog({ patientId, clinicId, onCreated
       examIds: selected,
       clinicalIndication: indication.trim() || undefined,
       priority: urgent ? "URGENT" : "ROUTINE",
+      prenatalVisitId,
     });
     setSaving(false);
     if (res.success) {
@@ -68,11 +88,18 @@ export default function NewRadiologyOrderDialog({ patientId, clinicId, onCreated
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button size="sm" className="gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white" />}>
-        <ScanLine className="h-4 w-4" />
-        Prescrire une imagerie
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-lg rounded-2xl">
+      {triggerLabel ? (
+        <DialogTrigger render={<Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-lg text-xs" />}>
+          <ScanLine className="h-3.5 w-3.5" />
+          {triggerLabel}
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger render={<Button size="sm" className="gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white" />}>
+          <ScanLine className="h-4 w-4" />
+          Prescrire une imagerie
+        </DialogTrigger>
+      )}
+      <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto rounded-2xl p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
           <DialogTitle>Prescrire un examen d&apos;imagerie</DialogTitle>
           <DialogDescription>Les examens sont facturés à la caisse dès la prescription, au tarif du catalogue.</DialogDescription>
@@ -87,7 +114,7 @@ export default function NewRadiologyOrderDialog({ patientId, clinicId, onCreated
             ) : (
               <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">
                 {exams.map((exam) => (
-                  <label key={exam.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                  <label key={exam.id} className="flex items-center gap-3 px-3 py-3 sm:py-2 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40">
                     <input type="checkbox" checked={selected.includes(exam.id)} onChange={() => toggle(exam.id)} className="h-4 w-4" />
                     <span className="flex-1 text-sm">
                       {exam.name}
@@ -102,7 +129,7 @@ export default function NewRadiologyOrderDialog({ patientId, clinicId, onCreated
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="indication">Indication clinique</Label>
-            <Textarea id="indication" rows={3} value={indication} onChange={(e) => setIndication(e.target.value)} placeholder="Contexte, question posée au radiologue..." maxLength={1000} />
+            <Textarea id="indication" rows={3} className="text-base sm:text-sm" value={indication} onChange={(e) => setIndication(e.target.value)} placeholder="Contexte, question posée au radiologue..." maxLength={1000} />
           </div>
           <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
             <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} className="h-4 w-4 accent-red-600" />

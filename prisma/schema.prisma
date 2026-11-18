@@ -513,15 +513,15 @@ model LabOrder {
   // Prélèvement
   sampleType          String? // BLOOD, URINE, STOOL, SALIVA, BIOPSY, CSF, OTHER
   sampleCollectedAt   DateTime?
-  sampleCollectedById String?   @db.ObjectId
-  sampleCollectedBy   User?     @relation("LabOrderSampleCollectedBy", fields: [sampleCollectedById], references: [id])
+  sampleCollectedById String?     @db.ObjectId
+  sampleCollectedBy   User?       @relation("LabOrderSampleCollectedBy", fields: [sampleCollectedById], references: [id])
   sampleQuantity      String?
   sampleCondition     String?
   // Prélèvements (tubes) de la demande : chacun couvre un ou plusieurs examens de `tests`. Une
   // demande peut donc avoir un tube par examen ou un tube commun. Les champs sample* ci-dessus
   // reprennent le PREMIER prélèvement (compatibilité : HL7, compte-rendu, anciennes demandes
   // dont `samples` est vide = un seul prélèvement couvrant tous les examens).
-  samples LabSample[]
+  samples             LabSample[]
 
   // Visite prénatale d'origine (maternité), comme appointmentId pour une consultation.
   prenatalVisitId String?        @db.ObjectId
@@ -950,18 +950,20 @@ model PrenatalVisit {
   notes                  String?
 
   // Consultation prénatale (CPN) — éléments du carnet de la femme enceinte.
-  cpnNumber           Int? // CPN 1, 2, 3...
-  edema               Boolean? // œdèmes
-  urineProtein        String? // bandelette : NEG, TRACES, +, ++, +++
-  urineGlucose        String? // bandelette : NEG, TRACES, +, ++, +++
-  fetalPresentation   String? // CEPHALIC, BREECH, TRANSVERSE
-  fetalMovements      Boolean? // mouvements actifs fœtaux perçus
+  cpnNumber            Int? // CPN 1, 2, 3...
+  edema                Boolean? // œdèmes
+  urineProtein         String? // bandelette : NEG, TRACES, +, ++, +++
+  urineGlucose         String? // bandelette : NEG, TRACES, +, ++, +++
+  fetalPresentation    String? // CEPHALIC, BREECH, TRANSVERSE
+  fetalMovements       Boolean? // mouvements actifs fœtaux perçus
   // Traitements préventifs donnés à cette visite : IPTP_SP (TPI/SP), TT_VACCINE (VAT),
   // IRON_FOLIC (fer + acide folique), DEWORMING (déparasitage), LLIN (moustiquaire imprégnée).
-  preventiveTreatments String[] @default([])
-  nextVisitDate       DateTime?
+  preventiveTreatments String[]  @default([])
+  nextVisitDate        DateTime?
 
-  labOrders LabOrder[]
+  labOrders       LabOrder[]
+  prescriptions   Prescription[]
+  radiologyOrders RadiologyOrder[]
 
   recordedById String @db.ObjectId
   recordedBy   User   @relation("PrenatalVisitRecordedBy", fields: [recordedById], references: [id])
@@ -1448,8 +1450,11 @@ model Prescription {
   medicalRecordId String?        @db.ObjectId
   medicalRecord   MedicalRecord? @relation(fields: [medicalRecordId], references: [id])
 
-  appointmentId String?      @db.ObjectId
-  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  appointmentId   String?        @db.ObjectId
+  appointment     Appointment?   @relation(fields: [appointmentId], references: [id])
+  // Visite prénatale d'origine (maternité), comme appointmentId pour une consultation.
+  prenatalVisitId String?        @db.ObjectId
+  prenatalVisit   PrenatalVisit? @relation(fields: [prenatalVisitId], references: [id])
 
   organizationId String?       @db.ObjectId
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -1802,31 +1807,34 @@ model RadiologyExam {
 // rédigé → validé. Facturée à la prescription, au tarif du catalogue figé dans `exams` (cf.
 // src/actions/radiology.ts) — comme le laboratoire.
 model RadiologyOrder {
-  id                 String    @id @default(auto()) @map("_id") @db.ObjectId
-  patientId          String    @db.ObjectId
-  organizationId     String    @db.ObjectId
-  medicalRecordId    String?   @db.ObjectId
+  id                 String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId          String         @db.ObjectId
+  organizationId     String         @db.ObjectId
+  medicalRecordId    String?        @db.ObjectId
+  // Visite prénatale d'origine (échographie de grossesse...).
+  prenatalVisitId    String?        @db.ObjectId
+  prenatalVisit      PrenatalVisit? @relation(fields: [prenatalVisitId], references: [id])
   // Instantané des examens prescrits : [{ examId, name, modality, price }].
   exams              Json
   clinicalIndication String?
-  priority           String    @default("ROUTINE") // ROUTINE, URGENT
-  status             String    @default("PRESCRIBED") // PRESCRIBED, PERFORMED, REPORTED, VALIDATED, CANCELLED
-  pendingInvoiceId   String?   @db.ObjectId
-  orderedById        String    @db.ObjectId
-  performedById      String?   @db.ObjectId
+  priority           String         @default("ROUTINE") // ROUTINE, URGENT
+  status             String         @default("PRESCRIBED") // PRESCRIBED, PERFORMED, REPORTED, VALIDATED, CANCELLED
+  pendingInvoiceId   String?        @db.ObjectId
+  orderedById        String         @db.ObjectId
+  performedById      String?        @db.ObjectId
   performedAt        DateTime?
   performedNotes     String?
   report             String?
   conclusion         String?
-  reportedById       String?   @db.ObjectId
+  reportedById       String?        @db.ObjectId
   reportedAt         DateTime?
-  validatedById      String?   @db.ObjectId
+  validatedById      String?        @db.ObjectId
   validatedAt        DateTime?
-  cancelledById      String?   @db.ObjectId
+  cancelledById      String?        @db.ObjectId
   cancelledAt        DateTime?
   cancelReason       String?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([organizationId, createdAt])
   @@index([patientId, createdAt])
@@ -2012,22 +2020,22 @@ model IntegrationClient {
 // document source. Écrites uniquement par postEntry (src/lib/accounting/engine.ts).
 
 model AccountingEntry {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  organizationId String   @db.ObjectId // la clinique (la « structure » comptable)
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String    @db.ObjectId // la clinique (la « structure » comptable)
   journal        String // VE, AC, TR, OD, AN
   number         String // VE-2026-00001, continu par clinique, journal et année
   entryDate      String // AAAA-MM-JJ, jour civil à l'heure de Douala, figé à la création
   label          String
   reference      String?
   sourceType     String // MANUAL, CONSULTATION, PAYMENT, EXPENSE, REVERSAL, DEPRECIATION...
-  sourceId       String?  @db.ObjectId
+  sourceId       String?   @db.ObjectId
   // Clé d'idempotence, toujours renseignée : « <clinique>:<type>:<id du document> », ou
   // « <clinique>:MANUAL:<id de l'écriture> » sans document. Un index unique sur un champ facultatif
   // refuserait plusieurs valeurs absentes sous MongoDB (cf. Patient.ipp) : d'où ce champ obligatoire.
-  sourceKey      String   @unique
-  reversalOf     String?  @db.ObjectId
-  createdById    String?  @db.ObjectId
-  createdAt      DateTime @default(now())
+  sourceKey      String    @unique
+  reversalOf     String?   @db.ObjectId
+  createdById    String?   @db.ObjectId
+  createdAt      DateTime  @default(now())
   // Instant réel du document comptabilisé (heure du règlement, de la sortie de caisse...) : ordonne
   // les écritures d'une même journée dans le journal et le grand livre. createdAt ne convient pas :
   // un rattrapage crée des centaines d'écritures au même moment.

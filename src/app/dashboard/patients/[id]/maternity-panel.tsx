@@ -12,6 +12,9 @@ import NewPregnancyDialog from "./new-pregnancy-dialog";
 import AddPrenatalVisitDialog from "./add-prenatal-visit-dialog";
 import RecordDeliveryDialog from "./record-delivery-dialog";
 import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
+import NewRadiologyOrderDialog from "@/app/dashboard/clinics/[id]/imagerie/new-radiology-order-dialog";
+import NewPrescriptionDialog from "./new-prescription-dialog";
+import { RADIOLOGY_STATUS_LABELS } from "@/lib/radiology";
 import { FETAL_PRESENTATION_LABELS, PREVENTIVE_TREATMENT_LABELS, isPrenatalLabTest } from "@/lib/maternity-labels";
 import { toast } from "sonner";
 
@@ -56,6 +59,8 @@ export default function MaternityPanel({
   pregnancies,
   canWrite,
   canOrderLab = false,
+  canOrderImaging = false,
+  canPrescribe = false,
   isDischarged,
 }: {
   patientId: string;
@@ -65,6 +70,10 @@ export default function MaternityPanel({
   canWrite: boolean;
   // Module Laboratoire actif et rôle clinique : bouton « Demander des examens » sur chaque visite.
   canOrderLab?: boolean;
+  // Module Imagerie actif et rôle clinique : bouton « Échographie » sur chaque visite.
+  canOrderImaging?: boolean;
+  // Médecin / coordinateur : bouton « Ordonnance » sur chaque visite.
+  canPrescribe?: boolean;
   isDischarged: boolean;
 }) {
   const router = useRouter();
@@ -207,27 +216,58 @@ export default function MaternityPanel({
                               </div>
                             )}
                             {visit.notes && <p className="text-muted-foreground italic">{visit.notes}</p>}
-                            {visit.labOrders?.length > 0 && (
+                            {/* Ce qui a été demandé lors de la visite : examens, imagerie, ordonnances */}
+                            {(visit.labOrders?.length > 0 || visit.radiologyOrders?.length > 0 || visit.prescriptions?.length > 0) && (
                               <div className="space-y-1">
-                                {visit.labOrders.map((o: any) => (
+                                {(visit.labOrders || []).map((o: any) => (
                                   <Link key={o.id} href={`/dashboard/lab/${o.id}`} className="flex flex-wrap items-center gap-1.5 rounded-md bg-background/60 px-2 py-1.5 hover:bg-background">
                                     <span className="font-medium text-blue-600 dark:text-blue-400">Examens :</span>
                                     <span className="min-w-0 flex-1">{o.tests.join(", ")}</span>
                                     <Badge variant="outline" className="text-[10px]">{LAB_STATUS_LABELS[o.status] || o.status}</Badge>
                                   </Link>
                                 ))}
+                                {(visit.radiologyOrders || []).map((o: any) => (
+                                  <Link key={o.id} href={`/dashboard/clinics/${patient?.organizationId}/imagerie/${o.id}`} className="flex flex-wrap items-center gap-1.5 rounded-md bg-background/60 px-2 py-1.5 hover:bg-background">
+                                    <span className="font-medium text-violet-600 dark:text-violet-400">Imagerie :</span>
+                                    <span className="min-w-0 flex-1">{((o.exams as any[]) || []).map((e) => e.name).join(", ")}</span>
+                                    <Badge variant="outline" className="text-[10px]">{RADIOLOGY_STATUS_LABELS[o.status] || o.status}</Badge>
+                                  </Link>
+                                ))}
+                                {(visit.prescriptions || []).map((rx: any) => (
+                                  <div key={rx.id} className="flex flex-wrap items-center gap-1.5 rounded-md bg-background/60 px-2 py-1.5">
+                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">Ordonnance :</span>
+                                    <span className="min-w-0 flex-1">{(rx.items || []).map((i: any) => `${i.drugName} ${i.dosage}`).join(", ")}</span>
+                                  </div>
+                                ))}
                               </div>
                             )}
-                            {canOrderLab && isActive && !isDischarged && patient && (
-                              <NewLabOrderDialog
-                                patients={[patient]}
-                                defaultPatientId={patientId}
-                                organizationId={patient.organizationId ?? undefined}
-                                prenatalVisitId={visit.id}
-                                triggerLabel={visit.labOrders?.length > 0 ? "Autres examens" : "Demander des examens"}
-                                quickPick={PRENATAL_QUICK_PICK}
-                                onSuccess={() => router.refresh()}
-                              />
+                            {isActive && !isDischarged && patient && (canOrderLab || canOrderImaging || canPrescribe) && (
+                              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                {canOrderLab && (
+                                  <NewLabOrderDialog
+                                    patients={[patient]}
+                                    defaultPatientId={patientId}
+                                    organizationId={patient.organizationId ?? undefined}
+                                    prenatalVisitId={visit.id}
+                                    triggerLabel={visit.labOrders?.length > 0 ? "Autres examens" : "Examens"}
+                                    quickPick={PRENATAL_QUICK_PICK}
+                                    onSuccess={() => router.refresh()}
+                                  />
+                                )}
+                                {canOrderImaging && patient.organizationId && (
+                                  <NewRadiologyOrderDialog
+                                    patientId={patientId}
+                                    clinicId={patient.organizationId}
+                                    prenatalVisitId={visit.id}
+                                    triggerLabel="Échographie"
+                                    preferModality="ULTRASOUND"
+                                    onCreated={() => router.refresh()}
+                                  />
+                                )}
+                                {canPrescribe && (
+                                  <NewPrescriptionDialog patientId={patientId} prenatalVisitId={visit.id} onSuccess={() => router.refresh()} />
+                                )}
+                              </div>
                             )}
                           </li>
                         ))}

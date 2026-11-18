@@ -65,6 +65,33 @@ describe("createRadiologyOrder", () => {
     const { createRadiologyOrder } = await import("./radiology");
     expect((await createRadiologyOrder({ patientId: "p1", examIds: ["e1"] })).success).toBe(false);
   });
+
+  it("laisse la sage-femme (CAREGIVER) prescrire une échographie depuis une visite prénatale de la patiente", async () => {
+    const { orderCreate } = mockDb({ exams: [{ id: "e1", name: "Échographie obstétricale", modality: "ULTRASOUND", basePrice: 10000 }] });
+    vi.doMock("@/lib/maternity-server", () => ({ assertPrenatalVisitOfPatient: vi.fn(async () => undefined) }));
+    state.user = { id: "n1", role: "CAREGIVER", organizationId: "org1" };
+    const { createRadiologyOrder } = await import("./radiology");
+
+    const result = await createRadiologyOrder({ patientId: "p1", examIds: ["e1"], prenatalVisitId: "v1" });
+
+    expect(result.success).toBe(true);
+    expect(orderCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ prenatalVisitId: "v1", orderedById: "n1" }) });
+  });
+
+  it("refuse une visite prénatale d'une autre patiente", async () => {
+    const { orderCreate } = mockDb({ exams: [{ id: "e1", name: "Écho", modality: "ULTRASOUND", basePrice: 1 }] });
+    vi.doMock("@/lib/maternity-server", () => ({
+      assertPrenatalVisitOfPatient: vi.fn(async () => {
+        throw new Error("Visite prénatale introuvable pour cette patiente.");
+      }),
+    }));
+    const { createRadiologyOrder } = await import("./radiology");
+
+    const result = await createRadiologyOrder({ patientId: "p1", examIds: ["e1"], prenatalVisitId: "v-autre" });
+
+    expect(result.success ? "" : result.error).toMatch(/Visite prénatale introuvable/);
+    expect(orderCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe("updateRadiologyOrder", () => {

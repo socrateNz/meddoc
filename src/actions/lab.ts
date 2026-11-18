@@ -10,6 +10,7 @@ import { toErrorMessage } from "@/lib/utils";
 import { resolvePage } from "@/lib/pagination";
 import { computeLabOrderStatus, isCriticalValue, orderSamples, testsWithoutSample } from "@/lib/lab-rules";
 import { randomUUID } from "crypto";
+import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
 import {
   createLabOrderSchema,
   updateLabOrderStatusSchema,
@@ -153,10 +154,7 @@ async function createLabOrderOnce(data: {
     const organizationId = patient?.organizationId || null;
 
     // Visite prénatale d'origine : doit appartenir à une grossesse de CETTE patiente.
-    if (data.prenatalVisitId) {
-      const visit = await prisma.prenatalVisit.findUnique({ where: { id: data.prenatalVisitId }, select: { pregnancy: { select: { patientId: true } } } });
-      if (!visit || visit.pregnancy.patientId !== data.patientId) throw new Error("Visite prénatale introuvable pour cette patiente.");
-    }
+    if (data.prenatalVisitId) await assertPrenatalVisitOfPatient(data.prenatalVisitId, data.patientId);
 
     // Résout le catalogue pour chaque examen avant création : le prix (base + produits
     // consommés) et la facturation en dépendent.

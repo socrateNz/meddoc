@@ -36,7 +36,8 @@ import {
   HeartPulse,
   BedDouble,
   Banknote,
-  PackageSearch
+  PackageSearch,
+  Baby
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
@@ -209,6 +210,15 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/imagerie`,
         icon: ScanLine,
         // Garder en phase avec la section « imagerie » de src/middleware.ts.
+        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        section: "Clinique",
+      },
+      {
+        name: "Maternité",
+        module: "MATERNITE",
+        href: `/dashboard/clinics/${activeClinicId}/maternite`,
+        icon: Baby,
+        // Garder en phase avec la section « maternite » de src/middleware.ts.
         roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
         section: "Clinique",
       },

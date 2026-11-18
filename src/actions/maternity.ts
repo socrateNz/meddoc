@@ -14,6 +14,8 @@ import {
 } from "@/validators/maternity";
 import { revalidatePath } from "next/cache";
 import { assertUserModule } from "@/lib/modules-server";
+import { assertClinicScope } from "@/lib/clinic-scope";
+import { prenatalFollowUp, comparePrenatalFollowUp } from "@/lib/maternity-labels";
 
 // Consulter le suivi de maternité est ouvert à tout le personnel clinique, y compris ADMIN
 // (holding) en lecture seule. Créer/modifier une grossesse, une visite prénatale ou un
@@ -39,6 +41,8 @@ const PREGNANCY_INCLUDE = {
       recordedBy: { select: { firstName: true, lastName: true } },
       // Examens demandés lors de la visite (cf. LabOrder.prenatalVisitId).
       labOrders: { select: { id: true, tests: true, status: true, createdAt: true }, orderBy: { createdAt: "asc" as const } },
+      prescriptions: { select: { id: true, status: true, items: { select: { drugName: true, dosage: true } } }, orderBy: { createdAt: "asc" as const } },
+      radiologyOrders: { select: { id: true, status: true, exams: true }, orderBy: { createdAt: "asc" as const } },
     },
   },
   delivery: {
@@ -292,5 +296,59 @@ export async function updatePregnancyStatus(pregnancyId: string, status: "MISCAR
     return { success: true, data: updated };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la mise à jour du statut.") };
+  }
+}
+
+// Suivi des CPN de la clinique (page Maternité) : toutes les grossesses en cours, avec la dernière
+// visite et le prochain rendez-vous, triées des plus urgentes (terme dépassé, CPN manquée) aux
+// rendez-vous à venir — pour relancer les patientes par téléphone.
+export async function listPrenatalFollowUp(clinicId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
+    assertMaternityReadRole(activeUser.role);
+    await assertClinicScope(clinicId, activeUser);
+
+    const pregnancies = await prisma.pregnancy.findMany({
+      where: { status: "ACTIVE", patient: { organizationId: clinicId } },
+      select: {
+        id: true,
+        lastMenstrualPeriod: true,
+        expectedDueDate: true,
+        gravidity: true,
+        parity: true,
+        riskFactors: true,
+        patient: { select: { id: true, ipp: true, user: { select: { firstName: true, lastName: true, phone: true } } } },
+        prenatalVisits: { select: { visitDate: true, nextVisitDate: true, cpnNumber: true }, orderBy: { visitDate: "desc" }, take: 1 },
+        _count: { select: { prenatalVisits: true } },
+      },
+      take: 1000,
+    });
+
+    const today = new Date();
+    const rows = pregnancies
+      .map((p) => {
+        const lastVisit = p.prenatalVisits[0] ?? null;
+        return {
+          id: p.id,
+          patientId: p.patient.id,
+          patientName: `${p.patient.user.lastName} ${p.patient.user.firstName}`,
+          ipp: p.patient.ipp,
+          phone: p.patient.user.phone,
+          gravidity: p.gravidity,
+          parity: p.parity,
+          riskFactors: p.riskFactors,
+          expectedDueDate: p.expectedDueDate,
+          visitCount: p._count.prenatalVisits,
+          lastVisit,
+          ...prenatalFollowUp({ lastMenstrualPeriod: p.lastMenstrualPeriod, expectedDueDate: p.expectedDueDate, lastVisit }, today),
+        };
+      })
+      .sort(comparePrenatalFollowUp);
+
+    return { success: true as const, data: rows };
+  } catch (error: any) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du suivi des CPN.") };
   }
 }
