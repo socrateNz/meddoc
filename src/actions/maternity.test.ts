@@ -101,6 +101,64 @@ describe("addPrenatalVisit", () => {
     expect(result.error).toMatch(/n'est plus active/);
     expect(visitCreate).not.toHaveBeenCalled();
   });
+
+  it("enregistre les éléments de la CPN (bandelette, présentation, traitements préventifs, prochain RDV)", async () => {
+    const visitCreate = vi.fn(async ({ data }: any) => ({ id: "v1", ...data }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pregnancy: { findUnique: vi.fn(async () => ({ id: "preg1", patientId: "p1", status: "ACTIVE" })) },
+        prenatalVisit: { create: visitCreate },
+      },
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      getCurrentUser: vi.fn(async () => activeUser),
+      verifyPatientAccess: vi.fn(async () => true),
+    }));
+    const { addPrenatalVisit } = await import("./maternity");
+
+    const result = await addPrenatalVisit({
+      pregnancyId: "preg1",
+      cpnNumber: 2,
+      edema: false,
+      urineProtein: "++",
+      fetalPresentation: "CEPHALIC",
+      fetalMovements: true,
+      preventiveTreatments: ["IPTP_SP", "IRON_FOLIC"],
+      nextVisitDate: "2026-12-15",
+    });
+
+    expect(result.success).toBe(true);
+    expect(visitCreate.mock.calls[0][0].data).toMatchObject({
+      cpnNumber: 2,
+      edema: false,
+      urineProtein: "++",
+      urineGlucose: null,
+      fetalPresentation: "CEPHALIC",
+      fetalMovements: true,
+      preventiveTreatments: ["IPTP_SP", "IRON_FOLIC"],
+      nextVisitDate: new Date("2026-12-15"),
+    });
+  });
+
+  it("refuse un traitement préventif inconnu", async () => {
+    const visitCreate = vi.fn();
+    vi.doMock("@/lib/db", () => ({
+      prisma: {
+        pregnancy: { findUnique: vi.fn(async () => ({ id: "preg1", patientId: "p1", status: "ACTIVE" })) },
+        prenatalVisit: { create: visitCreate },
+      },
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      getCurrentUser: vi.fn(async () => activeUser),
+      verifyPatientAccess: vi.fn(async () => true),
+    }));
+    const { addPrenatalVisit } = await import("./maternity");
+
+    const result = await addPrenatalVisit({ pregnancyId: "preg1", preventiveTreatments: ["INCONNU"] });
+
+    expect(result.success).toBe(false);
+    expect(visitCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe("recordDelivery", () => {

@@ -36,9 +36,15 @@ interface NewLabOrderDialogProps {
   // pas sur le catalogue local si le réseau tombe.
   organizationId?: string;
   onSuccess?: (order: any) => void;
+  // Visite prénatale d'origine (maternité) : la demande y est rattachée et s'affiche sous la visite.
+  prenatalVisitId?: string;
+  // Bouton compact (ex. dans une ligne de visite) au lieu du gros bouton bleu.
+  triggerLabel?: string;
+  // Raccourci « tout cocher » pour un bilan type (ex. bilan prénatal) parmi le catalogue.
+  quickPick?: { label: string; match: (testName: string) => boolean };
 }
 
-export default function NewLabOrderDialog({ patients, defaultPatientId, appointmentId, organizationId, onSuccess }: NewLabOrderDialogProps) {
+export default function NewLabOrderDialog({ patients, defaultPatientId, appointmentId, organizationId, onSuccess, prenatalVisitId, triggerLabel, quickPick }: NewLabOrderDialogProps) {
   const [open, setOpen] = useState(false);
   const { submitting: loading, guard } = useSubmitGuard();
   const [patientId, setPatientId] = useState(defaultPatientId || "");
@@ -77,6 +83,10 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
   const selectedTests = useMemo(() => catalog.filter((t) => tests.includes(t.name)), [catalog, tests]);
   const totalPrice = selectedTests.reduce((sum, t) => sum + (t.totalPrice || 0), 0);
 
+  // Examens du catalogue correspondant au raccourci (ex. bilan prénatal) : un clic les coche tous.
+  const quickPickTests = useMemo(() => (quickPick ? catalog.filter((t) => quickPick.match(t.name)) : []), [catalog, quickPick]);
+  const applyQuickPick = () => setTests((prev) => [...new Set([...prev, ...quickPickTests.map((t) => t.name)])]);
+
   const toggleTest = (test: any) => {
     setTests((prev) => (prev.includes(test.name) ? prev.filter((n) => n !== test.name) : [...prev, test.name]));
   };
@@ -101,7 +111,7 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
     }
 
     try {
-      const payload = { patientId, tests, notes: notes || undefined, priority, appointmentId };
+      const payload = { patientId, tests, notes: notes || undefined, priority, appointmentId, prenatalVisitId };
       const patientLabel = patients.find((p) => p.id === patientId);
       // La clé voyage aussi dans la file hors-ligne : un rejeu ne crée pas une seconde demande.
       const res = await guard((idempotencyKey) =>
@@ -132,11 +142,18 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
-      <DialogTrigger render={<Button className="gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs" />}>
-        <PlusCircle className="h-4 w-4" />
-        Nouvelle demande d&apos;analyse
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto rounded-2xl">
+      {triggerLabel ? (
+        <DialogTrigger render={<Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-lg text-xs" />}>
+          <FlaskConical className="h-3.5 w-3.5" />
+          {triggerLabel}
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger render={<Button className="gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs" />}>
+          <PlusCircle className="h-4 w-4" />
+          Nouvelle demande d&apos;analyse
+        </DialogTrigger>
+      )}
+      <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto rounded-2xl p-4 sm:max-w-[560px] sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl text-blue-600 dark:text-blue-400">
             <FlaskConical className="h-5 w-5" />
@@ -162,8 +179,13 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
           )}
 
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <Label>Examens demandés *</Label>
+              {quickPick && quickPickTests.length > 0 && (
+                <Button type="button" size="sm" variant="outline" className="h-8 rounded-lg text-xs" onClick={applyQuickPick}>
+                  {quickPick.label} ({quickPickTests.length})
+                </Button>
+              )}
               {useOfflineCatalog && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
                   <WifiOff className="h-3 w-3" /> Catalogue hors-ligne (tarifs estimatifs)
@@ -176,7 +198,7 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
                 placeholder="Rechercher un examen du catalogue..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-8 rounded-xl"
+                className="pl-8 rounded-xl text-base sm:text-sm"
               />
             </div>
 

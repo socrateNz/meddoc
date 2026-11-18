@@ -35,7 +35,11 @@ function assertMaternityWriteRole(role: string) {
 const PREGNANCY_INCLUDE = {
   prenatalVisits: {
     orderBy: { visitDate: "desc" as const },
-    include: { recordedBy: { select: { firstName: true, lastName: true } } },
+    include: {
+      recordedBy: { select: { firstName: true, lastName: true } },
+      // Examens demandés lors de la visite (cf. LabOrder.prenatalVisitId).
+      labOrders: { select: { id: true, tests: true, status: true, createdAt: true }, orderBy: { createdAt: "asc" as const } },
+    },
   },
   delivery: {
     include: { newborns: true, recordedBy: { select: { firstName: true, lastName: true } } },
@@ -135,6 +139,14 @@ async function addPrenatalVisitOnce(data: {
   fundalHeightCm?: number;
   fetalHeartRateBpm?: number;
   notes?: string;
+  cpnNumber?: number;
+  edema?: boolean;
+  urineProtein?: string;
+  urineGlucose?: string;
+  fetalPresentation?: string;
+  fetalMovements?: boolean;
+  preventiveTreatments?: string[];
+  nextVisitDate?: string;
 }) {
   try {
     addPrenatalVisitSchema.parse(data);
@@ -161,6 +173,14 @@ async function addPrenatalVisitOnce(data: {
         fundalHeightCm: data.fundalHeightCm ?? null,
         fetalHeartRateBpm: data.fetalHeartRateBpm ?? null,
         notes: data.notes || null,
+        cpnNumber: data.cpnNumber ?? null,
+        edema: data.edema ?? null,
+        urineProtein: data.urineProtein || null,
+        urineGlucose: data.urineGlucose || null,
+        fetalPresentation: data.fetalPresentation || null,
+        fetalMovements: data.fetalMovements ?? null,
+        preventiveTreatments: data.preventiveTreatments ?? [],
+        nextVisitDate: data.nextVisitDate ? new Date(data.nextVisitDate) : null,
         recordedById: activeUser.id,
       },
     });

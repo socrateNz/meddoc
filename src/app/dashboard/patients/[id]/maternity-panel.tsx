@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +11,8 @@ import { updatePregnancyStatus } from "@/actions/maternity";
 import NewPregnancyDialog from "./new-pregnancy-dialog";
 import AddPrenatalVisitDialog from "./add-prenatal-visit-dialog";
 import RecordDeliveryDialog from "./record-delivery-dialog";
+import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
+import { FETAL_PRESENTATION_LABELS, PREVENTIVE_TREATMENT_LABELS, isPrenatalLabTest } from "@/lib/maternity-labels";
 import { toast } from "sonner";
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -25,19 +28,43 @@ const MODE_LABELS: Record<string, string> = {
   ASSISTED: "Voie basse assistée",
 };
 
+const LAB_STATUS_LABELS: Record<string, string> = {
+  PRESCRIBED: "Prescrit",
+  SAMPLE_COLLECTED: "Prélevé",
+  RECEIVED_AT_LAB: "Reçu au labo",
+  IN_ANALYSIS: "En analyse",
+  TO_VALIDATE: "À valider",
+  VALIDATED: "Résultats validés",
+  DELIVERED: "Résultats remis",
+  CANCELLED: "Annulé",
+};
+
+const PRENATAL_QUICK_PICK = { label: "Bilan prénatal", match: isPrenatalLabTest };
+
+// Tension élevée en grossesse (≥ 140/90) : à surveiller (pré-éclampsie).
+function isHighBloodPressure(visit: any) {
+  return (visit.bloodPressureSystolic ?? 0) >= 140 || (visit.bloodPressureDiastolic ?? 0) >= 90;
+}
+
 function formatDate(date: string | Date) {
   return new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
 }
 
 export default function MaternityPanel({
   patientId,
+  patient,
   pregnancies,
   canWrite,
+  canOrderLab = false,
   isDischarged,
 }: {
   patientId: string;
+  // Patiente (pour la demande d'examens depuis une visite).
+  patient?: any;
   pregnancies: any[];
   canWrite: boolean;
+  // Module Laboratoire actif et rôle clinique : bouton « Demander des examens » sur chaque visite.
+  canOrderLab?: boolean;
   isDischarged: boolean;
 }) {
   const router = useRouter();
@@ -91,10 +118,15 @@ export default function MaternityPanel({
                     </CardTitle>
                     <CardDescription className="mt-1">
                       DDR : {formatDate(pregnancy.lastMenstrualPeriod)} • DPA : {formatDate(pregnancy.expectedDueDate)}
+                      {isActive && pregnancy.prenatalVisits?.[0]?.nextVisitDate && (
+                        <span className="block font-medium text-pink-600 dark:text-pink-400">
+                          Prochain RDV : {formatDate(pregnancy.prenatalVisits[0].nextVisitDate)}
+                        </span>
+                      )}
                     </CardDescription>
                   </div>
                   {isActive && canWrite && !isDischarged && (
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -135,23 +167,68 @@ export default function MaternityPanel({
                         <Stethoscope className="h-4 w-4 text-pink-500" />
                         Visites prénatales ({pregnancy.prenatalVisits?.length || 0})
                       </h4>
-                      {isActive && canWrite && !isDischarged && <AddPrenatalVisitDialog pregnancyId={pregnancy.id} />}
+                      {isActive && canWrite && !isDischarged && (
+                        <AddPrenatalVisitDialog
+                          pregnancyId={pregnancy.id}
+                          nextCpnNumber={Math.max(pregnancy.prenatalVisits?.length || 0, ...(pregnancy.prenatalVisits || []).map((v: any) => v.cpnNumber || 0)) + 1}
+                        />
+                      )}
                     </div>
                     {(pregnancy.prenatalVisits?.length || 0) === 0 ? (
                       <p className="text-xs text-muted-foreground">Aucune visite enregistrée.</p>
                     ) : (
                       <ul className="space-y-1.5">
                         {pregnancy.prenatalVisits.map((visit: any) => (
-                          <li key={visit.id} className="text-xs p-2.5 bg-muted/40 rounded-lg border border-border/50">
-                            <span className="font-semibold">{formatDate(visit.visitDate)}</span>
-                            {visit.gestationalWeeks != null && <span> • {visit.gestationalWeeks} SA</span>}
-                            {visit.weightKg != null && <span> • {visit.weightKg} kg</span>}
-                            {(visit.bloodPressureSystolic != null || visit.bloodPressureDiastolic != null) && (
-                              <span> • TA {visit.bloodPressureSystolic ?? "—"}/{visit.bloodPressureDiastolic ?? "—"}</span>
+                          <li key={visit.id} className="space-y-1.5 text-xs p-2.5 bg-muted/40 rounded-lg border border-border/50">
+                            <p>
+                              <span className="font-semibold">{visit.cpnNumber ? `CPN ${visit.cpnNumber} — ` : ""}{formatDate(visit.visitDate)}</span>
+                              {visit.gestationalWeeks != null && <span> • {visit.gestationalWeeks} SA</span>}
+                              {visit.weightKg != null && <span> • {visit.weightKg} kg</span>}
+                              {(visit.bloodPressureSystolic != null || visit.bloodPressureDiastolic != null) && (
+                                <span className={isHighBloodPressure(visit) ? "font-semibold text-red-600" : ""}>
+                                  {" "}• TA {visit.bloodPressureSystolic ?? "—"}/{visit.bloodPressureDiastolic ?? "—"}
+                                </span>
+                              )}
+                              {visit.fundalHeightCm != null && <span> • HU {visit.fundalHeightCm} cm</span>}
+                              {visit.fetalHeartRateBpm != null && <span> • BCF {visit.fetalHeartRateBpm} bpm</span>}
+                              {visit.fetalPresentation && <span> • {FETAL_PRESENTATION_LABELS[visit.fetalPresentation] || visit.fetalPresentation}</span>}
+                              {visit.fetalMovements != null && <span> • MAF {visit.fetalMovements ? "perçus" : "non perçus"}</span>}
+                              {visit.edema != null && <span className={visit.edema ? "font-semibold text-amber-600" : ""}> • Œdèmes {visit.edema ? "oui" : "non"}</span>}
+                              {visit.urineProtein && <span className={visit.urineProtein.includes("+") ? "font-semibold text-red-600" : ""}> • Albumine {visit.urineProtein}</span>}
+                              {visit.urineGlucose && <span className={visit.urineGlucose.includes("+") ? "font-semibold text-amber-600" : ""}> • Sucre {visit.urineGlucose}</span>}
+                            </p>
+                            {visit.preventiveTreatments?.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {visit.preventiveTreatments.map((t: string) => (
+                                  <Badge key={t} variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-700 bg-emerald-500/5">
+                                    {PREVENTIVE_TREATMENT_LABELS[t] || t}
+                                  </Badge>
+                                ))}
+                              </div>
                             )}
-                            {visit.fundalHeightCm != null && <span> • HU {visit.fundalHeightCm} cm</span>}
-                            {visit.fetalHeartRateBpm != null && <span> • BCF {visit.fetalHeartRateBpm} bpm</span>}
-                            {visit.notes && <p className="text-muted-foreground mt-1 italic">{visit.notes}</p>}
+                            {visit.notes && <p className="text-muted-foreground italic">{visit.notes}</p>}
+                            {visit.labOrders?.length > 0 && (
+                              <div className="space-y-1">
+                                {visit.labOrders.map((o: any) => (
+                                  <Link key={o.id} href={`/dashboard/lab/${o.id}`} className="flex flex-wrap items-center gap-1.5 rounded-md bg-background/60 px-2 py-1.5 hover:bg-background">
+                                    <span className="font-medium text-blue-600 dark:text-blue-400">Examens :</span>
+                                    <span className="min-w-0 flex-1">{o.tests.join(", ")}</span>
+                                    <Badge variant="outline" className="text-[10px]">{LAB_STATUS_LABELS[o.status] || o.status}</Badge>
+                                  </Link>
+                                ))}
+                              </div>
+                            )}
+                            {canOrderLab && isActive && !isDischarged && patient && (
+                              <NewLabOrderDialog
+                                patients={[patient]}
+                                defaultPatientId={patientId}
+                                organizationId={patient.organizationId ?? undefined}
+                                prenatalVisitId={visit.id}
+                                triggerLabel={visit.labOrders?.length > 0 ? "Autres examens" : "Demander des examens"}
+                                quickPick={PRENATAL_QUICK_PICK}
+                                onSuccess={() => router.refresh()}
+                              />
+                            )}
                           </li>
                         ))}
                       </ul>

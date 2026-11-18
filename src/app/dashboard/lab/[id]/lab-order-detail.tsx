@@ -19,6 +19,7 @@ import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 import PaymentStatusBadge from "@/components/payment-status-badge";
 import { toast } from "sonner";
 import { labOrderReference, MAX_TUBE_LABELS } from "@/lib/lab-label";
+import { orderSamples, testsWithoutSample } from "@/lib/lab-rules";
 
 function formatFCFA(val: number) {
   return Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
@@ -63,6 +64,8 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
   const [sampleType, setSampleType] = useState("BLOOD");
   const [sampleQuantity, setSampleQuantity] = useState("");
   const [sampleCondition, setSampleCondition] = useState("");
+  // Examens décochés pour le prochain tube (ils iront dans un autre prélèvement).
+  const [excludedTests, setExcludedTests] = useState<string[]>([]);
   const [savingSample, setSavingSample] = useState(false);
   const [labelCopies, setLabelCopies] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -75,14 +78,29 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
 
   const refresh = () => router.refresh();
 
+  const samples = orderSamples(order);
+  const remainingTests = testsWithoutSample(order);
+  const nextTubeTests = remainingTests.filter((t) => !excludedTests.includes(t));
+  const canCollect = canWrite && remainingTests.length > 0 && !["CANCELLED", "VALIDATED", "DELIVERED"].includes(order.status);
+  const pendingReception = samples.filter((s) => !s.receivedAt && s.id !== "legacy");
+  const legacyAwaitingReception = samples.length === 1 && samples[0].id === "legacy" && order.status === "SAMPLE_COLLECTED";
+
   const handleCollectSample = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingSample(true);
     try {
-      const res = await collectSample({ labOrderId: order.id, sampleType: sampleType as any, sampleQuantity: sampleQuantity || undefined, sampleCondition: sampleCondition || undefined });
+      if (nextTubeTests.length === 0) {
+        toast.error("Cochez au moins un examen pour ce prélèvement.");
+        return;
+      }
+      const res = await collectSample({ labOrderId: order.id, sampleType: sampleType as any, tests: nextTubeTests, sampleQuantity: sampleQuantity || undefined, sampleCondition: sampleCondition || undefined });
       if (res.success) {
-        toast.success("Prélèvement enregistré.");
+        const left = remainingTests.length - nextTubeTests.length;
+        toast.success(left > 0 ? `Prélèvement enregistré. ${left} examen(s) reste(nt) à prélever.` : "Prélèvement enregistré.");
         setOrder((prev: any) => ({ ...prev, ...res.data }));
+        setExcludedTests([]);
+        setSampleQuantity("");
+        setSampleCondition("");
         refresh();
       } else {
         toast.error(res.error || "Erreur lors de l'enregistrement du prélèvement.");
@@ -92,13 +110,13 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
     }
   };
 
-  const handleReceive = async () => {
+  const handleReceive = async (sampleId?: string) => {
     setBusy(true);
     try {
-      const res = await receiveAtLab(order.id);
+      const res = await receiveAtLab(order.id, sampleId);
       if (res.success) {
-        toast.success("Échantillon reçu au laboratoire.");
-        setOrder((prev: any) => ({ ...prev, status: "RECEIVED_AT_LAB" }));
+        toast.success(sampleId ? "Tube reçu au laboratoire." : "Échantillon(s) reçu(s) au laboratoire.");
+        setOrder((prev: any) => ({ ...prev, ...res.data }));
       } else {
         toast.error(res.error || "Erreur.");
       }
@@ -224,6 +242,15 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
               </Link>
             </p>
           )}
+          {order.prenatalVisit && (
+            <p>
+              <span className="text-muted-foreground">Visite prénatale d&apos;origine :</span>{" "}
+              <Link href={`/dashboard/patients/${order.patientId}`} className="text-blue-600 dark:text-blue-400 hover:underline">
+                {order.prenatalVisit.cpnNumber ? `CPN ${order.prenatalVisit.cpnNumber} • ` : ""}{formatDateTime(order.prenatalVisit.visitDate)}
+                {order.prenatalVisit.gestationalWeeks != null ? ` • ${order.prenatalVisit.gestationalWeeks} SA` : ""}
+              </Link>
+            </p>
+          )}
           <div className="flex flex-wrap gap-1.5 pt-1">
             <span className="text-muted-foreground text-sm">Examens demandés :</span>
             {order.tests.map((t: string) => <Badge key={t} variant="secondary" className="text-[11px]">{t}</Badge>)}
@@ -261,15 +288,112 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
         </Card>
       )}
 
-      {/* Prélèvement */}
+      {/* Prélèvements : un tube commun ou un tube par examen */}
       <Card className="rounded-2xl">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2"><PackageCheck className="h-4 w-4" /> Prélèvement</CardTitle>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <PackageCheck className="h-4 w-4" /> Prélèvements
+            {samples.length > 0 && <Badge variant="secondary" className="text-[11px]">{samples.length} tube{samples.length > 1 ? "s" : ""}</Badge>}
+          </CardTitle>
+          {canWrite && pendingReception.length > 1 && (
+            <Button size="sm" variant="outline" className="gap-1.5 rounded-lg" onClick={() => handleReceive()} disabled={busy}>
+              <Truck className="h-3.5 w-3.5" />
+              Tout marquer reçu
+            </Button>
+          )}
         </CardHeader>
-        <CardContent>
-          {order.status === "PRESCRIBED" ? (
-            canWrite ? (
-              <form onSubmit={handleCollectSample} className="grid gap-3 sm:grid-cols-4 items-end">
+        <CardContent className="space-y-4">
+          {samples.length === 0 && !canCollect && <p className="text-sm text-muted-foreground">Prélèvement pas encore enregistré.</p>}
+
+          {samples.map((sample, index) => (
+            <div key={sample.id} className="space-y-2 rounded-xl border p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold">
+                  Tube {index + 1} — {SAMPLE_TYPE_OPTIONS.find((o) => o.value === sample.sampleType)?.label || sample.sampleType}
+                </p>
+                {sample.receivedAt ? (
+                  <Badge variant="outline" className="gap-1 text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                    <CheckCircle2 className="h-3 w-3" /> Reçu au laboratoire
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">En attente de réception</Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {sample.tests.map((t) => <Badge key={t} variant="secondary" className="text-[11px]">{t}</Badge>)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Prélevé le {formatDateTime(sample.collectedAt)}{sample.collectedByName ? ` par ${sample.collectedByName}` : ""}
+                {sample.quantity ? ` • ${sample.quantity}` : ""}
+                {sample.condition ? ` • ${sample.condition}` : ""}
+              </p>
+              {order.status !== "CANCELLED" && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <PDFDownloadButton
+                    documentName={`etiquette_${labOrderReference(order.id)}_tube${index + 1}`}
+                    type="labtubelabel"
+                    data={{ order: { ...order, tests: sample.tests, sampleType: sample.sampleType, sampleCollectedAt: sample.collectedAt }, copies: labelCopies }}
+                    buttonText={`Étiquette du tube ${index + 1}`}
+                    className="h-9 rounded-lg"
+                  />
+                  {canWrite && !sample.receivedAt && sample.id !== "legacy" && (
+                    <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-lg" onClick={() => handleReceive(sample.id)} disabled={busy}>
+                      <Truck className="h-3.5 w-3.5" />
+                      Marquer reçu
+                    </Button>
+                  )}
+                  {canWrite && legacyAwaitingReception && (
+                    <Button size="sm" variant="outline" className="h-9 gap-1.5 rounded-lg" onClick={() => handleReceive()} disabled={busy}>
+                      <Truck className="h-3.5 w-3.5" />
+                      Marquer reçu au laboratoire
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {samples.length > 0 && order.status !== "CANCELLED" && (
+            <div className="flex items-center gap-2">
+              <Label htmlFor="label-copies" className="text-xs text-muted-foreground">Copies par étiquette</Label>
+              <Input
+                id="label-copies"
+                type="number"
+                min={1}
+                max={MAX_TUBE_LABELS}
+                value={labelCopies}
+                onChange={(e) => setLabelCopies(Math.min(MAX_TUBE_LABELS, Math.max(1, Math.floor(Number(e.target.value)) || 1)))}
+                className="h-9 w-20 rounded-lg text-base sm:text-sm"
+              />
+            </div>
+          )}
+
+          {canCollect && (
+            <form onSubmit={handleCollectSample} className="space-y-3 rounded-xl border border-dashed p-3">
+              <p className="text-sm font-semibold">{samples.length === 0 ? "Enregistrer le prélèvement" : "Prélèvement suivant"}</p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Examens couverts par ce tube</Label>
+                <div className="flex flex-wrap gap-2">
+                  {remainingTests.map((t) => {
+                    const checked = !excludedTests.includes(t);
+                    return (
+                      <label key={t} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${checked ? "border-blue-500/40 bg-blue-500/5" : "opacity-60"}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setExcludedTests((prev) => (checked ? [...prev, t] : prev.filter((x) => x !== t)))}
+                          className="h-4 w-4 accent-blue-600"
+                        />
+                        {t}
+                      </label>
+                    );
+                  })}
+                </div>
+                {remainingTests.length > 1 && (
+                  <p className="text-[11px] text-muted-foreground">Décochez les examens qui seront prélevés dans un autre tube (ex. urines, selles).</p>
+                )}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-4 items-end">
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs">Type d&apos;échantillon</Label>
                   <Select items={SAMPLE_TYPE_OPTIONS} value={sampleType} onValueChange={(v) => v && setSampleType(v)}>
@@ -281,58 +405,18 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">Quantité</Label>
-                  <Input value={sampleQuantity} onChange={(e) => setSampleQuantity(e.target.value)} placeholder="ex: 5 mL" className="rounded-xl" />
+                  <Input value={sampleQuantity} onChange={(e) => setSampleQuantity(e.target.value)} placeholder="ex: 5 mL" className="rounded-xl text-base sm:text-sm" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">État</Label>
-                  <Input value={sampleCondition} onChange={(e) => setSampleCondition(e.target.value)} placeholder="ex: Conforme" className="rounded-xl" />
+                  <Input value={sampleCondition} onChange={(e) => setSampleCondition(e.target.value)} placeholder="ex: Conforme" className="rounded-xl text-base sm:text-sm" />
                 </div>
-                <div className="sm:col-span-4">
-                  <Button type="submit" disabled={savingSample} className="gap-2 rounded-xl">
-                    {savingSample ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
-                    Enregistrer le prélèvement
-                  </Button>
-                </div>
-              </form>
-            ) : (
-              <p className="text-sm text-muted-foreground">Prélèvement pas encore enregistré.</p>
-            )
-          ) : (
-            <div className="text-sm space-y-1">
-              <p><span className="text-muted-foreground">Type :</span> {SAMPLE_TYPE_OPTIONS.find((o) => o.value === order.sampleType)?.label || order.sampleType}</p>
-              <p><span className="text-muted-foreground">Prélevé le :</span> {order.sampleCollectedAt ? formatDateTime(order.sampleCollectedAt) : "-"} par {order.sampleCollectedBy?.firstName} {order.sampleCollectedBy?.lastName}</p>
-              {order.sampleQuantity && <p><span className="text-muted-foreground">Quantité :</span> {order.sampleQuantity}</p>}
-              {order.sampleCondition && <p><span className="text-muted-foreground">État :</span> {order.sampleCondition}</p>}
-              {order.status !== "CANCELLED" && (
-                <div className="flex flex-wrap items-end gap-2 pt-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="label-copies" className="text-xs">Étiquettes (une par tube)</Label>
-                    <Input
-                      id="label-copies"
-                      type="number"
-                      min={1}
-                      max={MAX_TUBE_LABELS}
-                      value={labelCopies}
-                      onChange={(e) => setLabelCopies(Math.min(MAX_TUBE_LABELS, Math.max(1, Math.floor(Number(e.target.value)) || 1)))}
-                      className="h-8 w-20 rounded-lg"
-                    />
-                  </div>
-                  <PDFDownloadButton
-                    documentName={`etiquette_${labOrderReference(order.id)}`}
-                    type="labtubelabel"
-                    data={{ order, copies: labelCopies }}
-                    buttonText="Imprimer l'étiquette du tube"
-                    className="h-8 rounded-lg"
-                  />
-                </div>
-              )}
-              {order.status === "SAMPLE_COLLECTED" && canWrite && (
-                <Button size="sm" variant="outline" className="gap-1.5 rounded-lg mt-2" onClick={handleReceive} disabled={busy}>
-                  <Truck className="h-3.5 w-3.5" />
-                  Marquer reçu au laboratoire
-                </Button>
-              )}
-            </div>
+              </div>
+              <Button type="submit" disabled={savingSample || nextTubeTests.length === 0} className="w-full gap-2 rounded-xl sm:w-auto">
+                {savingSample ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
+                Enregistrer ce prélèvement ({nextTubeTests.length} examen{nextTubeTests.length > 1 ? "s" : ""})
+              </Button>
+            </form>
           )}
         </CardContent>
       </Card>

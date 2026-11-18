@@ -824,7 +824,7 @@ export default function PatientDetailView({
         {/* Tab Content: Maternité */}
         {showMaternityTab && (
           <TabsContent value="maternity" className="pt-6">
-            <MaternityPanel patientId={patient.id} pregnancies={pregnancies} canWrite={canWrite} isDischarged={isDischarged} />
+            <MaternityPanel patientId={patient.id} patient={patient} pregnancies={pregnancies} canWrite={canWrite} canOrderLab={hasModule("LABORATOIRE") && canWrite} isDischarged={isDischarged} />
             <PaginationNav
               page={pregnanciesPage.page}
               pageSize={pregnanciesPage.pageSize}

@@ -8,7 +8,8 @@ import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { resolvePage } from "@/lib/pagination";
-import { computeLabOrderStatus, isCriticalValue } from "@/lib/lab-rules";
+import { computeLabOrderStatus, isCriticalValue, orderSamples, testsWithoutSample } from "@/lib/lab-rules";
+import { randomUUID } from "crypto";
 import {
   createLabOrderSchema,
   updateLabOrderStatusSchema,
@@ -131,13 +132,16 @@ async function createLabOrderOnce(data: {
   tests: string[];
   notes?: string;
   priority?: "ROUTINE" | "URGENT";
+  prenatalVisitId?: string;
 }) {
   try {
     createLabOrderSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabOrderRole(activeUser.role);
+    // Sage-femme / infirmier(e) (CAREGIVER) : seulement le bilan d'une consultation prénatale,
+    // comme dans le carnet de CPN. Toute autre demande reste réservée au médecin/coordinateur.
+    if (!(data.prenatalVisitId && activeUser.role === "CAREGIVER")) assertLabOrderRole(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -147,6 +151,12 @@ async function createLabOrderOnce(data: {
       select: { organizationId: true },
     });
     const organizationId = patient?.organizationId || null;
+
+    // Visite prénatale d'origine : doit appartenir à une grossesse de CETTE patiente.
+    if (data.prenatalVisitId) {
+      const visit = await prisma.prenatalVisit.findUnique({ where: { id: data.prenatalVisitId }, select: { pregnancy: { select: { patientId: true } } } });
+      if (!visit || visit.pregnancy.patientId !== data.patientId) throw new Error("Visite prénatale introuvable pour cette patiente.");
+    }
 
     // Résout le catalogue pour chaque examen avant création : le prix (base + produits
     // consommés) et la facturation en dépendent.
@@ -185,6 +195,7 @@ async function createLabOrderOnce(data: {
         patientId: data.patientId,
         medicalRecordId: data.medicalRecordId || null,
         appointmentId: data.appointmentId || null,
+        prenatalVisitId: data.prenatalVisitId || null,
         organizationId,
         tests: data.tests,
         notes: data.notes || null,
@@ -372,6 +383,7 @@ export async function getLabOrder(labOrderId: string) {
         },
         medicalRecord: { select: { title: true, diagnosisLabel: true, description: true } },
         appointment: { select: { id: true, title: true, scheduledAt: true, type: true } },
+        prenatalVisit: { select: { id: true, visitDate: true, cpnNumber: true, gestationalWeeks: true } },
         organization: { select: { name: true, logoUrl: true } },
       },
     });
@@ -386,9 +398,13 @@ export async function getLabOrder(labOrderId: string) {
   }
 }
 
+// Un prélèvement (tube) couvre un ou plusieurs examens de la demande : on peut faire un tube
+// commun ou un tube par examen. Sans `tests`, le tube couvre tous les examens encore sans
+// prélèvement. La demande passe à « Échantillon prélevé » dès le premier tube.
 export async function collectSample(data: {
   labOrderId: string;
   sampleType: "BLOOD" | "URINE" | "STOOL" | "SALIVA" | "BIOPSY" | "CSF" | "OTHER";
+  tests?: string[];
   sampleQuantity?: string;
   sampleCondition?: string;
 }) {
@@ -399,32 +415,71 @@ export async function collectSample(data: {
     assertUserModule(activeUser, "LABORATOIRE");
     assertLabOperateRole(activeUser.role);
 
-    const order = await prisma.labOrder.findUnique({ where: { id: data.labOrderId } });
+    const order = await prisma.labOrder.findUnique({ where: { id: data.labOrderId }, include: { sampleCollectedBy: { select: { firstName: true, lastName: true } } } });
     if (!order) throw new Error("Demande d'analyse introuvable.");
-    if (order.status !== "PRESCRIBED") throw new Error("Le prélèvement a déjà été enregistré pour cette demande.");
+    if (["CANCELLED", "VALIDATED", "DELIVERED"].includes(order.status)) throw new Error("Cette demande n'accepte plus de prélèvement.");
 
     const hasAccess = await verifyPatientAccess(order.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
+
+    const remaining = testsWithoutSample(order);
+    if (remaining.length === 0) throw new Error("Tous les examens de cette demande ont déjà un prélèvement.");
+    const tests = data.tests && data.tests.length > 0 ? [...new Set(data.tests)] : remaining;
+    const invalid = tests.filter((t) => !remaining.includes(t));
+    if (invalid.length > 0) throw new Error(`Déjà prélevé ou absent de la demande : ${invalid.join(", ")}.`);
 
     // Le prélèvement n'est plus gaté par le règlement (vente à crédit possible, comme en
     // pharmacie) et ne décompte plus le stock lui-même — cf. dispensePendingInvoice dans
     // finance.ts, qui décompte les produits consommés (LabOrder.testDetails) au moment où le
     // patient les récupère au comptoir pharmacie, exactement comme pour un médicament.
+    const now = new Date();
+    // Une ancienne demande prélevée une seule fois garde son tube, repris dans la liste.
+    const existing = order.samples.length > 0 ? order.samples : orderSamples(order).map((s) => ({
+      id: randomUUID(),
+      sampleType: s.sampleType,
+      tests: s.tests,
+      quantity: s.quantity,
+      condition: s.condition,
+      collectedAt: new Date(s.collectedAt),
+      collectedById: order.sampleCollectedById || activeUser.id,
+      collectedByName: s.collectedByName,
+      receivedAt: s.receivedAt ? new Date(s.receivedAt) : null,
+    }));
+    const sample = {
+      id: randomUUID(),
+      sampleType: data.sampleType,
+      tests,
+      quantity: data.sampleQuantity || null,
+      condition: data.sampleCondition || null,
+      collectedAt: now,
+      collectedById: activeUser.id,
+      collectedByName: [activeUser.firstName, activeUser.lastName].filter(Boolean).join(" ") || null,
+      receivedAt: null,
+    };
+    const first = existing.length === 0;
+
     const updated = await prisma.labOrder.update({
       where: { id: data.labOrderId },
       data: {
-        status: "SAMPLE_COLLECTED",
-        sampleType: data.sampleType,
-        sampleQuantity: data.sampleQuantity || null,
-        sampleCondition: data.sampleCondition || null,
-        sampleCollectedAt: new Date(),
-        sampleCollectedById: activeUser.id,
+        samples: [...existing, sample],
+        ...(order.status === "PRESCRIBED" ? { status: "SAMPLE_COLLECTED" } : {}),
+        // Champs historiques = premier prélèvement (HL7, compte-rendu).
+        ...(first
+          ? {
+              sampleType: data.sampleType,
+              sampleQuantity: data.sampleQuantity || null,
+              sampleCondition: data.sampleCondition || null,
+              sampleCollectedAt: now,
+              sampleCollectedById: activeUser.id,
+            }
+          : {}),
       },
     });
 
-    await logAuditAction(activeUser.id, "COLLECT_LAB_SAMPLE", "LabOrder", data.labOrderId, { sampleType: data.sampleType });
+    await logAuditAction(activeUser.id, "COLLECT_LAB_SAMPLE", "LabOrder", data.labOrderId, { sampleType: data.sampleType, tests });
 
     revalidatePath("/dashboard/lab");
+    revalidatePath(`/dashboard/lab/${data.labOrderId}`);
 
     return { success: true, data: updated };
   } catch (error: any) {
@@ -432,7 +487,9 @@ export async function collectSample(data: {
   }
 }
 
-export async function receiveAtLab(labOrderId: string) {
+// Réception au laboratoire d'un tube (sampleId) ou de tous les tubes en attente. La demande passe
+// à « Reçu au laboratoire » quand tous ses examens sont prélevés et tous les tubes reçus.
+export async function receiveAtLab(labOrderId: string, sampleId?: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
@@ -441,13 +498,32 @@ export async function receiveAtLab(labOrderId: string) {
 
     const order = await prisma.labOrder.findUnique({ where: { id: labOrderId } });
     if (!order) throw new Error("Demande d'analyse introuvable.");
-    if (order.status !== "SAMPLE_COLLECTED") throw new Error("Cette demande n'est pas au stade du prélèvement.");
+    if (["PRESCRIBED", "CANCELLED", "DELIVERED"].includes(order.status) && order.samples.length === 0) {
+      throw new Error("Cette demande n'est pas au stade du prélèvement.");
+    }
 
     const hasAccess = await verifyPatientAccess(order.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
 
-    const updated = await prisma.labOrder.update({ where: { id: labOrderId }, data: { status: "RECEIVED_AT_LAB" } });
+    const now = new Date();
+    let samples = order.samples;
+    if (samples.length > 0) {
+      if (sampleId && !samples.some((s) => s.id === sampleId)) throw new Error("Prélèvement introuvable.");
+      samples = samples.map((s) => (!s.receivedAt && (!sampleId || s.id === sampleId) ? { ...s, receivedAt: now } : s));
+    } else if (order.status !== "SAMPLE_COLLECTED") {
+      throw new Error("Cette demande n'est pas au stade du prélèvement.");
+    }
+
+    const allReceived = samples.every((s) => s.receivedAt);
+    const allCollected = testsWithoutSample({ ...order, samples }).length === 0;
+    const advance = order.status === "SAMPLE_COLLECTED" && allReceived && allCollected;
+
+    const updated = await prisma.labOrder.update({
+      where: { id: labOrderId },
+      data: { ...(order.samples.length > 0 ? { samples } : {}), ...(advance ? { status: "RECEIVED_AT_LAB" } : {}) },
+    });
     revalidatePath("/dashboard/lab");
+    revalidatePath(`/dashboard/lab/${labOrderId}`);
     return { success: true, data: updated };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la réception au laboratoire.") };

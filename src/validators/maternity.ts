@@ -9,6 +9,10 @@ export const createPregnancySchema = z.object({
   riskFactors: z.array(z.string()).optional(),
 });
 
+// Bandelette urinaire et traitements préventifs de la CPN (cf. PrenatalVisit dans schema.prisma).
+export const URINE_DIPSTICK = ["NEG", "TRACES", "+", "++", "+++"] as const;
+export const PREVENTIVE_TREATMENTS = ["IPTP_SP", "TT_VACCINE", "IRON_FOLIC", "DEWORMING", "LLIN"] as const;
+
 export const addPrenatalVisitSchema = z.object({
   pregnancyId: z.string().min(1),
   visitDate: z.string().optional(),
@@ -19,6 +23,14 @@ export const addPrenatalVisitSchema = z.object({
   fundalHeightCm: z.number().min(0).optional(),
   fetalHeartRateBpm: z.number().min(0).optional(),
   notes: z.string().optional(),
+  cpnNumber: z.number().int().min(1).max(20).optional(),
+  edema: z.boolean().optional(),
+  urineProtein: z.enum(URINE_DIPSTICK).optional(),
+  urineGlucose: z.enum(URINE_DIPSTICK).optional(),
+  fetalPresentation: z.enum(["CEPHALIC", "BREECH", "TRANSVERSE"]).optional(),
+  fetalMovements: z.boolean().optional(),
+  preventiveTreatments: z.array(z.enum(PREVENTIVE_TREATMENTS)).optional(),
+  nextVisitDate: z.string().optional(),
 });
 
 export const recordDeliverySchema = z.object({

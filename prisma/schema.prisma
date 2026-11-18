@@ -517,6 +517,15 @@ model LabOrder {
   sampleCollectedBy   User?     @relation("LabOrderSampleCollectedBy", fields: [sampleCollectedById], references: [id])
   sampleQuantity      String?
   sampleCondition     String?
+  // Prélèvements (tubes) de la demande : chacun couvre un ou plusieurs examens de `tests`. Une
+  // demande peut donc avoir un tube par examen ou un tube commun. Les champs sample* ci-dessus
+  // reprennent le PREMIER prélèvement (compatibilité : HL7, compte-rendu, anciennes demandes
+  // dont `samples` est vide = un seul prélèvement couvrant tous les examens).
+  samples LabSample[]
+
+  // Visite prénatale d'origine (maternité), comme appointmentId pour une consultation.
+  prenatalVisitId String?        @db.ObjectId
+  prenatalVisit   PrenatalVisit? @relation(fields: [prenatalVisitId], references: [id])
 
   results LabResult[]
 
@@ -529,6 +538,20 @@ model LabOrder {
   @@index([medicalRecordId])
   @@index([orderedById])
   @@index([pendingInvoiceId])
+  @@index([prenatalVisitId])
+}
+
+// Un prélèvement (tube) d'une demande d'analyse — cf. LabOrder.samples.
+type LabSample {
+  id              String
+  sampleType      String // BLOOD, URINE, STOOL, SALIVA, BIOPSY, CSF, OTHER
+  tests           String[] // examens de la demande couverts par ce tube
+  quantity        String?
+  condition       String?
+  collectedAt     DateTime
+  collectedById   String    @db.ObjectId
+  collectedByName String?
+  receivedAt      DateTime?
 }
 
 model LabResult {
@@ -925,6 +948,20 @@ model PrenatalVisit {
   fundalHeightCm         Float? // hauteur utérine
   fetalHeartRateBpm      Int? // BCF
   notes                  String?
+
+  // Consultation prénatale (CPN) — éléments du carnet de la femme enceinte.
+  cpnNumber           Int? // CPN 1, 2, 3...
+  edema               Boolean? // œdèmes
+  urineProtein        String? // bandelette : NEG, TRACES, +, ++, +++
+  urineGlucose        String? // bandelette : NEG, TRACES, +, ++, +++
+  fetalPresentation   String? // CEPHALIC, BREECH, TRANSVERSE
+  fetalMovements      Boolean? // mouvements actifs fœtaux perçus
+  // Traitements préventifs donnés à cette visite : IPTP_SP (TPI/SP), TT_VACCINE (VAT),
+  // IRON_FOLIC (fer + acide folique), DEWORMING (déparasitage), LLIN (moustiquaire imprégnée).
+  preventiveTreatments String[] @default([])
+  nextVisitDate       DateTime?
+
+  labOrders LabOrder[]
 
   recordedById String @db.ObjectId
   recordedBy   User   @relation("PrenatalVisitRecordedBy", fields: [recordedById], references: [id])

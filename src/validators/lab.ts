@@ -7,6 +7,7 @@ export const createLabOrderSchema = z.object({
   tests: z.array(z.string().min(1)).min(1, "Au moins une analyse requise"),
   notes: z.string().optional(),
   priority: z.enum(["ROUTINE", "URGENT"]).optional(),
+  prenatalVisitId: z.string().optional(),
 });
 
 export const updateLabOrderStatusSchema = z.object({
@@ -17,6 +18,7 @@ export const updateLabOrderStatusSchema = z.object({
 export const collectSampleSchema = z.object({
   labOrderId: z.string().min(1),
   sampleType: z.enum(["BLOOD", "URINE", "STOOL", "SALIVA", "BIOPSY", "CSF", "OTHER"]),
+  tests: z.array(z.string().min(1)).optional(),
   sampleQuantity: z.string().optional(),
   sampleCondition: z.string().optional(),
 });

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import NewLabOrderDialog from "./new-lab-order-dialog";
 import PaymentStatusBadge from "@/components/payment-status-badge";
+import { testsWithoutSample } from "@/lib/lab-rules";
 
 function formatDateTime(date: string | Date) {
   return new Intl.DateTimeFormat("fr-FR", {
@@ -335,6 +336,11 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
                                   <Zap className="h-3 w-3" /> URGENT
                                 </span>
                               )}
+                              {order.status !== "PRESCRIBED" && order.status !== "CANCELLED" && testsWithoutSample(order).length > 0 && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded-md bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[10px] font-bold">
+                                  Prélèvement partiel
+                                </span>
+                              )}
                               {hasCritical && (
                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-red-500/20 text-red-700 dark:text-red-300 border border-red-500/40 text-[10px] font-bold animate-pulse">
                                   <AlertTriangle className="h-3 w-3" /> CRITIQUE
@@ -439,6 +445,7 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
                     <div className="flex items-center gap-3 shrink-0">
                       <Badge variant="outline" className={statusInfo.className}>
                         {statusInfo.label}
+                        {order.status !== "PRESCRIBED" && order.status !== "CANCELLED" && testsWithoutSample(order).length > 0 ? " (partiel)" : ""}
                       </Badge>
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </div>
