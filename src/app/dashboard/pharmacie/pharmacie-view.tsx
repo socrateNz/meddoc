@@ -33,7 +33,7 @@ import {
 import { EditInvoiceClientDialog } from "../caisse/edit-invoice-client-dialog";
 import PharmacyDialog from "@/app/dashboard/finance/pharmacy-dialog";
 import StockPurchaseDialog from "@/app/dashboard/finance/stock-purchase-dialog";
-import ImportPharmacyCsvDialog from "@/app/dashboard/finance/import-pharmacy-csv-dialog";
+import ImportPharmacyCsvDialog, { ExportPharmacyCsvButton } from "@/app/dashboard/finance/import-pharmacy-csv-dialog";
 import InventoryPanel from "@/app/dashboard/finance/inventory-panel";
 import PurchaseHistoryPanel from "@/app/dashboard/finance/purchase-history-panel";
 import SaleBlockDialog from "@/app/dashboard/finance/sale-block-dialog";
@@ -274,11 +274,12 @@ export default function PharmacieView({
             </TabsTrigger>
           </TabsList>
 
-          {activeTab === "stock" && canWrite && (
-            <div className="flex gap-2">
-              <StockPurchaseDialog pharmacyItems={pharmacyItems} organizationId={organizationId} openRegisters={openRegisters} />
-              <ImportPharmacyCsvDialog organizationId={organizationId} />
-              <PharmacyDialog organizationId={organizationId} />
+          {activeTab === "stock" && (
+            <div className="flex flex-wrap gap-2">
+              {canWrite && <StockPurchaseDialog pharmacyItems={pharmacyItems} organizationId={organizationId} openRegisters={openRegisters} />}
+              <ExportPharmacyCsvButton pharmacyItems={pharmacyItems} />
+              {canWrite && <ImportPharmacyCsvDialog organizationId={organizationId} />}
+              {canWrite && <PharmacyDialog organizationId={organizationId} />}
             </div>
           )}
         </div>

@@ -16,12 +16,24 @@ const TEMPLATE_HEADERS = [
   "Prix d'achat (FCFA)",
   "Prix de vente (FCFA)",
   "Seuil d'alerte",
-  "Stock initial",
+  "Quantite en stock",
   "Numero de lot",
   "Date de peremption (AAAA-MM-JJ)",
   "Fournisseur",
   "Emplacement",
 ];
+
+// Colonne ajoutée par l'export du stock (vide dans le modèle) : relie la ligne au produit existant,
+// pour que la réimporter le MET À JOUR au lieu d'en créer un doublon. Préfixe « MD- » : sans lui,
+// Excel convertit certains identifiants (ex. « 65e12… », que des chiffres et un « e ») en nombre.
+const ID_HEADER = "ID MedDoc (ne pas modifier)";
+const ID_PREFIX = "MD-";
+
+const CATEGORY_EXPORT_LABELS: Record<string, string> = {
+  MEDICATION: "Medicament",
+  CONSUMABLE: "Consommable",
+  EQUIPMENT: "Materiel",
+};
 
 const TEMPLATE_ROWS = [
   ["Paracetamol", "500", "mg", "Medicament", "350", "500", "20", "100", "LOT-2026-01", "2027-06-30", "Labo Pharmacie Centrale", "Rayon A1"],
@@ -44,19 +56,24 @@ function classifyCategory(raw: string): { category: "MEDICATION" | "CONSUMABLE" 
   if (!key) return { category: "MEDICATION" };
   if (key.includes("consom") || key.includes("consum")) return { category: "CONSUMABLE" };
   if (key.includes("materi") || key.includes("equip")) return { category: "EQUIPMENT" };
+  // « Médicament » est la catégorie elle-même, pas une forme galénique : ne rien ajouter au dosage
+  // (sinon l'export puis la réimport du stock ajouterait « , Medicament » au dosage à chaque fois).
+  if (key.includes("medic")) return { category: "MEDICATION" };
   const form = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
   return { category: "MEDICATION", form };
 }
 
 interface ParsedRow {
   line: number;
+  id?: string;
   name: string;
   dosage?: string;
   category: "MEDICATION" | "CONSUMABLE" | "EQUIPMENT";
   reorderLevel: number;
   unitPrice: number;
   purchasePrice?: number;
-  stockQuantity: number;
+  // undefined = stock inchangé (ligne de mise à jour dont la quantité est laissée vide).
+  stockQuantity?: number;
   batchNumber?: string;
   expiryDate?: string;
   supplier?: string;
@@ -166,23 +183,86 @@ function parseDateFlexible(raw: string): string | undefined | null {
   return null;
 }
 
-function downloadTemplate() {
+function downloadCsv(table: string[][], fileName: string) {
   // Point-virgule : correspond à ce qu'Excel produit par défaut en locale française (le
   // séparateur le plus couramment rencontré en pratique) — le parseur détecte de toute façon
   // automatiquement le délimiteur réel du fichier importé, virgule ou point-virgule.
-  const lines = [TEMPLATE_HEADERS, ...TEMPLATE_ROWS].map((row) =>
-    row.map((cell) => (cell.includes(";") || cell.includes('"') ? `"${cell.replace(/"/g, '""')}"` : cell)).join(";")
+  const lines = table.map((row) =>
+    row.map((cell) => (/[;"\r\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell)).join(";")
   );
   // BOM UTF-8 en tête : Excel affiche correctement les accents à l'ouverture sans lui.
   const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "modele_import_produits_pharmacie.csv";
+  link.download = fileName;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+function downloadTemplate() {
+  downloadCsv([[...TEMPLATE_HEADERS, ID_HEADER], ...TEMPLATE_ROWS.map((row) => [...row, ""])], "modele_import_produits_pharmacie.csv");
+}
+
+function isoDay(value: unknown): string {
+  if (!value) return "";
+  const date = new Date(value as string);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+// Export du stock au format exact du modèle d'import, plus l'ID MedDoc : on modifie les
+// quantités (ou prix, seuils...) dans Excel puis on réimporte le fichier pour mettre à jour.
+// Le dosage stocké (« 500mg, Comprimé ») part tel quel dans « Dosage », « Unite » restant vide,
+// pour être relu à l'identique. Le prix d'achat est laissé vide : il est ignoré en mise à jour.
+interface ExportablePharmacyItem {
+  id: string;
+  name?: string | null;
+  dosage?: string | null;
+  category?: string | null;
+  unitPrice?: number | null;
+  reorderLevel?: number | null;
+  stockQuantity?: number | null;
+  batchNumber?: string | null;
+  expiryDate?: string | Date | null;
+  supplier?: string | null;
+  location?: string | null;
+}
+
+export function exportPharmacyItemsCsv(items: ExportablePharmacyItem[]) {
+  const rows = items.map((item) => [
+    item.name || "",
+    item.dosage || "",
+    "",
+    CATEGORY_EXPORT_LABELS[item.category ?? ""] || "Medicament",
+    "",
+    String(item.unitPrice ?? 0),
+    String(item.reorderLevel ?? 0),
+    String(item.stockQuantity ?? 0),
+    item.batchNumber || "",
+    isoDay(item.expiryDate),
+    item.supplier || "",
+    item.location || "",
+    `${ID_PREFIX}${item.id}`,
+  ]);
+  downloadCsv([[...TEMPLATE_HEADERS, ID_HEADER], ...rows], `stock_pharmacie_${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+export function ExportPharmacyCsvButton({ pharmacyItems }: { pharmacyItems: ExportablePharmacyItem[] }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className="gap-2 rounded-xl"
+      disabled={pharmacyItems.length === 0}
+      onClick={() => exportPharmacyItemsCsv(pharmacyItems)}
+      title="Télécharger le stock au format d'import, pour modifier les quantités et le réimporter"
+    >
+      <Download className="h-4 w-4" />
+      Exporter CSV
+    </Button>
+  );
 }
 
 interface ImportPharmacyCsvDialogProps {
@@ -240,6 +320,7 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
       expiryDate: colIndex("peremption", "expir"),
       supplier: colIndex("fournisseur"),
       location: colIndex("emplacement", "rayon", "location"),
+      id: colIndex("idmeddoc"),
     };
 
     if (idx.name === -1 || idx.unitPrice === -1) {
@@ -262,6 +343,17 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
       if (!name) {
         parsedErrors.push({ line, message: "Nom du produit manquant." });
         continue;
+      }
+
+      const idRaw = get(idx.id);
+      let id: string | undefined;
+      if (idRaw) {
+        const match = idRaw.match(/^(?:MD-)?([a-f0-9]{24})$/i);
+        if (!match) {
+          parsedErrors.push({ line, message: `ID MedDoc modifié ou illisible pour "${name}" : remettez la valeur exportée, ou videz la cellule pour créer un nouveau produit.` });
+          continue;
+        }
+        id = match[1].toLowerCase();
       }
 
       const unitPriceRaw = get(idx.unitPrice).replace(/\s/g, "").replace(",", ".");
@@ -294,10 +386,11 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
       // évoluant ensuite uniquement via achat/vente/inventaire) : sert uniquement à amorcer le
       // catalogue la toute première fois. Les articles créés après cet import initial repassent
       // par le circuit normal (Nouveau produit + Nouvel achat).
-      const stockRaw = get(idx.stockQuantity).replace(/\s/g, "");
-      const stockQuantity = stockRaw ? Number(stockRaw) : 0;
-      if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
-        parsedErrors.push({ line, message: `Stock initial invalide pour "${name}".` });
+      // Produit existant (ID MedDoc) : quantité réelle constatée, vide = stock inchangé.
+      const stockRaw = get(idx.stockQuantity).replace(/\s/g, "").replace(",", ".");
+      const stockQuantity = stockRaw ? Number(stockRaw) : id ? undefined : 0;
+      if (stockQuantity !== undefined && (!Number.isInteger(stockQuantity) || stockQuantity < 0)) {
+        parsedErrors.push({ line, message: `Quantité en stock invalide pour "${name}" (nombre entier positif attendu).` });
         continue;
       }
 
@@ -319,6 +412,7 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
 
       parsedRows.push({
         line,
+        id,
         name,
         dosage,
         category,
@@ -347,17 +441,30 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
         organizationId,
       });
       if (res.success) {
-        const failures = res.data?.failures || [];
+        const failures = [...(res.data?.failures || [])];
         const count = res.data?.count ?? 0;
+        const updated = res.data?.updated ?? 0;
+        const stockChanged = res.data?.stockChanged ?? 0;
+        const stale = res.data?.staleProducts || [];
+        // Stock modifié par une vente/un achat pendant la clôture : écart non appliqué (cf.
+        // completeInventoryCount), à réimporter.
+        for (const name of stale) {
+          failures.push({ name, error: "Le stock a bougé pendant l'import : quantité non appliquée, réimportez le fichier." });
+        }
+        const summary = [
+          count > 0 ? `${count} produit(s) créé(s)` : "",
+          updated > 0 ? `${updated} mis à jour` : "",
+          stockChanged > 0 ? `${stockChanged} quantité(s) corrigée(s) par inventaire` : "",
+        ].filter(Boolean).join(", ") || "Aucun changement";
         router.refresh();
         if (failures.length === 0) {
-          toast.success(`${count} produit(s) importé(s) avec succès.`);
+          toast.success(`${summary}.`);
           setOpen(false);
           reset();
         } else {
           // Chaque ligne est indépendante (cf. importPharmacyItems) : un échec partiel n'annule
           // pas les autres, mais on le montre clairement plutôt que de prétendre un succès total.
-          toast.error(`${count} produit(s) importé(s), ${failures.length} en échec — voir le détail ci-dessous.`);
+          toast.error(`${summary} — ${failures.length} en échec, voir le détail ci-dessous.`);
           setImportFailures(failures);
           setRows([]);
         }
@@ -382,9 +489,9 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
             Importer des produits depuis un fichier CSV
           </DialogTitle>
           <DialogDescription>
-            Chaque ligne du fichier crée un nouveau produit dans le catalogue, avec la quantité indiquée dans « Stock initial » (0 si vide).
-            Cette colonne ne sert qu&apos;à amorcer le stock la toute première fois — pour tout ajout ultérieur, utilisez
-            « Nouveau produit » (stock à 0) puis « Nouvel achat » pour réceptionner une quantité.
+            Une ligne sans « ID MedDoc » crée un nouveau produit, avec la quantité indiquée (0 si vide).
+            Une ligne issue de « Exporter CSV » (ID MedDoc rempli) met à jour ce produit : sa quantité est la quantité
+            réelle comptée, et tout écart est enregistré comme un inventaire (perte ou surplus).
           </DialogDescription>
         </DialogHeader>
 
@@ -408,7 +515,13 @@ export default function ImportPharmacyCsvDialog({ organizationId }: ImportPharma
           {rows.length > 0 && (
             <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-950/20 flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400 font-medium">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              {rows.length} produit(s) prêt(s) à être importé(s).
+              {(() => {
+                const toUpdate = rows.filter((r) => r.id).length;
+                const toCreate = rows.length - toUpdate;
+                return [toCreate > 0 ? `${toCreate} produit(s) à créer` : "", toUpdate > 0 ? `${toUpdate} produit(s) à mettre à jour` : ""]
+                  .filter(Boolean)
+                  .join(" • ");
+              })()}
             </div>
           )}
 

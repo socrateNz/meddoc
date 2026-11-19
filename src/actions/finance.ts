@@ -24,7 +24,14 @@ import {
   changeInvoiceStatusSchema,
   deletePendingInvoiceSchema,
 } from "@/validators/finance";
-import { assertStockWrite, getItemUnitCostMap } from "@/actions/stock";
+import {
+  assertStockWrite,
+  completeInventoryCount,
+  getItemUnitCostMap,
+  cancelInventoryCount,
+  saveInventoryCounts,
+  startInventoryCount,
+} from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { assertPharmacyItemsSellable } from "@/lib/pharmacy-sale-block";
 import { applyLotConsumption, decrementField, groupIdsByValue, planLotConsumption } from "@/lib/stock-batch";
@@ -229,10 +236,16 @@ export async function createOrUpdatePharmacyItem(data: {
   }
 }
 
-// Import CSV en masse — toujours une CRÉATION (jamais de mise à jour par ce chemin, contrairement
-// à createOrUpdatePharmacyItem) : pas de rapprochement par nom pour éviter d'écraser silencieusement
-// un produit existant à cause d'un nom mal orthographié dans le fichier.
-// stockQuantity (optionnel, 0 par défaut) est une dérogation volontaire à la règle habituelle
+// Import CSV en masse.
+// - Ligne SANS id : CRÉATION. Pas de rapprochement par nom, pour ne jamais écraser un produit
+//   existant à cause d'un nom mal orthographié dans le fichier.
+// - Ligne AVEC id (colonne « ID MedDoc » du fichier exporté depuis l'onglet Stock) : MISE À JOUR
+//   de ce produit précis de l'établissement (nom, dosage, prix, seuil, lot...). La quantité y est
+//   la quantité réelle constatée : un écart avec le stock système passe par un inventaire démarré,
+//   compté et clôturé automatiquement (completeInventoryCount) — pertes valorisées en charge et
+//   surplus remis en lot exactement comme un inventaire manuel, et tracé dans l'historique des
+//   inventaires. Quantité vide = stock inchangé. Le prix d'achat est ignoré en mise à jour.
+// Création — stockQuantity (optionnel, 0 par défaut) est une dérogation volontaire à la règle habituelle
 // (stock à 0 à la création, n'évoluant ensuite que via achat/vente/inventaire) : elle permet
 // d'amorcer le catalogue en une fois lors du tout premier import.
 // purchasePrice (optionnel, vide = non renseigné) : si fourni avec un stockQuantity > 0, un lot
@@ -244,6 +257,7 @@ export async function createOrUpdatePharmacyItem(data: {
 // initial repassent par le circuit normal (Nouveau produit, stock à 0, puis Nouvel achat).
 export async function importPharmacyItems(data: {
   items: Array<{
+    id?: string;
     name: string;
     dosage?: string;
     category?: string;
@@ -290,9 +304,104 @@ export async function importPharmacyItems(data: {
     const CHUNK_SIZE = 20;
     const failures: { name: string; error: string }[] = [];
     let count = 0;
+    let updated = 0;
+    let stockChanged = 0;
+    let staleProducts: string[] = [];
 
-    for (let i = 0; i < data.items.length; i += CHUNK_SIZE) {
-      const chunk = data.items.slice(i, i + CHUNK_SIZE);
+    const creations = data.items.filter((item) => !item.id);
+    const updateRows = data.items.filter((item) => item.id);
+
+    // ---- Mises à jour (lignes portant l'ID MedDoc d'un produit exporté) ----
+    if (updateRows.length > 0) {
+      const existing = await prisma.pharmacyItem.findMany({
+        where: { id: { in: updateRows.map((item) => item.id!) }, organizationId: targetOrgId || null },
+        select: { id: true, stockQuantity: true },
+      });
+      const stockById = new Map(existing.map((item) => [item.id, item.stockQuantity]));
+
+      const seen = new Set<string>();
+      const toUpdate: typeof updateRows = [];
+      for (const item of updateRows) {
+        if (!stockById.has(item.id!)) {
+          failures.push({ name: item.name, error: "Produit introuvable dans cet établissement (supprimé, ou fichier d'un autre établissement)." });
+        } else if (seen.has(item.id!)) {
+          failures.push({ name: item.name, error: "Ce produit apparaît plusieurs fois dans le fichier : seule la première ligne est prise en compte." });
+        } else {
+          seen.add(item.id!);
+          toUpdate.push(item);
+        }
+      }
+
+      const quantityChanges = toUpdate
+        .filter((item) => item.stockQuantity != null && Math.round(item.stockQuantity) !== stockById.get(item.id!))
+        .map((item) => ({ id: item.id!, quantity: Math.round(item.stockQuantity!) }));
+
+      // Vérifié AVANT toute écriture : un inventaire manuel en cours ne doit pas être clôturé ni
+      // doublé par l'import.
+      if (quantityChanges.length > 0) {
+        if (!targetOrgId) throw new Error("Établissement requis pour modifier des quantités en stock.");
+        const inProgress = await prisma.inventoryCount.findFirst({
+          where: { organizationId: targetOrgId, status: "IN_PROGRESS" },
+          select: { id: true },
+        });
+        if (inProgress) {
+          throw new Error(
+            "Un inventaire est en cours (onglet Inventaire) : clôturez-le ou annulez-le avant d'importer des quantités modifiées. Rien n'a été importé."
+          );
+        }
+      }
+
+      for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
+        const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
+        const settled = await Promise.allSettled(
+          chunk.map(async (item) => {
+            const expiryDate = item.expiryDate ? new Date(item.expiryDate) : null;
+            if (expiryDate && Number.isNaN(expiryDate.getTime())) {
+              throw new Error(`Date de péremption invalide ("${item.expiryDate}")`);
+            }
+            // Ni le stock (cf. inventaire ci-dessous) ni l'établissement ne changent ici.
+            const fields: Partial<ReturnType<typeof toItemData>> = toItemData(item, 0, expiryDate);
+            delete fields.stockQuantity;
+            delete fields.organizationId;
+            await prisma.pharmacyItem.update({ where: { id: item.id! }, data: fields });
+          })
+        );
+        settled.forEach((result, idx) => {
+          if (result.status === "fulfilled") updated++;
+          else failures.push({ name: chunk[idx].name, error: toErrorMessage(result.reason, "Erreur inconnue") });
+        });
+      }
+
+      if (quantityChanges.length > 0) {
+        let inventoryId: string | null = null;
+        try {
+          const started: any = await startInventoryCount(targetOrgId!);
+          if (!started.success) throw new Error(started.error);
+          inventoryId = started.data.id as string;
+          const lineByItem = new Map<string, string>(started.data.lines.map((line: any) => [line.pharmacyItemId, line.id]));
+          const lines = quantityChanges
+            .filter((change) => lineByItem.has(change.id))
+            .map((change) => ({ lineId: lineByItem.get(change.id)!, countedQuantity: change.quantity }));
+          const saved: any = await saveInventoryCounts(inventoryId, lines);
+          if (!saved.success) throw new Error(saved.error);
+          const done: any = await completeInventoryCount(inventoryId);
+          if (!done.success) throw new Error(done.error);
+          inventoryId = null;
+          staleProducts = done.data?.staleProducts || [];
+          stockChanged = lines.length - staleProducts.length;
+        } catch (stockError) {
+          if (inventoryId) await cancelInventoryCount(inventoryId, "Import CSV interrompu");
+          failures.push({
+            name: "Quantités en stock",
+            error: `Non appliquées (les autres informations des produits sont bien mises à jour) : ${toErrorMessage(stockError, "erreur inconnue")}`,
+          });
+        }
+      }
+    }
+
+    // ---- Créations ----
+    for (let i = 0; i < creations.length; i += CHUNK_SIZE) {
+      const chunk = creations.slice(i, i + CHUNK_SIZE);
       const settled = await Promise.allSettled(
         chunk.map(async (item) => {
           const stockQuantity = Math.max(0, Number(item.stockQuantity) || 0);
@@ -334,12 +443,17 @@ export async function importPharmacyItems(data: {
       });
     }
 
-    await logAuditAction(activeUser!.id, "IMPORT_PHARMACY_ITEMS_CSV", "PharmacyItem", "bulk", { count, failures: failures.length });
+    await logAuditAction(activeUser!.id, "IMPORT_PHARMACY_ITEMS_CSV", "PharmacyItem", "bulk", {
+      count,
+      updated,
+      stockChanged,
+      failures: failures.length,
+    });
     revalidatePath("/dashboard/pharmacie");
     if (targetOrgId) revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
     revalidatePath("/dashboard", "layout");
 
-    return { success: true, data: { count, failures } };
+    return { success: true, data: { count, updated, stockChanged, staleProducts, failures } };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'import du fichier.") };
   }

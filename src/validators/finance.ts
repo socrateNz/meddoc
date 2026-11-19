@@ -14,16 +14,18 @@ export const pharmacyItemSchema = z.object({
   organizationId: z.string().optional(),
 });
 
-// Un item importé n'a jamais d'id (toujours une création, jamais une mise à jour — cf.
-// importPharmacyItems dans src/actions/finance.ts) ni d'organizationId par ligne (imposé une
-// seule fois pour tout le lot par l'appelant).
+// Une ligne importée sans id crée un produit ; avec l'id d'un produit exporté (colonne « ID MedDoc »
+// de l'export du stock), elle met à jour ce produit — cf. importPharmacyItems dans
+// src/actions/finance.ts. Pas d'organizationId par ligne (imposé une seule fois pour tout le lot).
 export const pharmacyItemImportRowSchema = z.object({
+  id: z.string().regex(/^[a-f0-9]{24}$/i, "Identifiant MedDoc invalide").optional(),
   name: z.string().min(2, "Nom du produit requis"),
   dosage: z.string().optional(),
   category: z.enum(["MEDICATION", "CONSUMABLE", "EQUIPMENT"]).optional(),
   reorderLevel: z.number().min(0),
   unitPrice: z.number().min(0, "Le prix de vente doit être positif"),
-  // Amorce le stock au tout premier import — cf. commentaire sur importPharmacyItems.
+  // Création : amorce le stock au tout premier import. Mise à jour : quantité réelle constatée,
+  // appliquée par un inventaire clôturé automatiquement — cf. commentaire sur importPharmacyItems.
   stockQuantity: z.number().min(0).optional(),
   // Vide = non renseigné : le stock initial reste "hérité" (sans lot valorisé), comme si ce
   // champ n'existait pas. Fourni, il crée un lot StockPurchase pour ce stock initial.

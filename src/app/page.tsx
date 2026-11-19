@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import FacebookPixel, { trackLead } from "@/components/facebook-pixel";
+import WhatsAppBubble from "@/components/whatsapp-bubble";
 import {
   ArrowRight,
   Activity,
@@ -223,6 +224,7 @@ export default function LandingPage() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900" style={{ fontFamily: "'Inter', sans-serif" }}>
       <FacebookPixel />
+      <WhatsAppBubble />
 
       {/* ─── Navbar ──────────────────────────────────────────────────────── */}
       <header
