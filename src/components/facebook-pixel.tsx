@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Script from "next/script";
 
 // Pixel Facebook (Meta) de la page d'accueil publique — mesure les visites et les demandes de
@@ -20,7 +21,20 @@ export function trackLead() {
   window.fbq?.("track", "Lead");
 }
 
+// Événement standard « Contact » : clic sur un lien WhatsApp, e-mail ou téléphone de la page.
+// Écoute délégée sur le document : couvre aussi les liens ajoutés plus tard sans rien brancher.
+const CONTACT_LINK = 'a[href*="wa.me"], a[href*="whatsapp"], a[href^="mailto:"], a[href^="tel:"]';
+
 export default function FacebookPixel() {
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const link = (e.target as Element | null)?.closest?.(CONTACT_LINK);
+      if (link) window.fbq?.("track", "Contact");
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, []);
+
   return (
     <>
       <Script id="facebook-pixel" strategy="afterInteractive">
