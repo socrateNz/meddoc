@@ -142,7 +142,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
         </DialogTrigger>
       )}
 
-      <DialogContent className="sm:max-w-[580px] max-h-[92vh] rounded-3xl p-0 overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex flex-col text-slate-100">
+      <DialogContent className="print-anchor-top sm:max-w-[580px] max-h-[92vh] rounded-3xl p-0 overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex flex-col text-slate-100">
         {/* Header with Format Switcher */}
         <DialogHeader className="p-5 pb-3 bg-slate-950 border-b border-slate-800 flex flex-row items-center justify-between">
           <div>
