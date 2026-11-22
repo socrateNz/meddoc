@@ -434,7 +434,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
               <Settings className="h-6 w-6 text-violet-500" />
             </div>
             <h3 className="text-lg font-semibold">Configuration</h3>
-            <p className="text-sm text-slate-500 mt-4 flex-1">Paramètres généraux, adresse et facturation.</p>
+            <p className="text-sm text-slate-500 mt-4 flex-1">Logo, services, cliniques partenaires, caisse et facturation de la consultation.</p>
             <Link href={`/dashboard/clinics/${clinic.id}/settings`} className="w-full mt-6">
               <Button className="w-full" variant="outline">{isCoordinator ? "Modifier" : "Consulter les paramètres"}</Button>
             </Link>

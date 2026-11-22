@@ -80,7 +80,7 @@ export default function PartnersCard({ clinicId, partners, readOnly }: { clinicI
   const inputClass = "h-11 text-base sm:h-9 sm:text-sm";
 
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/60 p-5 dark:border-slate-800 dark:bg-slate-900/50">
+    <div id="partenaires" className="scroll-mt-24 space-y-4 rounded-2xl border border-slate-200 bg-white/60 p-5 dark:border-slate-800 dark:bg-slate-900/50">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 font-semibold">

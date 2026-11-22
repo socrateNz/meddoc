@@ -81,7 +81,14 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
           Relevés partenaires
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          Examens réalisés pour chaque clinique partenaire, au prix figé à la demande. Les partenaires se gèrent dans Configuration.
+          Examens réalisés pour chaque clinique partenaire, au prix figé à la demande.{" "}
+          {user.role === "COORDINATOR" || user.role === "ADMIN" ? (
+            <Link href={`/dashboard/clinics/${clinicId}/settings#partenaires`} className="font-semibold text-violet-600 hover:underline dark:text-violet-400">
+              Gérer les partenaires et leurs tarifs →
+            </Link>
+          ) : (
+            "Les partenaires se gèrent dans Configuration (coordinateur)."
+          )}
         </p>
       </div>
 
@@ -89,7 +96,14 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
         <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">{partnersRes.error}</div>
       ) : partners.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-          Aucun partenaire. Le coordinateur les ajoute dans Configuration &gt; Cliniques partenaires.
+          Aucun partenaire.{" "}
+          {user.role === "COORDINATOR" ? (
+            <Link href={`/dashboard/clinics/${clinicId}/settings#partenaires`} className="font-semibold text-violet-600 hover:underline dark:text-violet-400">
+              Ajouter un partenaire →
+            </Link>
+          ) : (
+            "Le coordinateur les ajoute dans Configuration > Cliniques partenaires."
+          )}
         </div>
       ) : (
         <>

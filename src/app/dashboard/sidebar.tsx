@@ -292,6 +292,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         section: "Finance",
       },
       {
+        // Paramètres de la clinique : services, partenaires, logo, fonctionnement (caisse, consultation).
+        name: "Configuration",
+        href: `/dashboard/clinics/${activeClinicId}/settings`,
+        icon: Settings,
+        roles: ["ADMIN", "COORDINATOR"],
+        section: "Administration",
+      },
+      {
         name: "Équipe médicale",
         href: `/dashboard/clinics/${activeClinicId}/team`,
         icon: Stethoscope,
