@@ -1,5 +1,7 @@
 "use server";
 
+import { can, type Permission } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -35,16 +37,12 @@ import { hiddenPatientIds, restrictedServiceIds } from "@/lib/service-access";
 // réceptionne et détruit les poches et pose les transfusions ; le médecin (ou le coordinateur)
 // réserve une poche pour un patient après les contrôles de compatibilité ; l'admin de holding
 // consulte. La poche est facturée à la pose (elle ne peut alors plus revenir en stock).
-const READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-const STOCK_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
-const RESERVE_ROLES = ["COORDINATOR", "MEDECIN"];
-const ADMINISTER_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
-async function requireUser(roles: string[], message = "Non autorisé.") {
+async function requireUser(permission: Permission, message = "Non autorisé.") {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
   assertUserModule(activeUser, "BANQUE_SANG");
-  if (!roles.includes(activeUser.role)) throw new Error(message);
+  if (!can(activeUser, permission)) throw new Error(message);
   return activeUser;
 }
 
@@ -57,7 +55,7 @@ function revalidateBloodBank(organizationId: string, patientId?: string) {
 
 export async function listBloodStock(clinicId: string) {
   try {
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("bloodbank.read");
     await assertClinicScope(clinicId, activeUser);
     const units = await prisma.bloodUnit.findMany({
       where: { organizationId: clinicId, status: { in: ["AVAILABLE", "RESERVED"] } },
@@ -77,8 +75,8 @@ export async function listBloodStock(clinicId: string) {
         price: u.price,
         status: u.status,
       })),
-      canManage: STOCK_ROLES.includes(activeUser.role),
-      canReserve: RESERVE_ROLES.includes(activeUser.role),
+      canManage: can(activeUser, "bloodbank.stock"),
+      canReserve: can(activeUser, "bloodbank.reserve"),
     };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du stock de sang.") };
@@ -101,7 +99,7 @@ const receiveSchema = z.object({
 export async function receiveBloodUnit(data: z.input<typeof receiveSchema>) {
   try {
     const input = receiveSchema.parse(data);
-    const activeUser = await requireUser(STOCK_ROLES, "Non autorisé. Réservé au personnel soignant.");
+    const activeUser = await requireUser("bloodbank.stock", "Non autorisé. Réservé au personnel soignant.");
     await assertClinicScope(input.clinicId, activeUser);
 
     // Une poche périme à la fin de sa date de péremption.
@@ -142,7 +140,7 @@ const discardSchema = z.object({ unitId: z.string().min(1), reason: z.enum(DISCA
 export async function discardBloodUnit(data: z.input<typeof discardSchema>) {
   try {
     const input = discardSchema.parse(data);
-    const activeUser = await requireUser(STOCK_ROLES, "Non autorisé. Réservé au personnel soignant.");
+    const activeUser = await requireUser("bloodbank.stock", "Non autorisé. Réservé au personnel soignant.");
     const unit = await prisma.bloodUnit.findUnique({ where: { id: input.unitId } });
     if (!unit) throw new Error("Poche introuvable.");
     await assertClinicScope(unit.organizationId, activeUser);
@@ -170,7 +168,7 @@ const groupSchema = { patientAboGroup: z.enum(ABO_GROUPS), patientRhesus: z.enum
 export async function listCompatibleUnits(data: { patientId: string; product: BloodProduct; patientAboGroup: AboGroup; patientRhesus: Rhesus }) {
   try {
     z.object({ patientId: z.string().min(1), product: z.enum(BLOOD_PRODUCTS), ...groupSchema }).parse(data);
-    const activeUser = await requireUser(RESERVE_ROLES);
+    const activeUser = await requireUser("bloodbank.reserve");
     if (!(await verifyPatientAccess(data.patientId, activeUser))) throw new Error("Non autorisé.");
     const patient = await prisma.patient.findUnique({ where: { id: data.patientId }, select: { organizationId: true } });
     if (!patient?.organizationId) throw new Error("Patient introuvable.");
@@ -212,7 +210,7 @@ const reserveSchema = z.object({
 export async function reserveBloodUnit(data: z.input<typeof reserveSchema>) {
   try {
     const input = reserveSchema.parse(data);
-    const activeUser = await requireUser(RESERVE_ROLES, "Non autorisé. Seul un médecin ou un coordinateur réserve une poche.");
+    const activeUser = await requireUser("bloodbank.reserve", "Non autorisé. Seul un médecin ou un coordinateur réserve une poche.");
     if (!(await verifyPatientAccess(input.patientId, activeUser))) {
       throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
     }
@@ -283,7 +281,7 @@ const startSchema = z.object({
 export async function startTransfusion(data: z.input<typeof startSchema>) {
   try {
     const input = startSchema.parse(data);
-    const activeUser = await requireUser(ADMINISTER_ROLES, "Non autorisé. Réservé au personnel soignant.");
+    const activeUser = await requireUser("bloodbank.administer", "Non autorisé. Réservé au personnel soignant.");
     const transfusion = await prisma.transfusion.findUnique({ where: { id: input.transfusionId } });
     if (!transfusion) throw new Error("Transfusion introuvable.");
     if (!(await verifyPatientAccess(transfusion.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -339,7 +337,7 @@ const completeSchema = z.object({
 export async function completeTransfusion(data: z.input<typeof completeSchema>) {
   try {
     const input = completeSchema.parse(data);
-    const activeUser = await requireUser(ADMINISTER_ROLES, "Non autorisé. Réservé au personnel soignant.");
+    const activeUser = await requireUser("bloodbank.administer", "Non autorisé. Réservé au personnel soignant.");
     const transfusion = await prisma.transfusion.findUnique({ where: { id: input.transfusionId } });
     if (!transfusion) throw new Error("Transfusion introuvable.");
     if (!(await verifyPatientAccess(transfusion.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -384,7 +382,7 @@ const cancelSchema = z.object({ transfusionId: z.string().min(1), reason: z.stri
 export async function cancelTransfusion(data: z.input<typeof cancelSchema>) {
   try {
     const input = cancelSchema.parse(data);
-    const activeUser = await requireUser(RESERVE_ROLES, "Non autorisé.");
+    const activeUser = await requireUser("bloodbank.reserve", "Non autorisé.");
     const transfusion = await prisma.transfusion.findUnique({ where: { id: input.transfusionId } });
     if (!transfusion) throw new Error("Transfusion introuvable.");
     if (!(await verifyPatientAccess(transfusion.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -411,7 +409,7 @@ export async function cancelTransfusion(data: z.input<typeof cancelSchema>) {
 
 export async function listTransfusions(options: { clinicId?: string; patientId?: string; activeOnly?: boolean }) {
   try {
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("bloodbank.read");
     const where: Prisma.TransfusionWhereInput = {};
     if (options.patientId) {
       if (!(await verifyPatientAccess(options.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -474,7 +472,7 @@ export async function listTransfusions(options: { clinicId?: string; patientId?:
           completedByName: t.completedById ? nameById.get(t.completedById) ?? null : null,
         };
       }),
-      permissions: { reserve: RESERVE_ROLES.includes(activeUser.role), administer: ADMINISTER_ROLES.includes(activeUser.role) },
+      permissions: { reserve: can(activeUser, "bloodbank.reserve"), administer: can(activeUser, "bloodbank.administer") },
     };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des transfusions.") };

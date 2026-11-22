@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -22,20 +24,17 @@ import { canSeePatientService, restrictedServiceIds } from "@/lib/service-access
 // est une opération structurelle réservée au coordinateur (même périmètre que le catalogue
 // labo, cf. src/actions/lab.ts). Affecter/libérer un lit reste un geste opérationnel courant,
 // ouvert au même trio que LAB_OPERATE_ROLES.
-const ROOMS_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-const ROOMS_STRUCTURE_ROLES = ["COORDINATOR"];
-const ROOMS_OPERATE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 function assertRoomsReadRole(role: string) {
-  if (!ROOMS_READ_ROLES.includes(role)) throw new Error("Non autorisé.");
+  if (!can(role, "rooms.read")) throw new Error("Non autorisé.");
 }
 
 function assertRoomsStructureRole(role: string) {
-  if (!ROOMS_STRUCTURE_ROLES.includes(role)) throw new Error("Non autorisé. Réservé aux coordinateurs.");
+  if (!can(role, "rooms.structure")) throw new Error("Non autorisé. Réservé aux coordinateurs.");
 }
 
 function assertRoomsOperateRole(role: string) {
-  if (!ROOMS_OPERATE_ROLES.includes(role)) throw new Error("Non autorisé. Réservé au personnel clinique.");
+  if (!can(role, "rooms.operate")) throw new Error("Non autorisé. Réservé au personnel clinique.");
 }
 
 // Cette clinique doit être la propre clinique de l'utilisateur, ou une clinique rattachée à la

@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -38,32 +40,27 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 // LABORANTIN (technicien) et CAREGIVER prélèvent, réceptionnent et saisissent les résultats bruts ;
 // COORDINATOR et MEDECIN valident (maker-checker à deux rôles). ADMIN (holding) consulte en lecture
 // seule ; PHARMACIST n'a pas accès au laboratoire.
-const LAB_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "LABORANTIN"];
 // Prescrire un examen (autorité diagnostique) est réservé au médecin ; prélever, réceptionner
 // et saisir un résultat brut restent des gestes opérationnels (infirmier(e), laborantin).
-const LAB_ORDER_ROLES = ["COORDINATOR", "MEDECIN"];
-const LAB_OPERATE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER", "LABORANTIN"];
-const LAB_VALIDATE_ROLES = ["COORDINATOR", "MEDECIN"];
-const LAB_AI_ROLES = ["COORDINATOR", "MEDECIN"];
 
 function assertLabReadRole(role: string) {
-  if (!LAB_READ_ROLES.includes(role)) throw new Error("Non autorisé.");
+  if (!can(role, "lab.read")) throw new Error("Non autorisé.");
 }
 
 function assertLabOrderRole(role: string) {
-  if (!LAB_ORDER_ROLES.includes(role)) throw new Error("Non autorisé. Seul un coordinateur ou un médecin peut prescrire un examen.");
+  if (!can(role, "lab.order")) throw new Error("Non autorisé. Seul un coordinateur ou un médecin peut prescrire un examen.");
 }
 
 function assertLabOperateRole(role: string) {
-  if (!LAB_OPERATE_ROLES.includes(role)) throw new Error("Non autorisé. Réservé au personnel clinique.");
+  if (!can(role, "lab.operate")) throw new Error("Non autorisé. Réservé au personnel clinique.");
 }
 
 function assertLabValidateRole(role: string) {
-  if (!LAB_VALIDATE_ROLES.includes(role)) throw new Error("Non autorisé. Seul un coordinateur ou un médecin peut valider un résultat.");
+  if (!can(role, "lab.validate")) throw new Error("Non autorisé. Seul un coordinateur ou un médecin peut valider un résultat.");
 }
 
 function assertLabAiRole(role: string) {
-  if (!LAB_AI_ROLES.includes(role)) throw new Error("Non autorisé.");
+  if (!can(role, "lab.ai")) throw new Error("Non autorisé.");
 }
 
 const ORDER_INCLUDE = {
@@ -163,8 +160,8 @@ async function createLabOrderOnce(data: {
     // comme dans le carnet de CPN. Toute autre demande reste réservée au médecin/coordinateur.
     // Examen externe d'un partenaire : la prescription vient du médecin du partenaire (bon de
     // demande), le laborantin l'enregistre.
-    const prenatalByMidwife = !!data.prenatalVisitId && activeUser.role === "CAREGIVER";
-    const partnerByLab = !!data.partnerId && activeUser.role === "LABORANTIN";
+    const prenatalByMidwife = !!data.prenatalVisitId && can(activeUser, "lab.order.prenatal");
+    const partnerByLab = !!data.partnerId && can(activeUser, "lab.order.partner");
     if (!prenatalByMidwife && !partnerByLab) assertLabOrderRole(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
@@ -866,7 +863,7 @@ export async function createOrUpdateLabTest(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    if (activeUser.role !== "COORDINATOR") throw new Error("Non autorisé. Réservé aux coordinateurs.");
+    if (!can(activeUser, "lab.catalog")) throw new Error("Non autorisé. Réservé aux coordinateurs.");
 
     const targetOrgId = await resolveTargetOrgId(activeUser, data.organizationId);
 
@@ -943,7 +940,7 @@ export async function importLabTests(input: z.input<typeof importLabTestsSchema>
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    if (activeUser.role !== "COORDINATOR") throw new Error("Non autorisé. Réservé aux coordinateurs.");
+    if (!can(activeUser, "lab.catalog")) throw new Error("Non autorisé. Réservé aux coordinateurs.");
     const organizationId = await resolveTargetOrgId(activeUser, data.organizationId);
     if (!organizationId) throw new Error("Établissement requis.");
 
@@ -1003,7 +1000,7 @@ export async function deactivateLabTest(id: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    if (activeUser.role !== "COORDINATOR") throw new Error("Non autorisé. Réservé aux coordinateurs.");
+    if (!can(activeUser, "lab.catalog")) throw new Error("Non autorisé. Réservé aux coordinateurs.");
 
     const labTest = await prisma.labTest.update({ where: { id }, data: { isActive: false } });
     revalidatePath("/dashboard/lab/catalog");

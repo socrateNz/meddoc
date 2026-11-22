@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -14,8 +16,6 @@ import { assertUserModule } from "@/lib/modules-server";
 
 // Tri des urgences (étape D2 de l'audit d'évolution) sur les passages de l'accueil orientés
 // « Urgences ». Tri par le personnel soignant ; lecture aussi pour l'admin de holding.
-const READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-const TRIAGE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 const bounded = (key: keyof typeof VITAL_BOUNDS, label: string, integer = false) => {
   const [min, max] = VITAL_BOUNDS[key];
@@ -48,7 +48,7 @@ export async function triageVisit(data: z.input<typeof triageSchema>) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "URGENCES");
-    if (!TRIAGE_ROLES.includes(activeUser.role)) throw new Error("Non autorisé. Le tri est réservé au personnel soignant.");
+    if (!can(activeUser, "triage.write")) throw new Error("Non autorisé. Le tri est réservé au personnel soignant.");
 
     const visit = await prisma.visit.findUnique({ where: { id: input.visitId } });
     if (!visit) throw new Error("Passage introuvable.");
@@ -115,7 +115,7 @@ export async function listEmergencyBoard(clinicId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "URGENCES");
-    if (!READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
+    if (!can(activeUser, "triage.read")) throw new Error("Non autorisé.");
     await assertClinicScope(clinicId, activeUser);
 
     const visits = await prisma.visit.findMany({ where: { organizationId: clinicId, visitDate: clinicDateKey(), destination: "EMERGENCY" } });
@@ -174,7 +174,7 @@ export async function listEmergencyBoard(clinicId: string) {
       })
       .sort(compareEmergency);
 
-    return { success: true as const, data, canTriage: TRIAGE_ROLES.includes(activeUser.role) };
+    return { success: true as const, data, canTriage: can(activeUser, "triage.write") };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du tableau des urgences.") };
   }

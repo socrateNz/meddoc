@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
-    const auth = await requireApiUser(["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"]);
+    const auth = await requireApiUser("ai.analyze");
     if ("response" in auth) return auth.response;
     if (!modulesOfUser(auth.user).includes("IA")) {
       return NextResponse.json({ error: MODULE_DISABLED_MESSAGE("IA") }, { status: 403 });

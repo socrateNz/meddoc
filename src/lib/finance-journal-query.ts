@@ -1,3 +1,4 @@
+import { rolesWith } from "@/lib/permissions-catalog";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { periodRange, resolvePeriod, type ResolvedPeriod } from "@/lib/finance-period";
@@ -10,7 +11,8 @@ type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 // un export reproduit exactement la sélection affichée, filtres et totaux compris.
 
 // ADMIN (holding) en lecture seule, COORDINATOR en écriture — cf. src/actions/finance.ts.
-export const FINANCE_READ_ROLES = ["ADMIN", "COORDINATOR", "COMPTABLE"];
+// Rôles qui ont « finance.read » par défaut (cf. src/lib/permissions-catalog.ts).
+export const FINANCE_READ_ROLES = [...rolesWith("finance.read")];
 
 export interface JournalFilters {
   organizationId?: string;

@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
@@ -14,9 +16,7 @@ import { accountSafely, accountTransaction } from "@/lib/accounting/postings";
 // les résultats sortent à leur en-tête et les examens leur sont facturés au prix partenaire.
 
 // Choisir un partenaire sur une demande : ceux qui enregistrent les demandes.
-const PARTNER_PICK_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "LABORANTIN", "CAREGIVER"];
 // Relevé (montants dus) : direction et comptabilité.
-const STATEMENT_ROLES = ["ADMIN", "COORDINATOR", "COMPTABLE"];
 
 const savePartnerSchema = z.object({
   clinicId: z.string().min(1),
@@ -40,7 +40,7 @@ export async function listPartners(clinicId: string, options?: { includeInactive
     const user = await getCurrentUser();
     if (!user) throw new Error("Non authentifié.");
     assertUserModule(user, "LABORATOIRE");
-    if (!PARTNER_PICK_ROLES.includes(user.role) && !STATEMENT_ROLES.includes(user.role)) throw new Error("Non autorisé.");
+    if (!can(user, "partners.pick")) throw new Error("Non autorisé.");
     await assertOrganizationAccess(user, clinicId);
     const partners = await prisma.partner.findMany({
       where: { organizationId: clinicId, ...(options?.includeInactive ? {} : { isActive: true }) },
@@ -57,7 +57,7 @@ export async function savePartner(input: z.input<typeof savePartnerSchema>) {
   try {
     const data = savePartnerSchema.parse(input);
     const user = await getCurrentUser();
-    if (!user || user.role !== "COORDINATOR" || user.organizationId !== data.clinicId) {
+    if (!user || !can(user, "partners.manage") || user.organizationId !== data.clinicId) {
       throw new Error("Non autorisé. Seul le coordinateur de la clinique gère les partenaires.");
     }
     const duplicate = await prisma.partner.findFirst({
@@ -98,7 +98,7 @@ export async function getPartnerPriceGrid(partnerId: string) {
     const user = await getCurrentUser();
     if (!user) throw new Error("Non authentifié.");
     assertUserModule(user, "LABORATOIRE");
-    if (!["ADMIN", "COORDINATOR", "COMPTABLE"].includes(user.role)) throw new Error("Non autorisé.");
+    if (!can(user, "partners.statements")) throw new Error("Non autorisé.");
     const partner = await prisma.partner.findUnique({ where: { id: partnerId } });
     if (!partner) throw new Error("Partenaire introuvable.");
     await assertOrganizationAccess(user, partner.organizationId);
@@ -125,7 +125,7 @@ export async function savePartnerPrices(input: { partnerId: string; prices: Reco
       .object({ partnerId: z.string().min(1), prices: z.record(z.string(), z.number().min(0)) })
       .parse(input);
     const user = await getCurrentUser();
-    if (!user || user.role !== "COORDINATOR") throw new Error("Non autorisé. Seul le coordinateur fixe les tarifs des partenaires.");
+    if (!user || !can(user, "partners.manage")) throw new Error("Non autorisé. Seul le coordinateur fixe les tarifs des partenaires.");
     const partner = await prisma.partner.findUnique({ where: { id: data.partnerId } });
     if (!partner || partner.organizationId !== user.organizationId) throw new Error("Partenaire introuvable.");
     const ids = Object.keys(data.prices);
@@ -163,7 +163,7 @@ export async function recordPartnerSettlement(input: z.input<typeof settlementSc
     const data = settlementSchema.parse(input);
     const user = await getCurrentUser();
     if (!user) throw new Error("Non authentifié.");
-    if (!["COORDINATOR", "COMPTABLE"].includes(user.role)) throw new Error("Non autorisé. Réservé au coordinateur et au comptable.");
+    if (!can(user, "partners.settle")) throw new Error("Non autorisé. Réservé au coordinateur et au comptable.");
     const partner = await prisma.partner.findUnique({ where: { id: data.partnerId } });
     if (!partner || partner.organizationId !== user.organizationId) throw new Error("Partenaire introuvable.");
     const paidAt = data.paidAt ? new Date(data.paidAt) : new Date();
@@ -171,7 +171,7 @@ export async function recordPartnerSettlement(input: z.input<typeof settlementSc
 
     let cashSessionId: string | null = null;
     if (data.paymentMethod === "CASH") {
-      if (user.role !== "COORDINATOR") throw new Error("Un règlement en espèces s'encaisse à la caisse : réservé au coordinateur.");
+      if (!can(user, "partners.settle.cash")) throw new Error("Un règlement en espèces s'encaisse à la caisse : réservé au coordinateur.");
       if (!data.cashSessionId) throw new Error("Choisissez la caisse ouverte qui reçoit les espèces.");
       const session = await prisma.cashSession.findUnique({ where: { id: data.cashSessionId }, select: { id: true, status: true, organizationId: true } });
       if (!session || session.status !== "OPEN" || session.organizationId !== partner.organizationId) throw new Error("Cette caisse n'est pas ouverte.");
@@ -233,7 +233,7 @@ export async function getPartnerStatement(input: { partnerId: string; month: str
     const user = await getCurrentUser();
     if (!user) throw new Error("Non authentifié.");
     assertUserModule(user, "LABORATOIRE");
-    if (!STATEMENT_ROLES.includes(user.role)) throw new Error("Non autorisé.");
+    if (!can(user, "partners.statements")) throw new Error("Non autorisé.");
     const partner = await prisma.partner.findUnique({ where: { id: data.partnerId } });
     if (!partner) throw new Error("Partenaire introuvable.");
     await assertOrganizationAccess(user, partner.organizationId);

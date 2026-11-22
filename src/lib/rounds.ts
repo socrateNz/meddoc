@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 // Ronde médicale : constantes et règles partagées par le serveur et l'interface (ce module n'est pas
 // un module serveur : il peut être importé par les composants et par les actions).
 
@@ -23,7 +24,7 @@ export const ROUND_MAX_TEXT_LENGTH = 2000;
 export const CLINIC_TIME_ZONE = "Africa/Douala";
 
 export function canRunRound(role: string): boolean {
-  return (ROUND_ROLES as readonly string[]).includes(role);
+  return can(role, "rounds.run");
 }
 
 export function isRoundDecision(value: unknown): value is RoundDecision {

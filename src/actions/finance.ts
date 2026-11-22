@@ -1,9 +1,11 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
 import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
-import { attachInvoiceTotals, buildJournalWhere, FINANCE_READ_ROLES, getJournalTotals, JOURNAL_TRANSACTION_INCLUDE } from "@/lib/finance-journal-query";
+import { attachInvoiceTotals, buildJournalWhere, getJournalTotals, JOURNAL_TRANSACTION_INCLUDE } from "@/lib/finance-journal-query";
 import { accountSafely, accountTransaction, postInvoiceWriteOff, reverseDeletedInvoiceSale, accountingEnabled } from "@/lib/accounting/postings";
 import { PAYMENT_METHODS, isCashOutCategory } from "@/lib/accounting/plan";
 import { buildReversalEntry, COUNTS_IN_KPI_WHERE, countsInKpi } from "@/lib/finance-reversal";
@@ -34,7 +36,6 @@ import {
 } from "@/actions/stock";
 import { assertRegisterOperateRole, assertRegisterReadRole } from "@/actions/register-permissions";
 import { assertPharmacyItemsSellable } from "@/lib/pharmacy-sale-block";
-import { applyLotConsumption, decrementField, groupIdsByValue, planLotConsumption } from "@/lib/stock-batch";
 import { decrementStockForItems } from "@/lib/stock-decrement";
 import {
   periodCreatedAtFilter,
@@ -59,27 +60,25 @@ const TICKET_ACCESS_DENIED = "Non autorisé. Ce ticket n'appartient pas à votre
 // COORDINATOR seul y a un accès d'écriture directe (dépenses hors-session exceptées — voir
 // recordExpense, désormais rattaché à une session de caisse). Le catalogue pharmacie a son
 // propre rôle de lecture élargi (CASHIER en a besoin pour construire un panier de vente).
-const PHARMACY_CATALOG_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST", "CASHIER"];
 // Remise des médicaments au comptoir : PHARMACIST uniquement, volontairement plus strict que
 // STOCK_WRITE_ROLES (COORDINATOR+PHARMACIST) qui régit le reste du stock — séparation caisse/
 // pharmacie voulue par cette fonctionnalité, seule dérogation à la convention habituelle de ce
 // module (partout ailleurs, COORDINATOR reste un rôle de secours).
-const PHARMACY_DISPENSE_ROLES = ["PHARMACIST"];
 
 function assertFinanceReadRole(role: string) {
-  if (!FINANCE_READ_ROLES.includes(role)) {
+  if (!can(role, "finance.read")) {
     throw new Error("Non autorisé.");
   }
 }
 
 function assertPharmacyCatalogReadRole(role: string) {
-  if (!PHARMACY_CATALOG_READ_ROLES.includes(role)) {
+  if (!can(role, "pharmacy.catalog.read")) {
     throw new Error("Non autorisé.");
   }
 }
 
 function assertPharmacyDispenseRole(role: string) {
-  if (!PHARMACY_DISPENSE_ROLES.includes(role)) {
+  if (!can(role, "pharmacy.dispense")) {
     throw new Error("Non autorisé. Réservé aux pharmacien(ne)s.");
   }
 }
@@ -1207,8 +1206,7 @@ export async function cancelDispense(pendingInvoiceId: string, reason?: string) 
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "PHARMACIE");
 
-    const allowedRoles = ["COORDINATOR"];
-    if (!allowedRoles.includes(activeUser.role)) {
+    if (!can(activeUser, "pharmacy.dispense.cancel")) {
       throw new Error("Non autorisé. Seul le coordonnateur peut annuler une remise.");
     }
 
@@ -1446,8 +1444,7 @@ export async function changeInvoiceStatus(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
-    const allowedRoles = ["COORDINATOR", "ADMIN", "SUPER_ADMIN"];
-    if (!allowedRoles.includes(activeUser.role)) {
+    if (!can(activeUser, "invoices.manage")) {
       throw new Error("Non autorisé. Seul le coordonnateur ou un administrateur peut modifier le statut d'un ticket.");
     }
 
@@ -1530,8 +1527,7 @@ export async function deletePendingInvoice(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
 
-    const allowedRoles = ["COORDINATOR", "ADMIN", "SUPER_ADMIN"];
-    if (!allowedRoles.includes(activeUser.role)) {
+    if (!can(activeUser, "invoices.manage")) {
       throw new Error("Non autorisé. Seul le coordonnateur ou un administrateur peut supprimer un ticket.");
     }
 

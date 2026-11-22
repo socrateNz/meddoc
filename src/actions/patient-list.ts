@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -8,7 +10,6 @@ import { resolvePage } from "@/lib/pagination";
 import { assertClinicScope } from "@/lib/clinic-scope";
 import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
 
-const PATIENT_LIST_ROLES = ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "ACCUEIL", "CASHIER"];
 
 export type PatientStatusFilter = "ALL" | "ACTIVE" | "DISCHARGED";
 export type PatientDependencyFilter = "ALL" | "HEAVY" | "MODERATE" | "AUTONOMOUS";
@@ -75,7 +76,7 @@ export async function listPatientsPage(options?: PatientListOptions) {
     if (!activeUser) throw new Error("Non authentifié.");
     // Personnel qui consulte la liste (section « patients ») ou cherche un patient au guichet pour
     // lui créer un ticket (accueil, caissier). Pharmacie, labo et comptabilité n'y ont pas accès.
-    if (!PATIENT_LIST_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
+    if (!can(activeUser, "patients.list")) throw new Error("Non autorisé.");
 
     const scope: Prisma.PatientWhereInput[] = [];
     if (options?.organizationId) {

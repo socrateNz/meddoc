@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify, SignJWT } from 'jose';
 import { appendSecurityHeaders } from '@/middlewares/securityHeaders';
-import { SECTION_ROLES } from '@/lib/staff-roles';
+import { canAccessSection } from '@/lib/permissions-catalog';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -21,9 +21,9 @@ const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password', '/api
 // Comptes usagers (patient, proche) : accueil sur /dashboard, jamais sur l'espace clinique.
 const PORTAL_ROLES = ['PATIENT', 'FAMILY'];
 
-// RBAC par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...) : source unique
-// dans src/lib/staff-roles.ts, partagée avec la barre latérale.
-const restrictedSections = SECTION_ROLES;
+// Accès par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...) : chaque
+// section exige une permission (src/lib/permissions-catalog.ts, SECTION_PERMISSIONS), partagée avec
+// la barre latérale. Le jeton ne porte que le rôle : ses permissions par défaut s'appliquent ici.
 
 // Page d'arrivée des rôles qui n'ont pas de tableau de bord clinique.
 const ROLE_HOME_SECTION: Record<string, string> = { COMPTABLE: 'comptabilite', ACCUEIL: 'accueil', LABORANTIN: 'lab' };
@@ -151,7 +151,7 @@ export async function middleware(request: NextRequest) {
     // (/dashboard/<section> pour une holding, /dashboard/clinics/<id>/<section> pour une clinique)
     const sectionMatch = pathname.match(/^\/dashboard\/(?:clinics\/[^/]+\/)?([^/]+)/);
     const section = sectionMatch?.[1];
-    if (section && restrictedSections[section] && !restrictedSections[section].includes(role)) {
+    if (section && !canAccessSection(role, section)) {
       return redirectTo(home);
     }
 

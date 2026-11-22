@@ -16,14 +16,13 @@ const createIncidentSchema = z.object({
   priority: z.nativeEnum(Priority).optional(),
 });
 
-const INCIDENT_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "LABORANTIN", "ACCUEIL", "PHARMACIST", "CASHIER"];
 
 export async function GET(req: Request) {
   try {
     const limited = await rateLimitOrResponse(req, 60, 60000);
     if (limited) return limited;
 
-    const auth = await requireApiUser(INCIDENT_ROLES);
+    const auth = await requireApiUser("incidents.access");
     if ("response" in auth) return auth.response;
     const { page, pageSize, skip, take } = parsePagination(new URL(req.url).searchParams);
 
@@ -50,7 +49,7 @@ export async function POST(req: Request) {
     const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
-    const auth = await requireApiUser(INCIDENT_ROLES);
+    const auth = await requireApiUser("incidents.access");
     if ("response" in auth) return auth.response;
 
     const body = await req.json();

@@ -1,5 +1,7 @@
 "use server";
 
+import { can, type Permission } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
@@ -14,13 +16,11 @@ import { assertUserModule } from "@/lib/modules-server";
 // clichés d'imagerie, stockés sur Cloudinary sans URL publique (cf. src/lib/medical-files-server.ts).
 // Envoi : 1) requestUploadSignature (paramètres signés, dossier du patient imposé), 2) envoi direct
 // navigateur → Cloudinary, 3) attachMedicalFile (vérification du fichier réellement reçu).
-const FILE_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-const FILE_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
-async function requirePatientFileUser(patientId: string, roles: string[]) {
+async function requirePatientFileUser(patientId: string, permission: Permission) {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
-  if (!roles.includes(activeUser.role)) throw new Error("Non autorisé.");
+  if (!can(activeUser, permission)) throw new Error("Non autorisé.");
   if (!(await verifyPatientAccess(patientId, activeUser))) {
     throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
   }
@@ -32,7 +32,7 @@ async function requirePatientFileUser(patientId: string, roles: string[]) {
 export async function requestUploadSignature(patientId: string) {
   try {
     z.string().min(1).parse(patientId);
-    const { organizationId } = await requirePatientFileUser(patientId, FILE_WRITE_ROLES);
+    const { organizationId } = await requirePatientFileUser(patientId, "records.write");
     return { success: true as const, data: signPatientUpload(organizationId, patientId) };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Impossible de préparer l'envoi du fichier.") };
@@ -53,7 +53,7 @@ const attachSchema = z.object({
 export async function attachMedicalFile(data: z.input<typeof attachSchema>) {
   try {
     const input = attachSchema.parse(data);
-    const { activeUser, organizationId } = await requirePatientFileUser(input.patientId, FILE_WRITE_ROLES);
+    const { activeUser, organizationId } = await requirePatientFileUser(input.patientId, "records.write");
 
     // Seul un fichier envoyé dans le dossier de CE patient (identifiant imposé par la signature)
     // peut lui être rattaché.
@@ -117,7 +117,7 @@ export async function attachMedicalFile(data: z.input<typeof attachSchema>) {
 export async function listPatientFiles(data: { patientId: string; category?: (typeof MEDICAL_FILE_CATEGORIES)[number]; radiologyOrderId?: string }) {
   try {
     z.object({ patientId: z.string().min(1) }).parse(data);
-    const { activeUser } = await requirePatientFileUser(data.patientId, FILE_READ_ROLES);
+    const { activeUser } = await requirePatientFileUser(data.patientId, "records.read");
 
     const files = await prisma.medicalFile.findMany({
       where: {
@@ -145,7 +145,7 @@ export async function listPatientFiles(data: { patientId: string; category?: (ty
         category: f.category,
         createdAt: f.createdAt.toISOString(),
         uploadedBy: nameById.get(f.uploadedById) ?? null,
-        canRemove: activeUser.role === "COORDINATOR" || f.uploadedById === activeUser.id,
+        canRemove: can(activeUser, "records.files.manage_all") || f.uploadedById === activeUser.id,
       })),
     };
   } catch (error) {
@@ -160,8 +160,8 @@ export async function removeMedicalFile(fileId: string) {
     z.string().min(1).parse(fileId);
     const file = await prisma.medicalFile.findUnique({ where: { id: fileId } });
     if (!file || file.deletedAt) throw new Error("Document introuvable.");
-    const { activeUser } = await requirePatientFileUser(file.patientId, FILE_WRITE_ROLES);
-    if (activeUser.role !== "COORDINATOR" && file.uploadedById !== activeUser.id) {
+    const { activeUser } = await requirePatientFileUser(file.patientId, "records.write");
+    if (!can(activeUser, "records.files.manage_all") && file.uploadedById !== activeUser.id) {
       throw new Error("Seul l'auteur de l'envoi ou un coordinateur peut retirer ce document.");
     }
 

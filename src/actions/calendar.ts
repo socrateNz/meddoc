@@ -1,5 +1,7 @@
 "use server";
 
+import { can, canAny } from "@/lib/permissions-catalog";
+
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -12,27 +14,19 @@ type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 // élargi par rapport à l'ancien APPOINTMENT_SCHEDULE_ROLES de src/actions/appointments.ts pour
 // que PHARMACIST voie l'expiration de stock + ses propres gardes/événements, et que CASHIER voie
 // ses propres gardes/événements, même sans jamais voir un rendez-vous patient (cf.
-// APPOINTMENT_CARETASK_ROLES plus bas). Garder en phase avec src/middleware.ts
+// "calendar.caretasks" plus bas). Garder en phase avec src/middleware.ts
 // (restrictedSections.appointments) et src/app/dashboard/sidebar.tsx — les trois doivent changer
 // ensemble, sinon le lien apparaît mais redirige silencieusement (ou l'inverse).
-const CALENDAR_ACCESS_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "ACCUEIL", "LABORANTIN", "PHARMACIST", "CASHIER"];
 // Lecture org-wide (par opposition à "mien ou non affecté") — même convention que
 // CONTRACT_READ_ROLES (ADMIN en lecture seule, jamais en écriture) déjà établie dans contracts.ts.
-const ORG_WIDE_READ_ROLES = ["ADMIN", "COORDINATOR"];
 // Rendez-vous et tâches de soins ne concernent que le personnel clinique — jamais PHARMACIST/
 // CASHIER, qui n'ont de toute façon aucun Caregiver associé (cf. team.ts : seuls MEDECIN et
 // CAREGIVER en reçoivent un à la création).
-const APPOINTMENT_CARETASK_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-// L'accueil gère les rendez-vous de toute la clinique, mais pas les tâches de soins (contenu médical).
-const APPOINTMENT_ONLY_ROLES = ["ACCUEIL"];
 // Mêmes rôles que CONTRACT_READ_ROLES (src/actions/contracts.ts) — une échéance de contrat n'a
 // aucun sens pour un rôle qui ne peut déjà pas voir le contrat lui-même.
-const CONTRACT_DEADLINE_ROLES = ["ADMIN", "COORDINATOR"];
 // Mêmes rôles que l'accès à la page Pharmacie (cf. src/middleware.ts: pharmacie).
-const STOCK_EXPIRY_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST"];
 // Seul COORDINATOR planifie le personnel — ADMIN reste en lecture seule ici comme ailleurs
 // (contrats, équipe...).
-const SHIFT_MANAGE_ROLES = ["COORDINATOR"];
 
 // Trois variantes du même filtre HOLDING/CLINIC/autre, une par modèle cible — cf. le constat de
 // l'exploration : getOrgScopeWhere (src/lib/org-scope.ts) est typé Prisma.PatientWhereInput et
@@ -202,15 +196,16 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
   try {
     const user = await getCurrentUser();
     if (!user) throw new Error("Non authentifié.");
-    if (!CALENDAR_ACCESS_ROLES.includes(user.role)) {
+    if (!can(user, "calendar.access")) {
       return { success: true, data: [] as CalendarItem[] };
     }
 
-    const isOrgWideReader = ORG_WIDE_READ_ROLES.includes(user.role);
-    const canSeeAppointmentsAndTasks = APPOINTMENT_CARETASK_ROLES.includes(user.role);
-    const canSeeAppointments = canSeeAppointmentsAndTasks || APPOINTMENT_ONLY_ROLES.includes(user.role);
-    const seesAllAppointments = isOrgWideReader || APPOINTMENT_ONLY_ROLES.includes(user.role);
-    const canManageShifts = SHIFT_MANAGE_ROLES.includes(user.role);
+    const isOrgWideReader = can(user, "shifts.read_all");
+    const canSeeAppointmentsAndTasks = can(user, "calendar.caretasks");
+    // L'accueil gère les rendez-vous (de toute la clinique) sans voir les tâches de soins.
+    const canSeeAppointments = canAny(user, "calendar.caretasks", "appointments.schedule");
+    const seesAllAppointments = can(user, "appointments.read_all");
+    const canManageShifts = can(user, "shifts.manage");
     const clinicId = options?.clinicId;
 
     const myCaregiver = await prisma.caregiver.findUnique({ where: { userId: user.id }, select: { id: true } });
@@ -270,7 +265,7 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
           })
         : Promise.resolve([] as CareTaskRow[]),
 
-      CONTRACT_DEADLINE_ROLES.includes(user.role)
+      can(user, "contracts.read")
         ? prisma.contract.findMany({
             where: { patient: patientOrgFilter(user, clinicId), endDate: { not: null } },
             include: { patient: { include: { user: true } }, caregiver: { include: { user: true } } },
@@ -282,7 +277,7 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
       // Fenêtre large (90j) volontairement différente du seuil d'alerte de scheduler.ts (30j) :
       // vue de planification, pas un flux d'urgence. Pas de dédoublonnage par article — chaque
       // lot avec une échéance distincte est une ligne de calendrier séparée (cf. plan).
-      STOCK_EXPIRY_ROLES.includes(user.role)
+      can(user, "stock.read")
         ? prisma.stockPurchase.findMany({
             where: { ...stockPurchaseOrgFilter(user, clinicId), remainingQuantity: { gt: 0 }, expiryDate: { gte: now, lte: in90Days } },
             include: { pharmacyItem: true },
@@ -292,7 +287,7 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
         : Promise.resolve([] as StockPurchaseRow[]),
     ]);
 
-    const canEditAppointment = canSeeAppointments && user.role !== "ADMIN";
+    const canEditAppointment = can(user, "appointments.schedule");
 
     const items: CalendarItem[] = [
       ...appointments.map((a) => mapAppointment(a, canEditAppointment)),

@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
@@ -16,13 +18,12 @@ import { revalidatePath } from "next/cache";
 import { billStayToDate, closeOpenSegment, findOpenStay, patientOutstanding } from "@/lib/hospital-stay-db";
 
 // Écrire sur un plan de soins (créer/clôturer/réouvrir, ajouter ou cocher une tâche) est
-// réservé au personnel opérationnel de la clinique — même périmètre que CLINICAL_WRITE_ROLES
+// réservé au personnel opérationnel de la clinique — même périmètre que "records.write"
 // dans src/actions/patients.ts. Avant ce contrôle, seul l'accès au dossier patient était
 // vérifié : un rôle non clinique (PHARMACIST, FAMILY, PATIENT...) partageant l'organisation
 // du patient pouvait déclencher ces écritures.
-const CLINICAL_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 function assertClinicalWriteAccess(role: string) {
-  if (!CLINICAL_WRITE_ROLES.includes(role)) {
+  if (!can(role, "records.write")) {
     throw new Error("Non autorisé. Réservé au personnel clinique (coordinateur, médecin ou infirmier(e)).");
   }
 }
@@ -178,7 +179,7 @@ export async function closeCarePlan(
 
     const forceReason = options.forceReason?.trim() || null;
     if (outstanding > 0) {
-      const canForce = activeUser.role === "COORDINATOR";
+      const canForce = can(activeUser, "careplans.force");
       if (!canForce || !forceReason) {
         return {
           success: false as const,

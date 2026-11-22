@@ -1,5 +1,7 @@
 "use server";
 
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -24,18 +26,15 @@ import { canSeePatientService, restrictedServiceIds } from "@/lib/service-access
 // Accueil & file d'attente (étape C2 de l'audit d'évolution). Rôle dédié ACCUEIL ; dans les petites
 // clinique le guichet reste aussi tenu par le personnel présent (soignants, caissier). ADMIN
 // (holding) consulte en lecture seule.
-const VISIT_READ_ROLES = ["ADMIN", "COORDINATOR", "ACCUEIL", "MEDECIN", "CAREGIVER", "LABORANTIN", "CASHIER", "PHARMACIST"];
-const VISIT_FRONT_DESK_ROLES = ["COORDINATOR", "ACCUEIL", "MEDECIN", "CAREGIVER", "CASHIER"];
-const CLINICAL_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 // Prendre en charge / terminer un passage : le personnel soignant pour tout passage, plus le
 // caissier pour le guichet administratif, le pharmacien pour la pharmacie et le laborantin pour
 // le laboratoire. L'accueil oriente mais ne prend pas en charge.
-function canHandle(role: string, destination: string) {
-  if (CLINICAL_ROLES.includes(role)) return true;
-  if (role === "CASHIER") return destination === "ADMINISTRATIVE";
-  if (role === "PHARMACIST") return destination === "PHARMACY";
-  if (role === "LABORANTIN") return destination === "LAB";
+function canHandle(subject: PermissionSubject, destination: string) {
+  if (can(subject, "visits.handle.all")) return true;
+  if (destination === "ADMINISTRATIVE") return can(subject, "visits.handle.admin");
+  if (destination === "PHARMACY") return can(subject, "visits.handle.pharmacy");
+  if (destination === "LAB") return can(subject, "visits.handle.lab");
   return false;
 }
 
@@ -56,7 +55,7 @@ export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "ACCUEIL");
-    if (!VISIT_FRONT_DESK_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
+    if (!can(activeUser, "visits.register")) throw new Error("Non autorisé.");
     await assertClinicScope(input.clinicId, activeUser);
     // Orientation vers un service dont le module n'est pas dans la licence : refusée.
     const destinationModule = VISIT_DESTINATION_MODULE[input.destination];
@@ -177,7 +176,7 @@ export async function listTodayVisits(clinicId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "ACCUEIL");
-    if (!VISIT_READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
+    if (!can(activeUser, "visits.read")) throw new Error("Non autorisé.");
     await assertClinicScope(clinicId, activeUser);
 
     // Médecin/infirmier rattaché à des services : il ne voit que les consultations de ses services
@@ -220,12 +219,12 @@ export async function listTodayVisits(clinicId: string) {
           handledByName: v.handledById ? nameById.get(v.handledById) ?? null : null,
           serviceId: v.serviceId,
           serviceName: v.service?.name ?? null,
-          canHandle: canHandle(activeUser.role, v.destination),
+          canHandle: canHandle(activeUser, v.destination),
         };
       })
       .sort(compareQueue);
 
-    return { success: true as const, data, canRegister: VISIT_FRONT_DESK_ROLES.includes(activeUser.role) };
+    return { success: true as const, data, canRegister: can(activeUser, "visits.register") };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement de la file d'attente.") };
   }
@@ -243,7 +242,7 @@ export async function updateVisitStatus(data: { visitId: string; action: VisitAc
     await assertClinicScope(visit.organizationId, activeUser);
 
     const handling = data.action === "START" || data.action === "COMPLETE";
-    if (handling ? !canHandle(activeUser.role, visit.destination) : !VISIT_FRONT_DESK_ROLES.includes(activeUser.role)) {
+    if (handling ? !canHandle(activeUser, visit.destination) : !can(activeUser, "visits.register")) {
       throw new Error("Non autorisé pour ce passage.");
     }
     if (handling && !canSeePatientService(await restrictedServiceIds(activeUser), visit.serviceId)) {

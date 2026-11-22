@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
@@ -27,11 +29,10 @@ const transferSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
-const TRANSFER_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 async function assertCoordinatorOf(clinicId: string) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "COORDINATOR" || user.organizationId !== clinicId) {
+  if (!user || !can(user, "clinic.configure") || user.organizationId !== clinicId) {
     throw new Error("Non autorisé. Seul le coordinateur de la clinique gère ses services.");
   }
   return user;
@@ -122,7 +123,7 @@ export async function transferPatient(input: z.input<typeof transferSchema>) {
     const data = transferSchema.parse(input);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    if (!TRANSFER_ROLES.includes(activeUser.role)) throw new Error("Non autorisé. Seuls le coordinateur, un médecin ou un infirmier(e) peuvent transférer un dossier.");
+    if (!can(activeUser, "records.transfer")) throw new Error("Non autorisé. Seuls le coordinateur, un médecin ou un infirmier(e) peuvent transférer un dossier.");
     if (!(await verifyPatientAccess(data.patientId, activeUser))) throw new Error("Non autorisé. Ce dossier n'est pas accessible.");
 
     const patient = await prisma.patient.findUnique({ where: { id: data.patientId }, select: { id: true, organizationId: true, serviceId: true } });

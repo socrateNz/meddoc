@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { NextResponse } from "next/server";
 import { AppointmentService } from "@/services/AppointmentService";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
@@ -19,10 +20,8 @@ const createApptSchema = z.object({
 });
 
 // Mêmes rôles que src/actions/appointments.ts (APPOINTMENT_SCHEDULE_ROLES).
-const APPOINTMENT_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER", "ACCUEIL"];
 // Agenda de toute la clinique : direction et accueil. Les autres rôles du personnel (pharmacie,
 // caisse, labo, comptabilité) n'ont pas à lire les rendez-vous des patients.
-const APPOINTMENT_ORG_READ_ROLES = ["ADMIN", "COORDINATOR", "ACCUEIL", "SUPER_ADMIN"];
 
 export async function GET(req: Request) {
   try {
@@ -47,7 +46,7 @@ export async function GET(req: Request) {
       const family = await prisma.familyMember.findUnique({ where: { userId: user.id }, select: { patientId: true } });
       if (!family) return NextResponse.json({ data: [], total: 0, page, pageSize });
       where = { patientId: family.patientId };
-    } else if (APPOINTMENT_ORG_READ_ROLES.includes(user.role)) {
+    } else if (can(user, "appointments.read_all")) {
       where = { patient: getOrgScopeWhere(user) };
     } else {
       return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
@@ -78,7 +77,7 @@ export async function POST(req: Request) {
     const limited = await rateLimitOrResponse(req, 20, 60000);
     if (limited) return limited;
 
-    const auth = await requireApiUser(APPOINTMENT_WRITE_ROLES);
+    const auth = await requireApiUser("appointments.schedule");
     if ("response" in auth) return auth.response;
 
     const body = await req.json();

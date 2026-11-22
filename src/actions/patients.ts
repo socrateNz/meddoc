@@ -1,5 +1,7 @@
 "use server";
 
+import { assertCan, can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { assertOrganizationAccess, resolveTargetOrgId } from "@/lib/org-scope";
@@ -24,10 +26,9 @@ import { billStayToDate, closeOpenSegment } from "@/lib/hospital-stay-db";
 
 // La prise en charge clinique (créer/modifier un patient, un dossier ou un incident) est réservée
 // au personnel opérationnel de la clinique — ADMIN (holding) et PHARMACIST restent en lecture seule.
-const CLINICAL_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 function assertClinicalWriteAccess(role: string) {
-  if (!CLINICAL_WRITE_ROLES.includes(role)) {
+  if (!can(role, "records.write")) {
     throw new Error("Non autorisé. Seuls un coordinateur, un médecin ou un infirmier(e) peuvent effectuer cette action.");
   }
 }
@@ -59,7 +60,7 @@ async function createPatientOnce(data: {
     }
     // L'accueil enregistre les nouveaux patients (identité et antécédents déclarés), sans accès au
     // reste du dossier médical.
-    if (activeUser.role !== "ACCUEIL") assertClinicalWriteAccess(activeUser.role);
+    assertCan(activeUser, "patients.create", "Non autorisé. Seuls le coordinateur, l'accueil, un médecin ou un infirmier(e) peuvent enregistrer un patient.");
 
     let targetOrgId = activeUser.organizationId;
     if (data.organizationId && activeUser.organization?.type === "HOLDING") {
@@ -158,7 +159,7 @@ export async function importPatients(input: { clinicId: string; items: ImportedP
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     // Reprise d'un fichier : coordinateur ou accueil, pas les soignants au quotidien.
-    if (!["COORDINATOR", "ACCUEIL"].includes(activeUser.role)) throw new Error("Non autorisé. Réservé au coordinateur et à l'accueil.");
+    assertCan(activeUser, "patients.import", "Non autorisé. Réservé au coordinateur et à l'accueil.");
     await assertOrganizationAccess(activeUser, input.clinicId);
 
     const services = await prisma.clinicService.findMany({ where: { organizationId: input.clinicId, isActive: true }, select: { id: true, name: true } });

@@ -1,5 +1,7 @@
 "use server";
 
+import { can, type Permission } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -28,18 +30,14 @@ import { canSeePatientService, restrictedServiceIds } from "@/lib/service-access
 // anesthésiste) ou le coordinateur programme et opère ; l'infirmier(e) — panseuse — signe la
 // check-list ; le coordinateur gère les salles ; l'admin de holding consulte. Facturé à la
 // programmation (forfait), comme l'imagerie.
-const READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-const SCHEDULE_ROLES = ["COORDINATOR", "MEDECIN"];
-const CHECKLIST_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
-const ROOM_ROLES = ["COORDINATOR"];
 const SURGEON_ROLES = ["COORDINATOR", "MEDECIN"];
 const NURSE_ROLES = ["CAREGIVER"];
 
-async function requireUser(roles: string[], message = "Non autorisé.") {
+async function requireUser(permission: Permission, message = "Non autorisé.") {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
   assertUserModule(activeUser, "BLOC");
-  if (!roles.includes(activeUser.role)) throw new Error(message);
+  if (!can(activeUser, permission)) throw new Error(message);
   return activeUser;
 }
 
@@ -52,7 +50,7 @@ function revalidateSurgery(organizationId: string, caseId?: string) {
 
 export async function listOperatingRooms(clinicId: string, options: { includeInactive?: boolean } = {}) {
   try {
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("surgery.read");
     await assertClinicScope(clinicId, activeUser);
     const rooms = await prisma.operatingRoom.findMany({
       where: { organizationId: clinicId, ...(options.includeInactive ? {} : { isActive: true }) },
@@ -74,7 +72,7 @@ const roomSchema = z.object({
 export async function upsertOperatingRoom(data: z.input<typeof roomSchema>) {
   try {
     const input = roomSchema.parse(data);
-    const activeUser = await requireUser(ROOM_ROLES, "Non autorisé. Les salles sont gérées par le coordinateur.");
+    const activeUser = await requireUser("surgery.rooms", "Non autorisé. Les salles sont gérées par le coordinateur.");
     await assertClinicScope(input.clinicId, activeUser);
 
     const duplicate = await prisma.operatingRoom.findFirst({ where: { organizationId: input.clinicId, name: input.name, ...(input.id ? { id: { not: input.id } } : {}) } });
@@ -100,7 +98,7 @@ export async function upsertOperatingRoom(data: z.input<typeof roomSchema>) {
 
 export async function listSurgeryStaff(clinicId: string) {
   try {
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("surgery.read");
     await assertClinicScope(clinicId, activeUser);
     const users = await prisma.user.findMany({
       where: { organizationId: clinicId, isActive: true, role: { in: ["COORDINATOR", "MEDECIN", "CAREGIVER"] } },
@@ -196,7 +194,7 @@ const scheduleSchema = z.object({
 export async function scheduleSurgery(data: z.input<typeof scheduleSchema>) {
   try {
     const input = scheduleSchema.parse(data);
-    const activeUser = await requireUser(SCHEDULE_ROLES, "Non autorisé. Seul un médecin ou un coordinateur programme une intervention.");
+    const activeUser = await requireUser("surgery.schedule", "Non autorisé. Seul un médecin ou un coordinateur programme une intervention.");
     if (!(await verifyPatientAccess(input.patientId, activeUser))) {
       throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
     }
@@ -279,7 +277,7 @@ const rescheduleSchema = z.object({ caseId: z.string().min(1), ...slotSchema });
 export async function rescheduleSurgery(data: z.input<typeof rescheduleSchema>) {
   try {
     const input = rescheduleSchema.parse(data);
-    const activeUser = await requireUser(SCHEDULE_ROLES, "Non autorisé.");
+    const activeUser = await requireUser("surgery.schedule", "Non autorisé.");
     const surgery = await prisma.surgeryCase.findUnique({ where: { id: input.caseId } });
     if (!surgery) throw new Error("Intervention introuvable.");
     if (!(await verifyPatientAccess(surgery.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -331,7 +329,7 @@ const checklistSchema = z.object({
 export async function signChecklistPhase(data: z.input<typeof checklistSchema>) {
   try {
     const input = checklistSchema.parse(data);
-    const activeUser = await requireUser(CHECKLIST_ROLES, "Non autorisé. La check-list est signée par l'équipe du bloc.");
+    const activeUser = await requireUser("surgery.checklist", "Non autorisé. La check-list est signée par l'équipe du bloc.");
     const surgery = await prisma.surgeryCase.findUnique({ where: { id: input.caseId } });
     if (!surgery) throw new Error("Intervention introuvable.");
     if (!(await verifyPatientAccess(surgery.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -376,7 +374,7 @@ function requireReport(input: { operativeReport?: string; postOpInstructions?: s
 
 // Le compte-rendu est rédigé par le chirurgien de l'intervention (ou le coordinateur).
 function assertReportAuthor(activeUser: { id: string; role: string }, surgeonId: string) {
-  if (activeUser.role !== "COORDINATOR" && activeUser.id !== surgeonId) {
+  if (!can(activeUser, "surgery.manage_all") && activeUser.id !== surgeonId) {
     throw new Error("Seul le chirurgien de l'intervention (ou le coordinateur) rédige le compte-rendu opératoire.");
   }
 }
@@ -391,7 +389,7 @@ const statusSchema = z.object({
 export async function updateSurgeryStatus(data: z.input<typeof statusSchema>) {
   try {
     const input = statusSchema.parse(data);
-    const activeUser = await requireUser(SCHEDULE_ROLES, "Non autorisé pour cette étape de l'intervention.");
+    const activeUser = await requireUser("surgery.schedule", "Non autorisé pour cette étape de l'intervention.");
     const surgery = await prisma.surgeryCase.findUnique({ where: { id: input.caseId } });
     if (!surgery) throw new Error("Intervention introuvable.");
     if (!(await verifyPatientAccess(surgery.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -451,7 +449,7 @@ const amendSchema = z.object({ caseId: z.string().min(1), ...reportFields });
 export async function amendOperativeReport(data: z.input<typeof amendSchema>) {
   try {
     const input = amendSchema.parse(data);
-    const activeUser = await requireUser(SCHEDULE_ROLES, "Non autorisé.");
+    const activeUser = await requireUser("surgery.schedule", "Non autorisé.");
     const surgery = await prisma.surgeryCase.findUnique({ where: { id: input.caseId } });
     if (!surgery) throw new Error("Intervention introuvable.");
     if (!(await verifyPatientAccess(surgery.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -486,7 +484,7 @@ async function namesById(ids: (string | null | undefined)[]) {
 // débordent, y compris celles commencées la veille.
 export async function listSurgeryDay(clinicId: string, dateKey: string = clinicDateKey()) {
   try {
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("surgery.read");
     await assertClinicScope(clinicId, activeUser);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) throw new Error("Date invalide.");
     const dayStart = clinicDateTimeToUtc(dateKey, "00:00");
@@ -535,7 +533,7 @@ export async function listSurgeryDay(clinicId: string, dateKey: string = clinicD
             checklistDone: CHECKLIST_PHASES.filter((ph) => checklist[ph]).length,
           };
         }),
-        canSchedule: SCHEDULE_ROLES.includes(activeUser.role),
+        canSchedule: can(activeUser, "surgery.schedule"),
       },
     };
   } catch (error) {
@@ -546,7 +544,7 @@ export async function listSurgeryDay(clinicId: string, dateKey: string = clinicD
 export async function getSurgeryCase(caseId: string) {
   try {
     z.string().min(1).parse(caseId);
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("surgery.read");
     const surgery = await prisma.surgeryCase.findUnique({ where: { id: caseId } });
     if (!surgery) throw new Error("Intervention introuvable.");
     if (!(await verifyPatientAccess(surgery.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -570,7 +568,7 @@ export async function getSurgeryCase(caseId: string) {
         ...CHECKLIST_PHASES.map((ph) => checklist[ph]?.checkedById),
       ]),
     ]);
-    const isSurgeonOrCoordinator = activeUser.role === "COORDINATOR" || activeUser.id === surgery.surgeonId;
+    const isSurgeonOrCoordinator = can(activeUser, "surgery.manage_all") || activeUser.id === surgery.surgeonId;
 
     return {
       success: true as const,
@@ -612,9 +610,9 @@ export async function getSurgeryCase(caseId: string) {
         organization,
         invoiceStatus: invoice?.status ?? null,
         permissions: {
-          schedule: SCHEDULE_ROLES.includes(activeUser.role),
-          checklist: CHECKLIST_ROLES.includes(activeUser.role),
-          report: SCHEDULE_ROLES.includes(activeUser.role) && isSurgeonOrCoordinator,
+          schedule: can(activeUser, "surgery.schedule"),
+          checklist: can(activeUser, "surgery.checklist"),
+          report: can(activeUser, "surgery.schedule") && isSurgeonOrCoordinator,
         },
       },
     };
@@ -626,7 +624,7 @@ export async function getSurgeryCase(caseId: string) {
 export async function listPatientSurgeries(patientId: string) {
   try {
     z.string().min(1).parse(patientId);
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("surgery.read");
     if (!(await verifyPatientAccess(patientId, activeUser))) throw new Error("Non autorisé.");
     const cases = await prisma.surgeryCase.findMany({ where: { patientId }, orderBy: { scheduledStart: "desc" }, take: 50 });
     const names = await namesById(cases.map((c) => c.surgeonId));

@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
@@ -11,8 +13,6 @@ import { assertUserModule } from "@/lib/modules-server";
 
 // Séjour d'hospitalisation en cours d'un patient (cf. src/lib/hospital-stay.ts) : consultation par
 // le personnel clinique, correction de la date d'entrée par le coordinateur.
-const STAY_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-const STAY_CORRECT_ROLES = ["COORDINATOR"];
 
 export async function getOpenStaySummary(patientId: string) {
   try {
@@ -20,7 +20,7 @@ export async function getOpenStaySummary(patientId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    if (!STAY_READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
+    if (!can(activeUser, "rooms.read")) throw new Error("Non autorisé.");
     if (!(await verifyPatientAccess(patientId, activeUser))) throw new Error("Non autorisé.");
 
     const stay = await prisma.hospitalStay.findFirst({
@@ -47,7 +47,7 @@ export async function getOpenStaySummary(patientId: string) {
         amountNotYetBilled: lines.reduce((sum, l) => sum + l.amount, 0),
         currentBed: current ? { wardName: current.wardName, roomName: current.roomName, bedLabel: current.bedLabel, nightlyRate: current.nightlyRate } : null,
         // La date d'entrée n'est corrigeable que tant qu'aucune nuitée n'a été facturée.
-        canCorrectAdmission: STAY_CORRECT_ROLES.includes(activeUser.role) && stay.nightsBilled === 0,
+        canCorrectAdmission: can(activeUser, "stays.correct") && stay.nightsBilled === 0,
       },
     };
   } catch (error) {
@@ -65,7 +65,7 @@ export async function correctStayAdmission(data: { stayId: string; admittedAt: s
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    if (!STAY_CORRECT_ROLES.includes(activeUser.role)) throw new Error("Non autorisé. Réservé aux coordinateurs.");
+    if (!can(activeUser, "stays.correct")) throw new Error("Non autorisé. Réservé aux coordinateurs.");
 
     const admittedAt = new Date(data.admittedAt);
     if (Number.isNaN(admittedAt.getTime())) throw new Error("Date d'entrée invalide.");

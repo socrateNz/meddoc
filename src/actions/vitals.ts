@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
@@ -9,11 +11,10 @@ import { resolvePage } from "@/lib/pagination";
 import { recordVitalSignSchema } from "@/validators/vitals";
 import { revalidatePath } from "next/cache";
 
-// Même périmètre que CLINICAL_WRITE_ROLES dans src/actions/patients.ts — enregistrer une
+// Même périmètre que "records.write" dans src/actions/patients.ts — enregistrer une
 // constante est un geste clinique, réservé au personnel opérationnel de la clinique.
-const CLINICAL_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 function assertClinicalWriteAccess(role: string) {
-  if (!CLINICAL_WRITE_ROLES.includes(role)) {
+  if (!can(role, "records.write")) {
     throw new Error("Non autorisé. Réservé au personnel clinique (coordinateur, médecin ou infirmier(e)).");
   }
 }

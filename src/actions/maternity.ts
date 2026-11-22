@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
@@ -24,15 +26,13 @@ import { prenatalFollowUp, comparePrenatalFollowUp } from "@/lib/maternity-label
 // (holding) en lecture seule. Créer/modifier une grossesse, une visite prénatale ou un
 // accouchement reste une écriture clinique réservée au même trio que CLINICAL_WRITE_ROLES
 // (src/actions/patients.ts, src/actions/careplans.ts).
-const MATERNITY_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-const MATERNITY_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 function assertMaternityReadRole(role: string) {
-  if (!MATERNITY_READ_ROLES.includes(role)) throw new Error("Non autorisé.");
+  if (!can(role, "maternity.read")) throw new Error("Non autorisé.");
 }
 
 function assertMaternityWriteRole(role: string) {
-  if (!MATERNITY_WRITE_ROLES.includes(role)) {
+  if (!can(role, "maternity.write")) {
     throw new Error("Non autorisé. Réservé au personnel clinique (coordinateur, médecin ou infirmier(e)).");
   }
 }

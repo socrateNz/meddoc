@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -11,7 +12,6 @@ import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
 // composer un panier de caisse hors-ligne (nom, prix, dernier stock connu) sans pouvoir rien
 // modifier par ce chemin. Mêmes rôles que la caisse (src/actions/registers.ts,
 // assertRegisterOperateRole) plus le pharmacien, qui dispense depuis le même catalogue.
-const OFFLINE_READ_ROLES = ["COORDINATOR", "CASHIER", "PHARMACIST", "ADMIN"];
 
 function toReplicatedDoc(item: {
   id: string;
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     if (!modulesOfUser(currentUser).includes("PHARMACIE")) {
       return NextResponse.json({ error: MODULE_DISABLED_MESSAGE("PHARMACIE") }, { status: 403 });
     }
-    if (!OFFLINE_READ_ROLES.includes(currentUser.role)) {
+    if (!can(currentUser, "pharmacy.catalog.read")) {
       return NextResponse.json({ error: "Non autorisé." }, { status: 403 });
     }
 

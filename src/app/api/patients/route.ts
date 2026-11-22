@@ -18,14 +18,13 @@ const createPatientSchema = z.object({
 });
 
 // Mêmes rôles que la section « patients » (src/lib/staff-roles.ts) : pas la pharmacie.
-const PATIENT_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 export async function GET(req: Request) {
   try {
     const limited = await rateLimitOrResponse(req, 60, 60000);
     if (limited) return limited;
 
-    const auth = await requireApiUser(PATIENT_READ_ROLES);
+    const auth = await requireApiUser("records.read");
     if ("response" in auth) return auth.response;
     const { page, pageSize, skip, take } = parsePagination(new URL(req.url).searchParams);
 

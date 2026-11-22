@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { NextRequest, NextResponse } from "next/server";
 import { AiRAGService, RateLimitError, ServiceUnavailableError } from "@/services/AiRAGService";
 import { prisma } from "@/lib/db";
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     const userRole = currentUser.role;
 
     // Assistance clinique IA : autorité diagnostique (COORDINATOR/MEDECIN), ADMIN en lecture seule.
-    if (!["ADMIN", "COORDINATOR", "MEDECIN"].includes(userRole)) {
+    if (!can(userRole, "ai.use")) {
       return NextResponse.json({ error: "Accès interdit" }, { status: 403 });
     }
 

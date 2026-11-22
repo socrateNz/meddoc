@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -10,7 +11,6 @@ import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
 // Lecture seule pour la réplication RxDB du catalogue d'examens (cf. src/lib/offline-db.ts) —
 // mêmes rôles que listLabTests (src/actions/lab.ts, assertLabReadRole), aucune écriture possible
 // par ce chemin.
-const OFFLINE_READ_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER", "ADMIN"];
 
 function toReplicatedDoc(test: {
   id: string;
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     if (!modulesOfUser(currentUser).includes("LABORATOIRE")) {
       return NextResponse.json({ error: MODULE_DISABLED_MESSAGE("LABORATOIRE") }, { status: 403 });
     }
-    if (!OFFLINE_READ_ROLES.includes(currentUser.role)) {
+    if (!can(currentUser, "lab.sync_offline")) {
       return NextResponse.json({ error: "Non autorisé." }, { status: 403 });
     }
 

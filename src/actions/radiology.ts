@@ -1,5 +1,7 @@
 "use server";
 
+import { can, canAny, type Permission } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -18,17 +20,12 @@ import { hiddenPatientIds, restrictedServiceIds } from "@/lib/service-access";
 // dédié : prescription et compte-rendu par le médecin (ou le coordinateur), réalisation et envoi
 // des clichés aussi par l'infirmier(e), catalogue par le coordinateur, lecture seule pour
 // l'admin de holding. Facturée à la prescription, comme le laboratoire.
-const READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
-const ORDER_ROLES = ["COORDINATOR", "MEDECIN"];
-const PERFORM_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
-const REPORT_ROLES = ["COORDINATOR", "MEDECIN"];
-const CATALOG_ROLES = ["COORDINATOR"];
 
-async function requireUser(roles: string[], message = "Non autorisé.") {
+async function requireUser(permissions: Permission | Permission[], message = "Non autorisé.") {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
   assertUserModule(activeUser, "IMAGERIE");
-  if (!roles.includes(activeUser.role)) throw new Error(message);
+  if (!canAny(activeUser, ...(Array.isArray(permissions) ? permissions : [permissions]))) throw new Error(message);
   return activeUser;
 }
 
@@ -41,7 +38,7 @@ function revalidateRadiology(organizationId: string, patientId?: string) {
 
 export async function listRadiologyExams(clinicId: string, options: { includeInactive?: boolean } = {}) {
   try {
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("imaging.read");
     await assertClinicScope(clinicId, activeUser);
     const exams = await prisma.radiologyExam.findMany({
       where: { organizationId: clinicId, ...(options.includeInactive ? {} : { isActive: true }) },
@@ -65,7 +62,7 @@ const examSchema = z.object({
 export async function upsertRadiologyExam(data: z.input<typeof examSchema>) {
   try {
     const input = examSchema.parse(data);
-    const activeUser = await requireUser(CATALOG_ROLES, "Non autorisé. Le catalogue est géré par le coordinateur.");
+    const activeUser = await requireUser("imaging.catalog", "Non autorisé. Le catalogue est géré par le coordinateur.");
     await assertClinicScope(input.clinicId, activeUser);
 
     let exam;
@@ -105,7 +102,7 @@ const importExamsSchema = z.object({
 export async function importRadiologyExams(data: z.input<typeof importExamsSchema>) {
   try {
     const input = importExamsSchema.parse(data);
-    const activeUser = await requireUser(CATALOG_ROLES, "Non autorisé. Le catalogue est géré par le coordinateur.");
+    const activeUser = await requireUser("imaging.catalog", "Non autorisé. Le catalogue est géré par le coordinateur.");
     await assertClinicScope(input.clinicId, activeUser);
     const existing = await prisma.radiologyExam.findMany({ where: { organizationId: input.clinicId }, select: { id: true, name: true } });
     const idByName = new Map(existing.map((e) => [e.name.trim().toLowerCase(), e.id]));
@@ -158,7 +155,7 @@ export async function createRadiologyOrder(data: z.input<typeof orderSchema>) {
     // Sage-femme / infirmier(e) : seulement depuis une consultation prénatale (échographie de
     // grossesse), comme pour le bilan biologique (cf. createLabOrder).
     const activeUser = await requireUser(
-      input.prenatalVisitId ? [...ORDER_ROLES, "CAREGIVER"] : ORDER_ROLES,
+      input.prenatalVisitId ? ["imaging.order", "imaging.order.prenatal"] as Permission[] : "imaging.order",
       "Non autorisé. Seul un médecin ou un coordinateur peut prescrire un examen d'imagerie."
     );
     if (!(await verifyPatientAccess(input.patientId, activeUser))) {
@@ -216,11 +213,11 @@ export async function createRadiologyOrder(data: z.input<typeof orderSchema>) {
 
 // --- Circuit de l'examen ---
 
-const ACTION_ROLES: Record<RadiologyAction, string[]> = {
-  PERFORM: PERFORM_ROLES,
-  REPORT: REPORT_ROLES,
-  VALIDATE: REPORT_ROLES,
-  CANCEL: ORDER_ROLES,
+const ACTION_ROLES: Record<RadiologyAction, Permission> = {
+  PERFORM: "imaging.perform",
+  REPORT: "imaging.report",
+  VALIDATE: "imaging.report",
+  CANCEL: "imaging.order",
 };
 
 const transitionSchema = z.object({
@@ -298,7 +295,7 @@ async function namesById(ids: (string | null | undefined)[]) {
 
 export async function listRadiologyOrders(options: { clinicId?: string; patientId?: string; status?: string; page?: number }) {
   try {
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("imaging.read");
     const where: Prisma.RadiologyOrderWhereInput = {};
     if (options.patientId) {
       if (!(await verifyPatientAccess(options.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -354,7 +351,7 @@ export async function listRadiologyOrders(options: { clinicId?: string; patientI
 export async function getRadiologyOrder(orderId: string) {
   try {
     z.string().min(1).parse(orderId);
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("imaging.read");
     const order = await prisma.radiologyOrder.findUnique({ where: { id: orderId } });
     if (!order) throw new Error("Examen introuvable.");
     if (!(await verifyPatientAccess(order.patientId, activeUser))) throw new Error("Non autorisé.");
@@ -389,10 +386,10 @@ export async function getRadiologyOrder(orderId: string) {
         validatedByName: order.validatedById ? names.get(order.validatedById) ?? null : null,
         cancelledByName: order.cancelledById ? names.get(order.cancelledById) ?? null : null,
         permissions: {
-          perform: PERFORM_ROLES.includes(activeUser.role),
-          report: REPORT_ROLES.includes(activeUser.role),
-          cancel: ORDER_ROLES.includes(activeUser.role),
-          upload: PERFORM_ROLES.includes(activeUser.role),
+          perform: can(activeUser, "imaging.perform"),
+          report: can(activeUser, "imaging.report"),
+          cancel: can(activeUser, "imaging.order"),
+          upload: can(activeUser, "imaging.perform"),
         },
       },
     };

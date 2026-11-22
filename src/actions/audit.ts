@@ -1,12 +1,14 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { resolvePage } from "@/lib/pagination";
 
 export async function getAuditLogs(organizationId?: string, options?: { page?: number; pageSize?: number }) {
   const activeUser = await getCurrentUser();
-  if (!activeUser || activeUser.role !== "ADMIN") {
+  if (!activeUser || !can(activeUser, "audit.read")) {
     throw new Error("Non autorisé. Réservé aux administrateurs.");
   }
 

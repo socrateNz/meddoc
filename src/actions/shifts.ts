@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -11,11 +13,10 @@ import { revalidatePath } from "next/cache";
 // Seul COORDINATOR planifie le personnel (cf. plan « Calendrier unifié ») — même principe que
 // CONTRACT_WRITE_ROLES dans contracts.ts : ADMIN reste en lecture seule, y compris sur ses
 // propres gardes si jamais il en avait une.
-const SHIFT_WRITE_ROLES = ["COORDINATOR"];
 
 function assertShiftWrite(activeUser: { role: string } | null) {
   if (!activeUser) throw new Error("Non authentifié.");
-  if (!SHIFT_WRITE_ROLES.includes(activeUser.role)) {
+  if (!can(activeUser, "shifts.manage")) {
     throw new Error("Non autorisé. Réservé aux coordinateurs.");
   }
 }

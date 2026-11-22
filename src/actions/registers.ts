@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { prisma } from "@/lib/db";
 import { resolveTargetOrgId } from "@/lib/org-scope";
 import { getCurrentUser } from "@/lib/auth";
@@ -31,10 +33,9 @@ const NON_CASH_METHODS = PAYMENT_METHODS.filter((m) => m !== "CASH");
 // assertRegisterOperateRole/assertRegisterReadRole vivent dans @/actions/register-permissions
 // (pas "use server") car ce fichier-ci ne peut exporter que des fonctions async — voir ce
 // module pour le détail ; aussi partagés avec finance.ts (ex: liste des tickets impayés).
-const REGISTER_STRUCTURE_ROLES = ["COORDINATOR"];
 
 function assertRegisterStructureRole(role: string) {
-  if (!REGISTER_STRUCTURE_ROLES.includes(role)) throw new Error("Non autorisé. Réservé aux coordinateurs.");
+  if (!can(role, "register.structure")) throw new Error("Non autorisé. Réservé aux coordinateurs.");
 }
 
 // Cette clinique doit être la propre clinique de l'utilisateur, ou une clinique rattachée à la

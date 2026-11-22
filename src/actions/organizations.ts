@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
@@ -111,7 +113,7 @@ export async function setPharmacistRegisterAccess(clinicId: string, allowed: boo
   try {
     z.object({ clinicId: z.string().min(1), allowed: z.boolean() }).parse({ clinicId, allowed });
     const user = await getCurrentUser();
-    if (!user || user.role !== "COORDINATOR" || user.organizationId !== clinicId) {
+    if (!user || !can(user, "clinic.configure") || user.organizationId !== clinicId) {
       throw new Error("Non autorisé. Seul le coordinateur de la clinique peut modifier ce réglage.");
     }
     await prisma.organization.update({ where: { id: clinicId }, data: { pharmacistCanUseRegister: allowed } });
@@ -129,7 +131,7 @@ export async function setConsultationBilling(clinicId: string, mode: "ON_CLOSE" 
   try {
     z.object({ clinicId: z.string().min(1), mode: z.enum(["ON_CLOSE", "ON_ARRIVAL"]) }).parse({ clinicId, mode });
     const user = await getCurrentUser();
-    if (!user || user.role !== "COORDINATOR" || user.organizationId !== clinicId) {
+    if (!user || !can(user, "clinic.configure") || user.organizationId !== clinicId) {
       throw new Error("Non autorisé. Seul le coordinateur de la clinique peut modifier ce réglage.");
     }
     await prisma.organization.update({ where: { id: clinicId }, data: { consultationBilling: mode } });
@@ -154,7 +156,7 @@ export async function updateClinic(id: string, data: { name: string; logoUrl?: s
       existing = await prisma.organization.findFirst({
         where: { id, parentId: user.organizationId, type: "CLINIC" }
       });
-    } else if (user.role === "COORDINATOR" && user.organizationId === id) {
+    } else if (can(user, "clinic.configure") && user.organizationId === id) {
       existing = await prisma.organization.findFirst({ where: { id, type: "CLINIC" } });
     } else {
       throw new Error("Unauthorized");

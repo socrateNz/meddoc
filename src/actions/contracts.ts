@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { resolveTargetOrgId } from "@/lib/org-scope";
@@ -12,15 +14,13 @@ import { createContractSchema, updateContractStatusSchema } from "@/validators/c
 import { revalidatePath } from "next/cache";
 import { assertUserModule } from "@/lib/modules-server";
 
-const CONTRACT_READ_ROLES = ["ADMIN", "COORDINATOR"];
-const CONTRACT_WRITE_ROLES = ["COORDINATOR"];
 
 // ADMIN (holding) garde une vue lecture seule des contrats des aidants ; seul
 // COORDINATOR (le véritable gestionnaire RH de sa clinique) peut les créer/modifier.
 async function assertContractRead(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
   assertUserModule(activeUser, "CONTRATS_AIDANTS");
-  if (!CONTRACT_READ_ROLES.includes(activeUser.role)) {
+  if (!can(activeUser, "contracts.read")) {
     throw new Error("Non autorisé.");
   }
 }
@@ -28,7 +28,7 @@ async function assertContractRead(activeUser: any) {
 async function assertContractWrite(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
   assertUserModule(activeUser, "CONTRATS_AIDANTS");
-  if (!CONTRACT_WRITE_ROLES.includes(activeUser.role)) {
+  if (!can(activeUser, "contracts.write")) {
     throw new Error("Non autorisé. Réservé aux coordinateurs.");
   }
   await requirePermission(activeUser.role, "MANAGE_CONTRACTS");

@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -15,13 +17,11 @@ import { clinicDateKey } from "@/lib/clinic-day";
 
 // Comptabilité d'une clinique : le comptable et le coordinateur la tiennent, l'administrateur de
 // la holding la consulte.
-const ACCOUNTING_READ_ROLES = ["COMPTABLE", "COORDINATOR", "ADMIN", "SUPER_ADMIN"];
-const ACCOUNTING_WRITE_ROLES = ["COMPTABLE", "COORDINATOR"];
 
 async function authorize(organizationId: string, write = false) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Non authentifié.");
-  if (!(write ? ACCOUNTING_WRITE_ROLES : ACCOUNTING_READ_ROLES).includes(user.role)) {
+  if (!can(user, write ? "accounting.write" : "accounting.read")) {
     throw new Error("Non autorisé. Réservé au comptable et au coordinateur de la clinique.");
   }
   await assertOrganizationAccess(user, organizationId);

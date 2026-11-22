@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -11,14 +13,13 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 // Dictée vocale et analyse IA : même rôle que pour clôturer une consultation
 // (COORDINATOR/MEDECIN) — l'autorité diagnostique, pas le personnel infirmier.
-const CLINICAL_WRITE_ROLES = ["COORDINATOR", "MEDECIN"];
 
 export async function transcribeConsultationAudio(audioBase64: string, mimeType: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "IA");
-    if (!CLINICAL_WRITE_ROLES.includes(activeUser.role)) {
+    if (!can(activeUser, "ai.clinical")) {
       throw new Error("Non autorisé.");
     }
     if (!audioBase64) throw new Error("Aucun enregistrement audio fourni.");
@@ -88,7 +89,7 @@ export async function generateAIAnalysis(patientId: string) {
       throw new Error("Non authentifié.");
     }
     assertUserModule(activeUser, "IA");
-    if (!CLINICAL_WRITE_ROLES.includes(activeUser.role)) {
+    if (!can(activeUser, "ai.clinical")) {
       throw new Error("Non autorisé.");
     }
 

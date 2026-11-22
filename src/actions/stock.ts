@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { accountSafely, accountTransaction } from "@/lib/accounting/postings";
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
@@ -23,8 +25,6 @@ import { assertUserModule } from "@/lib/modules-server";
 // n'autorise que des exports de fonctions async — voir plutôt les page.tsx qui rendent
 // InventoryPanel (dashboard/clinics/[id]/pharmacie, dashboard/clinics/[id]/finance, etc.).
 
-const STOCK_READ_ROLES = ["ADMIN", "COORDINATOR", "PHARMACIST", "COMPTABLE"];
-const STOCK_WRITE_ROLES = ["COORDINATOR", "PHARMACIST"];
 
 // ADMIN (holding) garde une vue lecture seule du stock/pharmacie ; seuls COORDINATOR
 // et PHARMACIST peuvent enregistrer des mouvements (achats, inventaire).
@@ -34,7 +34,7 @@ export async function assertStockRead(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
   // Stock, fournisseurs et bons de commande : module « Pharmacie & stock » de la licence.
   assertUserModule(activeUser, "PHARMACIE");
-  if (!STOCK_READ_ROLES.includes(activeUser.role)) {
+  if (!can(activeUser, "stock.read")) {
     throw new Error("Non autorisé.");
   }
 }
@@ -52,7 +52,7 @@ function fieldIsEmpty(field: string): any {
 export async function assertStockWrite(activeUser: any) {
   if (!activeUser) throw new Error("Non authentifié.");
   assertUserModule(activeUser, "PHARMACIE");
-  if (!STOCK_WRITE_ROLES.includes(activeUser.role)) {
+  if (!can(activeUser, "stock.write")) {
     throw new Error("Non autorisé. Réservé aux coordinateurs et pharmaciens.");
   }
   await requirePermission(activeUser.role, "MANAGE_STOCK");
@@ -382,7 +382,7 @@ export async function setPharmacyItemSaleBlock(data: { pharmacyItemId: string; b
     setPharmacyItemSaleBlockSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    if (activeUser.role !== "COORDINATOR") {
+    if (!can(activeUser, "stock.supervise")) {
       throw new Error("Non autorisé. Seul le coordinateur peut bloquer ou débloquer la vente d'un médicament.");
     }
 
@@ -423,7 +423,7 @@ export async function setPharmacyItemSaleBlock(data: { pharmacyItemId: string; b
 // blocage de vente) : détruire une fiche produit est une décision de supervision.
 function assertCoordinatorForCatalog(activeUser: any, action: string) {
   if (!activeUser) throw new Error("Non authentifié.");
-  if (activeUser.role !== "COORDINATOR") {
+  if (!can(activeUser, "stock.supervise")) {
     throw new Error(`Non autorisé. Seul le coordinateur peut ${action}.`);
   }
 }
@@ -572,7 +572,7 @@ export async function cancelStockPurchase(stockPurchaseId: string, reason?: stri
     // décision de supervision — celui qui a saisi l'achat ne doit pas pouvoir le faire disparaître
     // seul, même pour corriger sa propre erreur.
     if (!activeUser) throw new Error("Non authentifié.");
-    if (activeUser.role !== "COORDINATOR") {
+    if (!can(activeUser, "stock.supervise")) {
       throw new Error("Non autorisé. Seul le coordinateur peut annuler un achat.");
     }
 

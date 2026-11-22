@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -9,7 +10,6 @@ import { displayPatientEmail } from "@/lib/patient-identity";
 // Lecture seule pour la réplication RxDB Phase 1 — aucune écriture de Patient hors-ligne,
 // les modifications passent toujours par les Server Actions existantes (createPatient,
 // reassignPatient...) quand le réseau est disponible.
-const OFFLINE_READ_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 // Les champs sensibles sont renvoyés en clair ici (protégés en transit par TLS) : le
 // chiffrement au repos se fait côté client, juste avant l'écriture dans le storage local
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     if (!currentUser) {
       return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
     }
-    if (!OFFLINE_READ_ROLES.includes(currentUser.role)) {
+    if (!can(currentUser, "patients.sync_offline")) {
       return NextResponse.json({ error: "Non autorisé." }, { status: 403 });
     }
 

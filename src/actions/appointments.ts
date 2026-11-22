@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
@@ -13,17 +15,15 @@ import { runInteractionCheck } from "@/actions/prescriptions";
 // consultation (diagnostic + ordonnance) est réservé à l'autorité clinique complète — ADMIN
 // (holding) et PHARMACIST restent en lecture seule dans les deux cas. L'accueil prend et déplace les
 // rendez-vous, sans jamais clôturer de consultation.
-const APPOINTMENT_SCHEDULE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER", "ACCUEIL"];
-const CONSULTATION_WRITE_ROLES = ["COORDINATOR", "MEDECIN"];
 
 function assertScheduleAccess(role: string) {
-  if (!APPOINTMENT_SCHEDULE_ROLES.includes(role)) {
+  if (!can(role, "appointments.schedule")) {
     throw new Error("Non autorisé. Seuls le coordinateur, l'accueil, un médecin ou un infirmier(e) peuvent effectuer cette action.");
   }
 }
 
 function assertConsultationWriteAccess(role: string) {
-  if (!CONSULTATION_WRITE_ROLES.includes(role)) {
+  if (!can(role, "consultation.write")) {
     throw new Error("Non autorisé. Seuls un coordinateur ou un médecin peuvent clôturer une consultation.");
   }
 }

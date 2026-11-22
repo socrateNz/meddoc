@@ -1,5 +1,7 @@
 "use server";
 
+import { can } from "@/lib/permissions-catalog";
+
 import { prisma } from "@/lib/db";
 import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
 import { resolveTargetOrgId } from "@/lib/org-scope";
@@ -22,8 +24,6 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 // Rédiger/renouveler une ordonnance ou gérer un modèle est réservé à l'autorité clinique
 // complète (COORDINATOR/MEDECIN) — l'infirmier(e) consulte mais ne prescrit pas en autonomie.
 // PHARMACIST est en lecture seule (nécessaire pour préparer/importer une ordonnance en caisse).
-const PRESCRIPTION_WRITE_ROLES = ["COORDINATOR", "MEDECIN"];
-const PRESCRIPTION_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST"];
 
 type PrescriptionItemInput = {
   pharmacyItemId?: string;
@@ -36,13 +36,13 @@ type PrescriptionItemInput = {
 };
 
 function assertPrescriptionWriteRole(role: string) {
-  if (!PRESCRIPTION_WRITE_ROLES.includes(role)) {
+  if (!can(role, "prescriptions.write")) {
     throw new Error("Non autorisé. Seul un coordinateur ou un médecin peut rédiger une ordonnance.");
   }
 }
 
 function assertPrescriptionReadRole(role: string) {
-  if (!PRESCRIPTION_READ_ROLES.includes(role)) throw new Error("Non autorisé.");
+  if (!can(role, "prescriptions.read")) throw new Error("Non autorisé.");
 }
 
 function toItemCreateData(item: PrescriptionItemInput) {

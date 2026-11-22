@@ -1,5 +1,7 @@
 "use server";
 
+import { can, type Permission } from "@/lib/permissions-catalog";
+
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -12,20 +14,18 @@ import { assertUserModule } from "@/lib/modules-server";
 
 // Clés d'API des systèmes externes (étape E3) : créées et révoquées par le coordinateur de la
 // clinique, consultables par l'admin de holding. La clé n'est renvoyée qu'une fois, à la création.
-const READ_ROLES = ["ADMIN", "COORDINATOR"];
-const MANAGE_ROLES = ["COORDINATOR"];
 
-async function requireUser(roles: string[]) {
+async function requireUser(permission: Permission) {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
   assertUserModule(activeUser, "INTEROPERABILITE");
-  if (!roles.includes(activeUser.role)) throw new Error("Non autorisé. Les intégrations sont gérées par le coordinateur de la clinique.");
+  if (!can(activeUser, permission)) throw new Error("Non autorisé. Les intégrations sont gérées par le coordinateur de la clinique.");
   return activeUser;
 }
 
 export async function listIntegrationClients(clinicId: string) {
   try {
-    const activeUser = await requireUser(READ_ROLES);
+    const activeUser = await requireUser("integrations.read");
     await assertClinicScope(clinicId, activeUser);
     const clients = await prisma.integrationClient.findMany({ where: { organizationId: clinicId }, orderBy: { createdAt: "desc" } });
     return {
@@ -40,7 +40,7 @@ export async function listIntegrationClients(clinicId: string) {
         createdAt: c.createdAt.toISOString(),
         revokedAt: c.revokedAt?.toISOString() ?? null,
       })),
-      canManage: MANAGE_ROLES.includes(activeUser.role),
+      canManage: can(activeUser, "integrations.manage"),
     };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des intégrations.") };
@@ -56,7 +56,7 @@ const createSchema = z.object({
 export async function createIntegrationClient(data: z.input<typeof createSchema>) {
   try {
     const input = createSchema.parse(data);
-    const activeUser = await requireUser(MANAGE_ROLES);
+    const activeUser = await requireUser("integrations.manage");
     await assertClinicScope(input.clinicId, activeUser);
 
     // Automate de laboratoire : uniquement si le module Laboratoire est dans la licence.
@@ -76,7 +76,7 @@ export async function createIntegrationClient(data: z.input<typeof createSchema>
 export async function revokeIntegrationClient(clientId: string) {
   try {
     z.string().min(1).parse(clientId);
-    const activeUser = await requireUser(MANAGE_ROLES);
+    const activeUser = await requireUser("integrations.manage");
     const client = await prisma.integrationClient.findUnique({ where: { id: clientId } });
     if (!client) throw new Error("Intégration introuvable.");
     await assertClinicScope(client.organizationId, activeUser);
