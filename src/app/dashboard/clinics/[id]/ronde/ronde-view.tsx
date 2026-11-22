@@ -149,7 +149,7 @@ function RoundGrid({ entries, onOpen }: { entries: RoundEntryView[]; onOpen: (en
               >
                 <p className="text-[11px] font-semibold text-slate-500">Lit {entry.bedNumber ?? "—"}</p>
                 <p className="font-semibold text-sm text-slate-900 dark:text-white truncate">
-                  {entry.patient ? `${entry.patient.lastName} ${entry.patient.firstName}` : "Patient introuvable"}
+                  {entry.patient ? `${entry.patient.lastName} ${entry.patient.firstName}` : "Patient d'un autre service"}
                 </p>
                 <p className="text-[11px] text-slate-500">
                   {STATUS_LABEL[entry.status] ?? entry.status}

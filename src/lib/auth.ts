@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { prisma } from "./db";
+import { canSeePatientService, restrictedServiceIds } from "./service-access";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -66,6 +67,8 @@ export const getCurrentUser = cache(async function getCurrentUser() {
         avatarUrl: true,
         requiresPasswordChange: true,
         mutedNotificationTypes: true,
+        // Services de rattachement (cloisonnement des dossiers, cf. src/lib/service-access.ts).
+        serviceIds: true,
         organizationId: true,
         organization: {
           select: {
@@ -76,6 +79,8 @@ export const getCurrentUser = cache(async function getCurrentUser() {
             licenseExpiresAt: true,
             // Modules de la licence (cf. src/lib/modules.ts) : portés par la holding.
             disabledModules: true,
+            // Le pharmacien peut-il tenir la caisse (cf. src/lib/register-access.ts) ?
+            pharmacistCanUseRegister: true,
             parent: {
               select: {
                 subscriptionStatus: true,
@@ -136,8 +141,13 @@ export async function verifyPatientAccess(patientId: string, currentUser?: any) 
     where: {
       id: patientId,
       ...orgFilter
-    }
+    },
+    select: { id: true, serviceId: true },
   });
+  if (!patient) return false;
 
-  return !!patient;
+  // Cloisonnement par service : un médecin/infirmier rattaché à des services n'accède qu'aux
+  // dossiers de ses services (cf. src/lib/service-access.ts). Toutes les actions sur un patient
+  // passent par ici.
+  return canSeePatientService(await restrictedServiceIds(currentUser), patient.serviceId);
 }

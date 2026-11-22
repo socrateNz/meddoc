@@ -44,7 +44,7 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
     requires: [],
     routeSegments: ["rooms", "ronde"],
   },
-  LABORATOIRE: { key: "LABORATOIRE", label: "Laboratoire", description: "Demandes d'analyses, prélèvements, résultats et validation, catalogue.", requires: [], routeSegments: ["lab"] },
+  LABORATOIRE: { key: "LABORATOIRE", label: "Laboratoire", description: "Demandes d'analyses, prélèvements, résultats et validation, catalogue.", requires: [], routeSegments: ["lab", "partenaires"] },
   IMAGERIE: { key: "IMAGERIE", label: "Imagerie médicale", description: "Prescriptions, clichés et comptes-rendus d'imagerie.", requires: [], routeSegments: ["imagerie"] },
   BLOC: { key: "BLOC", label: "Bloc opératoire", description: "Salles, programme opératoire, check-list de sécurité, compte-rendu.", requires: [], routeSegments: ["bloc"] },
   BANQUE_SANG: { key: "BANQUE_SANG", label: "Banque de sang", description: "Stock de produits sanguins, transfusions, hémovigilance.", requires: [], routeSegments: ["banque-sang"] },

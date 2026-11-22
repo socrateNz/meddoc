@@ -57,7 +57,9 @@ async function createPatientOnce(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertClinicalWriteAccess(activeUser.role);
+    // L'accueil enregistre les nouveaux patients (identité et antécédents déclarés), sans accès au
+    // reste du dossier médical.
+    if (activeUser.role !== "ACCUEIL") assertClinicalWriteAccess(activeUser.role);
 
     let targetOrgId = activeUser.organizationId;
     if (data.organizationId && activeUser.organization?.type === "HOLDING") {
@@ -455,7 +457,8 @@ export async function reassignPatient(patientId: string, newOrganizationId: stri
 
       const p = await tx.patient.update({
         where: { id: patientId },
-        data: { organizationId: newOrganizationId, bedId: null }
+        // Les services appartiennent à la clinique d'origine : le dossier arrive sans service.
+        data: { organizationId: newOrganizationId, bedId: null, serviceId: null }
       });
       await tx.user.update({
         where: { id: p.userId },

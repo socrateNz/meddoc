@@ -6,6 +6,8 @@ import { toErrorMessage } from "@/lib/utils";
 import { resolvePage } from "@/lib/pagination";
 import { createClinicSchema, updateClinicSchema } from "@/validators/organizations";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { logAuditAction } from "@/middlewares/auditLogger";
 
 export async function getClinics(options?: { page?: number; pageSize?: number }) {
   try {
@@ -99,6 +101,25 @@ export async function setClinicActive(id: string, isActive: boolean) {
   } catch (error: any) {
     console.error("Error updating clinic status:", error);
     return { clinic: null, error: toErrorMessage(error, "Failed to update clinic status") };
+  }
+}
+
+// Le coordinateur décide si le pharmacien de sa clinique peut aussi tenir la caisse (cf.
+// src/actions/register-permissions.ts). Décision de supervision : coordinateur de la clinique
+// uniquement, pas l'admin de holding (lecture seule sur les réglages de la clinique).
+export async function setPharmacistRegisterAccess(clinicId: string, allowed: boolean) {
+  try {
+    z.object({ clinicId: z.string().min(1), allowed: z.boolean() }).parse({ clinicId, allowed });
+    const user = await getCurrentUser();
+    if (!user || user.role !== "COORDINATOR" || user.organizationId !== clinicId) {
+      throw new Error("Non autorisé. Seul le coordinateur de la clinique peut modifier ce réglage.");
+    }
+    await prisma.organization.update({ where: { id: clinicId }, data: { pharmacistCanUseRegister: allowed } });
+    await logAuditAction(user.id, "SET_PHARMACIST_REGISTER_ACCESS", "Organization", clinicId, { allowed });
+    revalidatePath(`/dashboard/clinics/${clinicId}`, "layout");
+    return { success: true as const };
+  } catch (error: any) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'enregistrement du réglage.") };
   }
 }
 

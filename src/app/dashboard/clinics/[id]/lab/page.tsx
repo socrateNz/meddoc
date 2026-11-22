@@ -5,6 +5,8 @@ import { getLabOrderStats, listLabOrders } from "@/actions/lab";
 import { MAX_PAGE_SIZE, pageFromParam } from "@/lib/pagination";
 import { keepQuery } from "@/components/ui/pagination-nav";
 import LabView from "@/app/dashboard/lab/lab-view";
+import { listPartners } from "@/actions/partners";
+import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
 
 export const metadata = {
   title: "Laboratoire (Clinique) | MedDoc",
@@ -28,15 +30,23 @@ export default async function ClinicLabPage({ params, searchParams }: ClinicLabP
     redirect("/login");
   }
 
-  const [labOrdersRes, statsRes, patients] = await Promise.all([
-    listLabOrders({ organizationId: clinicId, page: pageFromParam(query.page), search, urgentOnly: query.urgent === "1" }),
+  const myServices = await restrictedServiceIds(currentUser);
+  const bench = typeof query.paillasse === "string" ? query.paillasse : undefined;
+  const [labOrdersRes, statsRes, patients, partnersRes, benchRows] = await Promise.all([
+    listLabOrders({ organizationId: clinicId, page: pageFromParam(query.page), search, urgentOnly: query.urgent === "1", bench }),
     getLabOrderStats({ organizationId: clinicId }),
+    // Patients proposés pour une nouvelle demande : ceux des services de l'utilisateur.
     prisma.patient.findMany({
-      where: { organizationId: clinicId },
+      where: { organizationId: clinicId, ...patientServiceWhere(myServices) },
       include: { user: true },
       orderBy: { user: { lastName: "asc" } },
     }),
+    listPartners(clinicId),
+    // Paillasses utilisées dans le catalogue de la clinique.
+    prisma.labTest.findMany({ where: { organizationId: clinicId, isActive: true, department: { not: null } }, select: { department: true } }),
   ]);
+  const benches = [...new Set(benchRows.map((r) => r.department?.trim()).filter((d): d is string => !!d))].sort((a, b) => a.localeCompare(b, "fr"));
+  const partners = partnersRes.success ? partnersRes.data.map((p) => ({ id: p.id, name: p.name })) : [];
 
   const list = labOrdersRes.success ? labOrdersRes : { data: [], total: 0, page: 1, pageSize: MAX_PAGE_SIZE };
   const stats = statsRes.success ? statsRes.data : EMPTY_STATS;
@@ -63,6 +73,8 @@ export default async function ClinicLabPage({ params, searchParams }: ClinicLabP
         patients={patients}
         currentUserRole={currentUser.role}
         organizationId={clinicId}
+        partners={partners}
+        benches={benches}
       />
     </div>
   );

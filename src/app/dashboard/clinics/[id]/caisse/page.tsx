@@ -4,6 +4,7 @@ import { listRegistersWithStatus } from "@/actions/registers";
 import { getPharmacyItems, listCaisseHistoryInvoices } from "@/actions/finance";
 import CaisseView from "@/app/dashboard/caisse/caisse-view";
 import { redirect } from "next/navigation";
+import { pharmacistMayUseRegister } from "@/actions/register-permissions";
 
 export const metadata = {
   title: "Caisse | MedDoc",
@@ -18,6 +19,11 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
 
   const activeUser = await getCurrentUser();
   if (!activeUser) redirect("/login");
+  // Pharmacien sans autorisation du coordinateur (cf. register-permissions.ts) : la caisse lui est
+  // fermée, retour à sa pharmacie.
+  if (activeUser.role === "PHARMACIST" && !pharmacistMayUseRegister(activeUser)) {
+    redirect(`/dashboard/clinics/${clinicId}/pharmacie`);
+  }
 
   const [registersRes, patients, clinicOrg, pharmacyItemsRes, historyRes] = await Promise.all([
     listRegistersWithStatus(clinicId),

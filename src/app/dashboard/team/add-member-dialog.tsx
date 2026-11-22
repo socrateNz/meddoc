@@ -27,28 +27,26 @@ import {
 } from "@/components/ui/select";
 
 import { createTeamMember } from "@/actions/team";
+import { CLINIC_STAFF_ROLES, STAFF_ROLE_DESCRIPTIONS, STAFF_ROLE_LABELS } from "@/lib/staff-roles";
 
 const formSchema = z.object({
   firstName: z.string().min(2, "Prénom trop court"),
   lastName: z.string().min(2, "Nom trop court"),
   email: z.string().email("Email invalide"),
   phone: z.string().optional(),
-  role: z.enum(["MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "COMPTABLE", "COORDINATOR"]),
+  role: z.enum(["MEDECIN", "CAREGIVER", "LABORANTIN", "ACCUEIL", "PHARMACIST", "CASHIER", "COMPTABLE", "COORDINATOR"]),
   specialties: z.string().optional(),
   licenseNumber: z.string().optional(),
   organizationId: z.string().optional(),
 });
 
-const ROLE_OPTIONS = [
-  { value: "MEDECIN", label: "Médecin" },
-  { value: "CAREGIVER", label: "Infirmier(e)" },
-  { value: "PHARMACIST", label: "Pharmacien(ne)" },
-  { value: "CASHIER", label: "Caissier(ère)" },
-  { value: "COMPTABLE", label: "Comptable" },
-];
+// Rôles proposés : tout le personnel de clinique (cf. src/lib/staff-roles.ts) ; l'admin de holding
+// peut en plus désigner le coordinateur.
+const roleOptions = (withCoordinator: boolean) =>
+  [...(withCoordinator ? ["COORDINATOR"] : []), ...CLINIC_STAFF_ROLES].map((value) => ({ value, label: STAFF_ROLE_LABELS[value] }));
 
-// Un admin de holding ne fait plus que désigner le coordinateur d'une clinique ;
-// un coordinateur recrute le personnel (soignant/pharmacien) de sa propre clinique.
+// L'admin de holding désigne le coordinateur d'une clinique et peut y créer tout le personnel ;
+// le coordinateur recrute le personnel de sa propre clinique.
 export default function AddMemberDialog({
   isHoldingAdmin = false,
   holdingId = "",
@@ -62,6 +60,7 @@ export default function AddMemberDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const ROLE_OPTIONS = roleOptions(isHoldingAdmin);
 
   const {
     register,
@@ -99,15 +98,15 @@ export default function AddMemberDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="gap-2" />}>
         <Plus className="h-4 w-4" />
-        {isHoldingAdmin ? "Désigner un coordinateur" : "Ajouter un membre"}
+        Ajouter un membre
       </DialogTrigger>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{isHoldingAdmin ? "Désigner un coordinateur" : "Nouveau membre"}</DialogTitle>
+          <DialogTitle>Nouveau membre</DialogTitle>
           <DialogDescription>
             {isHoldingAdmin
-              ? "Affectez le coordinateur qui administrera au quotidien l'une de vos cliniques."
-              : "Ajoutez un médecin, un infirmier(e), un pharmacien ou un(e) caissier(ère) à l'équipe de votre clinique."}{" "}
+              ? "Désignez le coordinateur d'une clinique ou ajoutez un membre de son personnel."
+              : "Ajoutez un membre à l'équipe de votre clinique. Chaque rôle ne voit que ce qui le concerne."}{" "}
             Un mot de passe par défaut lui sera attribué.
           </DialogDescription>
         </DialogHeader>
@@ -137,8 +136,7 @@ export default function AddMemberDialog({
             <Input id="phone" {...register("phone")} />
           </div>
 
-          {!isHoldingAdmin && (
-            <div className="space-y-2">
+          <div className="space-y-2">
               <Label>Rôle</Label>
               <Select
                 items={ROLE_OPTIONS}
@@ -154,8 +152,10 @@ export default function AddMemberDialog({
                   ))}
                 </SelectContent>
               </Select>
+              {STAFF_ROLE_DESCRIPTIONS[selectedRole] && (
+                <p className="text-xs text-muted-foreground">{STAFF_ROLE_DESCRIPTIONS[selectedRole]}</p>
+              )}
             </div>
-          )}
 
           {(selectedRole === "CAREGIVER" || selectedRole === "MEDECIN") && (
             <div className="space-y-2">

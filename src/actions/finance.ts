@@ -469,7 +469,7 @@ async function recordExpenseOnce(data: { cashSessionId: string; description: str
     recordExpenseSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterOperateRole(activeUser.role);
+    assertRegisterOperateRole(activeUser);
 
     const session = await prisma.cashSession.findUnique({ where: { id: data.cashSessionId } });
     if (!session || session.status !== "OPEN") {
@@ -649,7 +649,7 @@ async function payPendingInvoiceOnce(
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterOperateRole(activeUser.role);
+    assertRegisterOperateRole(activeUser);
 
     // L'existence/l'état de la facture et de la session sont vérifiés avant la forme du panier :
     // une facture déjà réglée ou une caisse fermée doit renvoyer son message dédié même si le
@@ -800,7 +800,7 @@ async function createCaisseSaleOnce(data: {
     createCaisseSaleSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterOperateRole(activeUser.role);
+    assertRegisterOperateRole(activeUser);
     // Vente de produits (lignes PHARMACY) : module « Pharmacie & stock » de la licence ; les
     // prestations (SERVICE, LAB) relèvent du socle (caisse).
     if (data.items.some((item) => item.type === "PHARMACY")) assertUserModule(activeUser, "PHARMACIE");
@@ -899,7 +899,7 @@ export async function updateInvoicePatientInfo(data: {
     updateInvoicePatientInfoSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterOperateRole(activeUser.role);
+    assertRegisterOperateRole(activeUser);
 
     const pendingInvoice = await prisma.pendingInvoice.findUnique({
       where: { id: data.pendingInvoiceId },
@@ -1292,7 +1292,7 @@ export async function closeUnpaidInvoice(pendingInvoiceId: string) {
     z.string().min(1).parse(pendingInvoiceId);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterOperateRole(activeUser.role);
+    assertRegisterOperateRole(activeUser);
 
     const pending = await prisma.pendingInvoice.findUnique({ where: { id: pendingInvoiceId } });
     if (!pending) throw new Error("Facture introuvable.");

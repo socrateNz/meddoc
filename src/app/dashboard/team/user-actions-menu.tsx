@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MoreHorizontal, Replace, UserX, UserCheck, Stethoscope, Pencil, KeyRound } from "lucide-react";
+import { MoreHorizontal, Replace, UserX, UserCheck, Stethoscope, Pencil, KeyRound, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ReassignMemberDialog from "./reassign-member-dialog";
@@ -10,6 +10,8 @@ import ReactivateMemberAlert from "./reactivate-member-alert";
 import ReclassifyRoleDialog from "./reclassify-role-dialog";
 import EditMemberDialog from "./edit-member-dialog";
 import ResetPasswordAlert from "./reset-password-alert";
+import { isClinicStaffRole } from "@/lib/staff-roles";
+import StaffServicesDialog from "./staff-services-dialog";
 
 interface UserActionsMenuProps {
   member: any;
@@ -26,18 +28,23 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
   const userName = `${member.firstName} ${member.lastName}`;
 
-  // COORDINATOR ne gère que le personnel (médecin/infirmier/pharmacien) de sa clinique ;
-  // ADMIN (holding) ne gère plus que les coordinateurs — reflète team.ts:assertCanManageStaffMember.
+  // COORDINATOR gère le personnel de sa clinique ; ADMIN (holding) gère en plus les coordinateurs —
+  // reflète team.ts:assertCanManageStaffMember.
   const canManageStatus =
-    (currentUserRole === "COORDINATOR" && ["MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "COMPTABLE"].includes(member.role)) ||
-    (currentUserRole === "ADMIN" && member.role === "COORDINATOR");
+    (currentUserRole === "COORDINATOR" && isClinicStaffRole(member.role)) ||
+    (currentUserRole === "ADMIN" && (member.role === "COORDINATOR" || isClinicStaffRole(member.role)));
 
   // Bascule Médecin ⇄ Infirmier(e) : seul un COORDINATOR peut reclasser son propre personnel
   // clinique (cf. team.ts:reclassifyRole), disponible en permanence (pas qu'au déploiement).
   const canReclassify = currentUserRole === "COORDINATOR" && ["MEDECIN", "CAREGIVER"].includes(member.role) && member.isActive;
   const reclassifyTarget: "MEDECIN" | "CAREGIVER" = member.role === "MEDECIN" ? "CAREGIVER" : "MEDECIN";
+
+  // Services de rattachement : seuls médecins et infirmiers sont cloisonnés par service
+  // (cf. src/lib/service-access.ts).
+  const canSetServices = canManageStatus && ["MEDECIN", "CAREGIVER"].includes(member.role) && !!member.organizationId;
 
   if (!canManageStatus && !canReclassify && !isHoldingAdmin) {
     return null;
@@ -66,6 +73,12 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
             <DropdownMenuItem onClick={() => setEditOpen(true)} className="cursor-pointer">
               <Pencil className="mr-2 h-4 w-4" />
               <span>Modifier</span>
+            </DropdownMenuItem>
+          )}
+          {canSetServices && (
+            <DropdownMenuItem onClick={() => setServicesOpen(true)} className="cursor-pointer">
+              <Layers className="mr-2 h-4 w-4" />
+              <span>Services rattachés</span>
             </DropdownMenuItem>
           )}
           {canManageStatus && member.isActive && (
@@ -126,6 +139,16 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
       {canManageStatus && (
         <>
           <EditMemberDialog member={member} open={editOpen} onOpenChange={setEditOpen} />
+          {canSetServices && (
+            <StaffServicesDialog
+              open={servicesOpen}
+              onOpenChange={setServicesOpen}
+              userId={member.id}
+              userName={userName}
+              organizationId={member.organizationId}
+              currentServiceIds={member.serviceIds ?? []}
+            />
+          )}
           <ResetPasswordAlert
             open={resetPasswordOpen}
             onOpenChange={setResetPasswordOpen}

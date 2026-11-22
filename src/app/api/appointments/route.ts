@@ -18,7 +18,11 @@ const createApptSchema = z.object({
   type: z.enum(["VISIT", "CONSULTATION", "TELECONSULTATION"]),
 });
 
-const APPOINTMENT_WRITE_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"];
+// Mêmes rôles que src/actions/appointments.ts (APPOINTMENT_SCHEDULE_ROLES).
+const APPOINTMENT_WRITE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER", "ACCUEIL"];
+// Agenda de toute la clinique : direction et accueil. Les autres rôles du personnel (pharmacie,
+// caisse, labo, comptabilité) n'ont pas à lire les rendez-vous des patients.
+const APPOINTMENT_ORG_READ_ROLES = ["ADMIN", "COORDINATOR", "ACCUEIL", "SUPER_ADMIN"];
 
 export async function GET(req: Request) {
   try {
@@ -43,8 +47,10 @@ export async function GET(req: Request) {
       const family = await prisma.familyMember.findUnique({ where: { userId: user.id }, select: { patientId: true } });
       if (!family) return NextResponse.json({ data: [], total: 0, page, pageSize });
       where = { patientId: family.patientId };
-    } else {
+    } else if (APPOINTMENT_ORG_READ_ROLES.includes(user.role)) {
       where = { patient: getOrgScopeWhere(user) };
+    } else {
+      return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
     }
 
     const [items, total] = await Promise.all([

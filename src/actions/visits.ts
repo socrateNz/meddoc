@@ -19,19 +19,23 @@ import {
 } from "@/lib/visits";
 import { assertUserModule } from "@/lib/modules-server";
 import { VISIT_DESTINATION_MODULE } from "@/lib/modules";
+import { canSeePatientService, restrictedServiceIds } from "@/lib/service-access";
 
-// Accueil & file d'attente (étape C2 de l'audit d'évolution). Pas de rôle dédié : l'accueil est
-// tenu par le personnel déjà présent au guichet. ADMIN (holding) consulte en lecture seule.
-const VISIT_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "CASHIER", "PHARMACIST"];
-const VISIT_FRONT_DESK_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER", "CASHIER"];
+// Accueil & file d'attente (étape C2 de l'audit d'évolution). Rôle dédié ACCUEIL ; dans les petites
+// clinique le guichet reste aussi tenu par le personnel présent (soignants, caissier). ADMIN
+// (holding) consulte en lecture seule.
+const VISIT_READ_ROLES = ["ADMIN", "COORDINATOR", "ACCUEIL", "MEDECIN", "CAREGIVER", "LABORANTIN", "CASHIER", "PHARMACIST"];
+const VISIT_FRONT_DESK_ROLES = ["COORDINATOR", "ACCUEIL", "MEDECIN", "CAREGIVER", "CASHIER"];
 const CLINICAL_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 // Prendre en charge / terminer un passage : le personnel soignant pour tout passage, plus le
-// caissier pour le guichet administratif et le pharmacien pour la pharmacie.
+// caissier pour le guichet administratif, le pharmacien pour la pharmacie et le laborantin pour
+// le laboratoire. L'accueil oriente mais ne prend pas en charge.
 function canHandle(role: string, destination: string) {
   if (CLINICAL_ROLES.includes(role)) return true;
   if (role === "CASHIER") return destination === "ADMINISTRATIVE";
   if (role === "PHARMACIST") return destination === "PHARMACY";
+  if (role === "LABORANTIN") return destination === "LAB";
   return false;
 }
 
@@ -42,6 +46,8 @@ const registerVisitSchema = z.object({
   priority: z.enum(["NORMAL", "URGENT"]).default("NORMAL"),
   reason: z.string().trim().max(300).optional(),
   assignedToId: z.string().min(1).optional(),
+  // Service d'orientation (consultation) : le dossier lui est confié (cf. ClinicService).
+  serviceId: z.string().min(1).optional(),
 });
 
 export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
@@ -56,15 +62,29 @@ export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
     const destinationModule = VISIT_DESTINATION_MODULE[input.destination];
     if (destinationModule) assertUserModule(activeUser, destinationModule);
 
-    const patient = await prisma.patient.findUnique({ where: { id: input.patientId }, select: { organizationId: true } });
+    const patient = await prisma.patient.findUnique({ where: { id: input.patientId }, select: { organizationId: true, serviceId: true } });
     if (!patient || patient.organizationId !== input.clinicId) {
       throw new Error("Ce patient n'est pas enregistré dans cette clinique.");
     }
 
+    // Consultation : la clinique qui a créé ses services oriente obligatoirement vers l'un d'eux.
+    const serviceId = input.destination === "CONSULTATION" ? input.serviceId : undefined;
+    if (input.destination === "CONSULTATION") {
+      const activeServices = await prisma.clinicService.count({ where: { organizationId: input.clinicId, isActive: true, isTransversal: false } });
+      if (activeServices > 0 && !serviceId) throw new Error("Choisissez le service vers lequel orienter le patient.");
+    }
+    if (serviceId) {
+      const service = await prisma.clinicService.findFirst({ where: { id: serviceId, organizationId: input.clinicId, isActive: true, isTransversal: false }, select: { id: true } });
+      if (!service) throw new Error("Service invalide pour cette clinique.");
+    }
+
     if (input.assignedToId) {
-      const doctor = await prisma.user.findUnique({ where: { id: input.assignedToId }, select: { role: true, organizationId: true, isActive: true } });
+      const doctor = await prisma.user.findUnique({ where: { id: input.assignedToId }, select: { role: true, organizationId: true, isActive: true, serviceIds: true } });
       if (!doctor || doctor.role !== "MEDECIN" || doctor.organizationId !== input.clinicId || !doctor.isActive) {
         throw new Error("Médecin invalide pour cette clinique.");
+      }
+      if (serviceId && doctor.serviceIds.length > 0 && !doctor.serviceIds.includes(serviceId)) {
+        throw new Error("Ce médecin n'est pas rattaché au service choisi.");
       }
     }
 
@@ -79,18 +99,38 @@ export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
 
     // Ticket du jour : compteur atomique par clinique et par jour de la clinique.
     const ticketNumber = await nextSequenceValue(`visit-${input.clinicId}-${visitDate}`);
-    const visit = await prisma.visit.create({
-      data: {
-        organizationId: input.clinicId,
-        patientId: input.patientId,
-        visitDate,
-        ticketNumber,
-        destination: input.destination,
-        priority: input.priority,
-        reason: input.reason || null,
-        assignedToId: input.assignedToId || null,
-        createdById: activeUser.id,
-      },
+    const reoriented = !!serviceId && patient.serviceId !== serviceId;
+    const visit = await prisma.$transaction(async (tx) => {
+      const created = await tx.visit.create({
+        data: {
+          organizationId: input.clinicId,
+          patientId: input.patientId,
+          visitDate,
+          ticketNumber,
+          destination: input.destination,
+          priority: input.priority,
+          reason: input.reason || null,
+          assignedToId: input.assignedToId || null,
+          serviceId: serviceId || null,
+          createdById: activeUser.id,
+        },
+      });
+      // Orienté vers un autre service que celui qui suit le dossier : le dossier lui est confié,
+      // et le changement est tracé comme une orientation.
+      if (reoriented) {
+        await tx.patient.update({ where: { id: input.patientId }, data: { serviceId } });
+        await tx.patientTransfer.create({
+          data: {
+            patientId: input.patientId,
+            fromServiceId: patient.serviceId ?? null,
+            toServiceId: serviceId!,
+            kind: "ORIENTATION",
+            reason: input.reason || null,
+            transferredById: activeUser.id,
+          },
+        });
+      }
+      return created;
     });
 
     await logAuditAction(activeUser.id, "REGISTER_VISIT", "Visit", visit.id, {
@@ -98,6 +138,8 @@ export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
       ticket: formatTicket(ticketNumber),
       destination: input.destination,
       priority: input.priority,
+      serviceId: serviceId ?? null,
+      reoriented,
     });
     revalidatePath(`/dashboard/clinics/${input.clinicId}/accueil`);
     return { success: true as const, data: { id: visit.id, ticket: formatTicket(ticketNumber) } };
@@ -116,7 +158,12 @@ export async function listTodayVisits(clinicId: string) {
     if (!VISIT_READ_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
     await assertClinicScope(clinicId, activeUser);
 
-    const visits = await prisma.visit.findMany({ where: { organizationId: clinicId, visitDate: clinicDateKey() } });
+    // Médecin/infirmier rattaché à des services : il ne voit que les consultations de ses services
+    // (les autres passages — urgences, soins, labo... — restent visibles de tous).
+    const myServices = await restrictedServiceIds(activeUser);
+    const visits = (
+      await prisma.visit.findMany({ where: { organizationId: clinicId, visitDate: clinicDateKey() }, include: { service: { select: { name: true } } } })
+    ).filter((v) => canSeePatientService(myServices, v.serviceId));
     const patientIds = [...new Set(visits.map((v) => v.patientId))];
     const userIds = [...new Set(visits.flatMap((v) => [v.assignedToId, v.handledById]).filter((id): id is string => !!id))];
     const [patients, users] = await Promise.all([
@@ -149,6 +196,8 @@ export async function listTodayVisits(clinicId: string) {
           assignedToId: v.assignedToId,
           assignedToName: v.assignedToId ? nameById.get(v.assignedToId) ?? null : null,
           handledByName: v.handledById ? nameById.get(v.handledById) ?? null : null,
+          serviceId: v.serviceId,
+          serviceName: v.service?.name ?? null,
           canHandle: canHandle(activeUser.role, v.destination),
         };
       })
@@ -174,6 +223,9 @@ export async function updateVisitStatus(data: { visitId: string; action: VisitAc
     const handling = data.action === "START" || data.action === "COMPLETE";
     if (handling ? !canHandle(activeUser.role, visit.destination) : !VISIT_FRONT_DESK_ROLES.includes(activeUser.role)) {
       throw new Error("Non autorisé pour ce passage.");
+    }
+    if (handling && !canSeePatientService(await restrictedServiceIds(activeUser), visit.serviceId)) {
+      throw new Error("Ce patient est orienté vers un autre service.");
     }
 
     const next = nextVisitStatus(visit.status, data.action);

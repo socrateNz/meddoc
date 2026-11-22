@@ -77,9 +77,13 @@ interface LabViewProps {
   // Pour la réplication du catalogue hors-ligne (cf. new-lab-order-dialog.tsx) — absent sur la
   // vue globale holding (patients de plusieurs cliniques à la fois, aucun établissement unique).
   organizationId?: string;
+  // Cliniques partenaires actives (examens externes).
+  partners?: { id: string; name: string }[];
+  // Paillasses du catalogue (LabTest.department) : filtre « file de travail ».
+  benches?: string[];
 }
 
-export default function LabView({ labOrders, total, page, pageSize, stats, query, pathname, patients, currentUserRole, organizationId }: LabViewProps) {
+export default function LabView({ labOrders, total, page, pageSize, stats, query, pathname, patients, currentUserRole, organizationId, partners = [], benches = [] }: LabViewProps) {
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const router = useRouter();
   // Recherche et filtre « urgences » sont dans l'URL : chaque requête part au serveur, qui filtre
@@ -236,6 +240,23 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
             Urgences & Critiques
           </button>
 
+          {/* File de travail par paillasse */}
+          {benches.length > 0 && (
+            <select
+              value={query.paillasse ?? ""}
+              onChange={(e) => navigate({ paillasse: e.target.value || undefined, page: undefined })}
+              className="h-9 rounded-xl border border-border/70 bg-card px-2.5 text-xs font-semibold"
+              aria-label="Paillasse"
+            >
+              <option value="">Toutes les paillasses</option>
+              {benches.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* Catalog link */}
           {isCoordinator && (
             <Link href="/dashboard/lab/catalog">
@@ -247,7 +268,10 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
           )}
 
           {/* New lab order button */}
-          {canWrite && <NewLabOrderDialog patients={patients} organizationId={organizationId} />}
+          {/* Le laborantin n'enregistre que les examens externes des partenaires (prescription extérieure). */}
+          {canWrite && (currentUserRole !== "LABORANTIN" || partners.length > 0) && (
+            <NewLabOrderDialog patients={patients} organizationId={organizationId} partners={partners} partnerOnly={currentUserRole === "LABORANTIN"} />
+          )}
 
           {/* View mode toggle */}
           <div className="flex items-center p-1 rounded-xl bg-muted/40 border border-border/60">

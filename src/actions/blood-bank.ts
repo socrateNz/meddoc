@@ -29,6 +29,7 @@ import {
   type Rhesus,
 } from "@/lib/blood-bank";
 import { assertUserModule } from "@/lib/modules-server";
+import { hiddenPatientIds, restrictedServiceIds } from "@/lib/service-access";
 
 // Banque de sang (étape E2 de l'audit d'évolution), sans rôle dédié : le personnel soignant
 // réceptionne et détruit les poches et pose les transfusions ; le médecin (ou le coordinateur)
@@ -418,6 +419,9 @@ export async function listTransfusions(options: { clinicId?: string; patientId?:
     } else if (options.clinicId) {
       await assertClinicScope(options.clinicId, activeUser);
       where.organizationId = options.clinicId;
+      // Cloisonnement par service (cf. src/lib/service-access.ts).
+      const hidden = await hiddenPatientIds(options.clinicId, await restrictedServiceIds(activeUser));
+      if (hidden.length > 0) where.patientId = { notIn: hidden };
     } else {
       throw new Error("Clinique ou patient requis.");
     }

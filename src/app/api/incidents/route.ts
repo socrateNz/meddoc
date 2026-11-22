@@ -16,7 +16,7 @@ const createIncidentSchema = z.object({
   priority: z.nativeEnum(Priority).optional(),
 });
 
-const INCIDENT_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"];
+const INCIDENT_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "LABORANTIN", "ACCUEIL", "PHARMACIST", "CASHIER"];
 
 export async function GET(req: Request) {
   try {

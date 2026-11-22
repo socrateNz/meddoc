@@ -20,6 +20,13 @@ import { MAX_PAGE_SIZE } from "@/lib/pagination";
 // arbres de données ne puissent plus diverger.
 export const PATIENT_DETAIL_INCLUDE = {
   user: true,
+  // Service qui suit le dossier, et ses derniers changements (orientation, transferts).
+  service: { select: { id: true, name: true } },
+  transfers: {
+    include: { fromService: { select: { name: true } }, toService: { select: { name: true } } },
+    orderBy: { createdAt: "desc" as const },
+    take: 10,
+  },
   medicalRecords: {
     include: {
       appointment: { select: { id: true, title: true, scheduledAt: true } },
@@ -40,7 +47,8 @@ export const PATIENT_DETAIL_INCLUDE = {
   incidents: { orderBy: { createdAt: "desc" as const } },
   aiAnalyses: { orderBy: { createdAt: "desc" as const } },
   bed: { include: { room: { include: { ward: true } } } },
-  organization: { select: { name: true, logoUrl: true } },
+  // Nombre de services actifs : sans service créé, le panneau de transfert ne s'affiche pas.
+  organization: { select: { name: true, logoUrl: true, _count: { select: { clinicServices: { where: { isActive: true } } } } } },
 } as const;
 
 // Les 5 lectures associées (constantes, ordonnances, labo, grossesses, soignants) sont indépendantes

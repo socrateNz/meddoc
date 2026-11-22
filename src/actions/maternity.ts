@@ -15,6 +15,7 @@ import {
 import { revalidatePath } from "next/cache";
 import { assertUserModule } from "@/lib/modules-server";
 import { assertClinicScope } from "@/lib/clinic-scope";
+import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
 import { prenatalFollowUp, comparePrenatalFollowUp } from "@/lib/maternity-labels";
 
 // Consulter le suivi de maternité est ouvert à tout le personnel clinique, y compris ADMIN
@@ -310,8 +311,11 @@ export async function listPrenatalFollowUp(clinicId: string) {
     assertMaternityReadRole(activeUser.role);
     await assertClinicScope(clinicId, activeUser);
 
+    // Cloisonnement par service (cf. src/lib/service-access.ts) : la sage-femme de Maternité ne voit
+    // que les dossiers de son service.
+    const myServices = await restrictedServiceIds(activeUser);
     const pregnancies = await prisma.pregnancy.findMany({
-      where: { status: "ACTIVE", patient: { organizationId: clinicId } },
+      where: { status: "ACTIVE", patient: { organizationId: clinicId, ...patientServiceWhere(myServices) } },
       select: {
         id: true,
         lastMenstrualPeriod: true,

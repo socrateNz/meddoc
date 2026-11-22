@@ -14,7 +14,7 @@ import { VISIT_DESTINATION_MODULE } from "@/lib/modules";
 import { useModules } from "@/components/modules-provider";
 import NewPatientDialog from "@/app/dashboard/patients/new-patient-dialog";
 
-type FoundPatient = { id: string; name: string; ipp: string | null };
+type FoundPatient = { id: string; name: string; ipp: string | null; serviceId?: string | null; serviceName?: string | null };
 
 const selectClass =
   "w-full h-10 px-3 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white";
@@ -24,10 +24,14 @@ const selectClass =
 export default function RegisterVisitDialog({
   clinicId,
   doctors,
+  services = [],
   onRegistered,
 }: {
   clinicId: string;
-  doctors: { id: string; name: string }[];
+  // serviceIds vide = médecin de tous les services.
+  doctors: { id: string; name: string; serviceIds?: string[] }[];
+  // Services actifs de la clinique : la consultation y oriente obligatoirement s'il en existe.
+  services?: { id: string; name: string }[];
   onRegistered: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -40,6 +44,16 @@ export default function RegisterVisitDialog({
   const [patient, setPatient] = useState<FoundPatient | null>(null);
   const [destination, setDestination] = useState<VisitDestination>("CONSULTATION");
   const [assignedToId, setAssignedToId] = useState("");
+  const [serviceId, setServiceId] = useState("");
+  const needsService = destination === "CONSULTATION" && services.length > 0;
+  // Médecins du service choisi (ou de tous les services).
+  const serviceDoctors = doctors.filter((d) => !serviceId || !d.serviceIds?.length || d.serviceIds.includes(serviceId));
+
+  // Patient déjà suivi par un service : proposé par défaut (il revient le plus souvent au même).
+  const pickPatient = (p: FoundPatient) => {
+    setPatient(p);
+    if (p.serviceId && services.some((s) => s.id === p.serviceId)) setServiceId(p.serviceId);
+  };
   const [urgent, setUrgent] = useState(false);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -56,7 +70,7 @@ export default function RegisterVisitDialog({
       setSearching(false);
       setResults(
         res.success
-          ? res.data.map((p) => ({ id: p.id, name: `${p.user.lastName} ${p.user.firstName}`, ipp: p.ipp ?? null }))
+          ? res.data.map((p) => ({ id: p.id, name: `${p.user.lastName} ${p.user.firstName}`, ipp: p.ipp ?? null, serviceId: p.serviceId ?? null, serviceName: p.service?.name ?? null }))
           : []
       );
     }, 300);
@@ -72,6 +86,7 @@ export default function RegisterVisitDialog({
     setPatient(null);
     setDestination("CONSULTATION");
     setAssignedToId("");
+    setServiceId("");
     setUrgent(false);
     setReason("");
   };
@@ -82,6 +97,10 @@ export default function RegisterVisitDialog({
       toast.error("Sélectionnez ou créez le patient.");
       return;
     }
+    if (needsService && !serviceId) {
+      toast.error("Choisissez le service vers lequel orienter le patient.");
+      return;
+    }
     setSaving(true);
     const res = await registerVisit({
       clinicId,
@@ -90,10 +109,12 @@ export default function RegisterVisitDialog({
       priority: urgent ? "URGENT" : "NORMAL",
       reason: reason.trim() || undefined,
       assignedToId: destination === "CONSULTATION" && assignedToId ? assignedToId : undefined,
+      serviceId: needsService ? serviceId : undefined,
     });
     setSaving(false);
     if (res.success) {
-      toast.success(`Ticket ${res.data.ticket} — ${patient.name}`, { duration: 8000 });
+      const serviceName = needsService ? services.find((s) => s.id === serviceId)?.name : null;
+      toast.success(`Ticket ${res.data.ticket} — ${patient.name}${serviceName ? ` → ${serviceName}` : ""}`, { duration: 8000 });
       setOpen(false);
       reset();
       onRegistered();
@@ -131,6 +152,7 @@ export default function RegisterVisitDialog({
                 <div className="min-w-0">
                   <p className="text-sm font-semibold truncate">{patient.name}</p>
                   {patient.ipp && <p className="text-xs font-mono text-muted-foreground">{patient.ipp}</p>}
+                  {patient.serviceName && <p className="text-xs text-muted-foreground">Suivi en {patient.serviceName}</p>}
                 </div>
                 <Button type="button" variant="ghost" size="sm" onClick={() => setPatient(null)}>
                   Changer
@@ -158,7 +180,7 @@ export default function RegisterVisitDialog({
                         <button
                           key={r.id}
                           type="button"
-                          onClick={() => setPatient(r)}
+                          onClick={() => pickPatient(r)}
                           className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                         >
                           <span className="text-sm font-medium">{r.name}</span>
@@ -171,7 +193,7 @@ export default function RegisterVisitDialog({
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <UserPlus className="h-3.5 w-3.5" />
                   Patient non enregistré ?
-                  <NewPatientDialog defaultOrganizationId={clinicId} onCreated={(p) => setPatient(p)} />
+                  <NewPatientDialog defaultOrganizationId={clinicId} onCreated={(p) => pickPatient(p)} />
                 </div>
               </>
             )}
@@ -179,7 +201,7 @@ export default function RegisterVisitDialog({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="destination">Orientation *</Label>
               <select id="destination" value={destination} onChange={(e) => setDestination(e.target.value as VisitDestination)} className={selectClass}>
@@ -190,7 +212,29 @@ export default function RegisterVisitDialog({
                 ))}
               </select>
             </div>
-            <div className="space-y-1.5">
+            {needsService && (
+              <div className="space-y-1.5">
+                <Label htmlFor="service">Service *</Label>
+                <select
+                  id="service"
+                  value={serviceId}
+                  onChange={(e) => {
+                    setServiceId(e.target.value);
+                    setAssignedToId("");
+                  }}
+                  className={selectClass}
+                  required
+                >
+                  <option value="">Choisir le service…</option>
+                  {services.map((sv) => (
+                    <option key={sv.id} value={sv.id}>
+                      {sv.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className={`space-y-1.5 ${needsService ? "sm:col-span-2" : ""}`}>
               <Label htmlFor="doctor">Médecin</Label>
               <select
                 id="doctor"
@@ -200,7 +244,7 @@ export default function RegisterVisitDialog({
                 className={selectClass}
               >
                 <option value="">Premier disponible</option>
-                {doctors.map((d) => (
+                {serviceDoctors.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
@@ -208,6 +252,12 @@ export default function RegisterVisitDialog({
               </select>
             </div>
           </div>
+
+          {needsService && patient?.serviceId && serviceId && patient.serviceId !== serviceId && (
+            <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              Ce patient est suivi en {patient.serviceName}. Son dossier sera confié au service choisi (changement tracé dans son historique).
+            </p>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="reason">Motif de venue</Label>

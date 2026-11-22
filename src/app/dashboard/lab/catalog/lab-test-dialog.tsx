@@ -9,6 +9,8 @@ import SearchableSelect from "@/components/ui/searchable-select";
 import { Plus, Edit, Loader2, FlaskConical, X } from "lucide-react";
 import { createOrUpdateLabTest } from "@/actions/lab";
 import { toast } from "sonner";
+import ResultTemplateEditor from "@/components/lab/result-template-editor";
+import { LAB_BENCHES, TEMPLATE_PRESETS, parseTemplate, type ResultTemplate } from "@/lib/lab-templates";
 
 interface LabTestDialogProps {
   labTest?: any;
@@ -27,6 +29,8 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
   const [department, setDepartment] = useState(labTest?.department || "");
   const [basePrice, setBasePrice] = useState(labTest?.basePrice?.toString() || "0");
   const [baseCost, setBaseCost] = useState(labTest?.baseCost?.toString() || "0");
+  const [partnerPrice, setPartnerPrice] = useState(labTest?.partnerPrice != null ? String(labTest.partnerPrice) : "");
+  const [resultTemplate, setResultTemplate] = useState<ResultTemplate | null>(() => parseTemplate(labTest?.resultTemplate));
   const [durationMinutes, setDurationMinutes] = useState(labTest?.durationMinutes?.toString() || "");
   const [criticalLow, setCriticalLow] = useState(labTest?.criticalLow?.toString() || "");
   const [criticalHigh, setCriticalHigh] = useState(labTest?.criticalHigh?.toString() || "");
@@ -82,6 +86,8 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
         department: department.trim() || undefined,
         basePrice: Number(basePrice) || 0,
         baseCost: Number(baseCost) || 0,
+        partnerPrice: partnerPrice.trim() === "" ? null : Number(partnerPrice) || 0,
+        resultTemplate,
         durationMinutes: durationMinutes ? Number(durationMinutes) : undefined,
         criticalLow: criticalLow ? Number(criticalLow) : undefined,
         criticalHigh: criticalHigh ? Number(criticalHigh) : undefined,
@@ -110,7 +116,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
       }>
         {labTest ? <Edit className="h-4 w-4" /> : (<><Plus className="h-4 w-4" />Nouvel examen</>)}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[480px] rounded-2xl">
+      <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto rounded-2xl p-4 sm:max-w-2xl sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl text-blue-600 dark:text-blue-400">
             <FlaskConical className="h-5 w-5" />
@@ -129,8 +135,13 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Service</Label>
-              <Input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="ex: Hématologie" className="rounded-xl" />
+              <Label>Paillasse</Label>
+              <Input list="lab-benches" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="ex: Hématologie" className="rounded-xl" />
+              <datalist id="lab-benches">
+                {LAB_BENCHES.map((b) => (
+                  <option key={b} value={b} />
+                ))}
+              </datalist>
             </div>
             <div className="space-y-1.5">
               <Label>Durée (minutes)</Label>
@@ -148,6 +159,24 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
               <Input type="number" min="0" value={baseCost} onChange={(e) => setBaseCost(e.target.value)} placeholder="0" className="rounded-xl" />
               <p className="text-[10px] text-muted-foreground">Réactifs/matériel non suivis en stock — sert au calcul de la marge.</p>
             </div>
+          </div>
+
+          <ResultTemplateEditor
+            value={resultTemplate}
+            onChange={(t) => {
+              setResultTemplate(t);
+              // Paillasse proposée d'après le modèle choisi, si elle n'est pas encore renseignée.
+              if (t && !department.trim()) {
+                const preset = TEMPLATE_PRESETS.find((p) => JSON.stringify(p.template) === JSON.stringify(t));
+                if (preset) setDepartment(preset.bench);
+              }
+            }}
+          />
+
+          <div className="space-y-1.5">
+            <Label>Prix partenaire (FCFA)</Label>
+            <Input type="number" min="0" value={partnerPrice} onChange={(e) => setPartnerPrice(e.target.value)} placeholder="Vide = prix maison" className="rounded-xl" />
+            <p className="text-[10px] text-muted-foreground">Appliqué aux examens demandés par une clinique partenaire, à la place du prix maison.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

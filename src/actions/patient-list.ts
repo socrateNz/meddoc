@@ -6,6 +6,9 @@ import { getCurrentUser } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
 import { resolvePage } from "@/lib/pagination";
 import { assertClinicScope } from "@/lib/clinic-scope";
+import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
+
+const PATIENT_LIST_ROLES = ["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "ACCUEIL", "CASHIER"];
 
 export type PatientStatusFilter = "ALL" | "ACTIVE" | "DISCHARGED";
 export type PatientDependencyFilter = "ALL" | "HEAVY" | "MODERATE" | "AUTONOMOUS";
@@ -20,6 +23,8 @@ type PatientListOptions = {
   dependency?: PatientDependencyFilter;
   allergiesOnly?: boolean;
   sort?: PatientSort;
+  // Filtre facultatif sur un service (liste des patients d'un service).
+  serviceId?: string;
 };
 
 // Un patient est sorti si son statut est DISCHARGED, ou si toutes ses prises en charge sont closes
@@ -68,6 +73,9 @@ export async function listPatientsPage(options?: PatientListOptions) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
+    // Personnel qui consulte la liste (section « patients ») ou cherche un patient au guichet pour
+    // lui créer un ticket (accueil, caissier). Pharmacie, labo et comptabilité n'y ont pas accès.
+    if (!PATIENT_LIST_ROLES.includes(activeUser.role)) throw new Error("Non autorisé.");
 
     const scope: Prisma.PatientWhereInput[] = [];
     if (options?.organizationId) {
@@ -86,6 +94,13 @@ export async function listPatientsPage(options?: PatientListOptions) {
       // Tableau `in` vide : ne matche jamais, sans faire planter Prisma sur un ObjectId invalide.
       scope.push({ organizationId: { in: [] } });
     }
+
+    // Médecin/infirmier rattaché à des services : uniquement les dossiers de ses services (et les
+    // dossiers sans service) — cf. src/lib/service-access.ts. Fait partie du périmètre : les
+    // compteurs du bandeau suivent la même règle.
+    const myServices = await restrictedServiceIds(activeUser);
+    if (myServices) scope.push(patientServiceWhere(myServices));
+    if (options?.serviceId) scope.push({ serviceId: options.serviceId });
 
     const conditions = [...scope];
     if (options?.status === "ACTIVE") conditions.push(ACTIVE_CLAUSE);
@@ -117,6 +132,7 @@ export async function listPatientsPage(options?: PatientListOptions) {
         where,
         include: {
           user: true,
+          service: { select: { id: true, name: true } },
           bed: { select: { id: true, label: true, room: { select: { name: true } } } },
           carePlans: { select: { id: true, status: true } },
           vitalSigns: { take: 1, orderBy: { createdAt: "desc" } },

@@ -37,9 +37,11 @@ import {
   BedDouble,
   Banknote,
   PackageSearch,
-  Baby
+  Baby,
+  Handshake
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { SECTION_ROLES } from "@/lib/staff-roles";
 
 interface SidebarProps {
   currentUser: {
@@ -51,7 +53,7 @@ interface SidebarProps {
     phone: string | null;
     avatarUrl: string | null;
     organizationId?: string | null;
-    organization?: { type: string } | null;
+    organization?: { type: string; pharmacistCanUseRegister?: boolean | null } | null;
   } | null;
   unreadCounts: {
     total: number;
@@ -118,7 +120,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       icon: Bell,
       count: unreadCounts?.total || 0,
       badgeColor: "bg-primary text-primary-foreground font-bold shadow-xs",
-      roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'SUPER_ADMIN'],
+      roles: SECTION_ROLES.notifications,
       section: "Aperçu",
     },
     // If a clinic is active, render clinic-specific items
@@ -127,7 +129,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         name: "Tableau de bord Médecin",
         href: `/dashboard/clinics/${activeClinicId}/medecin`,
         icon: HeartPulse,
-        roles: ['MEDECIN'],
+        roles: SECTION_ROLES.medecin,
         section: "Clinique",
       },
       {
@@ -135,8 +137,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "ACCUEIL",
         href: `/dashboard/clinics/${activeClinicId}/accueil`,
         icon: Ticket,
-        // Garder en phase avec la section « accueil » de src/middleware.ts.
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'CASHIER', 'PHARMACIST'],
+        roles: SECTION_ROLES.accueil,
         section: "Clinique",
       },
       {
@@ -145,8 +146,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/urgences`,
         icon: Siren,
         iconClassName: "text-red-500",
-        // Garder en phase avec la section « urgences » de src/middleware.ts.
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.urgences,
         section: "Clinique",
       },
       {
@@ -155,8 +155,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/bloc`,
         icon: Scissors,
         iconClassName: "text-teal-600",
-        // Garder en phase avec la section « bloc » de src/middleware.ts.
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.bloc,
         section: "Clinique",
       },
       {
@@ -165,15 +164,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/banque-sang`,
         icon: Droplet,
         iconClassName: "text-red-600",
-        // Garder en phase avec la section « banque-sang » de src/middleware.ts.
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES["banque-sang"],
         section: "Clinique",
       },
       {
         name: "Patients",
         href: `/dashboard/clinics/${activeClinicId}/patients`,
         icon: Users,
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.patients,
         section: "Clinique",
       },
       {
@@ -182,7 +180,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Calendar,
         count: unreadCounts?.appointment || 0,
         badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'CASHIER'],
+        roles: SECTION_ROLES.appointments,
         section: "Clinique",
       },
       {
@@ -191,7 +189,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: AlertCircle,
         count: unreadCounts?.incident || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.incidents,
         section: "Clinique",
       },
       {
@@ -201,7 +199,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: FlaskConical,
         count: unreadCounts?.lab || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.lab,
         section: "Clinique",
       },
       {
@@ -209,8 +207,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "IMAGERIE",
         href: `/dashboard/clinics/${activeClinicId}/imagerie`,
         icon: ScanLine,
-        // Garder en phase avec la section « imagerie » de src/middleware.ts.
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.imagerie,
         section: "Clinique",
       },
       {
@@ -218,8 +215,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "MATERNITE",
         href: `/dashboard/clinics/${activeClinicId}/maternite`,
         icon: Baby,
-        // Garder en phase avec la section « maternite » de src/middleware.ts.
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.maternite,
         section: "Clinique",
       },
       {
@@ -227,7 +223,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "HOSPITALISATION",
         href: `/dashboard/clinics/${activeClinicId}/rooms`,
         icon: BedDouble,
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.rooms,
         section: "Clinique",
       },
       {
@@ -235,7 +231,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "HOSPITALISATION",
         href: `/dashboard/clinics/${activeClinicId}/ronde`,
         icon: Stethoscope,
-        roles: ['COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.ronde,
         section: "Clinique",
       },
       {
@@ -246,14 +242,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         iconClassName: "text-violet-500",
         count: unreadCounts?.ai || 0,
         badgeColor: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN'],
+        roles: SECTION_ROLES["ai-assistant"],
         section: "Clinique",
       },
       {
         name: "Caisse",
         href: `/dashboard/clinics/${activeClinicId}/caisse`,
         icon: Banknote,
-        roles: ['ADMIN', 'COORDINATOR', 'CASHIER', 'PHARMACIST'],
+        roles: SECTION_ROLES.caisse,
         section: "Finance",
       },
       {
@@ -261,14 +257,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "PHARMACIE",
         href: `/dashboard/clinics/${activeClinicId}/pharmacie`,
         icon: PackageSearch,
-        roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+        roles: SECTION_ROLES.pharmacie,
         section: "Finance",
       },
       {
         name: "Finance",
         href: `/dashboard/clinics/${activeClinicId}/finance`,
         icon: Wallet,
-        roles: ['ADMIN', 'COORDINATOR', 'COMPTABLE'],
+        roles: SECTION_ROLES.finance,
         section: "Finance",
       },
       {
@@ -276,7 +272,15 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "COMPTABILITE",
         href: `/dashboard/clinics/${activeClinicId}/comptabilite`,
         icon: BookOpenCheck,
-        roles: ['ADMIN', 'COORDINATOR', 'COMPTABLE'],
+        roles: SECTION_ROLES.comptabilite,
+        section: "Finance",
+      },
+      {
+        name: "Relevés partenaires",
+        module: "LABORATOIRE",
+        href: `/dashboard/clinics/${activeClinicId}/partenaires`,
+        icon: Handshake,
+        roles: SECTION_ROLES.partenaires,
         section: "Finance",
       },
       {
@@ -284,21 +288,21 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "CONTRATS_AIDANTS",
         href: `/dashboard/clinics/${activeClinicId}/contracts`,
         icon: FileSignature,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: SECTION_ROLES.contracts,
         section: "Finance",
       },
       {
         name: "Équipe médicale",
         href: `/dashboard/clinics/${activeClinicId}/team`,
         icon: Stethoscope,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: SECTION_ROLES.team,
         section: "Administration",
       },
       {
         name: "Journal d'audit",
         href: `/dashboard/clinics/${activeClinicId}/audit-log`,
         icon: ScrollText,
-        roles: ['ADMIN'],
+        roles: SECTION_ROLES["audit-log"],
         section: "Administration",
       },
       {
@@ -307,14 +311,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: MessageSquare,
         count: unreadCounts?.message || 0,
         badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+        roles: SECTION_ROLES.messages,
         section: "Autres",
       },
       {
         name: "Manuel d'utilisation",
         href: `/dashboard/clinics/${activeClinicId}/manual`,
         icon: BookOpen,
-        roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'COMPTABLE', 'FAMILY', 'PATIENT'],
+        roles: SECTION_ROLES.manual,
         section: "Autres",
       },
     ] : [
@@ -325,14 +329,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: FlaskConical,
         count: unreadCounts?.lab || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
+        roles: SECTION_ROLES.lab,
         section: "Clinique",
       },
       {
         name: "Caisse",
         href: "/dashboard/caisse",
         icon: Banknote,
-        roles: ['ADMIN', 'COORDINATOR', 'CASHIER'],
+        roles: SECTION_ROLES.caisse,
         section: "Finance",
       },
       {
@@ -340,14 +344,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "PHARMACIE",
         href: "/dashboard/pharmacie",
         icon: PackageSearch,
-        roles: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
+        roles: SECTION_ROLES.pharmacie,
         section: "Finance",
       },
       {
         name: "Finance",
         href: "/dashboard/finance",
         icon: Wallet,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: SECTION_ROLES.finance,
         section: "Finance",
       },
       {
@@ -355,21 +359,21 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         module: "CONTRATS_AIDANTS",
         href: "/dashboard/contracts",
         icon: FileSignature,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: SECTION_ROLES.contracts,
         section: "Finance",
       },
       {
         name: "Équipe médicale",
         href: "/dashboard/team",
         icon: Stethoscope,
-        roles: ['ADMIN', 'COORDINATOR'],
+        roles: SECTION_ROLES.team,
         section: "Administration",
       },
       {
         name: "Journal d'audit",
         href: "/dashboard/audit-log",
         icon: ScrollText,
-        roles: ['ADMIN'],
+        roles: SECTION_ROLES["audit-log"],
         section: "Administration",
       },
       {
@@ -378,14 +382,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: MessageSquare,
         count: unreadCounts?.message || 0,
         badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-        roles: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
+        roles: SECTION_ROLES.messages,
         section: "Autres",
       },
       {
         name: "Manuel d'utilisation",
         href: "/dashboard/manual",
         icon: BookOpen,
-        roles: ['SUPER_ADMIN', 'ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'FAMILY', 'PATIENT'],
+        roles: SECTION_ROLES.manual,
         section: "Autres",
       },
     ]),
@@ -403,7 +407,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       name: "Permissions",
       href: "/dashboard/permissions",
       icon: ShieldCheck,
-      roles: ['ADMIN'],
+      roles: SECTION_ROLES.permissions,
       section: "Administration",
     },
     {
@@ -412,7 +416,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       icon: Server,
       count: superAdminAlerts?.expiringLicenses || 0,
       badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-      roles: ['SUPER_ADMIN'],
+      roles: SECTION_ROLES.holdings,
       section: "Plateforme",
     },
     {
@@ -421,7 +425,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       icon: MessageCircle,
       count: superAdminAlerts?.contactMessages || 0,
       badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-      roles: ['SUPER_ADMIN'],
+      roles: SECTION_ROLES["contact-messages"],
       section: "Plateforme",
     },
   ];
@@ -491,6 +495,8 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
     const filteredNavItems = navItems.filter((item: any) => {
       if (!currentUser) return !item.roles;
       if (item.roles && !item.roles.includes(currentUser.role)) return false;
+      // Caisse du pharmacien : seulement si le coordinateur l'y autorise (cf. register-access.ts).
+      if (item.href.endsWith("/caisse") && currentUser.role === "PHARMACIST" && currentUser.organization?.pharmacistCanUseRegister === false) return false;
       // Module hors licence de l'établissement (cf. src/lib/modules.ts) : entrée masquée.
       if (item.module && !enabledModules.includes(item.module)) return false;
       if (item.isHoldingOnly && currentUser.organization?.type !== 'HOLDING') return false;

@@ -79,7 +79,7 @@ export default async function AppointmentsPage() {
     // Plus large que `caregivers` : le sélecteur d'affecté du dialogue de garde (Shift.userId)
     // couvre n'importe quel rôle de staff, pas seulement MEDECIN/CAREGIVER.
     prisma.user.findMany({
-      where: { ...userOrgFilter, isActive: true, role: { in: ["COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"] } },
+      where: { ...userOrgFilter, isActive: true, role: { in: ["COORDINATOR", "MEDECIN", "CAREGIVER", "LABORANTIN", "ACCUEIL", "PHARMACIST", "CASHIER"] } },
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: { lastName: "asc" },
     }),

@@ -10,9 +10,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, ClipboardCheck } from "lucide-react";
 import { recordLabResult } from "@/actions/lab";
 import { toast } from "sonner";
+import ResultTemplateForm from "@/components/lab/result-template-form";
+import { emptyResultData, hasAnyValue, type ResultData, type ResultTemplate } from "@/lib/lab-templates";
 
 interface RecordLabResultDialogProps {
-  labOrder: { id: string; tests: string[] };
+  // templates : modèle de compte rendu de chaque examen qui en a un au catalogue (cf. getLabOrder).
+  labOrder: { id: string; tests: string[]; templates?: Record<string, ResultTemplate> };
   onSuccess?: (result: any) => void;
 }
 
@@ -25,9 +28,20 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
   const [referenceRange, setReferenceRange] = useState("");
   const [isAbnormal, setIsAbnormal] = useState(false);
   const [notes, setNotes] = useState("");
+  const template = labOrder.templates?.[testName];
+  const [structured, setStructured] = useState<ResultData | null>(() => {
+    const t = labOrder.templates?.[labOrder.tests[0] || ""];
+    return t ? emptyResultData(t) : null;
+  });
+
+  const selectTest = (name: string) => {
+    setTestName(name);
+    const t = labOrder.templates?.[name];
+    setStructured(t ? emptyResultData(t) : null);
+  };
 
   const resetForm = () => {
-    setTestName(labOrder.tests[0] || "");
+    selectTest(labOrder.tests[0] || "");
     setValue("");
     setUnit("");
     setReferenceRange("");
@@ -37,7 +51,12 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!testName.trim() || !value.trim()) {
+    if (template && structured) {
+      if (!hasAnyValue(template, structured)) {
+        toast.error("Saisissez au moins un résultat.");
+        return;
+      }
+    } else if (!testName.trim() || !value.trim()) {
       toast.error("Veuillez indiquer l'analyse et la valeur du résultat.");
       return;
     }
@@ -46,9 +65,9 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
       const res = await guard((idempotencyKey) => recordLabResult({
         labOrderId: labOrder.id,
         testName: testName.trim(),
-        value: value.trim(),
-        unit: unit.trim() || undefined,
-        referenceRange: referenceRange.trim() || undefined,
+        ...(template && structured
+          ? { data: structured }
+          : { value: value.trim(), unit: unit.trim() || undefined, referenceRange: referenceRange.trim() || undefined }),
         isAbnormal,
         notes: notes.trim() || undefined,
         idempotencyKey,
@@ -73,7 +92,7 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
         <ClipboardCheck className="h-3.5 w-3.5" />
         Résultat
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[440px] rounded-2xl">
+      <DialogContent className={`max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto rounded-2xl p-4 sm:p-6 ${template ? "sm:max-w-2xl" : "sm:max-w-[440px]"}`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <ClipboardCheck className="h-5 w-5 text-blue-600" />
@@ -91,7 +110,7 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
               <select
                 required
                 value={testName}
-                onChange={(e) => setTestName(e.target.value)}
+                onChange={(e) => selectTest(e.target.value)}
                 className="w-full h-9 px-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
               >
                 {labOrder.tests.map((t) => (
@@ -103,21 +122,27 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Valeur *</Label>
-              <Input required value={value} onChange={(e) => setValue(e.target.value)} placeholder="ex: 13.2" className="rounded-xl" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Unité</Label>
-              <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="ex: g/dL" className="rounded-xl" />
-            </div>
-          </div>
+          {template && structured ? (
+            <ResultTemplateForm template={template} data={structured} onChange={setStructured} />
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Valeur *</Label>
+                  <Input required value={value} onChange={(e) => setValue(e.target.value)} placeholder="ex: 13.2" className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Unité</Label>
+                  <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="ex: g/dL" className="rounded-xl" />
+                </div>
+              </div>
 
-          <div className="space-y-1.5">
-            <Label>Valeurs de référence (optionnel)</Label>
-            <Input value={referenceRange} onChange={(e) => setReferenceRange(e.target.value)} placeholder="ex: 12 - 16" className="rounded-xl" />
-          </div>
+              <div className="space-y-1.5">
+                <Label>Valeurs de référence (optionnel)</Label>
+                <Input value={referenceRange} onChange={(e) => setReferenceRange(e.target.value)} placeholder="ex: 12 - 16" className="rounded-xl" />
+              </div>
+            </>
+          )}
 
           <div className="flex items-center gap-2">
             <Checkbox id="isAbnormal" checked={isAbnormal} onCheckedChange={(c) => setIsAbnormal(c === true)} />

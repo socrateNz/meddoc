@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { getClinics } from "@/actions/organizations";
 import { PaginationNav, keepQuery } from "@/components/ui/pagination-nav";
 import { pageFromParam, resolvePage } from "@/lib/pagination";
+import { ALL_STAFF_ROLES, STAFF_ROLE_LABELS } from "@/lib/staff-roles";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -33,9 +34,9 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
   // Membres de cette clinique uniquement, 20 par page.
   const clinicMembers = {
     organizationId: clinicId,
-    role: { in: ["CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "COMPTABLE", "ADMIN"] as Role[] },
+    role: { in: [...ALL_STAFF_ROLES] as Role[] },
   };
-  const [members, total, clinicsRes] = await Promise.all([
+  const [members, total, clinicsRes, services] = await Promise.all([
     prisma.user.findMany({
       where: clinicMembers,
       include: {
@@ -67,7 +68,9 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
     }),
     prisma.user.count({ where: clinicMembers }),
     isHoldingAdmin ? getClinics() : Promise.resolve(null),
+    prisma.clinicService.findMany({ where: { organizationId: clinicId }, select: { id: true, name: true } }),
   ]);
+  const serviceNameById = new Map(services.map((s) => [s.id, s.name]));
 
   let clinics: { id: string; name: string }[] = [];
   if (isHoldingAdmin && clinicsRes?.clinics) {
@@ -96,14 +99,7 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
           const isCaregiver = !!member.caregiverProfile;
           const isCoordinator = !!member.coordinatorProfile;
 
-          let roleLabel = member.role;
-          if (member.role === "MEDECIN") roleLabel = "Médecin";
-          if (member.role === "CAREGIVER") roleLabel = "Infirmier(e)";
-          if (member.role === "COORDINATOR") roleLabel = "Coordinateur";
-          if (member.role === "ADMIN") roleLabel = "Administrateur";
-          if (member.role === "PHARMACIST") roleLabel = "Pharmacien(ne)";
-          if (member.role === "CASHIER") roleLabel = "Caissier(ère)";
-          if (member.role === "COMPTABLE") roleLabel = "Comptable";
+          const roleLabel = STAFF_ROLE_LABELS[member.role] ?? member.role;
 
           const specialty = isCaregiver
             ? member.caregiverProfile.specialties?.[0] || (member.role === "MEDECIN" ? "Médecin" : "Soignant")
@@ -150,6 +146,13 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
                 <p className="text-xs text-muted-foreground mt-1 font-medium">
                   @ {member.organization?.name || "Siège (Holding)"}
                 </p>
+                {["MEDECIN", "CAREGIVER"].includes(member.role) && serviceNameById.size > 0 && (
+                  <p className="text-xs mt-1 font-medium text-slate-600 dark:text-slate-300">
+                    {member.serviceIds?.length
+                      ? `Service${member.serviceIds.length > 1 ? "s" : ""} : ${member.serviceIds.map((id: string) => serviceNameById.get(id) ?? "?").join(", ")}`
+                      : "Tous les services"}
+                  </p>
+                )}
 
                 <div className="mt-4 space-y-2 text-sm text-muted-foreground">
                   {member.phone && (

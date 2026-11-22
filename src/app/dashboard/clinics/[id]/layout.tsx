@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect, notFound } from "next/navigation";
+import { ALL_STAFF_ROLES } from "@/lib/staff-roles";
 
 interface ClinicLayoutProps {
   children: React.ReactNode;
@@ -42,7 +43,7 @@ export default async function ClinicLayout(props: ClinicLayoutProps) {
   }
 
   // 3. Fallback check for standard medical staff roles
-  if (!["SUPER_ADMIN", "ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER", "COMPTABLE"].includes(currentUser.role)) {
+  if (currentUser.role !== "SUPER_ADMIN" && !(ALL_STAFF_ROLES as readonly string[]).includes(currentUser.role)) {
     redirect("/dashboard");
   }
 

@@ -6,6 +6,9 @@ import { ArrowLeft, Building2, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ClinicSettingsForm from "./settings-form";
 import IntegrationsCard from "./integrations-card";
+import StaffAccessCard from "./staff-access-card";
+import ServicesCard from "./services-card";
+import PartnersCard from "./partners-card";
 import { listIntegrationClients } from "@/actions/integrations";
 import { modulesOfUser } from "@/lib/modules-server";
 import { MODULES, MODULE_KEYS } from "@/lib/modules";
@@ -45,6 +48,15 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
     redirect("/dashboard/clinics");
   }
 
+  const [services, partners] = await Promise.all([
+    prisma.clinicService.findMany({
+      where: { organizationId: clinic.id },
+      orderBy: [{ isActive: "desc" }, { name: "asc" }],
+      include: { _count: { select: { patients: true } } },
+    }),
+    prisma.partner.findMany({ where: { organizationId: clinic.id }, orderBy: [{ isActive: "desc" }, { name: "asc" }] }),
+  ]);
+
   // Le super-admin n'a pas accès aux clés d'une clinique (listIntegrationClients le refuse) ; la carte
   // n'existe que si le module Interopérabilité est dans la licence.
   const integrationsRes = isSuperAdmin || !modulesOfUser(currentUser).includes("INTEROPERABILITE") ? null : await listIntegrationClients(clinic.id);
@@ -70,6 +82,26 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
 
       <div className="max-w-3xl space-y-6">
         <ClinicSettingsForm clinic={{ id: clinic.id, name: clinic.name, logoUrl: clinic.logoUrl }} readOnly={!canEdit} />
+        <ServicesCard
+          clinicId={clinic.id}
+          readOnly={!canEdit}
+          services={services.map((s) => ({
+            id: s.id,
+            name: s.name,
+            consultationPrice: s.consultationPrice,
+            isTransversal: s.isTransversal,
+            isActive: s.isActive,
+            patientCount: s._count.patients,
+          }))}
+        />
+        {modulesOfUser(currentUser).includes("LABORATOIRE") && (
+          <PartnersCard
+            clinicId={clinic.id}
+            readOnly={!canEdit}
+            partners={partners.map((p) => ({ id: p.id, name: p.name, logoUrl: p.logoUrl, address: p.address, phone: p.phone, email: p.email, billing: p.billing, isActive: p.isActive }))}
+          />
+        )}
+        <StaffAccessCard clinicId={clinic.id} pharmacistCanUseRegister={clinic.pharmacistCanUseRegister !== false} readOnly={!canEdit} />
         {!isSuperAdmin && (
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/50 p-5 space-y-3">
             <div>

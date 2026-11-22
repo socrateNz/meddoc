@@ -11,6 +11,7 @@ import UserActionsMenu from "./user-actions-menu";
 import { Button } from "@/components/ui/button";
 import { getClinics } from "@/actions/organizations";
 import { PaginationNav } from "@/components/ui/pagination-nav";
+import { STAFF_ROLE_LABELS } from "@/lib/staff-roles";
 
 interface TeamPageProps {
   searchParams: Promise<{ page?: string }>;
@@ -56,14 +57,7 @@ export default async function TeamPage({ searchParams }: TeamPageProps) {
           const isCaregiver = !!member.caregiverProfile;
           const isCoordinator = !!member.coordinatorProfile;
 
-          let roleLabel = member.role;
-          if (member.role === "MEDECIN") roleLabel = "Médecin";
-          if (member.role === "CAREGIVER") roleLabel = "Infirmier(e)";
-          if (member.role === "COORDINATOR") roleLabel = "Coordinateur";
-          if (member.role === "ADMIN") roleLabel = "Administrateur";
-          if (member.role === "PHARMACIST") roleLabel = "Pharmacien(ne)";
-          if (member.role === "CASHIER") roleLabel = "Caissier(ère)";
-          if (member.role === "COMPTABLE") roleLabel = "Comptable";
+          const roleLabel = STAFF_ROLE_LABELS[member.role] ?? member.role;
 
           const specialty = isCaregiver
             ? member.caregiverProfile.specialties?.[0] || (member.role === "MEDECIN" ? "Médecin" : "Soignant")

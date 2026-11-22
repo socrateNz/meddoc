@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify, SignJWT } from 'jose';
 import { appendSecurityHeaders } from '@/middlewares/securityHeaders';
+import { SECTION_ROLES } from '@/lib/staff-roles';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -20,54 +21,12 @@ const publicPaths = ['/', '/api/auth/login', '/login', '/forgot-password', '/api
 // Comptes usagers (patient, proche) : accueil sur /dashboard, jamais sur l'espace clinique.
 const PORTAL_ROLES = ['PATIENT', 'FAMILY'];
 
-// RBAC par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...)
-// ADMIN (holding) est laissé en lecture seule par les pages/actions elles-mêmes sur
-// patients/team/finance/contracts — il reste dans la liste pour pouvoir consulter.
-const restrictedSections: Record<string, string[]> = {
-  patients: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
-  // Accueil & file d'attente (cf. src/actions/visits.ts) : pas de rôle dédié, tenu par le personnel
-  // du guichet ; garder en phase avec src/app/dashboard/sidebar.tsx.
-  accueil: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'CASHIER', 'PHARMACIST'],
-  team: ['ADMIN', 'COORDINATOR'],
-  incidents: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  lab: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  // Imagerie (cf. src/actions/radiology.ts) : mêmes rôles que le laboratoire.
-  imagerie: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  // Maternité : suivi des CPN de la clinique (cf. src/actions/maternity.ts listPrenatalFollowUp).
-  maternite: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  // Tableau des urgences et tri (cf. src/actions/triage.ts).
-  urgences: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  // Bloc opératoire et banque de sang (cf. src/actions/surgery.ts, src/actions/blood-bank.ts).
-  bloc: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  'banque-sang': ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  rooms: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  // Ronde médicale : l'équipe qui visite les patients hospitalisés (cf. src/lib/rounds.ts ROUND_ROLES).
-  ronde: ['COORDINATOR', 'MEDECIN', 'CAREGIVER'],
-  // Élargi à PHARMACIST/CASHIER avec le calendrier unifié (gardes/échéances de stock
-  // désormais agrégées sur cette même page, cf. src/actions/calendar.ts) — garder en phase
-  // avec src/app/dashboard/sidebar.tsx, les deux doivent changer ensemble.
-  appointments: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST', 'CASHIER'],
-  'ai-assistant': ['ADMIN', 'COORDINATOR', 'MEDECIN'],
-  medecin: ['MEDECIN'],
-  // Finance & Pharmacie éclatées en 3 sections (séparation caisse/pharmacie) : la caisse
-  // encaisse (CASHIER dédié, COORDINATOR en secours), la pharmacie remet les médicaments
-  // (PHARMACIST), et Finance reste une vue de synthèse en lecture pour ADMIN/COORDINATOR.
-  // PHARMACIST a pour le moment aussi accès à l'opération de la caisse (ouvrir/fermer une
-  // session, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
-  caisse: ['ADMIN', 'COORDINATOR', 'CASHIER', 'PHARMACIST'],
-  pharmacie: ['ADMIN', 'COORDINATOR', 'PHARMACIST'],
-  finance: ['ADMIN', 'COORDINATOR', 'COMPTABLE'],
-  // Comptabilité (cf. src/lib/accounting) : le comptable et le coordinateur, la holding en lecture.
-  comptabilite: ['ADMIN', 'COORDINATOR', 'COMPTABLE'],
-  contracts: ['ADMIN', 'COORDINATOR'],
-  permissions: ['ADMIN'],
-  'audit-log': ['ADMIN'],
-  'contact-messages': ['SUPER_ADMIN'],
-  holdings: ['SUPER_ADMIN'],
-  // CASHIER n'a délibérément pas accès à la messagerie/manuel pour l'instant (périmètre
-  // minimal du rôle) — cf. plan caisse/pharmacie.
-  messages: ['ADMIN', 'COORDINATOR', 'MEDECIN', 'CAREGIVER', 'PHARMACIST'],
-};
+// RBAC par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...) : source unique
+// dans src/lib/staff-roles.ts, partagée avec la barre latérale.
+const restrictedSections = SECTION_ROLES;
+
+// Page d'arrivée des rôles qui n'ont pas de tableau de bord clinique.
+const ROLE_HOME_SECTION: Record<string, string> = { COMPTABLE: 'comptabilite', ACCUEIL: 'accueil', LABORANTIN: 'lab' };
 
 function withSecurityHeaders(response: NextResponse): NextResponse {
   appendSecurityHeaders(response.headers);
@@ -163,8 +122,8 @@ export async function middleware(request: NextRequest) {
       payload.organizationType === 'CLINIC' && payload.organizationId && !PORTAL_ROLES.includes(role)
         ? `/dashboard/clinics/${payload.organizationId as string}`
         : null;
-    // Le comptable n'a pas de tableau de bord clinique : il arrive directement sur la comptabilité.
-    const home = clinicHome ? (role === 'COMPTABLE' ? `${clinicHome}/comptabilite` : clinicHome) : '/dashboard';
+    // Comptable, accueil, laborantin : pas de tableau de bord clinique, arrivée sur leur page.
+    const home = clinicHome ? (ROLE_HOME_SECTION[role] ? `${clinicHome}/${ROLE_HOME_SECTION[role]}` : clinicHome) : '/dashboard';
     const redirectTo = (path: string) => {
       const res = NextResponse.redirect(new URL(path, request.url));
       if (newAccessToken) {
@@ -181,6 +140,10 @@ export async function middleware(request: NextRequest) {
       return withSecurityHeaders(res);
     };
     if (pathname === '/dashboard' && home !== '/dashboard') {
+      return redirectTo(home);
+    }
+    // Le tableau de bord clinique (statistiques médicales et financières) n'est pas pour eux.
+    if (clinicHome && ROLE_HOME_SECTION[role] && pathname === clinicHome) {
       return redirectTo(home);
     }
 

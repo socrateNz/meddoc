@@ -9,14 +9,15 @@ import { toast } from "sonner";
 import { listTodayVisits, updateVisitStatus } from "@/actions/visits";
 import { VISIT_DESTINATION_LABELS, VISIT_STATUS_LABELS, formatWait, type VisitAction, type VisitDestination, type VisitStatus } from "@/lib/visits";
 import RegisterVisitDialog from "./register-visit-dialog";
+import { SECTION_ROLES } from "@/lib/staff-roles";
 
 type Visit = Extract<Awaited<ReturnType<typeof listTodayVisits>>, { success: true }>["data"][number];
 
 const REFRESH_MS = 20000;
 const CONSULTATION_ROLES = ["COORDINATOR", "MEDECIN"];
-// Mêmes rôles que la section « patients » du middleware (src/middleware.ts) : le caissier n'a pas
-// accès aux dossiers médicaux.
-const PATIENT_FILE_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST"];
+// Mêmes rôles que la section « patients » (src/lib/staff-roles.ts) : accueil, caisse, pharmacie et
+// labo n'ont pas accès aux dossiers médicaux.
+const PATIENT_FILE_ROLES = SECTION_ROLES.patients;
 
 const DESTINATION_STYLES: Record<string, string> = {
   CONSULTATION: "bg-blue-500/10 text-blue-700 border-blue-500/20",
@@ -31,14 +32,15 @@ interface AccueilViewProps {
   clinicId: string;
   currentUserId: string;
   currentUserRole: string;
-  doctors: { id: string; name: string }[];
+  doctors: { id: string; name: string; serviceIds?: string[] }[];
+  services?: { id: string; name: string }[];
   initialVisits: Visit[];
   canRegister: boolean;
 }
 
 // File d'attente du jour (cf. src/actions/visits.ts) : rafraîchie toutes les 20 s, pour que
 // l'accueil et les médecins voient les mêmes passages sans recharger la page.
-export default function AccueilView({ clinicId, currentUserId, currentUserRole, doctors, initialVisits, canRegister }: AccueilViewProps) {
+export default function AccueilView({ clinicId, currentUserId, currentUserRole, doctors, services = [], initialVisits, canRegister }: AccueilViewProps) {
   const [visits, setVisits] = useState<Visit[]>(initialVisits);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [destinationFilter, setDestinationFilter] = useState<"ALL" | VisitDestination>("ALL");
@@ -126,6 +128,7 @@ export default function AccueilView({ clinicId, currentUserId, currentUserRole, 
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
           <Badge variant="outline" className={`text-[10px] ${DESTINATION_STYLES[v.destination] || ""}`}>
             {VISIT_DESTINATION_LABELS[v.destination as VisitDestination] || v.destination}
+            {v.serviceName ? ` · ${v.serviceName}` : ""}
           </Badge>
           {v.assignedToName && (
             <span className="inline-flex items-center gap-1 text-muted-foreground">
@@ -232,7 +235,7 @@ export default function AccueilView({ clinicId, currentUserId, currentUserRole, 
             </label>
           )}
         </div>
-        {canRegister && <RegisterVisitDialog clinicId={clinicId} doctors={doctors} onRegistered={reload} />}
+        {canRegister && <RegisterVisitDialog clinicId={clinicId} doctors={doctors} services={services} onRegistered={reload} />}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

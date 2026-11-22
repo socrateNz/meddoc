@@ -11,6 +11,14 @@ import { resolvePage } from "@/lib/pagination";
 import { computeLabOrderStatus, isCriticalValue, orderSamples, testsWithoutSample } from "@/lib/lab-rules";
 import { randomUUID } from "crypto";
 import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
+import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
+import { evaluateResult, hasAnyValue, parseTemplate, type ResultData, type ResultTemplate, type StoredResultData } from "@/lib/lab-templates";
+
+// null efface le modèle ; undefined (champ absent) aussi : le formulaire du catalogue envoie
+// toujours le modèle courant.
+function templateJson(template: ResultTemplate | null | undefined) {
+  return template ? (template as unknown as Prisma.InputJsonValue) : null;
+}
 import {
   createLabOrderSchema,
   updateLabOrderStatusSchema,
@@ -24,15 +32,14 @@ import { assertUserModule, modulesOfUser } from "@/lib/modules-server";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-// Pas de rôle « technicien/biologiste » dédié dans la hiérarchie actuelle : COORDINATOR et
-// CAREGIVER prescrivent, prélèvent et saisissent les résultats bruts. Seul COORDINATOR valide
-// (maker-checker à deux rôles) et gère le catalogue d'examens. ADMIN (holding) consulte en
-// lecture seule ; PHARMACIST n'a pas accès au laboratoire.
-const LAB_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
+// LABORANTIN (technicien) et CAREGIVER prélèvent, réceptionnent et saisissent les résultats bruts ;
+// COORDINATOR et MEDECIN valident (maker-checker à deux rôles). ADMIN (holding) consulte en lecture
+// seule ; PHARMACIST n'a pas accès au laboratoire.
+const LAB_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "LABORANTIN"];
 // Prescrire un examen (autorité diagnostique) est réservé au médecin ; prélever, réceptionner
-// et saisir un résultat brut restent des gestes opérationnels que l'infirmier(e) garde.
+// et saisir un résultat brut restent des gestes opérationnels (infirmier(e), laborantin).
 const LAB_ORDER_ROLES = ["COORDINATOR", "MEDECIN"];
-const LAB_OPERATE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
+const LAB_OPERATE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER", "LABORANTIN"];
 const LAB_VALIDATE_ROLES = ["COORDINATOR", "MEDECIN"];
 const LAB_AI_ROLES = ["COORDINATOR", "MEDECIN"];
 
@@ -58,6 +65,7 @@ function assertLabAiRole(role: string) {
 
 const ORDER_INCLUDE = {
   patient: { include: { user: { select: { firstName: true, lastName: true } } } },
+  partner: { select: { id: true, name: true } },
   orderedBy: { select: { firstName: true, lastName: true } },
   sampleCollectedBy: { select: { firstName: true, lastName: true } },
   // Rendez-vous/consultation d'origine, quand connu — permet à la liste (listLabOrders, onglet
@@ -76,6 +84,12 @@ const ORDER_INCLUDE = {
     },
   },
 } as const;
+
+// Prix d'un examen catalogué : le prix partenaire remplace le prix maison (base + produits
+// consommés) pour une demande de partenaire, quand il est défini.
+function labTestPrice(test: { totalPrice: number; partnerPrice?: number | null }, forPartner: boolean): number {
+  return forPartner && test.partnerPrice != null ? test.partnerPrice : test.totalPrice;
+}
 
 async function findMatchingLabTest(testName: string, organizationId: string | null) {
   if (!organizationId) return null;
@@ -134,6 +148,8 @@ async function createLabOrderOnce(data: {
   notes?: string;
   priority?: "ROUTINE" | "URGENT";
   prenatalVisitId?: string;
+  partnerId?: string;
+  partnerReference?: string;
 }) {
   try {
     createLabOrderSchema.parse(data);
@@ -142,7 +158,11 @@ async function createLabOrderOnce(data: {
     assertUserModule(activeUser, "LABORATOIRE");
     // Sage-femme / infirmier(e) (CAREGIVER) : seulement le bilan d'une consultation prénatale,
     // comme dans le carnet de CPN. Toute autre demande reste réservée au médecin/coordinateur.
-    if (!(data.prenatalVisitId && activeUser.role === "CAREGIVER")) assertLabOrderRole(activeUser.role);
+    // Examen externe d'un partenaire : la prescription vient du médecin du partenaire (bon de
+    // demande), le laborantin l'enregistre.
+    const prenatalByMidwife = !!data.prenatalVisitId && activeUser.role === "CAREGIVER";
+    const partnerByLab = !!data.partnerId && activeUser.role === "LABORANTIN";
+    if (!prenatalByMidwife && !partnerByLab) assertLabOrderRole(activeUser.role);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -155,6 +175,11 @@ async function createLabOrderOnce(data: {
 
     // Visite prénatale d'origine : doit appartenir à une grossesse de CETTE patiente.
     if (data.prenatalVisitId) await assertPrenatalVisitOfPatient(data.prenatalVisitId, data.patientId);
+
+    const partner = data.partnerId
+      ? await prisma.partner.findFirst({ where: { id: data.partnerId, organizationId: organizationId ?? undefined, isActive: true } })
+      : null;
+    if (data.partnerId && !partner) throw new Error("Partenaire introuvable ou désactivé.");
 
     // Résout le catalogue pour chaque examen avant création : le prix (base + produits
     // consommés) et la facturation en dépendent.
@@ -171,20 +196,23 @@ async function createLabOrderOnce(data: {
     data.tests.forEach((testName) => {
       const p = pricedByName.get(testName.toLowerCase());
       if (!p) return;
+      // Partenaire : prix partenaire de l'examen s'il est défini, sinon prix maison.
+      const price = partner ? labTestPrice(p, true) : p.totalPrice;
       testDetails.push({
         testName,
         labTestId: p.id,
         basePrice: p.basePrice,
         baseCost: p.baseCost ?? 0,
         consumables: p.consumables,
-        totalPrice: p.totalPrice,
+        totalPrice: price,
+        ...(partner ? { partnerPrice: p.partnerPrice ?? null, housePrice: p.totalPrice } : {}),
       });
       items.push({
         type: "LAB",
-        description: `Analyse : ${p.name}`,
+        description: `Analyse : ${p.name}${partner ? ` (${partner.name})` : ""}`,
         quantity: 1,
-        unitPrice: p.totalPrice,
-        amount: p.totalPrice,
+        unitPrice: price,
+        amount: price,
       });
     });
 
@@ -201,10 +229,14 @@ async function createLabOrderOnce(data: {
         status: "PRESCRIBED",
         testDetails: testDetails.length > 0 ? testDetails : undefined,
         orderedById: activeUser.id,
+        partnerId: partner?.id ?? null,
+        partnerReference: partner ? data.partnerReference?.trim() || null : null,
       },
     });
 
-    if (items.length > 0) {
+    // Partenaire facturé en fin de mois : rien à régler à la caisse, l'examen figure sur son relevé.
+    const billedToPartner = partner?.billing === "PARTNER";
+    if (items.length > 0 && !billedToPartner) {
       const pendingInvoice = await prisma.pendingInvoice.create({
         data: {
           status: "PENDING",
@@ -244,6 +276,8 @@ type LabOrderListOptions = {
   urgentOnly?: boolean;
   // Patient, prescripteur, ou nom d'une analyse du catalogue.
   search?: string;
+  // Paillasse (LabTest.department) : file de travail de la paillasse.
+  bench?: string;
 };
 
 // Périmètre commun à la liste paginée et aux statistiques : un patient précis (avec contrôle
@@ -268,6 +302,10 @@ async function labOrderScope(activeUser: ActiveLabUser, options: LabOrderListOpt
   }
 
   if (options.orderedById) conditions.push({ orderedById: options.orderedById });
+  // Médecin/infirmier rattaché à des services : demandes des patients de ses services seulement
+  // (cf. src/lib/service-access.ts ; le laborantin n'est pas restreint).
+  const myServices = await restrictedServiceIds(activeUser);
+  if (myServices) conditions.push({ patient: patientServiceWhere(myServices) });
   return conditions;
 }
 
@@ -315,6 +353,15 @@ export async function listLabOrders(options?: LabOrderListOptions) {
     }
     const term = options?.search?.trim();
     if (term) conditions.push(await labOrderSearch(term));
+    // File de travail d'une paillasse : demandes contenant au moins un examen du catalogue rattaché
+    // à cette paillasse (LabTest.department).
+    if (options?.bench) {
+      const benchTests = await prisma.labTest.findMany({
+        where: { department: { equals: options.bench, mode: "insensitive" }, ...(options.organizationId ? { organizationId: options.organizationId } : {}) },
+        select: { name: true },
+      });
+      conditions.push({ tests: { hasSome: benchTests.map((t) => t.name) } });
+    }
 
     const where: Prisma.LabOrderWhereInput = { AND: conditions };
     const { page, pageSize, skip, take } = resolvePage(options);
@@ -383,6 +430,8 @@ export async function getLabOrder(labOrderId: string) {
         appointment: { select: { id: true, title: true, scheduledAt: true, type: true } },
         prenatalVisit: { select: { id: true, visitDate: true, cpnNumber: true, gestationalWeeks: true } },
         organization: { select: { name: true, logoUrl: true } },
+        // Examen d'un partenaire : son en-tête remplace celui de la clinique sur le rapport.
+        partner: { select: { id: true, name: true, logoUrl: true, address: true, phone: true, email: true, billing: true } },
       },
     });
     if (!order) throw new Error("Demande d'analyse introuvable.");
@@ -390,7 +439,20 @@ export async function getLabOrder(labOrderId: string) {
     const hasAccess = await verifyPatientAccess(order.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
 
-    return { success: true, data: order };
+    // Modèles de compte rendu des examens demandés (catalogue actuel), pour la saisie des résultats.
+    const catalog = order.organizationId
+      ? await prisma.labTest.findMany({
+          where: { organizationId: order.organizationId, name: { in: order.tests } },
+          select: { name: true, resultTemplate: true },
+        })
+      : [];
+    const templates: Record<string, ResultTemplate> = {};
+    for (const t of catalog) {
+      const template = parseTemplate(t.resultTemplate);
+      if (template) templates[t.name] = template;
+    }
+
+    return { success: true, data: { ...order, templates } };
   } catch (error: any) {
     return { success: false, error: error.message || "Erreur lors du chargement de la demande d'analyse." };
   }
@@ -536,7 +598,8 @@ export async function recordLabResult(data: Parameters<typeof recordLabResultOnc
 async function recordLabResultOnce(data: {
   labOrderId: string;
   testName: string;
-  value: string;
+  value?: string;
+  data?: ResultData;
   unit?: string;
   referenceRange?: string;
   isAbnormal?: boolean;
@@ -558,8 +621,24 @@ async function recordLabResultOnce(data: {
 
     // Détection de valeur critique par correspondance avec le catalogue.
     const catalogTest = await findMatchingLabTest(data.testName, order.organizationId);
-    const isCritical = isCriticalValue(catalogTest, data.value);
-    const isAbnormal = !!data.isAbnormal || isCritical;
+
+    // Compte rendu structuré : le modèle actuel de l'examen au catalogue est figé avec les valeurs,
+    // la valeur texte devient le résumé et les anomalies sont calculées sur les références du modèle.
+    let structured: StoredResultData | null = null;
+    let value = data.value?.trim() ?? "";
+    let templateAbnormal = false;
+    if (data.data) {
+      const template = parseTemplate(catalogTest?.resultTemplate);
+      if (!template) throw new Error("Cet examen n'a pas de modèle de compte rendu au catalogue.");
+      if (!hasAnyValue(template, data.data)) throw new Error("Saisissez au moins un résultat.");
+      const evaluation = evaluateResult(template, data.data);
+      structured = { ...data.data, template };
+      value = evaluation.summary;
+      templateAbnormal = evaluation.isAbnormal;
+    }
+
+    const isCritical = structured ? false : isCriticalValue(catalogTest, value);
+    const isAbnormal = !!data.isAbnormal || isCritical || templateAbnormal;
 
     const derivedReferenceRange =
       data.referenceRange ||
@@ -571,11 +650,12 @@ async function recordLabResultOnce(data: {
       data: {
         labOrderId: data.labOrderId,
         testName: data.testName,
-        value: data.value,
-        unit: data.unit || null,
-        referenceRange: derivedReferenceRange,
+        value,
+        unit: structured ? null : data.unit || null,
+        referenceRange: structured ? null : derivedReferenceRange,
         isAbnormal,
         notes: data.notes || null,
+        data: structured ? (structured as unknown as Prisma.InputJsonValue) : undefined,
         recordedById: activeUser.id,
       },
     });
@@ -592,7 +672,7 @@ async function recordLabResultOnce(data: {
           orderedById: order.orderedById,
           organizationId: order.organizationId,
           testName: data.testName,
-          value: data.value,
+          value,
         });
       } catch (e) {
         console.error("Failed to emit lab.result.critical event:", e);
@@ -724,6 +804,8 @@ export async function createOrUpdateLabTest(data: {
   department?: string;
   basePrice?: number;
   baseCost?: number;
+  partnerPrice?: number | null;
+  resultTemplate?: ResultTemplate | null;
   durationMinutes?: number;
   criticalLow?: number;
   criticalHigh?: number;
@@ -749,6 +831,8 @@ export async function createOrUpdateLabTest(data: {
           department: data.department || null,
           basePrice: data.basePrice ?? 0,
           baseCost: data.baseCost ?? 0,
+          partnerPrice: data.partnerPrice ?? null,
+          resultTemplate: templateJson(data.resultTemplate),
           durationMinutes: data.durationMinutes ?? null,
           criticalLow: data.criticalLow ?? null,
           criticalHigh: data.criticalHigh ?? null,
@@ -763,6 +847,8 @@ export async function createOrUpdateLabTest(data: {
           department: data.department || null,
           basePrice: data.basePrice ?? 0,
           baseCost: data.baseCost ?? 0,
+          partnerPrice: data.partnerPrice ?? null,
+          resultTemplate: templateJson(data.resultTemplate),
           durationMinutes: data.durationMinutes ?? null,
           criticalLow: data.criticalLow ?? null,
           criticalHigh: data.criticalHigh ?? null,

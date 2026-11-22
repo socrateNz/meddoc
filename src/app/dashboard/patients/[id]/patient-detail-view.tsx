@@ -54,6 +54,7 @@ import CreateCarePlanDialog from "./create-care-plan-dialog";
 import CreateCareTaskDialog from "./create-care-task-dialog";
 import TaskStatusToggle from "./task-status-toggle";
 import ReassignPatientDialog from "../reassign-patient-dialog";
+import PatientServicePanel from "./patient-service-panel";
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 import VitalSignsDialog from "./vital-signs-dialog";
 import VitalSignsChart from "./vital-signs-chart";
@@ -294,6 +295,16 @@ export default function PatientDetailView({
                 {patient.ipp && <span className="font-mono font-semibold text-foreground/80">{patient.ipp} • </span>}
                 {calculatePatientAge(patient.dateOfBirth)} ans • {patient.sex === "M" ? "Homme" : patient.sex === "F" ? "Femme" : patient.sex || "Sexe non renseigné"} • Né(e) le {formatPatientDate(patient.dateOfBirth)}
               </p>
+              <div className="mt-2">
+                <PatientServicePanel
+                  patientId={patient.id}
+                  patientName={patientFullName}
+                  clinicId={patient.organizationId}
+                  service={patient.service ?? null}
+                  transfers={patient.transfers ?? []}
+                  canTransfer={canWrite && !isDischarged && !isHoldingAdmin && (patient.organization?._count?.clinicServices ?? 0) > 0}
+                />
+              </div>
             </div>
           </div>
 

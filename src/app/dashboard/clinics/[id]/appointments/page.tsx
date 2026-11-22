@@ -65,7 +65,7 @@ export default async function ClinicAppointmentsPage({ params }: PageProps) {
       },
     }),
     prisma.user.findMany({
-      where: { organizationId: clinicId, isActive: true, role: { in: ["COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"] } },
+      where: { organizationId: clinicId, isActive: true, role: { in: ["COORDINATOR", "MEDECIN", "CAREGIVER", "LABORANTIN", "ACCUEIL", "PHARMACIST", "CASHIER"] } },
       select: { id: true, firstName: true, lastName: true, role: true },
       orderBy: { lastName: "asc" },
     }),

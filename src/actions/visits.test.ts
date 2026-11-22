@@ -5,28 +5,45 @@ const authState = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: async () => authState.user }));
 
-type Options = { patientClinic?: string; activeVisit?: boolean; doctor?: Record<string, unknown> | null; visit?: Record<string, unknown>; claimFails?: boolean };
+type Options = {
+  patientClinic?: string;
+  patientServiceId?: string | null;
+  activeVisit?: boolean;
+  doctor?: Record<string, unknown> | null;
+  visit?: Record<string, unknown>;
+  claimFails?: boolean;
+  // Services actifs (non transversaux) de la clinique.
+  services?: string[];
+};
 
 function mockDb(options: Options = {}) {
-  const { patientClinic = "clinicA", activeVisit = false, doctor = null, visit, claimFails = false } = options;
+  const { patientClinic = "clinicA", patientServiceId = null, activeVisit = false, doctor = null, visit, claimFails = false, services = [] } = options;
   const runCommandRaw = vi.fn(async () => ({ value: { value: 7 } }));
   const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "v1", ...data }));
   const updateMany = vi.fn(async () => ({ count: claimFails ? 0 : 1 }));
-  vi.doMock("@/lib/db", () => ({
-    prisma: {
-      patient: { findUnique: vi.fn(async () => ({ organizationId: patientClinic })) },
-      user: { findUnique: vi.fn(async () => doctor) },
-      visit: {
-        findFirst: vi.fn(async () => (activeVisit ? { ticketNumber: 3 } : null)),
-        findUnique: vi.fn(async () => visit ?? null),
-        create,
-        updateMany,
-      },
-      organization: { findFirst: vi.fn(async () => null) },
-      $runCommandRaw: runCommandRaw,
+  const patientUpdate = vi.fn(async () => ({}));
+  const transferCreate = vi.fn(async () => ({}));
+  const prisma = {
+    patient: { findUnique: vi.fn(async () => ({ organizationId: patientClinic, serviceId: patientServiceId })), update: patientUpdate },
+    user: { findUnique: vi.fn(async () => doctor) },
+    visit: {
+      findFirst: vi.fn(async () => (activeVisit ? { ticketNumber: 3 } : null)),
+      findUnique: vi.fn(async () => visit ?? null),
+      findMany: vi.fn(async () => []),
+      create,
+      updateMany,
     },
-  }));
-  return { runCommandRaw, create, updateMany };
+    clinicService: {
+      count: vi.fn(async () => services.length),
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => (services.includes(where.id) ? { id: where.id } : null)),
+    },
+    patientTransfer: { create: transferCreate },
+    organization: { findFirst: vi.fn(async () => null) },
+    $runCommandRaw: runCommandRaw,
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
+  };
+  vi.doMock("@/lib/db", () => ({ prisma }));
+  return { runCommandRaw, create, updateMany, patientUpdate, transferCreate };
 }
 
 beforeEach(() => {
@@ -75,10 +92,47 @@ describe("registerVisit", () => {
     expect((await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION" })).success).toBe(false);
 
     vi.resetModules();
-    mockDb({ doctor: { role: "MEDECIN", organizationId: "clinicB", isActive: true } });
+    mockDb({ doctor: { role: "MEDECIN", organizationId: "clinicB", isActive: true, serviceIds: [] } });
     ({ registerVisit } = await import("./visits"));
     const result = await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION", assignedToId: "doc9" });
     expect(result.success ? "" : result.error).toMatch(/Médecin invalide/);
+  });
+
+  it("oblige à choisir un service quand la clinique en a, et confie le dossier au service choisi", async () => {
+    const { create, patientUpdate, transferCreate } = mockDb({ services: ["svc-ophtalmo"], patientServiceId: "svc-medecine" });
+    const { registerVisit } = await import("./visits");
+
+    const missing = await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION" });
+    expect(missing.success ? "" : missing.error).toMatch(/Choisissez le service/);
+    expect(create).not.toHaveBeenCalled();
+
+    const result = await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION", serviceId: "svc-ophtalmo" });
+    expect(result.success).toBe(true);
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ serviceId: "svc-ophtalmo" }) });
+    expect(patientUpdate).toHaveBeenCalledWith({ where: { id: "p1" }, data: { serviceId: "svc-ophtalmo" } });
+    expect(transferCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ fromServiceId: "svc-medecine", toServiceId: "svc-ophtalmo", kind: "ORIENTATION" }),
+    });
+  });
+
+  it("ne trace rien quand le patient revient dans le service qui le suit déjà", async () => {
+    const { patientUpdate, transferCreate } = mockDb({ services: ["svc-ophtalmo"], patientServiceId: "svc-ophtalmo" });
+    const { registerVisit } = await import("./visits");
+
+    const result = await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION", serviceId: "svc-ophtalmo" });
+
+    expect(result.success).toBe(true);
+    expect(patientUpdate).not.toHaveBeenCalled();
+    expect(transferCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuse un médecin qui n'est pas rattaché au service choisi", async () => {
+    mockDb({ services: ["svc-ophtalmo"], doctor: { role: "MEDECIN", organizationId: "clinicA", isActive: true, serviceIds: ["svc-dentaire"] } });
+    const { registerVisit } = await import("./visits");
+
+    const result = await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION", serviceId: "svc-ophtalmo", assignedToId: "doc1" });
+
+    expect(result.success ? "" : result.error).toMatch(/pas rattaché au service/);
   });
 
   it("laisse l'admin de holding en lecture seule", async () => {

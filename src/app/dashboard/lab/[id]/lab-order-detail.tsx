@@ -20,6 +20,8 @@ import PaymentStatusBadge from "@/components/payment-status-badge";
 import { toast } from "sonner";
 import { labOrderReference, MAX_TUBE_LABELS } from "@/lib/lab-label";
 import { orderSamples, testsWithoutSample } from "@/lib/lab-rules";
+import { parseStoredResult } from "@/lib/lab-templates";
+import StructuredResultView from "@/components/lab/structured-result-view";
 
 function formatFCFA(val: number) {
   return Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
@@ -242,6 +244,16 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
               </Link>
             </p>
           )}
+          {order.partner && (
+            <p>
+              <span className="text-muted-foreground">Partenaire :</span>{" "}
+              <span className="font-semibold text-violet-700 dark:text-violet-300">{order.partner.name}</span>
+              {order.partnerReference ? ` • Bon n° ${order.partnerReference}` : ""}
+              <span className="text-muted-foreground">
+                {order.partner.billing === "PARTNER" ? " • facturé au partenaire (relevé mensuel)" : " • réglé par le patient au prix partenaire"}
+              </span>
+            </p>
+          )}
           {order.prenatalVisit && (
             <p>
               <span className="text-muted-foreground">Visite prénatale d&apos;origine :</span>{" "}
@@ -439,14 +451,23 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
                   <p className="text-xs text-muted-foreground">Aucun résultat saisi.</p>
                 ) : (
                   <div className="space-y-2">
-                    {results.map((r) => (
-                      <div key={r.id} className="flex items-center justify-between gap-3 text-sm bg-slate-50/60 dark:bg-slate-900/40 rounded-lg p-2.5">
-                        <div>
-                          <span className="font-medium">{r.value} {r.unit || ""}</span>
-                          {r.referenceRange && <span className="text-xs text-muted-foreground ml-2">(réf: {r.referenceRange})</span>}
+                    {results.map((r) => {
+                      const structured = parseStoredResult(r.data);
+                      return (
+                      <div key={r.id} className="flex flex-col gap-3 text-sm bg-slate-50/60 dark:bg-slate-900/40 rounded-lg p-2.5 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          {structured ? (
+                            <StructuredResultView result={structured} />
+                          ) : (
+                            <>
+                              <span className="font-medium">{r.value} {r.unit || ""}</span>
+                              {r.referenceRange && <span className="text-xs text-muted-foreground ml-2">(réf: {r.referenceRange})</span>}
+                            </>
+                          )}
                           {r.isAbnormal && (
                             <Badge variant="outline" className="ml-2 bg-red-500/10 text-red-600 border-red-500/20 text-[10px]">Anormal</Badge>
                           )}
+                          {r.notes && <p className="mt-1 text-xs text-muted-foreground">{r.notes}</p>}
                         </div>
                         {r.validatedAt ? (
                           <Badge variant="outline" className="gap-1 text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
@@ -462,7 +483,8 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
                           <Badge variant="outline" className="text-[10px]">En attente de validation</Badge>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

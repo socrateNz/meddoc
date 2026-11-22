@@ -15,6 +15,7 @@ import {
 import { revalidatePath } from "next/cache";
 import { closeOpenSegment, openBedSegment } from "@/lib/hospital-stay-db";
 import { assertUserModule } from "@/lib/modules-server";
+import { canSeePatientService, restrictedServiceIds } from "@/lib/service-access";
 
 // Consulter l'occupation (chambres/lits) est ouvert à tout le personnel clinique, y compris
 // ADMIN (holding) en lecture seule. Créer/renommer/supprimer un service, une chambre ou un lit
@@ -106,6 +107,23 @@ export async function listWardsWithRooms(clinicId: string) {
       },
       orderBy: { code: "asc" },
     });
+
+    // Cloisonnement par service : le lit reste « occupé » (gestion des places), mais l'occupant
+    // d'un autre service n'est montré ni par son nom ni par son dossier.
+    const myServices = await restrictedServiceIds(activeUser);
+    if (myServices) {
+      for (const ward of wards) {
+        for (const room of ward.rooms) {
+          for (const bed of room.beds) {
+            bed.patients = bed.patients.map((p) =>
+              canSeePatientService(myServices, p.serviceId)
+                ? p
+                : ({ id: p.id, bedId: p.bedId, serviceId: p.serviceId, status: p.status, user: { firstName: "", lastName: "Patient d'un autre service" } } as unknown as typeof p)
+            );
+          }
+        }
+      }
+    }
 
     return { success: true, data: wards };
   } catch (error: any) {

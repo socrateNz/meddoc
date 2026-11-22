@@ -42,9 +42,14 @@ interface NewLabOrderDialogProps {
   triggerLabel?: string;
   // Raccourci « tout cocher » pour un bilan type (ex. bilan prénatal) parmi le catalogue.
   quickPick?: { label: string; match: (testName: string) => boolean };
+  // Cliniques partenaires actives : la demande peut venir de l'une d'elles (prix partenaire,
+  // rapport à son en-tête). Absent ou vide = demande interne uniquement.
+  partners?: { id: string; name: string }[];
+  // Le laborantin n'enregistre que des demandes de partenaires (prescription externe).
+  partnerOnly?: boolean;
 }
 
-export default function NewLabOrderDialog({ patients, defaultPatientId, appointmentId, organizationId, onSuccess, prenatalVisitId, triggerLabel, quickPick }: NewLabOrderDialogProps) {
+export default function NewLabOrderDialog({ patients, defaultPatientId, appointmentId, organizationId, onSuccess, prenatalVisitId, triggerLabel, quickPick, partners = [], partnerOnly = false }: NewLabOrderDialogProps) {
   const [open, setOpen] = useState(false);
   const { submitting: loading, guard } = useSubmitGuard();
   const [patientId, setPatientId] = useState(defaultPatientId || "");
@@ -52,6 +57,8 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
   const [tests, setTests] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [priority, setPriority] = useState<"ROUTINE" | "URGENT">("ROUTINE");
+  const [partnerId, setPartnerId] = useState("");
+  const [partnerReference, setPartnerReference] = useState("");
 
   const isOffline = useIsOffline();
 
@@ -81,7 +88,9 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
   }, [catalog, searchQuery]);
 
   const selectedTests = useMemo(() => catalog.filter((t) => tests.includes(t.name)), [catalog, tests]);
-  const totalPrice = selectedTests.reduce((sum, t) => sum + (t.totalPrice || 0), 0);
+  // Prix affiché : prix partenaire de l'examen quand la demande vient d'un partenaire.
+  const priceOf = (t: { totalPrice?: number; partnerPrice?: number | null }) => (partnerId && t.partnerPrice != null ? t.partnerPrice : t.totalPrice || 0);
+  const totalPrice = selectedTests.reduce((sum, t) => sum + priceOf(t), 0);
 
   // Examens du catalogue correspondant au raccourci (ex. bilan prénatal) : un clic les coche tous.
   const quickPickTests = useMemo(() => (quickPick ? catalog.filter((t) => quickPick.match(t.name)) : []), [catalog, quickPick]);
@@ -97,6 +106,8 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
     setTests([]);
     setNotes("");
     setPriority("ROUTINE");
+    setPartnerId("");
+    setPartnerReference("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -109,9 +120,22 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
       toast.error("Sélectionnez au moins un examen du catalogue.");
       return;
     }
+    if (partnerOnly && !partnerId) {
+      toast.error("Choisissez la clinique partenaire qui demande ces examens.");
+      return;
+    }
 
     try {
-      const payload = { patientId, tests, notes: notes || undefined, priority, appointmentId, prenatalVisitId };
+      const payload = {
+        patientId,
+        tests,
+        notes: notes || undefined,
+        priority,
+        appointmentId,
+        prenatalVisitId,
+        partnerId: partnerId || undefined,
+        partnerReference: partnerId ? partnerReference.trim() || undefined : undefined,
+      };
       const patientLabel = patients.find((p) => p.id === patientId);
       // La clé voyage aussi dans la file hors-ligne : un rejeu ne crée pas une seconde demande.
       const res = await guard((idempotencyKey) =>
@@ -178,6 +202,39 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
             </div>
           )}
 
+          {partners.length > 0 && !prenatalVisitId && (
+            <div className="grid grid-cols-1 gap-3 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="lab-partner">Demande de {partnerOnly ? "*" : ""}</Label>
+                <select
+                  id="lab-partner"
+                  value={partnerId}
+                  onChange={(e) => setPartnerId(e.target.value)}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base sm:h-9 sm:text-sm dark:border-slate-800 dark:bg-slate-900"
+                >
+                  {!partnerOnly && <option value="">Notre clinique</option>}
+                  {partnerOnly && <option value="">Choisir le partenaire…</option>}
+                  {partners.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {partnerId && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="lab-partner-ref">N° du bon de demande</Label>
+                  <Input id="lab-partner-ref" value={partnerReference} onChange={(e) => setPartnerReference(e.target.value)} maxLength={60} placeholder="Optionnel" className="rounded-xl text-base sm:text-sm" />
+                </div>
+              )}
+              {partnerId && (
+                <p className="text-xs text-violet-700 sm:col-span-2 dark:text-violet-300">
+                  Prix partenaire appliqué ; le rapport sortira à l&apos;en-tête du partenaire.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Label>Examens demandés *</Label>
@@ -228,7 +285,7 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
                           {t.department && <Badge variant="outline" className="text-[10px]">{t.department}</Badge>}
                         </div>
                       </div>
-                      <span className="text-xs font-semibold text-muted-foreground shrink-0">{formatFCFA(t.totalPrice || 0)}</span>
+                      <span className="text-xs font-semibold text-muted-foreground shrink-0">{formatFCFA(priceOf(t))}</span>
                     </button>
                   );
                 })

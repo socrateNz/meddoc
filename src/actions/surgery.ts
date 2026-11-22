@@ -22,6 +22,7 @@ import {
   validatePhaseAnswers,
 } from "@/lib/surgery";
 import { assertUserModule } from "@/lib/modules-server";
+import { canSeePatientService, restrictedServiceIds } from "@/lib/service-access";
 
 // Bloc opératoire (étape E1 de l'audit d'évolution), sans rôle dédié : le médecin (chirurgien ou
 // anesthésiste) ou le coordinateur programme et opère ; l'infirmier(e) — panseuse — signe la
@@ -500,9 +501,12 @@ export async function listSurgeryDay(clinicId: string, dateKey: string = clinicD
     ]);
     const patients = await prisma.patient.findMany({
       where: { id: { in: [...new Set(cases.map((c) => c.patientId))] } },
-      select: { id: true, ipp: true, user: { select: { firstName: true, lastName: true } } },
+      select: { id: true, ipp: true, serviceId: true, user: { select: { firstName: true, lastName: true } } },
     });
-    const patientById = new Map(patients.map((p) => [p.id, p]));
+    // Cloisonnement par service : l'intervention reste au programme (la salle est bien occupée),
+    // mais l'identité d'un patient d'un autre service n'est pas affichée.
+    const myServices = await restrictedServiceIds(activeUser);
+    const patientById = new Map(patients.filter((p) => canSeePatientService(myServices, p.serviceId)).map((p) => [p.id, p]));
     const names = await namesById(cases.flatMap((c) => [c.surgeonId, c.anesthetistId, c.scrubNurseId]));
 
     return {
@@ -517,7 +521,7 @@ export async function listSurgeryDay(clinicId: string, dateKey: string = clinicD
             id: c.id,
             operatingRoomId: c.operatingRoomId,
             patientId: c.patientId,
-            patientName: p?.user ? `${p.user.lastName} ${p.user.firstName}` : "Patient",
+            patientName: p?.user ? `${p.user.lastName} ${p.user.firstName}` : "Patient d'un autre service",
             ipp: p?.ipp ?? null,
             procedure: c.procedure,
             laterality: c.laterality,

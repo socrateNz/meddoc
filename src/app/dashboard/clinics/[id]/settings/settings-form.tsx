@@ -13,7 +13,7 @@ import { toast } from "sonner";
 // Redimensionne l'image côté client avant l'envoi (aucun logo de clinique n'a besoin de dépasser
 // quelques centaines de pixels) et la rasterise en PNG — évite un SVG que @react-pdf/renderer ne
 // sait pas afficher, et garde le data URI stocké en base largement sous la limite du validateur.
-async function fileToResizedDataUrl(file: File, maxDim = 320): Promise<string> {
+export async function fileToResizedDataUrl(file: File, maxDim = 320): Promise<string> {
   const dataUrl: string = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Lecture du fichier impossible."));

@@ -17,7 +17,8 @@ const createPatientSchema = z.object({
   allergies: z.array(z.string()).optional(),
 });
 
-const PATIENT_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST"];
+// Mêmes rôles que la section « patients » (src/lib/staff-roles.ts) : pas la pharmacie.
+const PATIENT_READ_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 export async function GET(req: Request) {
   try {

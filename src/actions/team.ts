@@ -15,6 +15,7 @@ import { revalidatePath } from "next/cache";
 import bcrypt from "bcryptjs";
 import { Role } from "@prisma/client";
 import { resolvePage } from "@/lib/pagination";
+import { ALL_STAFF_ROLES, isClinicStaffRole } from "@/lib/staff-roles";
 
 export async function getTeamMembers(options?: { page?: number; pageSize?: number }) {
   const activeUser = await getCurrentUser();
@@ -22,7 +23,7 @@ export async function getTeamMembers(options?: { page?: number; pageSize?: numbe
   const { page, pageSize, skip, take } = resolvePage(options);
 
   const whereClause: any = {
-    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "COMPTABLE", "ADMIN"] },
+    role: { in: [...ALL_STAFF_ROLES] },
   };
 
   if (activeUser.organization?.type === "HOLDING") {
@@ -113,17 +114,18 @@ export async function createTeamMember(data: any) {
 
     if (activeUser.role === "COORDINATOR") {
       // Le coordinateur ne recrute que pour sa propre clinique, jamais un autre coordinateur ou un admin.
-      if (!["CAREGIVER", "PHARMACIST", "MEDECIN", "CASHIER", "COMPTABLE"].includes(role)) {
-        throw new Error("Un coordinateur ne peut ajouter que des médecins, des infirmier(e)s, des pharmaciens, des caissier(ère)s ou des comptables.");
+      if (!isClinicStaffRole(role)) {
+        throw new Error("Un coordinateur ne peut ajouter que du personnel de clinique (pas de coordinateur ni d'administrateur).");
       }
       targetOrgId = activeUser.organizationId;
     } else if (activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING") {
-      // L'admin de holding ne fait plus que désigner le coordinateur d'une clinique.
-      if (role !== "COORDINATOR") {
-        throw new Error("Un administrateur ne peut que désigner un coordinateur de clinique.");
+      // L'admin de holding désigne le coordinateur d'une clinique et peut aussi y créer tout le
+      // personnel (ex. au démarrage d'une clinique, avant qu'un coordinateur soit en place).
+      if (role !== "COORDINATOR" && !isClinicStaffRole(role)) {
+        throw new Error("Rôle invalide pour un membre de clinique.");
       }
       if (!organizationId) {
-        throw new Error("Veuillez sélectionner la clinique à laquelle affecter ce coordinateur.");
+        throw new Error("Veuillez sélectionner la clinique à laquelle affecter ce membre.");
       }
       const targetOrg = await prisma.organization.findFirst({
         where: { id: organizationId, parentId: activeUser.organizationId, type: "CLINIC" }
@@ -191,20 +193,21 @@ export async function createTeamMember(data: any) {
 // (holding) ne gère plus que les coordinateurs de ses cliniques enfants (désignation/remplacement).
 async function assertCanManageStaffMember(activeUser: any, target: { role: string; organizationId: string | null }) {
   if (activeUser.role === "COORDINATOR") {
-    if (target.organizationId !== activeUser.organizationId || !["CAREGIVER", "PHARMACIST", "MEDECIN", "CASHIER", "COMPTABLE"].includes(target.role)) {
-      throw new Error("Vous ne pouvez gérer que le personnel (médecin, infirmier(e), pharmacien ou caissier(ère)) de votre clinique.");
+    if (target.organizationId !== activeUser.organizationId || !isClinicStaffRole(target.role)) {
+      throw new Error("Vous ne pouvez gérer que le personnel de votre clinique (pas un coordinateur ni un administrateur).");
     }
     return;
   }
   if (activeUser.role === "ADMIN" && activeUser.organization?.type === "HOLDING") {
-    if (target.role !== "COORDINATOR") {
-      throw new Error("Un administrateur ne peut gérer que les coordinateurs de clinique.");
+    if (target.role !== "COORDINATOR" && !isClinicStaffRole(target.role)) {
+      throw new Error("Un administrateur ne peut gérer que le personnel des cliniques de sa holding.");
     }
+    if (!target.organizationId) throw new Error("Ce membre n'appartient pas à votre holding.");
     const targetOrg = await prisma.organization.findFirst({
-      where: { id: target.organizationId ?? undefined, parentId: activeUser.organizationId }
+      where: { id: target.organizationId, parentId: activeUser.organizationId }
     });
     if (!targetOrg) {
-      throw new Error("Ce coordinateur n'appartient pas à votre holding.");
+      throw new Error("Ce membre n'appartient pas à votre holding.");
     }
     return;
   }
@@ -371,7 +374,7 @@ export async function getClinicTeam(clinicId: string, options?: { page?: number;
   const { page, pageSize, skip, take } = resolvePage(options);
   const clinicMembers = {
     organizationId: clinicId,
-    role: { in: ["MEDECIN", "CAREGIVER", "COORDINATOR", "PHARMACIST", "CASHIER", "COMPTABLE", "ADMIN"] as Role[] },
+    role: { in: [...ALL_STAFF_ROLES] as Role[] },
   };
   const [members, total] = await Promise.all([
   prisma.user.findMany({

@@ -12,6 +12,7 @@ import { revalidatePath } from "next/cache";
 import { RADIOLOGY_MODALITIES, nextRadiologyStatus, snapshotExams, type RadiologyAction, type RadiologyExamSnapshot } from "@/lib/radiology";
 import { assertUserModule } from "@/lib/modules-server";
 import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
+import { hiddenPatientIds, restrictedServiceIds } from "@/lib/service-access";
 
 // Imagerie médicale (étape D1 de l'audit d'évolution) — mêmes rôles que le laboratoire, sans rôle
 // dédié : prescription et compte-rendu par le médecin (ou le coordinateur), réalisation et envoi
@@ -257,6 +258,9 @@ export async function listRadiologyOrders(options: { clinicId?: string; patientI
     } else if (options.clinicId) {
       await assertClinicScope(options.clinicId, activeUser);
       where.organizationId = options.clinicId;
+      // Cloisonnement par service (cf. src/lib/service-access.ts).
+      const hidden = await hiddenPatientIds(options.clinicId, await restrictedServiceIds(activeUser));
+      if (hidden.length > 0) where.patientId = { notIn: hidden };
     } else {
       throw new Error("Clinique ou patient requis.");
     }

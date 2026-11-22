@@ -15,7 +15,7 @@ type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 // APPOINTMENT_CARETASK_ROLES plus bas). Garder en phase avec src/middleware.ts
 // (restrictedSections.appointments) et src/app/dashboard/sidebar.tsx — les trois doivent changer
 // ensemble, sinon le lien apparaît mais redirige silencieusement (ou l'inverse).
-const CALENDAR_ACCESS_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "PHARMACIST", "CASHIER"];
+const CALENDAR_ACCESS_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER", "ACCUEIL", "LABORANTIN", "PHARMACIST", "CASHIER"];
 // Lecture org-wide (par opposition à "mien ou non affecté") — même convention que
 // CONTRACT_READ_ROLES (ADMIN en lecture seule, jamais en écriture) déjà établie dans contracts.ts.
 const ORG_WIDE_READ_ROLES = ["ADMIN", "COORDINATOR"];
@@ -23,6 +23,8 @@ const ORG_WIDE_READ_ROLES = ["ADMIN", "COORDINATOR"];
 // CASHIER, qui n'ont de toute façon aucun Caregiver associé (cf. team.ts : seuls MEDECIN et
 // CAREGIVER en reçoivent un à la création).
 const APPOINTMENT_CARETASK_ROLES = ["ADMIN", "COORDINATOR", "MEDECIN", "CAREGIVER"];
+// L'accueil gère les rendez-vous de toute la clinique, mais pas les tâches de soins (contenu médical).
+const APPOINTMENT_ONLY_ROLES = ["ACCUEIL"];
 // Mêmes rôles que CONTRACT_READ_ROLES (src/actions/contracts.ts) — une échéance de contrat n'a
 // aucun sens pour un rôle qui ne peut déjà pas voir le contrat lui-même.
 const CONTRACT_DEADLINE_ROLES = ["ADMIN", "COORDINATOR"];
@@ -206,6 +208,8 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
 
     const isOrgWideReader = ORG_WIDE_READ_ROLES.includes(user.role);
     const canSeeAppointmentsAndTasks = APPOINTMENT_CARETASK_ROLES.includes(user.role);
+    const canSeeAppointments = canSeeAppointmentsAndTasks || APPOINTMENT_ONLY_ROLES.includes(user.role);
+    const seesAllAppointments = isOrgWideReader || APPOINTMENT_ONLY_ROLES.includes(user.role);
     const canManageShifts = SHIFT_MANAGE_ROLES.includes(user.role);
     const clinicId = options?.clinicId;
 
@@ -225,9 +229,9 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
     const in90Days = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
     const [appointments, shifts, events, careTasks, contracts, stockLots] = await Promise.all([
-      canSeeAppointmentsAndTasks
+      canSeeAppointments
         ? prisma.appointment.findMany({
-            where: { patient: patientOrgFilter(user, clinicId), ...(isOrgWideReader ? {} : mineOrUnassignedAppointment) },
+            where: { patient: patientOrgFilter(user, clinicId), ...(seesAllAppointments ? {} : mineOrUnassignedAppointment) },
             include: { patient: { include: { user: true } }, caregiver: { include: { user: true } } },
             orderBy: { scheduledAt: "asc" },
             take: 500,
@@ -288,7 +292,7 @@ export async function getCalendarItems(options?: { clinicId?: string }) {
         : Promise.resolve([] as StockPurchaseRow[]),
     ]);
 
-    const canEditAppointment = canSeeAppointmentsAndTasks && user.role !== "ADMIN";
+    const canEditAppointment = canSeeAppointments && user.role !== "ADMIN";
 
     const items: CalendarItem[] = [
       ...appointments.map((a) => mapAppointment(a, canEditAppointment)),

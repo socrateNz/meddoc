@@ -16,6 +16,8 @@ enum Role {
   PHARMACIST
   CASHIER
   COMPTABLE // comptabilité de la clinique (journaux, états, clôture) — aucun accès médical
+  ACCUEIL // réception : enregistre les patients (identité), oriente et gère la file et les rendez-vous — aucun contenu médical
+  LABORANTIN // technicien de laboratoire : prélèvements et saisie des résultats, pas le reste du dossier
   FAMILY
   PATIENT
 }
@@ -127,6 +129,10 @@ model Organization {
   // Canaux de messagerie par service (#urgences, #garde-nuit...) de cet établissement — jamais
   // les conversations privées (DM), qui ne portent pas d'organizationId (cf. Conversation.type).
   conversations         Conversation[]
+  // Services de la clinique (Médecine, Ophtalmologie, Maternité...) — cf. ClinicService.
+  clinicServices        ClinicService[]
+  // Cliniques partenaires qui font réaliser leurs examens ici (cf. Partner).
+  partners              Partner[]
 
   plan               SubscriptionPlan   @default(TRIAL)
   subscriptionStatus SubscriptionStatus @default(TRIALING)
@@ -140,6 +146,11 @@ model Organization {
   // tous les modules. Renseigné sur la holding uniquement, par le SUPER_ADMIN ; les cliniques
   // héritent des modules de leur holding.
   disabledModules String[] @default([])
+
+  // Le pharmacien peut-il aussi tenir la caisse (ouvrir/fermer une session, encaisser) ? Réglé par
+  // le coordinateur de la clinique (cf. src/lib/register-access.ts). Absent = oui : comportement
+  // historique, aucune migration nécessaire. Faux = séparation stricte caisse / pharmacie.
+  pharmacistCanUseRegister Boolean?
 
   // Comptabilité (cf. src/lib/accounting) — renseignés sur la clinique, qui est la « structure »
   // comptable. accountingLockedUntil : aucune écriture datée de ce jour (AAAA-MM-JJ) ou d'avant.
@@ -233,6 +244,10 @@ model User {
   calendarEvents               CalendarEvent[]           @relation("UserCalendarEvents")
 
   organizationId      String?        @db.ObjectId
+  // Services de la clinique auxquels ce membre est rattaché (cf. ClinicService,
+  // src/lib/service-access.ts). Vide = tous les services : comportement historique, et toujours le
+  // cas du coordinateur et de la direction. Restreint ce que voient médecins et infirmiers.
+  serviceIds          String[]       @default([]) @db.ObjectId
   organization        Organization?  @relation(fields: [organizationId], references: [id])
   roundsStarted       RoundSession[] @relation("RoundStartedBy")
   roundsClosed        RoundSession[] @relation("RoundClosedBy")
@@ -294,6 +309,12 @@ model Patient {
   bedId String? @db.ObjectId
   bed   Bed?    @relation("PatientBed", fields: [bedId], references: [id])
 
+  // Service qui a la charge du dossier (orientation à l'accueil, puis transferts — cf.
+  // PatientTransfer). Absent = dossier commun, visible de tous les services (dossiers antérieurs).
+  serviceId String?           @db.ObjectId
+  service   ClinicService?    @relation(fields: [serviceId], references: [id])
+  transfers PatientTransfer[]
+
   consultationDrafts ConsultationDraft[]
   pregnancies        Pregnancy[]
   // Dossier partagé dans un fil de messagerie (cf. Message.sharedPatientId) — jamais inclus par
@@ -303,6 +324,7 @@ model Patient {
 
   @@index([organizationId])
   @@index([organizationId, updatedAt])
+  @@index([organizationId, serviceId])
 }
 
 model FamilyMember {
@@ -524,8 +546,13 @@ model LabOrder {
   samples             LabSample[]
 
   // Visite prénatale d'origine (maternité), comme appointmentId pour une consultation.
-  prenatalVisitId String?        @db.ObjectId
-  prenatalVisit   PrenatalVisit? @relation(fields: [prenatalVisitId], references: [id])
+  prenatalVisitId  String?        @db.ObjectId
+  // Examen externe demandé par une clinique partenaire : prix partenaire, rapport à son en-tête,
+  // relevé mensuel. partnerReference = numéro du bon de demande du partenaire.
+  partnerId        String?        @db.ObjectId
+  partner          Partner?       @relation(fields: [partnerId], references: [id])
+  partnerReference String?
+  prenatalVisit    PrenatalVisit? @relation(fields: [prenatalVisitId], references: [id])
 
   results LabResult[]
 
@@ -565,6 +592,9 @@ model LabResult {
   referenceRange String?
   isAbnormal     Boolean @default(false)
   notes          String?
+  // Compte rendu structuré : valeurs saisies + modèle tel qu'il était à la saisie (cf.
+  // StoredResultData, src/lib/lab-templates.ts). `value` en porte alors le résumé texte.
+  data           Json?
 
   recordedById String @db.ObjectId
   recordedBy   User   @relation("LabResultRecordedBy", fields: [recordedById], references: [id])
@@ -593,18 +623,24 @@ model LabTest {
 
   // Tarif propre de l'examen, indépendant de tout produit consommé (prix de VENTE facturé au
   // patient).
-  basePrice   Float @default(0)
+  basePrice      Float  @default(0)
   // Coût propre de l'examen (réactifs/consommables non suivis en stock pharmacie, temps
   // technique, etc.) — distinct de basePrice qui est le prix de VENTE. Sert uniquement au calcul
   // de la marge (Finance > répartition du bénéfice), jamais facturé tel quel au patient.
-  baseCost    Float @default(0)
+  baseCost       Float  @default(0)
+  // Prix appliqué aux demandes d'un partenaire (cf. Partner), à la place du prix maison
+  // (basePrice + produits consommés). Absent = prix maison.
+  partnerPrice   Float?
+  // Modèle de compte rendu (cf. src/lib/lab-templates.ts) : sections de champs chiffrés, à choix
+  // ou texte, antibiogramme... Absent = saisie simple (une valeur, une unité).
+  resultTemplate Json?
   // Recette de produits consommés à chaque réalisation de l'examen : [{ pharmacyItemId, name,
   // quantity }]. Remplace l'ancien pharmacyItemId obligatoire (fusionné ici — cf. script de
   // migration scripts/migrate-lab-test-consumables.mjs) ET les anciens "consommables annexes" :
   // un seul mécanisme désormais, 0 ou plusieurs produits. Le prix n'est jamais mis en cache
   // ici : résolu dynamiquement à chaque commande (createLabOrder) et figé sur
   // LabOrder.testDetails, comme PendingInvoice.items fige déjà le panier d'une vente.
-  consumables Json?
+  consumables    Json?
 
   organizationId String?       @db.ObjectId
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -1732,31 +1768,34 @@ model BedStay {
 // Passage à l'accueil (étape C2 de l'audit d'évolution) : arrivée d'un patient, ticket du jour,
 // orientation et suivi dans la file d'attente jusqu'à sa prise en charge (cf. src/lib/visits.ts).
 model Visit {
-  id             String    @id @default(auto()) @map("_id") @db.ObjectId
-  organizationId String    @db.ObjectId
-  patientId      String    @db.ObjectId
+  id             String         @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String         @db.ObjectId
+  patientId      String         @db.ObjectId
   // Jour de la clinique (AAAA-MM-JJ, fuseau de Douala) et numéro de ticket de ce jour (1, 2...) —
   // compteur atomique par clinique et par jour (Counter « visit-<clinique>-<jour> »).
   visitDate      String
   ticketNumber   Int
   destination    String // CONSULTATION, LAB, PHARMACY, NURSING, EMERGENCY, ADMINISTRATIVE
-  priority       String    @default("NORMAL") // NORMAL, URGENT
+  priority       String         @default("NORMAL") // NORMAL, URGENT
   reason         String?
   // Médecin souhaité pour une consultation (facultatif : sinon le premier disponible).
-  assignedToId   String?   @db.ObjectId
-  status         String    @default("WAITING") // WAITING, CALLED, IN_PROGRESS, DONE, CANCELLED
+  assignedToId   String?        @db.ObjectId
+  // Service vers lequel l'accueil oriente le patient (consultation) — le dossier lui est alors confié.
+  serviceId      String?        @db.ObjectId
+  service        ClinicService? @relation(fields: [serviceId], references: [id])
+  status         String         @default("WAITING") // WAITING, CALLED, IN_PROGRESS, DONE, CANCELLED
   // Dernier niveau de tri CIMU (1 = vitale immédiate … 5 = non urgent) d'un passage aux urgences —
   // recopié depuis EmergencyTriage pour ordonner le tableau des urgences.
   triageLevel    Int?
   triagedAt      DateTime?
-  arrivedAt      DateTime  @default(now())
+  arrivedAt      DateTime       @default(now())
   calledAt       DateTime?
   startedAt      DateTime?
   completedAt    DateTime?
-  createdById    String    @db.ObjectId
-  handledById    String?   @db.ObjectId
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdById    String         @db.ObjectId
+  handledById    String?        @db.ObjectId
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([organizationId, visitDate, status])
   @@index([patientId, visitDate])
@@ -2091,4 +2130,75 @@ model AccountingAccount {
   createdAt      DateTime @default(now())
 
   @@unique([organizationId, number])
+}
+
+// Service d'une clinique (Médecine, Ophtalmologie, Dentaire, Maternité, Pédiatrie, Chirurgie,
+// Laboratoire...) : chaque service a ses patients (Patient.serviceId), son personnel
+// (User.serviceIds) et son tarif de consultation. Un service « transversal » (laboratoire,
+// imagerie, urgences) travaille pour tous les autres : son personnel n'est pas restreint.
+model ClinicService {
+  id                String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId    String       @db.ObjectId
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name              String
+  // Prix de la consultation dans ce service (FCFA), repris sur le ticket de caisse à la clôture de
+  // la consultation. Absent = saisi à la caisse comme avant.
+  consultationPrice Float?
+  isTransversal     Boolean      @default(false)
+  isActive          Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  patients      Patient[]
+  visits        Visit[]
+  transfersFrom PatientTransfer[] @relation("TransferFrom")
+  transfersTo   PatientTransfer[] @relation("TransferTo")
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
+}
+
+// Historique des changements de service d'un dossier : orientation à l'accueil, transfert décidé
+// par un soignant.
+model PatientTransfer {
+  id              String         @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String         @db.ObjectId
+  patient         Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  fromServiceId   String?        @db.ObjectId
+  fromService     ClinicService? @relation("TransferFrom", fields: [fromServiceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  toServiceId     String         @db.ObjectId
+  toService       ClinicService  @relation("TransferTo", fields: [toServiceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  reason          String?
+  // ORIENTATION (accueil) ou TRANSFER (décision d'un soignant).
+  kind            String         @default("TRANSFER")
+  transferredById String         @db.ObjectId
+  createdAt       DateTime       @default(now())
+
+  @@index([patientId, createdAt])
+}
+
+// Clinique partenaire : ses patients viennent faire leurs examens au laboratoire de cette clinique.
+// Les résultats sortent à SON en-tête (nom, logo, coordonnées) et les examens lui sont facturés au
+// prix partenaire (LabTest.partnerPrice).
+model Partner {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  // En-tête des rapports : logo en data URI (comme Organization.logoUrl) et coordonnées.
+  logoUrl        String?
+  address        String?
+  phone          String?
+  email          String?
+  // PARTNER : rien à la caisse, les examens figurent sur le relevé mensuel du partenaire.
+  // PATIENT : le patient règle à la caisse, au prix partenaire.
+  billing        String       @default("PARTNER")
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  labOrders LabOrder[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, isActive])
 }

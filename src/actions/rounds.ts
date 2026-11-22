@@ -8,6 +8,7 @@ import { resolvePage } from "@/lib/pagination";
 import { assertClinicScope } from "@/lib/clinic-scope";
 import { ROUND_ROLES, ageFrom, canRunRound, cleanRoundText, isRoundDecision, isValidRoundDay, type RoundDecision } from "@/lib/rounds";
 import { assertUserModule } from "@/lib/modules-server";
+import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
 
 // Accès à la ronde : rôle soignant, et clinique du périmètre de l'utilisateur.
 async function requireRoundUser(clinicId: string) {
@@ -231,8 +232,12 @@ export async function getRound(clinicId: string, wardId: string, day: string, op
       if (g.status === "SKIPPED") counts.skipped = g._count._all;
     }
 
+    // Cloisonnement par service : le point clinique d'un patient d'un autre service (hébergé dans
+    // ce service faute de place, par exemple) n'est pas chargé — la ligne reste, sans son dossier.
+    const viewer = await getCurrentUser();
+    const myServices = viewer ? await restrictedServiceIds(viewer) : null;
     const patients = await prisma.patient.findMany({
-      where: { id: { in: entries.map((e) => e.patientId) } },
+      where: { id: { in: entries.map((e) => e.patientId) }, ...patientServiceWhere(myServices) },
       select: {
         id: true,
         dateOfBirth: true,

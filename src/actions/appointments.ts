@@ -11,13 +11,14 @@ import { runInteractionCheck } from "@/actions/prescriptions";
 
 // Planifier un RDV reste large (le personnel infirmier organise aussi l'agenda) ; clôturer une
 // consultation (diagnostic + ordonnance) est réservé à l'autorité clinique complète — ADMIN
-// (holding) et PHARMACIST restent en lecture seule dans les deux cas.
-const APPOINTMENT_SCHEDULE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
+// (holding) et PHARMACIST restent en lecture seule dans les deux cas. L'accueil prend et déplace les
+// rendez-vous, sans jamais clôturer de consultation.
+const APPOINTMENT_SCHEDULE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER", "ACCUEIL"];
 const CONSULTATION_WRITE_ROLES = ["COORDINATOR", "MEDECIN"];
 
 function assertScheduleAccess(role: string) {
   if (!APPOINTMENT_SCHEDULE_ROLES.includes(role)) {
-    throw new Error("Non autorisé. Seuls un coordinateur, un médecin ou un infirmier(e) peuvent effectuer cette action.");
+    throw new Error("Non autorisé. Seuls le coordinateur, l'accueil, un médecin ou un infirmier(e) peuvent effectuer cette action.");
   }
 }
 
@@ -176,7 +177,7 @@ export async function completeConsultation(data: {
 
       const patientRecord = await tx.patient.findUnique({
         where: { id: data.patientId },
-        select: { organizationId: true },
+        select: { organizationId: true, service: { select: { name: true, consultationPrice: true } } },
       });
 
       // 3. Ordonnance électronique : un médicament reconnu au catalogue pharmacie (par nom,
@@ -227,13 +228,17 @@ export async function completeConsultation(data: {
       // plutôt que d'enregistrer directement une transaction financière.
       let pendingInvoice = null;
       if (patientRecord?.organizationId) {
+        // Tarif du service qui suit le dossier (cf. ClinicService.consultationPrice) ; sans tarif, la
+        // caisse saisit le montant comme avant.
+        const service = patientRecord.service;
+        const consultationPrice = service?.consultationPrice ?? 0;
         const items: any[] = [
           {
             type: "SERVICE",
-            description: "Frais de consultation",
+            description: service ? `Consultation — ${service.name}` : "Frais de consultation",
             quantity: 1,
-            unitPrice: 0,
-            amount: 0,
+            unitPrice: consultationPrice,
+            amount: consultationPrice,
           },
         ];
 

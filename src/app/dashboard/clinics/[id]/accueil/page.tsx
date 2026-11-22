@@ -18,12 +18,18 @@ export default async function AccueilPage({ params }: AccueilPageProps) {
   if (!activeUser) redirect("/login");
 
   // listTodayVisits contrôle le rôle et le périmètre de la clinique.
-  const [visitsRes, doctors] = await Promise.all([
+  const [visitsRes, doctors, services] = await Promise.all([
     listTodayVisits(clinicId),
     prisma.user.findMany({
       where: { organizationId: clinicId, role: "MEDECIN", isActive: true },
-      select: { id: true, firstName: true, lastName: true },
+      select: { id: true, firstName: true, lastName: true, serviceIds: true },
       orderBy: { lastName: "asc" },
+    }),
+    // Services vers lesquels orienter une consultation (cf. Configuration > Services).
+    prisma.clinicService.findMany({
+      where: { organizationId: clinicId, isActive: true, isTransversal: false },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
     }),
   ]);
 
@@ -41,7 +47,8 @@ export default async function AccueilPage({ params }: AccueilPageProps) {
           clinicId={clinicId}
           currentUserId={activeUser.id}
           currentUserRole={activeUser.role}
-          doctors={doctors.map((d) => ({ id: d.id, name: `Dr ${d.lastName} ${d.firstName}` }))}
+          doctors={doctors.map((d) => ({ id: d.id, name: `Dr ${d.lastName} ${d.firstName}`, serviceIds: d.serviceIds }))}
+          services={services}
           initialVisits={visitsRes.data}
           canRegister={visitsRes.canRegister}
         />

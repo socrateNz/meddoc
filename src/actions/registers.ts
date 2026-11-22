@@ -132,7 +132,7 @@ export async function openRegisterSession(data: { registerId: string; openingFlo
     openRegisterSessionSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterOperateRole(activeUser.role);
+    assertRegisterOperateRole(activeUser);
 
     const register = await prisma.cashRegister.findUnique({ where: { id: data.registerId } });
     if (!register || !register.isActive) throw new Error("Caisse introuvable ou désactivée.");
@@ -191,7 +191,7 @@ export async function correctOpeningFloat(data: { sessionId: string; newOpeningF
     correctOpeningFloatSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterOperateRole(activeUser.role);
+    assertRegisterOperateRole(activeUser);
 
     const session = await prisma.cashSession.findUnique({ where: { id: data.sessionId } });
     if (!session) throw new Error("Session de caisse introuvable.");
@@ -391,7 +391,7 @@ export async function closeRegisterSession(data: { sessionId: string; countedAmo
     closeRegisterSessionSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterOperateRole(activeUser.role);
+    assertRegisterOperateRole(activeUser);
 
     const session = await prisma.cashSession.findUnique({ where: { id: data.sessionId } });
     if (!session) throw new Error("Session de caisse introuvable.");
