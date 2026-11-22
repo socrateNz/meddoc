@@ -13,6 +13,7 @@ import { randomUUID } from "crypto";
 import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
 import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
 import { decrementStockForItems } from "@/lib/stock-decrement";
+import { accountSafely, postPartnerLabSale, reversePartnerLabSale } from "@/lib/accounting/postings";
 import { evaluateResult, hasAnyValue, parseTemplate, presetById, type ResultData, type ResultTemplate, type StoredResultData } from "@/lib/lab-templates";
 import { z } from "zod";
 
@@ -252,6 +253,12 @@ async function createLabOrderOnce(data: {
         },
       });
       await prisma.labOrder.update({ where: { id: labOrder.id }, data: { pendingInvoiceId: pendingInvoice.id } });
+    }
+
+    // Vente à crédit au partenaire (D 4111 / C 7062) : la comptabilité n'empêche jamais la demande,
+    // une écriture manquée est rattrapée par « Générer les écritures manquantes ».
+    if (billedToPartner && items.length > 0) {
+      await accountSafely(`Examens partenaire ${labOrder.id}`, organizationId, () => postPartnerLabSale(labOrder.id));
     }
 
     await logAuditAction(activeUser.id, "CREATE_LAB_ORDER", "LabOrder", labOrder.id, { patientId: data.patientId, tests: data.tests });
@@ -794,6 +801,12 @@ export async function updateLabOrderStatus(labOrderId: string, status: "PRESCRIB
     if (!hasAccess) throw new Error("Non autorisé.");
 
     const updated = await prisma.labOrder.update({ where: { id: labOrderId }, data: { status } });
+
+    // Examen facturé au partenaire puis annulé : sa vente (créance 4111) est contrepassée.
+    if (status === "CANCELLED" && existing.status !== "CANCELLED" && existing.partnerId && !existing.pendingInvoiceId && existing.organizationId) {
+      const orgId = existing.organizationId;
+      await accountSafely(`Annulation examens partenaire ${labOrderId}`, orgId, () => reversePartnerLabSale(orgId, labOrderId));
+    }
 
     await logAuditAction(activeUser.id, "UPDATE_LAB_ORDER_STATUS", "LabOrder", labOrderId, { status });
     revalidatePath("/dashboard/lab");

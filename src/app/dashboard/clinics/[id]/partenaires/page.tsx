@@ -2,11 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Handshake } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { getPartnerStatement, listPartners } from "@/actions/partners";
 import PrintButton from "./print-button";
 import SettlementForm from "./settlement-form";
 
-const SETTLEMENT_METHODS: Record<string, string> = { CASH: "Espèces", MOBILE_MONEY: "Mobile money", BANK_TRANSFER: "Virement", CHEQUE: "Chèque" };
+const SETTLEMENT_METHODS: Record<string, string> = { CASH: "Espèces", MOBILE: "Mobile money", TRANSFER: "Virement", CHEQUE: "Chèque" };
 
 const LAB_STATUS_LABELS: Record<string, string> = {
   PRESCRIBED: "Prescrit",
@@ -58,9 +59,18 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
   const month = typeof query.mois === "string" && /^\d{4}-\d{2}$/.test(query.mois) ? query.mois : currentMonth();
   const partnerId = typeof query.partenaire === "string" ? query.partenaire : partners[0]?.id;
   const statementRes = partnerId ? await getPartnerStatement({ partnerId, month }) : null;
-  const basePath = `/dashboard/clinics/${clinicId}/partenaires`;
   // Enregistrer un règlement : coordinateur et comptable de la clinique (l'admin de holding consulte).
   const canSettle = ["COORDINATOR", "COMPTABLE"].includes(user.role) && user.organizationId === clinicId;
+  // Caisses ouvertes de la clinique (règlement en espèces).
+  const openSessions = canSettle
+    ? (
+        await prisma.cashSession.findMany({
+          where: { organizationId: clinicId, status: "OPEN" },
+          select: { id: true, openedAt: true, register: { select: { name: true } } },
+        })
+      ).map((s) => ({ id: s.id, label: `${s.register?.name ?? "Caisse"} (ouverte le ${s.openedAt.toLocaleDateString("fr-FR")})` }))
+    : [];
+  const basePath = `/dashboard/clinics/${clinicId}/partenaires`;
   const href = (p: string | undefined, m: string) => `${basePath}?${new URLSearchParams({ ...(p ? { partenaire: p } : {}), mois: m })}`;
 
   return (
@@ -150,7 +160,13 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
                 </div>
               )}
               {canSettle && statementRes.data.balance > 0 && (
-                <SettlementForm partnerId={statementRes.data.partner.id} month={month} balance={statementRes.data.balance} />
+                <SettlementForm
+                  partnerId={statementRes.data.partner.id}
+                  month={month}
+                  balance={statementRes.data.balance}
+                  openSessions={openSessions}
+                  canCash={user.role === "COORDINATOR"}
+                />
               )}
 
               {statementRes.data.rows.length === 0 ? (

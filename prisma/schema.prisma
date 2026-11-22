@@ -2223,18 +2223,20 @@ model Partner {
 
 // Règlement reçu d'un partenaire pour son relevé d'un mois (AAAA-MM) : un ou plusieurs versements.
 model PartnerSettlement {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  partnerId      String   @db.ObjectId
-  partner        Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  organizationId String   @db.ObjectId
-  month          String
-  amount         Float
-  paymentMethod  String // CASH, MOBILE_MONEY, BANK_TRANSFER, CHEQUE
-  reference      String?
-  notes          String?
-  paidAt         DateTime @default(now())
-  recordedById   String   @db.ObjectId
-  createdAt      DateTime @default(now())
+  id                     String   @id @default(auto()) @map("_id") @db.ObjectId
+  partnerId              String   @db.ObjectId
+  partner                Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  organizationId         String   @db.ObjectId
+  month                  String
+  amount                 Float
+  paymentMethod          String // CASH, MOBILE, TRANSFER, CHEQUE (cf. PAYMENT_METHODS, src/lib/accounting/plan.ts)
+  // Encaissement correspondant en Finance (INCOME), comptabilisé D 5xx / C 4111 (cf. postings.ts).
+  financialTransactionId String?  @db.ObjectId
+  reference              String?
+  notes                  String?
+  paidAt                 DateTime @default(now())
+  recordedById           String   @db.ObjectId
+  createdAt              DateTime @default(now())
 
   @@index([partnerId, month])
   @@index([organizationId, paidAt])

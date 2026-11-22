@@ -9,17 +9,32 @@ import { recordPartnerSettlement } from "@/actions/partners";
 import { toast } from "sonner";
 
 const METHODS = [
-  ["CASH", "Espèces"],
-  ["MOBILE_MONEY", "Mobile money"],
-  ["BANK_TRANSFER", "Virement"],
+  ["TRANSFER", "Virement"],
+  ["MOBILE", "Mobile money"],
   ["CHEQUE", "Chèque"],
+  ["CASH", "Espèces (à la caisse)"],
 ] as const;
 
 // Enregistre un règlement reçu du partenaire pour le relevé affiché (versements partiels possibles).
-export default function SettlementForm({ partnerId, month, balance }: { partnerId: string; month: string; balance: number }) {
+export default function SettlementForm({
+  partnerId,
+  month,
+  balance,
+  openSessions,
+  canCash,
+}: {
+  partnerId: string;
+  month: string;
+  balance: number;
+  // Caisses ouvertes : un règlement en espèces entre dans l'une d'elles.
+  openSessions: { id: string; label: string }[];
+  canCash: boolean;
+}) {
   const router = useRouter();
   const [amount, setAmount] = useState(balance > 0 ? String(Math.round(balance)) : "");
-  const [method, setMethod] = useState<(typeof METHODS)[number][0]>("BANK_TRANSFER");
+  const [method, setMethod] = useState<(typeof METHODS)[number][0]>("TRANSFER");
+  const [sessionId, setSessionId] = useState(openSessions[0]?.id ?? "");
+  const methods = METHODS.filter(([v]) => v !== "CASH" || canCash);
   const [reference, setReference] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -30,8 +45,19 @@ export default function SettlementForm({ partnerId, month, balance }: { partnerI
       toast.error("Montant invalide.");
       return;
     }
+    if (method === "CASH" && !sessionId) {
+      toast.error("Aucune caisse ouverte : ouvrez une caisse pour encaisser des espèces.");
+      return;
+    }
     setSaving(true);
-    const res = await recordPartnerSettlement({ partnerId, month, amount: value, paymentMethod: method, reference: reference.trim() || undefined });
+    const res = await recordPartnerSettlement({
+      partnerId,
+      month,
+      amount: value,
+      paymentMethod: method,
+      cashSessionId: method === "CASH" ? sessionId : undefined,
+      reference: reference.trim() || undefined,
+    });
     setSaving(false);
     if (res.success) {
       toast.success("Règlement enregistré.");
@@ -51,13 +77,29 @@ export default function SettlementForm({ partnerId, month, balance }: { partnerI
       <div className="space-y-1">
         <label className="text-[11px] font-semibold text-slate-500">Mode</label>
         <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-800 dark:bg-slate-900">
-          {METHODS.map(([v, l]) => (
+          {methods.map(([v, l]) => (
             <option key={v} value={v}>
               {l}
             </option>
           ))}
         </select>
       </div>
+      {method === "CASH" && (
+        <div className="space-y-1">
+          <label className="text-[11px] font-semibold text-slate-500">Caisse</label>
+          {openSessions.length === 0 ? (
+            <p className="h-10 text-xs leading-10 text-red-600">Aucune caisse ouverte</p>
+          ) : (
+            <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-800 dark:bg-slate-900">
+              {openSessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
       <div className="min-w-40 flex-1 space-y-1">
         <label className="text-[11px] font-semibold text-slate-500">Référence (n° de virement, chèque…)</label>
         <Input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={80} className="h-10" />

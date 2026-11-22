@@ -204,7 +204,81 @@ export async function postInvoiceSale(invoiceId: string): Promise<PostEntryResul
   });
 }
 
+// --- Cliniques partenaires ---------------------------------------------------------------------
+// Examens d'un partenaire facturés en fin de mois (pas de ticket de caisse) :
+//   demande          D 4111 (tiers : le partenaire) / C 7062, datée de la demande
+//   demande annulée  contrepassation de la vente
+//   règlement reçu   D 5xx (moyen de paiement) / C 4111 — un encaissement INCOME relié au règlement
+// Le solde du 4111 d'un partenaire est ce qu'il doit encore.
+export const PARTNER_ACCOUNT = "4111";
+const partnerOrderRef = (labOrderId: string) => `LAB-${labOrderId.slice(-6).toUpperCase()}`;
+
+export function partnerOrderTotal(testDetails: unknown): number {
+  const details = Array.isArray(testDetails) ? (testDetails as { totalPrice?: number }[]) : [];
+  return roundAmount(details.reduce((sum, d) => sum + Math.max(0, Number(d.totalPrice) || 0), 0));
+}
+
+async function partnerOrderToPost(labOrderId: string) {
+  const order = await prisma.labOrder.findUnique({
+    where: { id: labOrderId },
+    select: { id: true, organizationId: true, partnerId: true, pendingInvoiceId: true, testDetails: true, createdAt: true, orderedById: true, partner: { select: { name: true } } },
+  });
+  // Seules les demandes facturées au partenaire (sans ticket de caisse) : les autres passent par la vente du ticket.
+  if (!order?.organizationId || !order.partnerId || order.pendingInvoiceId) return null;
+  return order;
+}
+
+export async function postPartnerLabSale(labOrderId: string): Promise<PostEntryResult | null> {
+  const order = await partnerOrderToPost(labOrderId);
+  if (!order) return null;
+  const total = partnerOrderTotal(order.testDetails);
+  if (total <= 0) return null;
+  return postEntry({
+    organizationId: order.organizationId!,
+    journal: "VE",
+    date: order.createdAt,
+    label: `Examens partenaire ${partnerOrderRef(order.id)} — ${order.partner?.name ?? "partenaire"}`.slice(0, 250),
+    reference: partnerOrderRef(order.id),
+    sourceType: "PARTNER_LAB_ORDER",
+    sourceId: order.id,
+    createdById: order.orderedById,
+    occurredAt: order.createdAt,
+    lines: [
+      { account: PARTNER_ACCOUNT, debit: total, customerId: order.partnerId },
+      { account: SALES_ACCOUNTS.ACT.account, credit: total },
+    ],
+  });
+}
+
+// Demande annulée après sa comptabilisation : la vente est contrepassée (idempotent).
+export async function reversePartnerLabSale(organizationId: string, labOrderId: string) {
+  const sale = await prisma.accountingEntry.findFirst({ where: { organizationId, sourceType: "PARTNER_LAB_ORDER", sourceId: labOrderId } });
+  if (!sale) return null;
+  return reverseEntry(sale.id, { reason: "demande d'examens annulée", sourceType: "PARTNER_LAB_ORDER_CANCELLED" });
+}
+
 async function postPayment(tx: Tx) {
+  // Règlement d'un partenaire (relevé mensuel) : il solde sa créance 4111.
+  const settlement = await prisma.partnerSettlement.findFirst({
+    where: { financialTransactionId: tx.id },
+    select: { partnerId: true, month: true, reference: true, partner: { select: { name: true } } },
+  });
+  if (settlement) {
+    return postEntry({
+      organizationId: tx.organizationId!,
+      journal: "TR",
+      date: tx.createdAt,
+      label: `Règlement ${settlement.partner.name} — relevé ${settlement.month}${settlement.reference ? ` (${settlement.reference})` : ""}`.slice(0, 250),
+      reference: settlement.reference,
+      sourceType: "PAYMENT",
+      sourceId: tx.id,
+      createdById: tx.recordedById,
+      lines: [
+        { account: treasuryAccount(tx.paymentMethod), debit: tx.amount },
+        { account: PARTNER_ACCOUNT, credit: tx.amount, customerId: settlement.partnerId },
+      ],
+    });
+  }
   const invoiceId = tx.pendingInvoiceId ?? tx.reversedFromInvoiceId;
   // Ancienne vente encaissée sans ticket : vente au comptant, D 5xx / C produit.
   if (!invoiceId) {
@@ -576,7 +650,24 @@ export async function syncAccounting(organizationId: string): Promise<SyncReport
   // entièrement comptabilisé (chaque fonction passe ses écritures dans un ordre fixe) et n'est pas
   // retraité. Sans ce tri, chaque rattrapage revérifiait des milliers de documents un par un.
   const posted = await prisma.accountingEntry.findMany({
-    where: { organizationId, sourceType: { in: ["PAYMENT", "EXPENSE_PAYMENT", "STOCK_PURCHASE", "STOCK_PURCHASE_PAYMENT", "STOCK_PURCHASE_EXTERNAL", "PAYMENT_REVERSAL", "INVOICE", "INVOICE_WRITE_OFF", "INVOICE_DELETED"] } },
+    where: {
+      organizationId,
+      sourceType: {
+        in: [
+          "PAYMENT",
+          "EXPENSE_PAYMENT",
+          "STOCK_PURCHASE",
+          "STOCK_PURCHASE_PAYMENT",
+          "STOCK_PURCHASE_EXTERNAL",
+          "PAYMENT_REVERSAL",
+          "INVOICE",
+          "INVOICE_WRITE_OFF",
+          "INVOICE_DELETED",
+          "PARTNER_LAB_ORDER",
+          "PARTNER_LAB_ORDER_CANCELLED",
+        ],
+      },
+    },
     select: { id: true, sourceType: true, sourceId: true },
   });
   const done = new Set(posted.map((e) => `${e.sourceType}:${e.sourceId}`));
@@ -584,6 +675,27 @@ export async function syncAccounting(organizationId: string): Promise<SyncReport
   const skip = () => {
     report.existing++;
   };
+
+  // 0. Examens facturés aux partenaires (ventes à crédit, avant leurs règlements) et leurs annulations.
+  const partnerOrders = await prisma.labOrder.findMany({
+    where: { organizationId, partnerId: { not: null }, pendingInvoiceId: null },
+    select: { id: true, status: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const saleByOrder = new Map(posted.filter((e) => e.sourceType === "PARTNER_LAB_ORDER").map((e) => [e.sourceId, e.id]));
+  for (const o of partnerOrders) {
+    const label = `Examens partenaire ${partnerOrderRef(o.id)}`;
+    if (!has("PARTNER_LAB_ORDER", o.id)) {
+      if (o.status === "CANCELLED") continue; // annulée avant toute comptabilisation : rien à passer
+      await attempt(label, async () => [await postPartnerLabSale(o.id)]);
+    } else if (o.status === "CANCELLED") {
+      const saleId = saleByOrder.get(o.id);
+      if (saleId && has("PARTNER_LAB_ORDER_CANCELLED", saleId)) skip();
+      else await attempt(`${label} (annulation)`, async () => [await reversePartnerLabSale(organizationId, o.id)]);
+    } else {
+      skip();
+    }
+  }
 
   // 1. Toutes les écritures financières, dans l'ordre chronologique (ventes avant règlements).
   const transactions = await prisma.financialTransaction.findMany({

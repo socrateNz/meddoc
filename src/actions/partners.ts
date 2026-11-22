@@ -8,6 +8,7 @@ import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { assertOrganizationAccess } from "@/lib/org-scope";
 import { assertUserModule } from "@/lib/modules-server";
+import { accountSafely, accountTransaction } from "@/lib/accounting/postings";
 
 // Cliniques partenaires (cf. modèle Partner) : leurs patients font leurs examens au laboratoire,
 // les résultats sortent à leur en-tête et les examens leur sont facturés au prix partenaire.
@@ -145,13 +146,18 @@ const settlementSchema = z.object({
   partnerId: z.string().min(1),
   month: z.string().regex(/^\d{4}-\d{2}$/),
   amount: z.number().positive("Montant invalide"),
-  paymentMethod: z.enum(["CASH", "MOBILE_MONEY", "BANK_TRANSFER", "CHEQUE"]),
+  // Moyens de paiement de la comptabilité (cf. PAYMENT_METHODS) : ils fixent le compte de trésorerie.
+  paymentMethod: z.enum(["CASH", "MOBILE", "TRANSFER", "CHEQUE"]),
+  // Espèces : la caisse ouverte qui les reçoit (l'argent entre dans le tiroir, son solde attendu en tient compte).
+  cashSessionId: z.string().min(1).optional(),
   reference: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(300).optional(),
   paidAt: z.string().optional(),
 });
 
-// Règlement reçu d'un partenaire pour le relevé d'un mois (un ou plusieurs versements).
+// Règlement reçu d'un partenaire pour le relevé d'un mois (un ou plusieurs versements). Il entre en
+// Finance comme un encaissement (INCOME) et se comptabilise D 5xx / C 4111 : il solde la créance née
+// des examens du partenaire (cf. postPartnerLabSale). Les espèces passent par une caisse ouverte.
 export async function recordPartnerSettlement(input: z.input<typeof settlementSchema>) {
   try {
     const data = settlementSchema.parse(input);
@@ -162,20 +168,54 @@ export async function recordPartnerSettlement(input: z.input<typeof settlementSc
     if (!partner || partner.organizationId !== user.organizationId) throw new Error("Partenaire introuvable.");
     const paidAt = data.paidAt ? new Date(data.paidAt) : new Date();
     if (Number.isNaN(paidAt.getTime())) throw new Error("Date de règlement invalide.");
-    const settlement = await prisma.partnerSettlement.create({
-      data: {
-        partnerId: partner.id,
-        organizationId: partner.organizationId,
-        month: data.month,
-        amount: data.amount,
-        paymentMethod: data.paymentMethod,
-        reference: data.reference || null,
-        notes: data.notes || null,
-        paidAt,
-        recordedById: user.id,
-      },
+
+    let cashSessionId: string | null = null;
+    if (data.paymentMethod === "CASH") {
+      if (user.role !== "COORDINATOR") throw new Error("Un règlement en espèces s'encaisse à la caisse : réservé au coordinateur.");
+      if (!data.cashSessionId) throw new Error("Choisissez la caisse ouverte qui reçoit les espèces.");
+      const session = await prisma.cashSession.findUnique({ where: { id: data.cashSessionId }, select: { id: true, status: true, organizationId: true } });
+      if (!session || session.status !== "OPEN" || session.organizationId !== partner.organizationId) throw new Error("Cette caisse n'est pas ouverte.");
+      cashSessionId = session.id;
+    }
+
+    const settlement = await prisma.$transaction(async (tx) => {
+      const income = await tx.financialTransaction.create({
+        data: {
+          type: "INCOME",
+          category: "LAB_EXAM_FEE",
+          amount: data.amount,
+          description: `Règlement partenaire ${partner.name} — relevé ${data.month}${data.reference ? ` (${data.reference})` : ""}`.slice(0, 250),
+          paymentMethod: data.paymentMethod,
+          recordedById: user.id,
+          organizationId: partner.organizationId,
+          cashSessionId,
+          createdAt: paidAt,
+        },
+      });
+      return tx.partnerSettlement.create({
+        data: {
+          partnerId: partner.id,
+          organizationId: partner.organizationId,
+          month: data.month,
+          amount: data.amount,
+          paymentMethod: data.paymentMethod,
+          reference: data.reference || null,
+          notes: data.notes || null,
+          paidAt,
+          recordedById: user.id,
+          financialTransactionId: income.id,
+        },
+      });
     });
+    // D 5xx / C 4111 ; une écriture manquée est rattrapée par « Générer les écritures manquantes ».
+    if (settlement.financialTransactionId) {
+      const incomeId = settlement.financialTransactionId;
+      await accountSafely(`Règlement partenaire ${settlement.id}`, partner.organizationId, () => accountTransaction(incomeId));
+    }
     await logAuditAction(user.id, "RECORD_PARTNER_SETTLEMENT", "PartnerSettlement", settlement.id, { month: data.month, amount: data.amount });
+    revalidatePath("/dashboard/finance");
+    revalidatePath(`/dashboard/clinics/${partner.organizationId}/finance`);
+    revalidatePath(`/dashboard/clinics/${partner.organizationId}/comptabilite`);
     revalidatePath(`/dashboard/clinics/${partner.organizationId}/partenaires`);
     return { success: true as const };
   } catch (error) {
