@@ -1,5 +1,6 @@
 "use client";
 
+import { useCan } from "@/components/permissions-provider";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Clock, FolderOpen, Play, ShieldAlert, Stethoscope } from "lucide-react";
@@ -15,7 +16,6 @@ import TriageDialog from "./triage-dialog";
 type Row = Extract<Awaited<ReturnType<typeof listEmergencyBoard>>, { success: true }>["data"][number];
 
 const REFRESH_MS = 20000;
-const CONSULTATION_ROLES = ["COORDINATOR", "MEDECIN"];
 
 function age(dateOfBirth: string | null) {
   if (!dateOfBirth) return null;
@@ -28,7 +28,8 @@ function age(dateOfBirth: string | null) {
 
 // Tableau des urgences : patients à trier en tête, puis par niveau CIMU et ordre d'arrivée ; le
 // dépassement du délai cible du niveau est signalé. Rafraîchi toutes les 20 s.
-export default function EmergencyBoard({ clinicId, currentUserRole, initialRows, canTriage }: { clinicId: string; currentUserRole: string; initialRows: Row[]; canTriage: boolean }) {
+export default function EmergencyBoard({ clinicId, initialRows, canTriage }: { clinicId: string; currentUserRole: string; initialRows: Row[]; canTriage: boolean }) {
+  const canConsultation = useCan("consultation.write");
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [now, setNow] = useState(() => new Date());
   const [reloadKey, setReloadKey] = useState(0);
@@ -163,7 +164,7 @@ export default function EmergencyBoard({ clinicId, currentUserRole, initialRows,
                       Terminer
                     </Button>
                   )}
-                  {CONSULTATION_ROLES.includes(currentUserRole) && (
+                  {canConsultation && (
                     <Button asChild size="sm" variant="outline" className="h-7 gap-1 rounded-lg text-xs">
                       <Link href={`/dashboard/clinics/${clinicId}/patients/${r.patientId}/consultation`}>
                         <Stethoscope className="h-3.5 w-3.5" />

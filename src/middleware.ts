@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify, SignJWT } from 'jose';
 import { appendSecurityHeaders } from '@/middlewares/securityHeaders';
-import { canAccessSection } from '@/lib/permissions-catalog';
+import { canAccessSection, decodePermissions } from '@/lib/permissions-catalog';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -23,10 +23,11 @@ const PORTAL_ROLES = ['PATIENT', 'FAMILY'];
 
 // Accès par section de dashboard (indépendant du préfixe /dashboard/clinics/<id>/...) : chaque
 // section exige une permission (src/lib/permissions-catalog.ts, SECTION_PERMISSIONS), partagée avec
-// la barre latérale. Le jeton ne porte que le rôle : ses permissions par défaut s'appliquent ici.
+// la barre latérale. Le jeton porte les permissions effectives du membre (rôle ajusté par sa
+// clinique, rôles additionnels — cf. sessionPayload dans src/lib/auth.ts).
 
-// Page d'arrivée des rôles qui n'ont pas de tableau de bord clinique.
-const ROLE_HOME_SECTION: Record<string, string> = { COMPTABLE: 'comptabilite', ACCUEIL: 'accueil', LABORANTIN: 'lab' };
+// Page d'arrivée des rôles qui n'ont pas de tableau de bord clinique (le médecin a le sien).
+const ROLE_HOME_SECTION: Record<string, string> = { COMPTABLE: 'comptabilite', ACCUEIL: 'accueil', LABORANTIN: 'lab', MEDECIN: 'medecin' };
 
 function withSecurityHeaders(response: NextResponse): NextResponse {
   appendSecurityHeaders(response.headers);
@@ -84,6 +85,7 @@ export async function middleware(request: NextRequest) {
           role: refreshPayload.role,
           organizationId: refreshPayload.organizationId,
           organizationType: refreshPayload.organizationType,
+          pb: refreshPayload.pb,
         })
           .setProtectedHeader({ alg: 'HS256' })
           .setExpirationTime('15m')
@@ -109,6 +111,9 @@ export async function middleware(request: NextRequest) {
   try {
     const { payload } = await jwtVerify(token!, JWT_SECRET);
     const role = payload.role as string;
+    // Permissions effectives portées par le jeton ; jeton émis avant leur ajout : permissions par
+    // défaut du rôle.
+    const subject = typeof payload.pb === 'string' ? { role, permissions: decodePermissions(payload.pb) } : role;
 
     // Accueil d'un utilisateur de clinique : sa clinique. Redirigé ICI, avant tout rendu, plutôt
     // que par le redirect() de src/app/dashboard/page.tsx : /dashboard a un loading.tsx, la page
@@ -122,8 +127,12 @@ export async function middleware(request: NextRequest) {
       payload.organizationType === 'CLINIC' && payload.organizationId && !PORTAL_ROLES.includes(role)
         ? `/dashboard/clinics/${payload.organizationId as string}`
         : null;
-    // Comptable, accueil, laborantin : pas de tableau de bord clinique, arrivée sur leur page.
-    const home = clinicHome ? (ROLE_HOME_SECTION[role] ? `${clinicHome}/${ROLE_HOME_SECTION[role]}` : clinicHome) : '/dashboard';
+    // Comptable, accueil, laborantin, médecin : arrivée sur leur page — si leur rôle (ajusté par la
+    // clinique) y donne toujours accès ; sinon le tableau de bord clinique, qui ne leur montre alors
+    // qu'un message (cf. clinics/[id]/page.tsx). Jamais de boucle : `home` est toujours ouvert.
+    const preferredSection = ROLE_HOME_SECTION[role];
+    const homeSection = preferredSection && canAccessSection(subject, preferredSection) ? preferredSection : null;
+    const home = clinicHome ? (homeSection ? `${clinicHome}/${homeSection}` : clinicHome) : '/dashboard';
     const redirectTo = (path: string) => {
       const res = NextResponse.redirect(new URL(path, request.url));
       if (newAccessToken) {
@@ -143,7 +152,7 @@ export async function middleware(request: NextRequest) {
       return redirectTo(home);
     }
     // Le tableau de bord clinique (statistiques médicales et financières) n'est pas pour eux.
-    if (clinicHome && ROLE_HOME_SECTION[role] && pathname === clinicHome) {
+    if (clinicHome && homeSection && pathname === clinicHome) {
       return redirectTo(home);
     }
 
@@ -151,7 +160,7 @@ export async function middleware(request: NextRequest) {
     // (/dashboard/<section> pour une holding, /dashboard/clinics/<id>/<section> pour une clinique)
     const sectionMatch = pathname.match(/^\/dashboard\/(?:clinics\/[^/]+\/)?([^/]+)/);
     const section = sectionMatch?.[1];
-    if (section && !canAccessSection(role, section)) {
+    if (section && !canAccessSection(subject, section)) {
       return redirectTo(home);
     }
 

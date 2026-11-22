@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { getCurrentUser } from "@/lib/auth";
 import NewPatientDialog from "./new-patient-dialog";
 import { getClinics } from "@/actions/organizations";
@@ -48,7 +49,7 @@ export default async function PatientsPage({ searchParams }: PatientsPageProps) 
             Gérez la liste de vos patients, filtrez par statut de soins et consultez leurs dossiers.
           </p>
         </div>
-        {["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role) && (
+        {can(activeUser, "patients.create") && (
           <NewPatientDialog
             isHoldingAdmin={isHoldingAdmin}
             holdingId={activeUser.organizationId || ""}

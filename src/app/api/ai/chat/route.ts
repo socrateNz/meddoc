@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const userRole = currentUser.role;
 
     // Assistance clinique IA : autorité diagnostique (COORDINATOR/MEDECIN), ADMIN en lecture seule.
-    if (!can(userRole, "ai.use")) {
+    if (!can(currentUser, "ai.use")) {
       return NextResponse.json({ error: "Accès interdit" }, { status: 403 });
     }
 

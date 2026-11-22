@@ -4,7 +4,7 @@ import { listRegistersWithStatus } from "@/actions/registers";
 import { getPharmacyItems, listCaisseHistoryInvoices } from "@/actions/finance";
 import CaisseView from "@/app/dashboard/caisse/caisse-view";
 import { redirect } from "next/navigation";
-import { pharmacistMayUseRegister } from "@/actions/register-permissions";
+import { can } from "@/lib/permissions-catalog";
 
 export const metadata = {
   title: "Caisse | MedDoc",
@@ -19,10 +19,10 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
 
   const activeUser = await getCurrentUser();
   if (!activeUser) redirect("/login");
-  // Pharmacien sans autorisation du coordinateur (cf. register-permissions.ts) : la caisse lui est
-  // fermée, retour à sa pharmacie.
-  if (activeUser.role === "PHARMACIST" && !pharmacistMayUseRegister(activeUser)) {
-    redirect(`/dashboard/clinics/${clinicId}/pharmacie`);
+  // Le middleware filtre déjà sur le jeton ; ici sur les permissions à jour (rôle ajusté par la
+  // clinique depuis l'émission du jeton, ex: pharmacien privé de caisse) : retour à sa pharmacie.
+  if (!can(activeUser, "caisse.access")) {
+    redirect(`/dashboard/clinics/${clinicId}${can(activeUser, "pharmacy.access") ? "/pharmacie" : ""}`);
   }
 
   const [registersRes, patients, clinicOrg, pharmacyItemsRes, historyRes] = await Promise.all([

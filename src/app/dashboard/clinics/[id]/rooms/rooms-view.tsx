@@ -1,5 +1,6 @@
 "use client";
 
+import { useCan } from "@/components/permissions-provider";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -15,8 +16,6 @@ import BedDialog from "./bed-dialog";
 import AssignBedDialog from "./assign-bed-dialog";
 import { toast } from "sonner";
 
-const ROOMS_STRUCTURE_ROLES = ["COORDINATOR"];
-const ROOMS_OPERATE_ROLES = ["COORDINATOR", "MEDECIN", "CAREGIVER"];
 
 interface RoomsViewProps {
   clinicId: string;
@@ -120,12 +119,12 @@ function WardDialog({ clinicId, ward, onSuccess }: { clinicId: string; ward?: { 
   );
 }
 
-export default function RoomsView({ clinicId, wards, patients, currentUserRole }: RoomsViewProps) {
+export default function RoomsView({ clinicId, wards, patients }: RoomsViewProps) {
   const router = useRouter();
   const refresh = () => router.refresh();
 
-  const canStructure = ROOMS_STRUCTURE_ROLES.includes(currentUserRole);
-  const canOperate = ROOMS_OPERATE_ROLES.includes(currentUserRole);
+  const canStructure = useCan("rooms.structure");
+  const canOperate = useCan("rooms.operate");
 
   const handleDeleteWard = async (id: string) => {
     const res = await deleteWard(id);

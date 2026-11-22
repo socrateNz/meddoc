@@ -1,5 +1,6 @@
 "use client";
 
+import { useCan } from "@/components/permissions-provider";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -60,7 +61,7 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Annulé",
 };
 
-export default function LabOrderDetail({ order: initialOrder, currentUserRole }: { order: any; currentUserRole?: string }) {
+export default function LabOrderDetail({ order: initialOrder }: { order: any; currentUserRole?: string }) {
   const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
   const [sampleType, setSampleType] = useState("BLOOD");
@@ -74,8 +75,8 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
   const [aiAnalysis, setAiAnalysis] = useState<{ summary: string; trends: string[]; flags: string[] } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
-  const canWrite = currentUserRole !== "ADMIN";
-  const canValidate = currentUserRole === "COORDINATOR";
+  const canWrite = useCan("lab.operate");
+  const canValidate = useCan("lab.validate");
   const patient = order.patient;
 
   const refresh = () => router.refresh();

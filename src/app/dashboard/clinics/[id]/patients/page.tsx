@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { getCurrentUser } from "@/lib/auth";
 import { getClinics } from "@/actions/organizations";
 import { listPatientsPage } from "@/actions/patient-list";
@@ -53,8 +54,8 @@ export default async function ClinicPatientsPage({ params, searchParams }: PageP
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {activeUser.role === "COORDINATOR" && <PatientsImport clinicId={clinicId} />}
-          {["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role) && (
+          {can(activeUser, "patients.import") && <PatientsImport clinicId={clinicId} />}
+          {can(activeUser, "patients.create") && (
             <NewPatientDialog
               isHoldingAdmin={isHoldingAdmin}
               holdingId={activeUser.organizationId || ""}
@@ -75,7 +76,7 @@ export default async function ClinicPatientsPage({ params, searchParams }: PageP
         pathname={`/dashboard/clinics/${clinicId}/patients`}
         clinicId={clinicId}
         organizationId={clinicId}
-        canAssignBed={["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role) && modulesOfUser(activeUser).includes("HOSPITALISATION")}
+        canAssignBed={can(activeUser, "rooms.operate") && modulesOfUser(activeUser).includes("HOSPITALISATION")}
       />
 
       <CacheWriter

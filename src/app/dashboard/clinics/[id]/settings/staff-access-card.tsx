@@ -1,27 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Banknote, Loader2, Receipt } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
-import { setConsultationBilling, setPharmacistRegisterAccess } from "@/actions/organizations";
+import { Loader2, Receipt, ShieldCheck } from "lucide-react";
+import { setConsultationBilling } from "@/actions/organizations";
 import { toast } from "sonner";
 
-// Réglages d'accès du personnel décidés par le coordinateur.
+// Réglages de fonctionnement décidés par le coordinateur. Ce que chaque rôle peut faire (dont
+// l'ancien réglage « le pharmacien peut tenir la caisse ») se règle dans Rôles et permissions.
 export default function StaffAccessCard({
   clinicId,
-  pharmacistCanUseRegister,
   consultationBilling,
   readOnly,
 }: {
   clinicId: string;
-  pharmacistCanUseRegister: boolean;
   consultationBilling: "ON_CLOSE" | "ON_ARRIVAL";
   readOnly: boolean;
 }) {
   const router = useRouter();
-  const [allowed, setAllowed] = useState(pharmacistCanUseRegister);
-  const [saving, setSaving] = useState(false);
   const [billing, setBilling] = useState(consultationBilling);
   const [savingBilling, setSavingBilling] = useState(false);
 
@@ -39,41 +36,24 @@ export default function StaffAccessCard({
     }
   };
 
-  const onChange = async (value: boolean) => {
-    setSaving(true);
-    const res = await setPharmacistRegisterAccess(clinicId, value);
-    setSaving(false);
-    if (res.success) {
-      setAllowed(value);
-      toast.success(value ? "Le pharmacien peut désormais tenir la caisse." : "La caisse est désormais réservée aux caissiers et au coordinateur.");
-      router.refresh();
-    } else {
-      toast.error(res.error);
-    }
-  };
-
   return (
     <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/60 p-5 dark:border-slate-800 dark:bg-slate-900/50">
       <div>
         <h2 className="font-semibold">Fonctionnement de la clinique</h2>
         <p className="text-xs text-muted-foreground">Réglages décidés par le coordinateur de la clinique.</p>
       </div>
-      <label className="flex items-start justify-between gap-4 rounded-xl border border-slate-200/70 p-3 dark:border-slate-800">
-        <span className="flex gap-3">
-          <Banknote className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-          <span>
-            <span className="block text-sm font-medium">Le pharmacien peut tenir la caisse</span>
-            <span className="block text-xs text-muted-foreground">
-              Ouvrir et fermer une session, encaisser, enregistrer une dépense. Utile quand caisse et pharmacie sont au même guichet.
-              Désactivé : séparation stricte, la caisse est réservée aux caissiers et au coordinateur.
-            </span>
+      <Link
+        href={`/dashboard/clinics/${clinicId}/roles`}
+        className="flex items-start gap-3 rounded-xl border border-slate-200/70 p-3 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
+      >
+        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+        <span>
+          <span className="block text-sm font-medium">Rôles et permissions</span>
+          <span className="block text-xs text-muted-foreground">
+            Ce que chaque rôle peut faire (ex : le pharmacien peut-il tenir la caisse ?), et les rôles propres à la clinique.
           </span>
         </span>
-        <span className="flex items-center gap-2 pt-0.5">
-          {saving && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
-          <Switch checked={allowed} onCheckedChange={onChange} disabled={readOnly || saving} aria-label="Le pharmacien peut tenir la caisse" />
-        </span>
-      </label>
+      </Link>
       <div className="space-y-2 rounded-xl border border-slate-200/70 p-3 dark:border-slate-800">
         <p className="flex items-center gap-2 text-sm font-medium">
           <Receipt className="h-5 w-5 shrink-0 text-blue-600" />

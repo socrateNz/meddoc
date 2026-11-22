@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MoreHorizontal, Replace, UserX, UserCheck, Stethoscope, Pencil, KeyRound, Layers } from "lucide-react";
+import { MoreHorizontal, Replace, UserX, UserCheck, Stethoscope, Pencil, KeyRound, Layers, ShieldPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ReassignMemberDialog from "./reassign-member-dialog";
@@ -12,6 +12,7 @@ import EditMemberDialog from "./edit-member-dialog";
 import ResetPasswordAlert from "./reset-password-alert";
 import { isClinicStaffRole } from "@/lib/staff-roles";
 import StaffServicesDialog from "./staff-services-dialog";
+import MemberRolesDialog from "./member-roles-dialog";
 
 interface UserActionsMenuProps {
   member: any;
@@ -19,9 +20,11 @@ interface UserActionsMenuProps {
   holdingId: string;
   clinics: { id: string; name: string }[];
   currentUserRole?: string;
+  // Rôles de la clinique attribuables (fournis seulement au coordinateur qui gère les rôles).
+  assignableRoles?: { id: string; name: string }[];
 }
 
-export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, clinics, currentUserRole }: UserActionsMenuProps) {
+export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, clinics, currentUserRole, assignableRoles }: UserActionsMenuProps) {
   const [reassignOpen, setReassignOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
@@ -29,6 +32,7 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
   const [editOpen, setEditOpen] = useState(false);
   const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
+  const [rolesOpen, setRolesOpen] = useState(false);
   const userName = `${member.firstName} ${member.lastName}`;
 
   // COORDINATOR gère le personnel de sa clinique ; ADMIN (holding) gère en plus les coordinateurs —
@@ -46,7 +50,10 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
   // (cf. src/lib/service-access.ts).
   const canSetServices = canManageStatus && ["MEDECIN", "CAREGIVER"].includes(member.role) && !!member.organizationId;
 
-  if (!canManageStatus && !canReclassify && !isHoldingAdmin) {
+  // Rôles additionnels (cf. ClinicRole) : membre du personnel de la clinique, hors coordinateur.
+  const canSetRoles = !!assignableRoles && isClinicStaffRole(member.role) && !!member.organizationId;
+
+  if (!canManageStatus && !canReclassify && !isHoldingAdmin && !canSetRoles) {
     return null;
   }
 
@@ -79,6 +86,12 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
             <DropdownMenuItem onClick={() => setServicesOpen(true)} className="cursor-pointer">
               <Layers className="mr-2 h-4 w-4" />
               <span>Services rattachés</span>
+            </DropdownMenuItem>
+          )}
+          {canSetRoles && (
+            <DropdownMenuItem onClick={() => setRolesOpen(true)} className="cursor-pointer">
+              <ShieldPlus className="mr-2 h-4 w-4" />
+              <span>Rôles additionnels</span>
             </DropdownMenuItem>
           )}
           {canManageStatus && member.isActive && (
@@ -134,6 +147,17 @@ export default function UserActionsMenu({ member, isHoldingAdmin, holdingId, cli
           userId={member.id}
           userName={userName}
           targetRole={reclassifyTarget}
+        />
+      )}
+      {canSetRoles && (
+        <MemberRolesDialog
+          open={rolesOpen}
+          onOpenChange={setRolesOpen}
+          userId={member.id}
+          userName={userName}
+          organizationId={member.organizationId}
+          roles={assignableRoles!}
+          currentRoleIds={member.extraRoleIds ?? []}
         />
       )}
       {canManageStatus && (

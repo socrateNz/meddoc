@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
@@ -22,7 +23,7 @@ export default async function ClinicContractsPage({ params, searchParams }: Clin
   if (!activeUser) {
     redirect("/login");
   }
-  if (activeUser.role !== "ADMIN" && activeUser.role !== "COORDINATOR") {
+  if (!can(activeUser, "contracts.read")) {
     redirect(`/dashboard/clinics/${clinicId}`);
   }
 

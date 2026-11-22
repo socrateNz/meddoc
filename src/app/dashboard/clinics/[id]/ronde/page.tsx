@@ -21,7 +21,7 @@ export default async function RondePage({ params, searchParams }: RondePageProps
 
   const currentUser = await getCurrentUser();
   if (!currentUser) redirect("/login");
-  if (!canRunRound(currentUser.role)) redirect(`/dashboard/clinics/${clinicId}`);
+  if (!canRunRound(currentUser)) redirect(`/dashboard/clinics/${clinicId}`);
 
   const [wardsRes, teamRes] = await Promise.all([getRoundWards(clinicId), getRoundTeam(clinicId)]);
   const wards = wardsRes.success ? wardsRes.data : [];

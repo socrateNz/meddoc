@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { prisma } from "@/lib/db";
 import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
@@ -35,13 +35,13 @@ type PrescriptionItemInput = {
   quantity?: number;
 };
 
-function assertPrescriptionWriteRole(role: string) {
+function assertPrescriptionWriteRole(role: PermissionSubject) {
   if (!can(role, "prescriptions.write")) {
     throw new Error("Non autorisé. Seul un coordinateur ou un médecin peut rédiger une ordonnance.");
   }
 }
 
-function assertPrescriptionReadRole(role: string) {
+function assertPrescriptionReadRole(role: PermissionSubject) {
   if (!can(role, "prescriptions.read")) throw new Error("Non autorisé.");
 }
 
@@ -172,7 +172,7 @@ export async function createPrescription(data: {
     createPrescriptionSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertPrescriptionWriteRole(activeUser.role);
+    assertPrescriptionWriteRole(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -213,7 +213,7 @@ export async function renewPrescription(prescriptionId: string, overrides?: { it
     renewPrescriptionSchema.parse({ prescriptionId, items: overrides?.items, notes: overrides?.notes });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertPrescriptionWriteRole(activeUser.role);
+    assertPrescriptionWriteRole(activeUser);
 
     const source = await prisma.prescription.findUnique({ where: { id: prescriptionId }, include: { items: true } });
     if (!source) throw new Error("Ordonnance introuvable.");
@@ -278,7 +278,7 @@ export async function updatePrescription(data: {
     updatePrescriptionSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertPrescriptionWriteRole(activeUser.role);
+    assertPrescriptionWriteRole(activeUser);
 
     const source = await prisma.prescription.findUnique({ where: { id: data.prescriptionId } });
     if (!source) throw new Error("Ordonnance introuvable.");
@@ -322,7 +322,7 @@ export async function createPrescriptionTemplate(data: {
     createPrescriptionTemplateSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertPrescriptionWriteRole(activeUser.role);
+    assertPrescriptionWriteRole(activeUser);
 
     const template = await prisma.prescriptionTemplate.create({
       data: {
@@ -348,7 +348,7 @@ export async function listPrescriptionTemplates(options?: { pathology?: string }
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertPrescriptionWriteRole(activeUser.role);
+    assertPrescriptionWriteRole(activeUser);
 
     const where: any = {
       OR: [
@@ -377,7 +377,7 @@ export async function listPrescriptions(options?: {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertPrescriptionReadRole(activeUser.role);
+    assertPrescriptionReadRole(activeUser);
 
     const where: any = {};
 
@@ -430,7 +430,7 @@ export async function sendPrescriptionToPharmacy(prescriptionId: string) {
     if (!activeUser) throw new Error("Non authentifié.");
     // Sans pharmacie interne, l'ordonnance est seulement imprimée.
     assertUserModule(activeUser, "PHARMACIE");
-    assertPrescriptionWriteRole(activeUser.role);
+    assertPrescriptionWriteRole(activeUser);
 
     const prescription = await prisma.prescription.findUnique({ where: { id: prescriptionId }, include: { items: true } });
     if (!prescription) throw new Error("Ordonnance introuvable.");

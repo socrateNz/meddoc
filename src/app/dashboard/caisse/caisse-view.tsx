@@ -1,5 +1,6 @@
 "use client";
 
+import { useCan } from "@/components/permissions-provider";
 import { useState, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -79,7 +80,6 @@ export default function CaisseView({
   organizationName,
   organizationLogoUrl,
   currentUserId,
-  currentUserRole,
   patients,
   pharmacyItems,
 }: CaisseViewProps) {
@@ -130,15 +130,14 @@ export default function CaisseView({
   const historyTotal = historyQuery.data?.total ?? 0;
   const loadingHistory = historyQuery.isFetching;
 
-  // PHARMACIST inclus temporairement ("pour le moment") : peut se comporter comme un caissier
-  // (ouvrir/fermer une caisse, encaisser) — cf. register-permissions.ts:REGISTER_OPERATE_ROLES.
-  const canOperate = currentUserRole === "COORDINATOR" || currentUserRole === "CASHIER" || currentUserRole === "PHARMACIST";
-  const canManageRegisters = currentUserRole === "COORDINATOR";
+  // Permissions effectives (rôle ajusté par la clinique, cf. src/lib/permissions-server.ts).
+  const canOperate = useCan("register.operate");
+  const canManageRegisters = useCan("register.structure");
   // Caissière qui est aussi pharmacienne : peut remettre les médicaments dès l'encaissement.
-  const canDispense = currentUserRole === "PHARMACIST";
+  const canDispense = useCan("pharmacy.dispense");
   const hasUndispensedPharmacy = (inv: any) =>
     !inv.dispensedAt && ((inv.items as any[]) || []).some((i) => i.type === "PHARMACY" && (Number(i.dispensedQuantity) || 0) < Number(i.quantity));
-  const canManageStatus = currentUserRole === "COORDINATOR" || currentUserRole === "ADMIN" || currentUserRole === "SUPER_ADMIN";
+  const canManageStatus = useCan("invoices.manage");
 
   const selectedRegister = registers.find((r) => r.id === selectedRegisterId) || null;
 

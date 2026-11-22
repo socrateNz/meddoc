@@ -165,9 +165,6 @@ describe("recordStockPurchase — deductFromCash", () => {
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    // assertStockWrite appelle requirePermission (@/lib/permissions), qui lit
-    // prisma.permission en base — non pertinent pour ces tests, on le neutralise.
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -280,7 +277,6 @@ describe("recordStockPurchase — linkedExpenseTransactionId (retrait absorbé)"
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -484,7 +480,6 @@ describe("recordStockPurchase — prix d'achat optionnel pour un produit existan
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -576,7 +571,6 @@ describe("recordStockPurchase — produit bloqué par le coordinateur", () => {
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -641,7 +635,6 @@ describe("saveInventoryCounts — rafraîchit systemQuantity au moment du compta
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -753,7 +746,6 @@ describe("getActiveInventoryCount — rattrapage des produits ajoutés après le
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -878,7 +870,6 @@ describe("completeInventoryCount — rattrapage de sécurité avant clôture", (
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -996,7 +987,6 @@ describe("completeInventoryCount — requêtes groupées (pas une par ligne)", (
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -1159,7 +1149,6 @@ describe("getInventoryReport — rapport PDF d'un inventaire clôturé", () => {
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
   });
 
   const completedCount = (overrides: any = {}) => ({
@@ -1258,7 +1247,6 @@ describe("cancelInventoryCount", () => {
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -1322,7 +1310,6 @@ describe("cancelStockPurchase", () => {
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -1528,7 +1515,6 @@ describe("setPharmacyItemSaleBlock", () => {
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 
@@ -1616,7 +1602,6 @@ describe("deletePharmacyItem / getPharmacyItemDeletionInfo", () => {
     vi.resetModules();
     vi.doMock("@/middlewares/auditLogger", () => ({ logAuditAction: vi.fn() }));
     vi.doMock("next/cache", () => ({ revalidatePath: vi.fn() }));
-    vi.doMock("@/lib/permissions", () => ({ requirePermission: vi.fn(async () => {}) }));
     authState.user = coordinatorUser;
   });
 

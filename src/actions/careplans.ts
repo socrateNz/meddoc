@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
@@ -22,7 +22,7 @@ import { billStayToDate, closeOpenSegment, findOpenStay, patientOutstanding } fr
 // dans src/actions/patients.ts. Avant ce contrôle, seul l'accès au dossier patient était
 // vérifié : un rôle non clinique (PHARMACIST, FAMILY, PATIENT...) partageant l'organisation
 // du patient pouvait déclencher ces écritures.
-function assertClinicalWriteAccess(role: string) {
+function assertClinicalWriteAccess(role: PermissionSubject) {
   if (!can(role, "records.write")) {
     throw new Error("Non autorisé. Réservé au personnel clinique (coordinateur, médecin ou infirmier(e)).");
   }
@@ -43,7 +43,7 @@ async function createCarePlanOnce(data: {
     createCarePlanSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -90,7 +90,7 @@ async function createCareTaskOnce(data: {
     createCareTaskSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -118,7 +118,7 @@ export async function toggleTaskStatus(taskId: string, patientId: string, isComp
     toggleTaskStatusSchema.parse({ taskId, patientId, isCompleted });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -160,7 +160,7 @@ export async function closeCarePlan(
     closeCarePlanSchema.parse({ carePlanId, patientId, dischargeSummary });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");
@@ -280,7 +280,7 @@ export async function reopenCarePlan(patientId: string, title?: string) {
     reopenCarePlanSchema.parse({ patientId, title });
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");

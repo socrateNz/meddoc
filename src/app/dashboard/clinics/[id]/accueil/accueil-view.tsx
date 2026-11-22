@@ -1,5 +1,6 @@
 "use client";
 
+import { useCan } from "@/components/permissions-provider";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Clock, FolderOpen, Loader2, Megaphone, Play, RotateCcw, Stethoscope, UserX } from "lucide-react";
@@ -9,15 +10,12 @@ import { toast } from "sonner";
 import { listTodayVisits, updateVisitStatus } from "@/actions/visits";
 import { VISIT_DESTINATION_LABELS, VISIT_STATUS_LABELS, formatWait, type VisitAction, type VisitDestination, type VisitStatus } from "@/lib/visits";
 import RegisterVisitDialog from "./register-visit-dialog";
-import { SECTION_ROLES } from "@/lib/staff-roles";
 
 type Visit = Extract<Awaited<ReturnType<typeof listTodayVisits>>, { success: true }>["data"][number];
 
 const REFRESH_MS = 20000;
-const CONSULTATION_ROLES = ["COORDINATOR", "MEDECIN"];
 // Mêmes rôles que la section « patients » (src/lib/staff-roles.ts) : accueil, caisse, pharmacie et
 // labo n'ont pas accès aux dossiers médicaux.
-const PATIENT_FILE_ROLES = SECTION_ROLES.patients;
 
 const DESTINATION_STYLES: Record<string, string> = {
   CONSULTATION: "bg-blue-500/10 text-blue-700 border-blue-500/20",
@@ -44,6 +42,8 @@ export default function AccueilView({ clinicId, currentUserId, currentUserRole, 
   const [visits, setVisits] = useState<Visit[]>(initialVisits);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [destinationFilter, setDestinationFilter] = useState<"ALL" | VisitDestination>("ALL");
+  const canConsultation = useCan("consultation.write");
+  const canOpenFile = useCan("records.read");
   const [mineOnly, setMineOnly] = useState(currentUserRole === "MEDECIN");
   const [now, setNow] = useState(() => new Date());
   const [reloadKey, setReloadKey] = useState(0);
@@ -98,7 +98,7 @@ export default function AccueilView({ clinicId, currentUserId, currentUserRole, 
     const busy = busyId === v.id;
     const urgent = v.priority === "URGENT";
     const status = v.status as VisitStatus;
-    const canConsult = CONSULTATION_ROLES.includes(currentUserRole) && (v.destination === "CONSULTATION" || v.destination === "EMERGENCY");
+    const canConsult = canConsultation && (v.destination === "CONSULTATION" || v.destination === "EMERGENCY");
     return (
       <div
         key={v.id}
@@ -182,7 +182,7 @@ export default function AccueilView({ clinicId, currentUserId, currentUserRole, 
                 Terminer
               </Button>
             )}
-            {PATIENT_FILE_ROLES.includes(currentUserRole) && (
+            {canOpenFile && (
               <Button asChild size="sm" variant="ghost" className="h-7 gap-1 rounded-lg text-xs">
                 <Link href={`/dashboard/clinics/${clinicId}/patients/${v.patientId}`}>
                   <FolderOpen className="h-3.5 w-3.5" />

@@ -137,6 +137,7 @@ describe("correctOpeningFloat", () => {
 
     const result = await correctOpeningFloat({ sessionId: "sess1", newOpeningFloat: 8000, reason: "erreur de saisie" });
 
+    expect(result.error).toBeUndefined();
     expect(result.success).toBe(true);
     expect(sessionUpdate).toHaveBeenCalledWith({ where: { id: "sess1" }, data: { openingFloat: 8000 } });
   });

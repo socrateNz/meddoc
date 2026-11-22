@@ -21,6 +21,8 @@ const baseUser = {
 
 beforeEach(() => {
   vi.resetModules();
+  // Permissions effectives (lecture des rôles de la clinique en base) : figées ici.
+  vi.doMock("@/lib/permissions-server", () => ({ effectivePermissions: vi.fn(async () => ["lab.read", "records.read"]) }));
 });
 
 function mockRepository(user: any) {
@@ -103,5 +105,12 @@ describe("AuthService.login", () => {
     expect(result.user).toEqual(
       expect.objectContaining({ id: "user1", email: baseUser.email, role: "MEDECIN", requiresPasswordChange: false })
     );
+    // Permissions effectives encodées dans les deux jetons, pour le middleware.
+    const { decodePermissions } = await import("@/lib/permissions-catalog");
+    const { verifyJwt, verifyRefreshToken } = await import("@/lib/auth");
+    for (const payload of [verifyJwt(result.token), verifyRefreshToken(result.refreshToken!)] as any[]) {
+      expect(payload.role).toBe("MEDECIN");
+      expect(decodePermissions(payload.pb).sort()).toEqual(["lab.read", "records.read"]);
+    }
   });
 });

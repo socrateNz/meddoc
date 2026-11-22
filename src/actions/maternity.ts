@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
@@ -27,11 +27,11 @@ import { prenatalFollowUp, comparePrenatalFollowUp } from "@/lib/maternity-label
 // accouchement reste une écriture clinique réservée au même trio que CLINICAL_WRITE_ROLES
 // (src/actions/patients.ts, src/actions/careplans.ts).
 
-function assertMaternityReadRole(role: string) {
+function assertMaternityReadRole(role: PermissionSubject) {
   if (!can(role, "maternity.read")) throw new Error("Non autorisé.");
 }
 
-function assertMaternityWriteRole(role: string) {
+function assertMaternityWriteRole(role: PermissionSubject) {
   if (!can(role, "maternity.write")) {
     throw new Error("Non autorisé. Réservé au personnel clinique (coordinateur, médecin ou infirmier(e)).");
   }
@@ -72,7 +72,7 @@ async function createPregnancyOnce(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityWriteRole(activeUser.role);
+    assertMaternityWriteRole(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -107,7 +107,7 @@ export async function listPregnancies(patientId: string, options?: { page?: numb
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityReadRole(activeUser.role);
+    assertMaternityReadRole(activeUser);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -160,7 +160,7 @@ async function addPrenatalVisitOnce(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityWriteRole(activeUser.role);
+    assertMaternityWriteRole(activeUser);
 
     const pregnancy = await prisma.pregnancy.findUnique({ where: { id: data.pregnancyId } });
     if (!pregnancy) throw new Error("Grossesse introuvable.");
@@ -226,7 +226,7 @@ async function recordDeliveryOnce(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityWriteRole(activeUser.role);
+    assertMaternityWriteRole(activeUser);
 
     const pregnancy = await prisma.pregnancy.findUnique({ where: { id: data.pregnancyId } });
     if (!pregnancy) throw new Error("Grossesse introuvable.");
@@ -317,7 +317,7 @@ export async function addPartogramEntry(input: z.input<typeof partogramEntrySche
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityWriteRole(activeUser.role);
+    assertMaternityWriteRole(activeUser);
     const pregnancy = await prisma.pregnancy.findUnique({ where: { id: data.pregnancyId }, select: { id: true, patientId: true, status: true } });
     if (!pregnancy) throw new Error("Grossesse introuvable.");
     if (pregnancy.status !== "ACTIVE") throw new Error("Le partogramme se remplit pendant le travail, avant l'accouchement.");
@@ -343,7 +343,7 @@ export async function listPartogram(pregnancyId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityReadRole(activeUser.role);
+    assertMaternityReadRole(activeUser);
     const pregnancy = await prisma.pregnancy.findUnique({ where: { id: pregnancyId }, select: { patientId: true } });
     if (!pregnancy || !(await verifyPatientAccess(pregnancy.patientId, activeUser))) throw new Error("Non autorisé.");
     const entries = await prisma.partogramEntry.findMany({ where: { pregnancyId }, orderBy: { recordedAt: "asc" }, take: 500 });
@@ -360,7 +360,7 @@ export async function createNewbornRecord(newbornId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityWriteRole(activeUser.role);
+    assertMaternityWriteRole(activeUser);
     const newborn = await prisma.newborn.findUnique({
       where: { id: newbornId },
       include: { delivery: { include: { pregnancy: { select: { patientId: true } }, newborns: { select: { id: true, vitalStatus: true }, orderBy: { id: "asc" } } } } },
@@ -389,7 +389,7 @@ export async function updatePregnancyStatus(pregnancyId: string, status: "MISCAR
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityWriteRole(activeUser.role);
+    assertMaternityWriteRole(activeUser);
 
     const pregnancy = await prisma.pregnancy.findUnique({ where: { id: pregnancyId } });
     if (!pregnancy) throw new Error("Grossesse introuvable.");
@@ -417,7 +417,7 @@ export async function listPrenatalFollowUp(clinicId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "MATERNITE");
-    assertMaternityReadRole(activeUser.role);
+    assertMaternityReadRole(activeUser);
     await assertClinicScope(clinicId, activeUser);
 
     // Cloisonnement par service (cf. src/lib/service-access.ts) : la sage-femme de Maternité ne voit

@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
@@ -43,23 +43,23 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 // Prescrire un examen (autorité diagnostique) est réservé au médecin ; prélever, réceptionner
 // et saisir un résultat brut restent des gestes opérationnels (infirmier(e), laborantin).
 
-function assertLabReadRole(role: string) {
+function assertLabReadRole(role: PermissionSubject) {
   if (!can(role, "lab.read")) throw new Error("Non autorisé.");
 }
 
-function assertLabOrderRole(role: string) {
+function assertLabOrderRole(role: PermissionSubject) {
   if (!can(role, "lab.order")) throw new Error("Non autorisé. Seul un coordinateur ou un médecin peut prescrire un examen.");
 }
 
-function assertLabOperateRole(role: string) {
+function assertLabOperateRole(role: PermissionSubject) {
   if (!can(role, "lab.operate")) throw new Error("Non autorisé. Réservé au personnel clinique.");
 }
 
-function assertLabValidateRole(role: string) {
+function assertLabValidateRole(role: PermissionSubject) {
   if (!can(role, "lab.validate")) throw new Error("Non autorisé. Seul un coordinateur ou un médecin peut valider un résultat.");
 }
 
-function assertLabAiRole(role: string) {
+function assertLabAiRole(role: PermissionSubject) {
   if (!can(role, "lab.ai")) throw new Error("Non autorisé.");
 }
 
@@ -162,7 +162,7 @@ async function createLabOrderOnce(data: {
     // demande), le laborantin l'enregistre.
     const prenatalByMidwife = !!data.prenatalVisitId && can(activeUser, "lab.order.prenatal");
     const partnerByLab = !!data.partnerId && can(activeUser, "lab.order.partner");
-    if (!prenatalByMidwife && !partnerByLab) assertLabOrderRole(activeUser.role);
+    if (!prenatalByMidwife && !partnerByLab) assertLabOrderRole(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -350,7 +350,7 @@ export async function listLabOrders(options?: LabOrderListOptions) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabReadRole(activeUser.role);
+    assertLabReadRole(activeUser);
 
     const conditions = await labOrderScope(activeUser, options ?? {});
     if (options?.status && options.status !== "ALL") conditions.push({ status: options.status });
@@ -397,7 +397,7 @@ export async function getLabOrderStats(options?: { organizationId?: string; orde
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabReadRole(activeUser.role);
+    assertLabReadRole(activeUser);
 
     const scope = await labOrderScope(activeUser, { organizationId: options?.organizationId, orderedById: options?.orderedById });
     const startOfToday = new Date();
@@ -425,7 +425,7 @@ export async function getLabOrder(labOrderId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabReadRole(activeUser.role);
+    assertLabReadRole(activeUser);
 
     const order = await prisma.labOrder.findUnique({
       where: { id: labOrderId },
@@ -481,7 +481,7 @@ export async function collectSample(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabOperateRole(activeUser.role);
+    assertLabOperateRole(activeUser);
 
     const order = await prisma.labOrder.findUnique({ where: { id: data.labOrderId }, include: { sampleCollectedBy: { select: { firstName: true, lastName: true } } } });
     if (!order) throw new Error("Demande d'analyse introuvable.");
@@ -593,7 +593,7 @@ export async function receiveAtLab(labOrderId: string, sampleId?: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabOperateRole(activeUser.role);
+    assertLabOperateRole(activeUser);
 
     const order = await prisma.labOrder.findUnique({ where: { id: labOrderId } });
     if (!order) throw new Error("Demande d'analyse introuvable.");
@@ -649,7 +649,7 @@ async function recordLabResultOnce(data: {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabOperateRole(activeUser.role);
+    assertLabOperateRole(activeUser);
 
     const order = await prisma.labOrder.findUnique({ where: { id: data.labOrderId } });
     if (!order) throw new Error("Demande d'analyse introuvable.");
@@ -734,7 +734,7 @@ export async function validateLabResult(resultId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabValidateRole(activeUser.role);
+    assertLabValidateRole(activeUser);
 
     const result = await prisma.labResult.findUnique({ where: { id: resultId }, include: { labOrder: true } });
     if (!result) throw new Error("Résultat introuvable.");
@@ -766,7 +766,7 @@ export async function markDelivered(labOrderId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabOperateRole(activeUser.role);
+    assertLabOperateRole(activeUser);
 
     const order = await prisma.labOrder.findUnique({ where: { id: labOrderId } });
     if (!order) throw new Error("Demande d'analyse introuvable.");
@@ -789,7 +789,7 @@ export async function updateLabOrderStatus(labOrderId: string, status: "PRESCRIB
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabOperateRole(activeUser.role);
+    assertLabOperateRole(activeUser);
 
     const existing = await prisma.labOrder.findUnique({ where: { id: labOrderId } });
     if (!existing) throw new Error("Demande d'analyse introuvable.");
@@ -822,7 +822,7 @@ export async function listLabTests(organizationId?: string, options?: { page?: n
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
-    assertLabReadRole(activeUser.role);
+    assertLabReadRole(activeUser);
 
     const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
     const where: any = { isActive: true };
@@ -1019,7 +1019,7 @@ export async function analyzeLabResults(labOrderId: string) {
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "LABORATOIRE");
     assertUserModule(activeUser, "IA");
-    assertLabAiRole(activeUser.role);
+    assertLabAiRole(activeUser);
 
     const order = await prisma.labOrder.findUnique({
       where: { id: labOrderId },

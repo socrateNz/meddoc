@@ -106,25 +106,6 @@ export async function setClinicActive(id: string, isActive: boolean) {
   }
 }
 
-// Le coordinateur décide si le pharmacien de sa clinique peut aussi tenir la caisse (cf.
-// src/actions/register-permissions.ts). Décision de supervision : coordinateur de la clinique
-// uniquement, pas l'admin de holding (lecture seule sur les réglages de la clinique).
-export async function setPharmacistRegisterAccess(clinicId: string, allowed: boolean) {
-  try {
-    z.object({ clinicId: z.string().min(1), allowed: z.boolean() }).parse({ clinicId, allowed });
-    const user = await getCurrentUser();
-    if (!user || !can(user, "clinic.configure") || user.organizationId !== clinicId) {
-      throw new Error("Non autorisé. Seul le coordinateur de la clinique peut modifier ce réglage.");
-    }
-    await prisma.organization.update({ where: { id: clinicId }, data: { pharmacistCanUseRegister: allowed } });
-    await logAuditAction(user.id, "SET_PHARMACIST_REGISTER_ACCESS", "Organization", clinicId, { allowed });
-    revalidatePath(`/dashboard/clinics/${clinicId}`, "layout");
-    return { success: true as const };
-  } catch (error: any) {
-    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'enregistrement du réglage.") };
-  }
-}
-
 // Quand la consultation est facturée : à la clôture par le médecin (défaut) ou dès l'arrivée, le
 // patient payant à la caisse avant de voir le médecin. Coordinateur de la clinique uniquement.
 export async function setConsultationBilling(clinicId: string, mode: "ON_CLOSE" | "ON_ARRIVAL") {

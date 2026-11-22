@@ -1,4 +1,4 @@
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 // Ronde médicale : constantes et règles partagées par le serveur et l'interface (ce module n'est pas
 // un module serveur : il peut être importé par les composants et par les actions).
 
@@ -23,7 +23,7 @@ export const ROUND_MAX_TEXT_LENGTH = 2000;
 // Fuseau de l'établissement : le jour de la ronde est celui de la clinique, pas celui du serveur.
 export const CLINIC_TIME_ZONE = "Africa/Douala";
 
-export function canRunRound(role: string): boolean {
+export function canRunRound(role: PermissionSubject): boolean {
   return can(role, "rounds.run");
 }
 

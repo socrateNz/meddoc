@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { prisma } from "./db";
 import { canSeePatientService, restrictedServiceIds } from "./service-access";
+import { effectivePermissions, type PermissionUser } from "./permissions-server";
+import { encodePermissions } from "./permissions-catalog";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -21,6 +23,41 @@ export function signJwt(payload: any, options: jwt.SignOptions = { expiresIn: "1
 
 export function signRefreshToken(payload: any, options: jwt.SignOptions = { expiresIn: "7d" }) {
   return jwt.sign(payload, REFRESH_SECRET, options);
+}
+
+// Contenu des jetons de session. `pb` : permissions effectives encodées (cf. encodePermissions),
+// lues par le middleware (Edge, sans base) pour ouvrir ou non une page.
+export function sessionPayload(
+  user: { id: string; email: string; role: string; organizationId?: string | null; organization?: { type?: string | null } | null },
+  permissions: Iterable<string>
+) {
+  return {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    organizationId: user.organizationId,
+    organizationType: user.organization?.type,
+    pb: encodePermissions(permissions),
+  };
+}
+
+const cookieBase = { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, path: "/" };
+
+// Les permissions d'un membre ont changé depuis l'émission de son jeton (rôle ajusté par le
+// coordinateur, rôle additionnel attribué ou retiré...) : ré-émet ses deux jetons avec les
+// permissions à jour. Appelée par le battement de présence (cf. heartbeat), donc dans une action
+// serveur — seul endroit, avec les routes, où les cookies sont modifiables. Renvoie vrai si les
+// jetons ont été ré-émis (la page doit alors se rafraîchir).
+export async function syncSessionPermissions(user: Parameters<typeof sessionPayload>[0] & { permissions: readonly string[] }): Promise<boolean> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("token")?.value;
+  if (!token) return false;
+  const current = verifyJwt(token) as { pb?: string } | null;
+  const payload = sessionPayload(user, user.permissions);
+  if (!current || current.pb === payload.pb) return false;
+  cookieStore.set({ name: "token", value: signJwt(payload, { expiresIn: "15m" }), maxAge: 60 * 15, ...cookieBase });
+  cookieStore.set({ name: "refreshToken", value: signRefreshToken(payload, { expiresIn: "7d" }), maxAge: 60 * 60 * 24 * 7, ...cookieBase });
+  return true;
 }
 
 export function verifyJwt(token: string) {
@@ -69,6 +106,8 @@ export const getCurrentUser = cache(async function getCurrentUser() {
         mutedNotificationTypes: true,
         // Services de rattachement (cloisonnement des dossiers, cf. src/lib/service-access.ts).
         serviceIds: true,
+        // Rôles additionnels attribués par la clinique (cf. src/lib/permissions-server.ts).
+        extraRoleIds: true,
         organizationId: true,
         organization: {
           select: {
@@ -79,7 +118,8 @@ export const getCurrentUser = cache(async function getCurrentUser() {
             licenseExpiresAt: true,
             // Modules de la licence (cf. src/lib/modules.ts) : portés par la holding.
             disabledModules: true,
-            // Le pharmacien peut-il tenir la caisse (cf. src/lib/register-access.ts) ?
+            // Ancien réglage « le pharmacien peut tenir la caisse », encore lu par
+            // effectivePermissions tant que la clinique n'a pas ajusté le rôle PHARMACIST.
             pharmacistCanUseRegister: true,
             parent: {
               select: {
@@ -109,7 +149,11 @@ export const getCurrentUser = cache(async function getCurrentUser() {
       }
     }
 
-    return user;
+    if (!user) return null;
+    // Permissions effectives (rôle ajusté par la clinique, rôles additionnels) : lues par can()
+    // dans toutes les actions, pages et API (cf. src/lib/permissions-catalog.ts).
+    const permissions: string[] = await effectivePermissions(user as PermissionUser);
+    return { ...user, permissions };
   } catch (error) {
     return null;
   }

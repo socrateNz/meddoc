@@ -11,7 +11,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
 import { MAX_PAGE_SIZE, resolvePage } from "@/lib/pagination";
-import { requirePermission } from "@/lib/permissions";
 import { assertItemPurchasable } from "@/lib/pharmacy-sale-block";
 import { applyLotConsumption, groupIdsByValue, planLotConsumption, setField } from "@/lib/stock-batch";
 import { buildInventoryReport } from "@/lib/inventory-report";
@@ -55,7 +54,6 @@ export async function assertStockWrite(activeUser: any) {
   if (!can(activeUser, "stock.write")) {
     throw new Error("Non autorisé. Réservé aux coordinateurs et pharmaciens.");
   }
-  await requirePermission(activeUser.role, "MANAGE_STOCK");
 }
 
 /**

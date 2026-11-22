@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, syncSessionPermissions } from "@/lib/auth";
 import { toErrorMessage } from "@/lib/utils";
 import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { sendMessageSchema, createConversationSchema, createChannelSchema } from "@/validators/messages";
@@ -216,7 +216,10 @@ export async function heartbeat() {
     const currentUser = await getCurrentUser();
     if (!currentUser) return { success: false, error: "Non authentifié." };
     await prisma.user.update({ where: { id: currentUser.id }, data: { lastActiveAt: new Date() } });
-    return { success: true };
+    // Permissions modifiées depuis la connexion (rôle ajusté par le coordinateur...) : jetons
+    // ré-émis, et le navigateur rafraîchit la page (cf. PresenceHeartbeat).
+    const permissionsChanged = await syncSessionPermissions(currentUser);
+    return { success: true, permissionsChanged };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur de présence.") };
   }

@@ -1,6 +1,6 @@
 "use server";
 
-import { assertCan, can } from "@/lib/permissions-catalog";
+import { assertCan, can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
@@ -27,7 +27,7 @@ import { billStayToDate, closeOpenSegment } from "@/lib/hospital-stay-db";
 // La prise en charge clinique (créer/modifier un patient, un dossier ou un incident) est réservée
 // au personnel opérationnel de la clinique — ADMIN (holding) et PHARMACIST restent en lecture seule.
 
-function assertClinicalWriteAccess(role: string) {
+function assertClinicalWriteAccess(role: PermissionSubject) {
   if (!can(role, "records.write")) {
     throw new Error("Non autorisé. Seuls un coordinateur, un médecin ou un infirmier(e) peuvent effectuer cette action.");
   }
@@ -229,7 +229,7 @@ async function createMedicalRecordOnce(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -278,7 +278,7 @@ export async function listMedicalRecords(options?: { patientId?: string; created
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const where: any = {};
     if (options?.patientId) where.patientId = options.patientId;
@@ -334,7 +334,7 @@ async function createIncidentOnce(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -399,7 +399,7 @@ export async function updateIncidentStatus(incidentId: string, status: IncidentS
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     // Verify incident belongs to a patient the user can access
     const existingIncident = await prisma.incident.findUnique({ where: { id: incidentId } });

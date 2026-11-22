@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Handshake } from "lucide-react";
@@ -60,7 +61,7 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
   const partnerId = typeof query.partenaire === "string" ? query.partenaire : partners[0]?.id;
   const statementRes = partnerId ? await getPartnerStatement({ partnerId, month }) : null;
   // Enregistrer un règlement : coordinateur et comptable de la clinique (l'admin de holding consulte).
-  const canSettle = ["COORDINATOR", "COMPTABLE"].includes(user.role) && user.organizationId === clinicId;
+  const canSettle = can(user, "partners.settle") && user.organizationId === clinicId;
   // Caisses ouvertes de la clinique (règlement en espèces).
   const openSessions = canSettle
     ? (
@@ -82,7 +83,7 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">
           Examens réalisés pour chaque clinique partenaire, au prix figé à la demande.{" "}
-          {user.role === "COORDINATOR" || user.role === "ADMIN" ? (
+          {can(user, "partners.manage") || can(user, "clinic.configure") || user.role === "ADMIN" ? (
             <Link href={`/dashboard/clinics/${clinicId}/settings#partenaires`} className="font-semibold text-violet-600 hover:underline dark:text-violet-400">
               Gérer les partenaires et leurs tarifs →
             </Link>
@@ -97,7 +98,7 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
       ) : partners.length === 0 ? (
         <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
           Aucun partenaire.{" "}
-          {user.role === "COORDINATOR" ? (
+          {can(user, "partners.manage") ? (
             <Link href={`/dashboard/clinics/${clinicId}/settings#partenaires`} className="font-semibold text-violet-600 hover:underline dark:text-violet-400">
               Ajouter un partenaire →
             </Link>
@@ -179,7 +180,7 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
                   month={month}
                   balance={statementRes.data.balance}
                   openSessions={openSessions}
-                  canCash={user.role === "COORDINATOR"}
+                  canCash={can(user, "partners.settle.cash")}
                 />
               )}
 

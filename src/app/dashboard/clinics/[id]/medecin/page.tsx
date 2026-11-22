@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -53,7 +54,7 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
   const hasLab = modulesOfUser(currentUser).includes("LABORATOIRE");
   // Défense en profondeur : le middleware (restrictedSections.medecin) gate déjà cette route,
   // ce contrôle évite juste qu'un autre rôle clinique atterrisse ici via un lien direct.
-  if (currentUser.role !== "MEDECIN") {
+  if (!can(currentUser, "dashboard.doctor")) {
     redirect(`/dashboard/clinics/${clinicId}`);
   }
 

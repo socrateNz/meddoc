@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -26,7 +27,8 @@ export default async function ImageriePage({ params, searchParams }: ImageriePag
   if (!activeUser) redirect("/login");
 
   const status = typeof query.status === "string" && FILTERS.includes(query.status) ? query.status : "ALL";
-  const showCatalog = query.tab === "catalogue" && activeUser.role === "COORDINATOR";
+  const canCatalog = can(activeUser, "imaging.catalog");
+  const showCatalog = query.tab === "catalogue" && canCatalog;
 
   const [ordersRes, examsRes] = await Promise.all([
     listRadiologyOrders({ clinicId, status, page: pageFromParam(query.page) }),
@@ -54,7 +56,7 @@ export default async function ImageriePage({ params, searchParams }: ImageriePag
             </Link>
           ))}
         </div>
-        {activeUser.role === "COORDINATOR" && (
+        {canCatalog && (
           <Link href={`${basePath}?tab=catalogue`} className={`${tabClass(showCatalog)} border border-slate-200 dark:border-slate-800`}>
             Catalogue des examens
           </Link>

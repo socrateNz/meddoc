@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { prisma } from "@/lib/db";
 import { resolveTargetOrgId } from "@/lib/org-scope";
@@ -34,7 +34,7 @@ const NON_CASH_METHODS = PAYMENT_METHODS.filter((m) => m !== "CASH");
 // (pas "use server") car ce fichier-ci ne peut exporter que des fonctions async — voir ce
 // module pour le détail ; aussi partagés avec finance.ts (ex: liste des tickets impayés).
 
-function assertRegisterStructureRole(role: string) {
+function assertRegisterStructureRole(role: PermissionSubject) {
   if (!can(role, "register.structure")) throw new Error("Non autorisé. Réservé aux coordinateurs.");
 }
 
@@ -55,7 +55,7 @@ export async function listRegistersWithStatus(clinicId: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterReadRole(activeUser.role);
+    assertRegisterReadRole(activeUser);
     await assertClinicScope(clinicId, activeUser);
 
     const registers = await prisma.cashRegister.findMany({
@@ -88,7 +88,7 @@ export async function createRegister(data: { organizationId: string; name: strin
     createRegisterSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterStructureRole(activeUser.role);
+    assertRegisterStructureRole(activeUser);
     await assertClinicScope(data.organizationId, activeUser);
 
     const register = await prisma.cashRegister.create({
@@ -107,7 +107,7 @@ export async function deactivateRegister(id: string) {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterStructureRole(activeUser.role);
+    assertRegisterStructureRole(activeUser);
 
     const existing = await prisma.cashRegister.findUnique({ where: { id } });
     if (!existing) throw new Error("Caisse introuvable.");
@@ -203,7 +203,7 @@ export async function correctOpeningFloat(data: { sessionId: string; newOpeningF
 
     const transactionCount = await prisma.financialTransaction.count({ where: { cashSessionId: data.sessionId } });
     if (transactionCount > 0) {
-      assertRegisterStructureRole(activeUser.role);
+      assertRegisterStructureRole(activeUser);
     }
 
     const oldOpeningFloat = session.openingFloat;
@@ -234,7 +234,7 @@ export async function getSessionSummary(sessionId: string, options?: { page?: nu
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterReadRole(activeUser.role);
+    assertRegisterReadRole(activeUser);
 
     const session = await prisma.cashSession.findUnique({
       where: { id: sessionId },
@@ -318,7 +318,7 @@ export async function listCashSessions(organizationId?: string, periodInput?: Pe
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterReadRole(activeUser.role);
+    assertRegisterReadRole(activeUser);
 
     const where: any = {};
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {

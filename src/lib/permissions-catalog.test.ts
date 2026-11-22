@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PERMISSIONS, PERMISSION_KEYS, SECTION_PERMISSIONS, can, canAccessSection, permissionsOf, rolesWith, type Permission } from "./permissions-catalog";
+import { GRANTABLE_PERMISSIONS, PERMISSIONS, PERMISSION_KEYS, SECTION_PERMISSIONS, can, canAccessSection, decodePermissions, encodePermissions, permissionsOf, rolesWith, type Permission } from "./permissions-catalog";
 
 // Passage des rôles codés en dur aux permissions (étape 2) : AUCUN changement de droits. Ces
 // listes figent ce que chaque contrôle acceptait avant la migration ; les permissions par défaut
@@ -28,7 +28,9 @@ const LEGACY_SECTIONS: Record<string, string[]> = {
   comptabilite: ["ADMIN", "COORDINATOR", "COMPTABLE"],
   partenaires: ["ADMIN", "COORDINATOR", "COMPTABLE"],
   contracts: ["ADMIN", "COORDINATOR"],
-  permissions: ["ADMIN"],
+  // Étape 4 : l'ancienne page « Permissions » de la plateforme (réservée à l'ADMIN) est remplacée
+  // par la gestion des rôles de la clinique, réservée au coordinateur.
+  roles: ["COORDINATOR"],
   "audit-log": ["ADMIN"],
   "contact-messages": ["SUPER_ADMIN"],
   holdings: ["SUPER_ADMIN"],
@@ -131,5 +133,31 @@ describe("can", () => {
     expect(can({ role: "COORDINATOR", permissions: [] }, "lab.read")).toBe(false);
     expect(permissionsOf(null).size).toBe(0);
     expect(can("INCONNU", "lab.read")).toBe(false);
+  });
+});
+
+describe("encodePermissions / decodePermissions", () => {
+  it("restitue exactement les permissions encodées", () => {
+    for (const role of ALL_ROLES) {
+      const perms = [...permissionsOf(role)];
+      expect(sorted(decodePermissions(encodePermissions(perms))), role).toEqual(sorted(perms));
+    }
+    expect(decodePermissions(encodePermissions([]))).toEqual([]);
+    expect(sorted(decodePermissions(encodePermissions(PERMISSION_KEYS)))).toEqual(sorted(PERMISSION_KEYS));
+  });
+
+  it("ignore les clés inconnues et tolère un encodage tronqué ou invalide", () => {
+    expect(decodePermissions(encodePermissions(["inconnue", "lab.read"]))).toEqual(["lab.read"]);
+    expect(decodePermissions("")).toEqual([]);
+    expect(decodePermissions("zz")).toEqual([]);
+  });
+});
+
+describe("GRANTABLE_PERMISSIONS", () => {
+  it("exclut la plateforme, l'audit de la holding et la gestion des rôles", () => {
+    expect(GRANTABLE_PERMISSIONS).not.toContain("platform.holdings");
+    expect(GRANTABLE_PERMISSIONS).not.toContain("audit.read");
+    expect(GRANTABLE_PERMISSIONS).not.toContain("roles.manage");
+    expect(GRANTABLE_PERMISSIONS).toContain("lab.validate");
   });
 });

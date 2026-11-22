@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
@@ -16,13 +16,13 @@ import { runInteractionCheck } from "@/actions/prescriptions";
 // (holding) et PHARMACIST restent en lecture seule dans les deux cas. L'accueil prend et déplace les
 // rendez-vous, sans jamais clôturer de consultation.
 
-function assertScheduleAccess(role: string) {
+function assertScheduleAccess(role: PermissionSubject) {
   if (!can(role, "appointments.schedule")) {
     throw new Error("Non autorisé. Seuls le coordinateur, l'accueil, un médecin ou un infirmier(e) peuvent effectuer cette action.");
   }
 }
 
-function assertConsultationWriteAccess(role: string) {
+function assertConsultationWriteAccess(role: PermissionSubject) {
   if (!can(role, "consultation.write")) {
     throw new Error("Non autorisé. Seuls un coordinateur ou un médecin peuvent clôturer une consultation.");
   }
@@ -48,7 +48,7 @@ async function createAppointmentOnce(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertScheduleAccess(activeUser.role);
+    assertScheduleAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -122,7 +122,7 @@ export async function completeConsultation(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertConsultationWriteAccess(activeUser.role);
+    assertConsultationWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) {
@@ -339,7 +339,7 @@ export async function saveConsultationDraft(data: {
     saveConsultationDraftSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertConsultationWriteAccess(activeUser.role);
+    assertConsultationWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -376,7 +376,7 @@ export async function getConsultationDraft(options: { appointmentId?: string; pa
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertConsultationWriteAccess(activeUser.role);
+    assertConsultationWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(options.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -408,7 +408,7 @@ export async function updateAppointment(data: {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertScheduleAccess(activeUser.role);
+    assertScheduleAccess(activeUser);
 
     const existing = await prisma.appointment.findUnique({
       where: { id: data.id },
@@ -477,7 +477,7 @@ export async function updateAppointmentStatus(appointmentId: string, status: str
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertScheduleAccess(activeUser.role);
+    assertScheduleAccess(activeUser);
 
     const existing = await prisma.appointment.findUnique({
       where: { id: appointmentId },
@@ -525,7 +525,7 @@ export async function deleteAppointment(appointmentId: string) {
     if (!activeUser) {
       throw new Error("Non authentifié.");
     }
-    assertScheduleAccess(activeUser.role);
+    assertScheduleAccess(activeUser);
 
     const existing = await prisma.appointment.findUnique({
       where: { id: appointmentId },

@@ -254,14 +254,17 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     redirect("/dashboard");
   }
 
-  // MEDECIN a son propre tableau de bord dédié (consultations du jour, labo, prescriptions,
-  // notes) — le "Tableau de bord" générique de la clinique reste conçu pour les autres rôles.
-  if (user.role === "MEDECIN") {
-    redirect(`/dashboard/clinics/${params.id}/medecin`);
-  }
-  // Le comptable n'a pas de tableau de bord clinique (données médicales) : sa page est la comptabilité.
-  if (user.role === "COMPTABLE") {
-    redirect(`/dashboard/clinics/${params.id}/comptabilite`);
+  // Médecin (son propre tableau de bord), comptable, accueil, laborantin : le middleware les envoie
+  // sur leur page. Arrivés ici, leur rôle — ajusté par la clinique — n'y donne plus accès : pas de
+  // redirection (elle bouclerait avec celle du middleware), ni des statistiques médicales et
+  // financières de la clinique, qui ne sont pas pour eux.
+  if (["MEDECIN", "COMPTABLE", "ACCUEIL", "LABORANTIN"].includes(user.role)) {
+    return (
+      <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white/60 p-8 text-center dark:border-slate-800 dark:bg-slate-900/50">
+        <h1 className="text-xl font-semibold">Bienvenue</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Utilisez le menu pour ouvrir les pages de votre rôle.</p>
+      </div>
+    );
   }
 
   // ADMIN (holding)/SUPER_ADMIN : consultation en lecture seule. COORDINATOR : administre

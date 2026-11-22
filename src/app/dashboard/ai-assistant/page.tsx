@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -11,7 +12,7 @@ export default async function AIAssistantPage() {
   }
 
   // Assistance clinique IA : autorité diagnostique (COORDINATOR/MEDECIN), ADMIN en lecture seule.
-  if (!["ADMIN", "COORDINATOR", "MEDECIN"].includes(currentUser.role)) {
+  if (!can(currentUser, "ai.use")) {
     redirect("/dashboard");
   }
 

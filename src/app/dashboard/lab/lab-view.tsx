@@ -1,5 +1,6 @@
 "use client";
 
+import { useCan } from "@/components/permissions-provider";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PaginationNav } from "@/components/ui/pagination-nav";
@@ -83,7 +84,7 @@ interface LabViewProps {
   benches?: string[];
 }
 
-export default function LabView({ labOrders, total, page, pageSize, stats, query, pathname, patients, currentUserRole, organizationId, partners = [], benches = [] }: LabViewProps) {
+export default function LabView({ labOrders, total, page, pageSize, stats, query, pathname, patients, organizationId, partners = [], benches = [] }: LabViewProps) {
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const router = useRouter();
   // Recherche et filtre « urgences » sont dans l'URL : chaque requête part au serveur, qui filtre
@@ -108,8 +109,9 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
     searchTimer.current = setTimeout(() => navigate({ q: value.trim() || undefined }), 300);
   };
 
-  const canWrite = currentUserRole !== "ADMIN";
-  const isCoordinator = currentUserRole === "COORDINATOR";
+  const canOrder = useCan("lab.order");
+  const canOrderForPartner = useCan("lab.order.partner");
+  const canCatalog = useCan("lab.catalog");
 
   // La page affichée est déjà filtrée par le serveur.
   const filteredOrders = labOrders;
@@ -258,7 +260,7 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
           )}
 
           {/* Catalog link */}
-          {isCoordinator && (
+          {canCatalog && (
             <Link href="/dashboard/lab/catalog">
               <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs rounded-xl border-border/70">
                 <Settings className="h-3.5 w-3.5" />
@@ -269,8 +271,8 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
 
           {/* New lab order button */}
           {/* Le laborantin n'enregistre que les examens externes des partenaires (prescription extérieure). */}
-          {canWrite && (currentUserRole !== "LABORANTIN" || partners.length > 0) && (
-            <NewLabOrderDialog patients={patients} organizationId={organizationId} partners={partners} partnerOnly={currentUserRole === "LABORANTIN"} />
+          {(canOrder || (canOrderForPartner && partners.length > 0)) && (
+            <NewLabOrderDialog patients={patients} organizationId={organizationId} partners={partners} partnerOnly={!canOrder} />
           )}
 
           {/* View mode toggle */}

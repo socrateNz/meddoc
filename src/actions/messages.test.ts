@@ -310,7 +310,7 @@ describe("heartbeat", () => {
   });
 
   it("met à jour lastActiveAt de l'utilisateur courant", async () => {
-    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorOrg1) }));
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorOrg1), syncSessionPermissions: vi.fn(async () => false) }));
     const update = vi.fn(async () => ({}));
     vi.doMock("@/lib/db", () => ({ prisma: { user: { update } } }));
     const { heartbeat } = await import("./messages");
@@ -319,6 +319,18 @@ describe("heartbeat", () => {
 
     expect(result.success).toBe(true);
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "coord1" } }));
+  });
+
+  it("signale un changement de permissions (jetons ré-émis) pour rafraîchir la page", async () => {
+    const syncSessionPermissions = vi.fn(async () => true);
+    vi.doMock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => coordinatorOrg1), syncSessionPermissions }));
+    vi.doMock("@/lib/db", () => ({ prisma: { user: { update: vi.fn(async () => ({})) } } }));
+    const { heartbeat } = await import("./messages");
+
+    const result = await heartbeat();
+
+    expect(result).toEqual({ success: true, permissionsChanged: true });
+    expect(syncSessionPermissions).toHaveBeenCalledWith(coordinatorOrg1);
   });
 
   it("ne fait aucune écriture si non authentifié", async () => {

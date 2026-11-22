@@ -14,6 +14,7 @@ import { getClinics } from "@/actions/organizations";
 import { PaginationNav, keepQuery } from "@/components/ui/pagination-nav";
 import { pageFromParam, resolvePage } from "@/lib/pagination";
 import { ALL_STAFF_ROLES, STAFF_ROLE_LABELS } from "@/lib/staff-roles";
+import { can } from "@/lib/permissions-catalog";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -36,7 +37,10 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
     organizationId: clinicId,
     role: { in: [...ALL_STAFF_ROLES] as Role[] },
   };
-  const [members, total, clinicsRes, services] = await Promise.all([
+  // Rôles propres à la clinique (cf. ClinicRole) : affichés sur chaque fiche, attribuables par le
+  // coordinateur qui gère les rôles.
+  const canAssignRoles = can(currentUser, "roles.manage") && currentUser.organizationId === clinicId;
+  const [members, total, clinicsRes, services, customRoles] = await Promise.all([
     prisma.user.findMany({
       where: clinicMembers,
       include: {
@@ -69,7 +73,13 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
     prisma.user.count({ where: clinicMembers }),
     isHoldingAdmin ? getClinics() : Promise.resolve(null),
     prisma.clinicService.findMany({ where: { organizationId: clinicId }, select: { id: true, name: true } }),
+    prisma.clinicRole.findMany({
+      where: { organizationId: clinicId, OR: [{ baseRole: null }, { baseRole: { isSet: false } }] },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
+  const roleNameById = new Map(customRoles.map((r) => [r.id, r.name]));
   const serviceNameById = new Map(services.map((s) => [s.id, s.name]));
 
   let clinics: { id: string; name: string }[] = [];
@@ -129,6 +139,7 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
                         holdingId={currentUser.organizationId || ""}
                         clinics={clinics}
                         currentUserRole={currentUser.role}
+                        assignableRoles={canAssignRoles ? customRoles : undefined}
                       />
                     )}
                   </div>
@@ -146,6 +157,13 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
                 <p className="text-xs text-muted-foreground mt-1 font-medium">
                   @ {member.organization?.name || "Siège (Holding)"}
                 </p>
+                {(member.extraRoleIds ?? []).some((id: string) => roleNameById.has(id)) && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {(member.extraRoleIds as string[]).filter((id) => roleNameById.has(id)).map((id) => (
+                      <Badge key={id} variant="outline" className="text-[11px]">+ {roleNameById.get(id)}</Badge>
+                    ))}
+                  </div>
+                )}
                 {["MEDECIN", "CAREGIVER"].includes(member.role) && serviceNameById.size > 0 && (
                   <p className="text-xs mt-1 font-medium text-slate-600 dark:text-slate-300">
                     {member.serviceIds?.length

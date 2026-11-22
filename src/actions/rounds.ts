@@ -15,7 +15,7 @@ async function requireRoundUser(clinicId: string) {
   const activeUser = await getCurrentUser();
   if (!activeUser) throw new Error("Non authentifié.");
   assertUserModule(activeUser, "HOSPITALISATION");
-  if (!canRunRound(activeUser.role)) {
+  if (!canRunRound(activeUser)) {
     throw new Error("Non autorisé. La ronde est réservée à l'équipe médicale.");
   }
   await assertClinicScope(clinicId, activeUser);

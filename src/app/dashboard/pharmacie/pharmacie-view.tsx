@@ -1,5 +1,6 @@
 "use client";
 
+import { useCan } from "@/components/permissions-provider";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PaginationNav } from "@/components/ui/pagination-nav";
@@ -87,7 +88,6 @@ export default function PharmacieView({
   queueQuery,
   historyQuery,
   organizationId,
-  currentUserRole,
   openRegisters = [],
 }: PharmacieViewProps) {
   const router = useRouter();
@@ -128,17 +128,17 @@ export default function PharmacieView({
   };
 
   // ADMIN (holding) consulte le stock en lecture seule ; COORDINATOR/PHARMACIST gèrent le catalogue.
-  const canWrite = currentUserRole === "COORDINATOR" || currentUserRole === "PHARMACIST";
+  const canWrite = useCan("stock.write");
   // Remise physique des médicaments : réservée au PHARMACIST, plus strict que canWrite — même
   // séparation que côté serveur (dispensePendingInvoice).
-  const canDispense = currentUserRole === "PHARMACIST";
+  const canDispense = useCan("pharmacy.dispense");
   // Annulation d'une remise (correction si le pharmacien s'est trompé) : réservée au
   // COORDINATOR, séparation des rôles voulue — même logique que côté serveur (cancelDispense),
   // celui qui remet ne peut pas se corriger lui-même sans supervision.
-  const canCancelDispense = currentUserRole === "COORDINATOR";
+  const canCancelDispense = useCan("pharmacy.dispense.cancel");
   // Décisions de supervision réservées au coordinateur, comme côté serveur : bloquer/débloquer la
   // vente d'un médicament (setPharmacyItemSaleBlock) et annuler un achat (cancelStockPurchase).
-  const isCoordinator = currentUserRole === "COORDINATOR";
+  const isCoordinator = useCan("stock.supervise");
 
   const now = new Date();
 

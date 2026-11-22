@@ -31,18 +31,13 @@ describe("accès par section", () => {
   });
 });
 
-describe("caisse du pharmacien", () => {
-  const pharmacist = (pharmacistCanUseRegister?: boolean | null) => ({ role: "PHARMACIST", organization: { pharmacistCanUseRegister } });
-
-  it("autorisée par défaut (clinique existante, réglage absent)", () => {
-    expect(canOperateRegister(pharmacist(null))).toBe(true);
-    expect(canOperateRegister(pharmacist(undefined))).toBe(true);
-  });
-
-  it("refusée quand le coordinateur l'a désactivée, sans toucher au caissier", () => {
-    expect(canOperateRegister(pharmacist(false))).toBe(false);
-    expect(() => assertRegisterOperateRole(pharmacist(false))).toThrow(/coordinateur n'a pas autorisé/);
-    expect(canOperateRegister({ role: "CASHIER", organization: { pharmacistCanUseRegister: false } })).toBe(true);
+describe("caisse", () => {
+  it("se déduit des permissions effectives (rôle ajusté par la clinique)", () => {
+    expect(canOperateRegister({ role: "PHARMACIST" })).toBe(true);
+    expect(canOperateRegister({ role: "CASHIER" })).toBe(true);
+    // Pharmacien dont la clinique a retiré la caisse (cf. src/lib/permissions-server.ts).
+    expect(canOperateRegister({ role: "PHARMACIST", permissions: ["pharmacy.access"] })).toBe(false);
+    expect(() => assertRegisterOperateRole({ role: "PHARMACIST", permissions: [] })).toThrow(/tenir la caisse/);
   });
 
   it("jamais pour un rôle hors caisse", () => {

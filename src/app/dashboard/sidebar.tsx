@@ -53,7 +53,9 @@ interface SidebarProps {
     phone: string | null;
     avatarUrl: string | null;
     organizationId?: string | null;
-    organization?: { type: string; pharmacistCanUseRegister?: boolean | null } | null;
+    organization?: { type: string } | null;
+    // Permissions effectives (cf. src/lib/permissions-server.ts), lues par can().
+    permissions?: string[];
   } | null;
   unreadCounts: {
     total: number;
@@ -307,6 +309,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         section: "Administration",
       },
       {
+        // Ce que chaque rôle peut faire, rôles propres à la clinique (cf. ClinicRole).
+        name: "Rôles et permissions",
+        href: `/dashboard/clinics/${activeClinicId}/roles`,
+        icon: ShieldCheck,
+        permission: SECTION_PERMISSIONS.roles,
+        section: "Administration",
+      },
+      {
         name: "Journal d'audit",
         href: `/dashboard/clinics/${activeClinicId}/audit-log`,
         icon: ScrollText,
@@ -412,13 +422,6 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       }
     ] : []),
     {
-      name: "Permissions",
-      href: "/dashboard/permissions",
-      icon: ShieldCheck,
-      permission: SECTION_PERMISSIONS.permissions,
-      section: "Administration",
-    },
-    {
       name: "Toutes les Holdings",
       href: "/dashboard/holdings",
       icon: Server,
@@ -504,8 +507,6 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       if (!currentUser) return !item.roles;
       if (item.roles && !item.roles.includes(currentUser.role)) return false;
       if (item.permission && !can(currentUser, item.permission)) return false;
-      // Caisse du pharmacien : seulement si le coordinateur l'y autorise (cf. register-access.ts).
-      if (item.href.endsWith("/caisse") && currentUser.role === "PHARMACIST" && currentUser.organization?.pharmacistCanUseRegister === false) return false;
       // Module hors licence de l'établissement (cf. src/lib/modules.ts) : entrée masquée.
       if (item.module && !enabledModules.includes(item.module)) return false;
       if (item.isHoldingOnly && currentUser.organization?.type !== 'HOLDING') return false;

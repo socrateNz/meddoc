@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -35,7 +36,8 @@ export default async function BlocPage({ params, searchParams }: BlocPageProps) 
 
   const today = clinicDateKey();
   const date = typeof query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(query.date) ? query.date : today;
-  const showRooms = query.tab === "salles" && activeUser.role === "COORDINATOR";
+  const canRooms = can(activeUser, "surgery.rooms");
+  const showRooms = query.tab === "salles" && canRooms;
   const basePath = `/dashboard/clinics/${clinicId}/bloc`;
 
   const [dayRes, roomsRes] = await Promise.all([
@@ -63,7 +65,7 @@ export default async function BlocPage({ params, searchParams }: BlocPageProps) 
           <Link href={`${basePath}?date=${date}`} className={tabClass(!showRooms)}>
             Programme
           </Link>
-          {activeUser.role === "COORDINATOR" && (
+          {canRooms && (
             <Link href={`${basePath}?tab=salles`} className={tabClass(showRooms)}>
               Salles
             </Link>

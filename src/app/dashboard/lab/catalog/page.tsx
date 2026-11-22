@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -22,7 +23,7 @@ export default async function LabCatalogPage({ searchParams }: LabCatalogPagePro
   if (!currentUser) {
     redirect("/login");
   }
-  if (currentUser.role !== "COORDINATOR") {
+  if (!can(currentUser, "lab.catalog")) {
     redirect("/dashboard/lab");
   }
 

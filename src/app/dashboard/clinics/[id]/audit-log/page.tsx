@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { getAuditLogs } from "@/actions/audit";
@@ -20,7 +21,7 @@ export default async function ClinicAuditLogPage({ params, searchParams }: Clini
   if (!currentUser) {
     redirect("/login");
   }
-  if (currentUser.role !== "ADMIN") {
+  if (!can(currentUser, "audit.read")) {
     redirect(`/dashboard/clinics/${clinicId}`);
   }
 

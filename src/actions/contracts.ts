@@ -8,7 +8,6 @@ import { resolveTargetOrgId } from "@/lib/org-scope";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
 import { toErrorMessage } from "@/lib/utils";
-import { requirePermission } from "@/lib/permissions";
 import { resolvePage } from "@/lib/pagination";
 import { createContractSchema, updateContractStatusSchema } from "@/validators/contracts";
 import { revalidatePath } from "next/cache";
@@ -31,7 +30,6 @@ async function assertContractWrite(activeUser: any) {
   if (!can(activeUser, "contracts.write")) {
     throw new Error("Non autorisé. Réservé aux coordinateurs.");
   }
-  await requirePermission(activeUser.role, "MANAGE_CONTRACTS");
 }
 
 export async function listContracts(organizationId?: string, options?: { page?: number; pageSize?: number }) {

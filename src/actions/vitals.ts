@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
@@ -13,7 +13,7 @@ import { revalidatePath } from "next/cache";
 
 // Même périmètre que "records.write" dans src/actions/patients.ts — enregistrer une
 // constante est un geste clinique, réservé au personnel opérationnel de la clinique.
-function assertClinicalWriteAccess(role: string) {
+function assertClinicalWriteAccess(role: PermissionSubject) {
   if (!can(role, "records.write")) {
     throw new Error("Non autorisé. Réservé au personnel clinique (coordinateur, médecin ou infirmier(e)).");
   }
@@ -42,7 +42,7 @@ async function recordVitalSignOnce(data: RecordVitalSignInput) {
     recordVitalSignSchema.parse(data);
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertClinicalWriteAccess(activeUser.role);
+    assertClinicalWriteAccess(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé.");

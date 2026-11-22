@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { heartbeat } from "@/actions/messages";
 
 // Battement de présence "en ligne" pour la messagerie (cf. indicateur de statut en direct des
@@ -15,7 +16,11 @@ import { heartbeat } from "@/actions/messages";
 // instantané.
 const HEARTBEAT_INTERVAL_MS = 45_000;
 
+// Le même battement resynchronise les permissions : si le coordinateur a modifié le rôle de
+// l'utilisateur, le serveur ré-émet ses jetons (cf. syncSessionPermissions) et la page est
+// rafraîchie pour afficher le menu et les boutons à jour.
 export default function PresenceHeartbeat() {
+  const router = useRouter();
   useEffect(() => {
     let cancelled = false;
 
@@ -24,7 +29,9 @@ export default function PresenceHeartbeat() {
       // sera de toute façon pas celui que l'utilisateur regarde — économise des écritures Mongo
       // sans changer le statut perçu (le seuil de 2 min laisse largement le temps de revenir).
       if (cancelled || document.hidden) return;
-      heartbeat().catch(() => {
+      heartbeat().then((res) => {
+        if (!cancelled && res.success && "permissionsChanged" in res && res.permissionsChanged) router.refresh();
+      }).catch(() => {
         // Le statut de présence n'est qu'un confort d'interface — une erreur réseau ponctuelle ne
         // doit jamais remonter à l'utilisateur ni interrompre le battement suivant.
       });
@@ -39,7 +46,7 @@ export default function PresenceHeartbeat() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", beat);
     };
-  }, []);
+  }, [router]);
 
   return null;
 }

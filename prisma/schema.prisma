@@ -133,6 +133,8 @@ model Organization {
   clinicServices        ClinicService[]
   // Cliniques partenaires qui font réaliser leurs examens ici (cf. Partner).
   partners              Partner[]
+  // Rôles ajustés ou créés par la clinique (cf. ClinicRole).
+  clinicRoles           ClinicRole[]
 
   plan               SubscriptionPlan   @default(TRIAL)
   subscriptionStatus SubscriptionStatus @default(TRIALING)
@@ -147,9 +149,9 @@ model Organization {
   // héritent des modules de leur holding.
   disabledModules String[] @default([])
 
-  // Le pharmacien peut-il aussi tenir la caisse (ouvrir/fermer une session, encaisser) ? Réglé par
-  // le coordinateur de la clinique (cf. src/lib/register-access.ts). Absent = oui : comportement
-  // historique, aucune migration nécessaire. Faux = séparation stricte caisse / pharmacie.
+  // ANCIEN réglage « le pharmacien peut tenir la caisse » (faux = non), remplacé par les rôles
+  // modifiables (ClinicRole) : encore lu tant que la clinique n'a pas ajusté le rôle PHARMACIST
+  // (cf. src/lib/permissions-server.ts), plus modifiable.
   pharmacistCanUseRegister Boolean?
   // Facturation de la consultation : ON_CLOSE (à la clôture par le médecin, défaut historique)
   // ou ON_ARRIVAL (ticket de caisse dès l'orientation à l'accueil, payé avant de voir le médecin).
@@ -251,6 +253,9 @@ model User {
   // src/lib/service-access.ts). Vide = tous les services : comportement historique, et toujours le
   // cas du coordinateur et de la direction. Restreint ce que voient médecins et infirmiers.
   serviceIds          String[]       @default([]) @db.ObjectId
+  // Rôles de la clinique attribués EN PLUS du rôle principal (ClinicRole sans baseRole) : leurs
+  // permissions s'ajoutent à celles du rôle (cf. src/lib/permissions-server.ts).
+  extraRoleIds        String[]       @default([]) @db.ObjectId
   organization        Organization?  @relation(fields: [organizationId], references: [id])
   roundsStarted       RoundSession[] @relation("RoundStartedBy")
   roundsClosed        RoundSession[] @relation("RoundClosedBy")
@@ -764,11 +769,25 @@ model AuditLog {
   @@index([entityType, entityId])
 }
 
-model Permission {
-  id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  name        String  @unique
-  description String?
-  roles       Role[]
+// Rôle d'une clinique, fait de permissions (cf. src/lib/permissions-catalog.ts) :
+// - baseRole renseigné : la clinique a ajusté ce rôle intégré (MEDECIN, CAISSIER...) ; ses
+//   permissions remplacent celles par défaut pour tous les membres qui ont ce rôle ;
+// - baseRole vide : rôle créé par la clinique (« Major de service », « Secrétaire médicale »...),
+//   attribué EN PLUS du rôle principal d'un membre (User.extraRoleIds).
+// Permissions effectives d'un membre : src/lib/permissions-server.ts.
+model ClinicRole {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId String       @db.ObjectId
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  description    String?
+  baseRole       String?
+  permissions    String[]     @default([])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId, baseRole])
 }
 
 model Notification {

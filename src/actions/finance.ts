@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
@@ -65,19 +65,19 @@ const TICKET_ACCESS_DENIED = "Non autorisé. Ce ticket n'appartient pas à votre
 // pharmacie voulue par cette fonctionnalité, seule dérogation à la convention habituelle de ce
 // module (partout ailleurs, COORDINATOR reste un rôle de secours).
 
-function assertFinanceReadRole(role: string) {
+function assertFinanceReadRole(role: PermissionSubject) {
   if (!can(role, "finance.read")) {
     throw new Error("Non autorisé.");
   }
 }
 
-function assertPharmacyCatalogReadRole(role: string) {
+function assertPharmacyCatalogReadRole(role: PermissionSubject) {
   if (!can(role, "pharmacy.catalog.read")) {
     throw new Error("Non autorisé.");
   }
 }
 
-function assertPharmacyDispenseRole(role: string) {
+function assertPharmacyDispenseRole(role: PermissionSubject) {
   if (!can(role, "pharmacy.dispense")) {
     throw new Error("Non autorisé. Réservé aux pharmacien(ne)s.");
   }
@@ -128,7 +128,7 @@ export async function getPharmacyItems(organizationId?: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "PHARMACIE");
-    assertPharmacyCatalogReadRole(activeUser.role);
+    assertPharmacyCatalogReadRole(activeUser);
 
     const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
 
@@ -1054,7 +1054,7 @@ async function dispensePendingInvoiceOnce(
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "PHARMACIE");
-    assertPharmacyDispenseRole(activeUser.role);
+    assertPharmacyDispenseRole(activeUser);
 
     const pending = await prisma.pendingInvoice.findUnique({
       where: { id: pendingInvoiceId },
@@ -1604,7 +1604,7 @@ export async function getFinanceSummary(organizationId?: string, periodInput?: P
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceReadRole(activeUser.role);
+    assertFinanceReadRole(activeUser);
 
     const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
 
@@ -2004,7 +2004,7 @@ export async function listFinancialTransactions(filters: {
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertFinanceReadRole(activeUser.role);
+    assertFinanceReadRole(activeUser);
     // Valide l'organisation demandée (jamais un identifiant arbitraire) avant de construire le filtre.
     await resolveTargetOrgId(activeUser, filters.organizationId);
 
@@ -2213,7 +2213,7 @@ export async function listPharmacyDispenseQueue(organizationId?: string, options
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "PHARMACIE");
-    assertPharmacyCatalogReadRole(activeUser.role);
+    assertPharmacyCatalogReadRole(activeUser);
 
     const { page, pageSize } = resolvePage(options);
     const orgIds = await scopeOrganizationIds(activeUser, organizationId);
@@ -2239,7 +2239,7 @@ export async function listPharmacyDispenseHistory(organizationId?: string, optio
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "PHARMACIE");
-    assertPharmacyCatalogReadRole(activeUser.role);
+    assertPharmacyCatalogReadRole(activeUser);
 
     const { page, pageSize } = resolvePage(options);
     const orgIds = await scopeOrganizationIds(activeUser, organizationId);
@@ -2275,7 +2275,7 @@ export async function listPendingInvoices(organizationId?: string, options?: { p
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterReadRole(activeUser.role);
+    assertRegisterReadRole(activeUser);
 
     const orgIds = await scopeOrganizationIds(activeUser, organizationId);
     const where = { status: { in: ["PENDING", "PARTIAL"] }, organizationId: { in: orgIds } };
@@ -2333,7 +2333,7 @@ export async function listCaisseHistoryInvoices(
   try {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
-    assertRegisterReadRole(activeUser.role);
+    assertRegisterReadRole(activeUser);
 
     const where: Prisma.PendingInvoiceWhereInput = {};
     if (activeUser.organization?.type === "HOLDING" && !organizationId) {

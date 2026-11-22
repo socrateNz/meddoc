@@ -1,11 +1,13 @@
 // Catalogue des permissions de MedDoc — source unique des droits, pure (sans accès base) : utilisée
 // par le middleware (Edge), le menu, les actions serveur et les API.
 //
-// Chaque permission porte la liste des rôles qui l'ont PAR DÉFAUT (les rôles actuels de MedDoc,
-// tels qu'ils étaient codés en dur dans chaque action). Un contrôle d'accès ne teste plus jamais un
-// rôle, mais une permission : `can(user, "lab.validate")`. Les permissions d'un utilisateur se
-// déduisent aujourd'hui de son rôle ; une clinique pourra ensuite ajuster ses rôles (étape 3) en
-// renseignant `permissions` sur l'utilisateur, sans toucher aux contrôles.
+// Chaque permission porte la liste des rôles qui l'ont PAR DÉFAUT. Un contrôle d'accès ne teste
+// jamais un rôle, mais une permission : `can(user, "lab.validate")`. Chaque clinique peut ajuster
+// ses rôles et en créer d'autres (modèle ClinicRole) ; les permissions EFFECTIVES d'un membre sont
+// calculées par src/lib/permissions-server.ts et portées par getCurrentUser().permissions (et,
+// encodées, par le jeton de session pour le middleware).
+//
+// AJOUTER une permission : toujours en fin de catalogue (cf. encodePermissions).
 //
 // Restent volontairement hors catalogue les contrôles d'IDENTITÉ et de structure, qui ne sont pas
 // des droits délégables : super-admin de la plateforme, admin de holding, hiérarchie de l'équipe
@@ -116,7 +118,6 @@ export const PERMISSIONS = {
   "integrations.read": { group: "Administration", label: "Voir les intégrations (HL7, FHIR)", roles: [...ADMIN_READ, "COORDINATOR"] },
   "integrations.manage": { group: "Administration", label: "Gérer les clés d'intégration", roles: ["COORDINATOR"] },
   "audit.read": { group: "Administration", label: "Journal d'audit", roles: [...ADMIN_READ] },
-  "permissions.manage": { group: "Administration", label: "Permissions de la plateforme", roles: [...ADMIN_READ] },
   "ai.use": { group: "Outils", label: "Assistant clinique IA", roles: [...ADMIN_READ, ...DOCTORS] },
   "ai.analyze": { group: "Outils", label: "Analyse IA d'un dossier", roles: [...ADMIN_READ, ...CLINICAL] },
   "ai.clinical": { group: "Outils", label: "Dictée et rédaction IA de consultation", roles: [...DOCTORS] },
@@ -129,6 +130,10 @@ export const PERMISSIONS = {
   // --- Plateforme (équipe MedDoc) ---
   "platform.holdings": { group: "Plateforme", label: "Gérer les holdings et licences", roles: ["SUPER_ADMIN"] },
   "platform.contact": { group: "Plateforme", label: "Messages de contact du site", roles: ["SUPER_ADMIN"] },
+
+  // --- Ajoutées ensuite : TOUJOURS à la fin (l'ordre du catalogue encode les permissions dans le
+  // jeton de session, cf. encodePermissions) ---
+  "roles.manage": { group: "Administration", label: "Gérer les rôles et leurs permissions", roles: ["COORDINATOR"] },
 } as const satisfies Record<string, PermissionDef>;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -147,8 +152,8 @@ export function rolesWith(permission: Permission): readonly string[] {
   return PERMISSIONS[permission].roles;
 }
 
-// Sujet d'un contrôle : un utilisateur (son rôle, et ses permissions effectives quand la clinique
-// a ajusté ses rôles — étape 3), ou directement un rôle.
+// Sujet d'un contrôle : un utilisateur (son rôle, et ses permissions effectives calculées par
+// src/lib/permissions-server.ts), ou directement un rôle (permissions par défaut).
 export type PermissionSubject = string | { role: string; permissions?: readonly string[] | null } | null | undefined;
 
 export function permissionsOf(subject: PermissionSubject): ReadonlySet<string> {
@@ -196,7 +201,7 @@ export const SECTION_PERMISSIONS: Record<string, Permission> = {
   comptabilite: "accounting.access",
   partenaires: "partners.statements",
   contracts: "contracts.read",
-  permissions: "permissions.manage",
+  roles: "roles.manage",
   "audit-log": "audit.read",
   "contact-messages": "platform.contact",
   holdings: "platform.holdings",
@@ -208,4 +213,46 @@ export const SECTION_PERMISSIONS: Record<string, Permission> = {
 export function canAccessSection(subject: PermissionSubject, section: string): boolean {
   const permission = SECTION_PERMISSIONS[section];
   return !permission || can(subject, permission);
+}
+
+// --- Rôles modifiables par une clinique ------------------------------------------------------
+// Rôles du personnel d'une clinique dont le coordinateur peut changer les permissions. Le
+// coordinateur lui-même n'est pas modifiable (il ne doit pas pouvoir se retirer l'accès).
+export const EDITABLE_CLINIC_ROLES = ["MEDECIN", "CAREGIVER", "ACCUEIL", "LABORANTIN", "PHARMACIST", "CASHIER", "COMPTABLE"] as const;
+
+const CLINIC_STAFF_ROLES: readonly string[] = ["COORDINATOR", ...EDITABLE_CLINIC_ROLES];
+
+// Permissions qu'un rôle de clinique peut recevoir : celles d'au moins un rôle de clinique par
+// défaut (jamais plus que le coordinateur : ni plateforme, ni journal d'audit de la holding), sauf la
+// gestion des rôles, réservée au coordinateur (sinon un rôle pourrait s'attribuer n'importe quoi).
+export const GRANTABLE_PERMISSIONS: readonly Permission[] = PERMISSION_KEYS.filter(
+  (key) => key !== "roles.manage" && PERMISSIONS[key].roles.some((role) => CLINIC_STAFF_ROLES.includes(role))
+);
+
+export function isPermission(value: string): value is Permission {
+  return Object.prototype.hasOwnProperty.call(PERMISSIONS, value);
+}
+
+// --- Encodage compact (jeton de session) -----------------------------------------------------
+// Un bit par permission, dans l'ordre du catalogue, en hexadécimal (~30 caractères) : le middleware
+// (Edge, sans base) lit ainsi les permissions effectives depuis le jeton. D'où la règle : une
+// nouvelle permission s'ajoute EN FIN de catalogue (sinon les jetons en cours seraient mal lus).
+export function encodePermissions(permissions: Iterable<string>): string {
+  const owned = new Set(permissions);
+  const nibbles: number[] = [];
+  PERMISSION_KEYS.forEach((key, i) => {
+    if (owned.has(key)) nibbles[i >> 2] = (nibbles[i >> 2] ?? 0) | (1 << (i & 3));
+  });
+  let hex = "";
+  for (let i = 0; i < Math.ceil(PERMISSION_KEYS.length / 4); i++) hex += (nibbles[i] ?? 0).toString(16);
+  return hex;
+}
+
+export function decodePermissions(hex: string): Permission[] {
+  const out: Permission[] = [];
+  PERMISSION_KEYS.forEach((key, i) => {
+    const nibble = parseInt(hex[i >> 2] ?? "0", 16);
+    if (!Number.isNaN(nibble) && nibble & (1 << (i & 3))) out.push(key);
+  });
+  return out;
 }

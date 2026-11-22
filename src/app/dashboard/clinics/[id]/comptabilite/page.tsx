@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import Link from "next/link";
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
@@ -51,7 +52,7 @@ export default async function AccountingPage({ params, searchParams }: { params:
   }
   const o = header.data;
   const p = o.period;
-  const canWrite = ["COMPTABLE", "COORDINATOR"].includes(user.role);
+  const canWrite = can(user, "accounting.write");
   const base = `/dashboard/clinics/${clinicId}/comptabilite`;
   const query = (extra: Record<string, string>) => `?${new URLSearchParams({ du: p.from, au: p.to, ...extra }).toString()}`;
   const flow = `du ${fr(p.from)} au ${fr(p.to)}`;

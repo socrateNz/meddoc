@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { notFound, redirect } from "next/navigation";
@@ -39,11 +40,11 @@ export default async function PatientDetailPage({ params, searchParams }: PagePr
 
   const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
   // ADMIN (holding) consulte en lecture seule ; PHARMACIST n'a qu'un accès identité limité (cf. plan RBAC).
-  const canWrite = ["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(currentUser.role);
+  const canWrite = can(currentUser, "records.write");
   // Rédiger/renouveler/envoyer une ordonnance reste réservé à l'autorité clinique complète.
-  const canPrescribe = ["COORDINATOR", "MEDECIN"].includes(currentUser.role);
+  const canPrescribe = can(currentUser, "prescriptions.write");
   // Prescrire un examen labo (autorité diagnostique) — mêmes rôles que LAB_ORDER_ROLES côté serveur.
-  const canOrderLab = ["COORDINATOR", "MEDECIN"].includes(currentUser.role);
+  const canOrderLab = can(currentUser, "lab.order");
   const isPharmacist = currentUser.role === "PHARMACIST";
   let clinics: { id: string; name: string }[] = [];
   if (isHoldingAdmin) {

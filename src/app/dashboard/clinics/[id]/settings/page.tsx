@@ -1,3 +1,4 @@
+import { can } from "@/lib/permissions-catalog";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
@@ -21,7 +22,7 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
   }
 
   const isHoldingAdmin = currentUser.role === "ADMIN" && currentUser.organization?.type === "HOLDING";
-  const isClinicCoordinator = currentUser.role === "COORDINATOR" && currentUser.organizationId === params.id;
+  const isClinicCoordinator = can(currentUser, "clinic.configure") && currentUser.organizationId === params.id;
   const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
 
   if (!isHoldingAdmin && !isClinicCoordinator && !isSuperAdmin) {
@@ -103,7 +104,6 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
         )}
         <StaffAccessCard
           clinicId={clinic.id}
-          pharmacistCanUseRegister={clinic.pharmacistCanUseRegister !== false}
           consultationBilling={clinic.consultationBilling === "ON_ARRIVAL" ? "ON_ARRIVAL" : "ON_CLOSE"}
           readOnly={!canEdit}
         />

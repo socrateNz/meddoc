@@ -1,5 +1,6 @@
 import { userRepository } from "@/repositories/UserRepository";
-import { signJwt, signRefreshToken } from "@/lib/auth";
+import { sessionPayload, signJwt, signRefreshToken } from "@/lib/auth";
+import { effectivePermissions } from "@/lib/permissions-server";
 // bcrypt (binding natif), pas bcryptjs (réimplémentation JS pure, nettement plus lente pour
 // compare() — les deux produisent/lisent le même format de hash, donc compatible avec les
 // mots de passe déjà hashés). bcrypt est déjà une dépendance du projet, utilisée ailleurs pour
@@ -41,23 +42,14 @@ export class AuthService {
       throw new Error("Identifiants invalides");
     }
 
+    // Permissions effectives encodées dans les jetons, pour le middleware (cf. sessionPayload).
+    const payload = sessionPayload(user, await effectivePermissions(user));
+
     // Access token (15 minutes)
-    const token = signJwt({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      organizationId: user.organizationId,
-      organizationType: user.organization?.type,
-    }, { expiresIn: "15m" });
+    const token = signJwt(payload, { expiresIn: "15m" });
 
     // Refresh token (7 days)
-    const refreshToken = signRefreshToken({
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      organizationId: user.organizationId,
-      organizationType: user.organization?.type,
-    }, { expiresIn: "7d" });
+    const refreshToken = signRefreshToken(payload, { expiresIn: "7d" });
 
     return {
       token,

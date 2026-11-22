@@ -1,6 +1,6 @@
 "use server";
 
-import { can } from "@/lib/permissions-catalog";
+import { can, type PermissionSubject } from "@/lib/permissions-catalog";
 
 import { prisma } from "@/lib/db";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
@@ -25,15 +25,15 @@ import { canSeePatientService, restrictedServiceIds } from "@/lib/service-access
 // labo, cf. src/actions/lab.ts). Affecter/libérer un lit reste un geste opérationnel courant,
 // ouvert au même trio que LAB_OPERATE_ROLES.
 
-function assertRoomsReadRole(role: string) {
+function assertRoomsReadRole(role: PermissionSubject) {
   if (!can(role, "rooms.read")) throw new Error("Non autorisé.");
 }
 
-function assertRoomsStructureRole(role: string) {
+function assertRoomsStructureRole(role: PermissionSubject) {
   if (!can(role, "rooms.structure")) throw new Error("Non autorisé. Réservé aux coordinateurs.");
 }
 
-function assertRoomsOperateRole(role: string) {
+function assertRoomsOperateRole(role: PermissionSubject) {
   if (!can(role, "rooms.operate")) throw new Error("Non autorisé. Réservé au personnel clinique.");
 }
 
@@ -86,7 +86,7 @@ export async function listWardsWithRooms(clinicId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsReadRole(activeUser.role);
+    assertRoomsReadRole(activeUser);
     await assertClinicScope(clinicId, activeUser);
 
     const wards = await prisma.ward.findMany({
@@ -137,7 +137,7 @@ export async function listAvailableBeds(clinicId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsOperateRole(activeUser.role);
+    assertRoomsOperateRole(activeUser);
     await assertClinicScope(clinicId, activeUser);
 
     const beds = await prisma.bed.findMany({
@@ -166,7 +166,7 @@ export async function createWard(data: { organizationId: string; name: string; c
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsStructureRole(activeUser.role);
+    assertRoomsStructureRole(activeUser);
     await assertClinicScope(data.organizationId, activeUser);
 
     const ward = await prisma.ward.create({
@@ -190,7 +190,7 @@ export async function updateWard(id: string, data: { name: string; code: string;
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsStructureRole(activeUser.role);
+    assertRoomsStructureRole(activeUser);
 
     const existing = await prisma.ward.findUnique({ where: { id } });
     if (!existing) throw new Error("Service introuvable.");
@@ -218,7 +218,7 @@ export async function deleteWard(id: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsStructureRole(activeUser.role);
+    assertRoomsStructureRole(activeUser);
 
     const existing = await prisma.ward.findUnique({ where: { id }, include: { rooms: { select: { id: true } } } });
     if (!existing) throw new Error("Service introuvable.");
@@ -245,7 +245,7 @@ export async function createRoom(data: { wardId: string; name: string; nightlyRa
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsStructureRole(activeUser.role);
+    assertRoomsStructureRole(activeUser);
 
     const ward = await prisma.ward.findUnique({ where: { id: data.wardId } });
     if (!ward) throw new Error("Service introuvable.");
@@ -269,7 +269,7 @@ export async function updateRoom(id: string, data: { name: string; nightlyRate?:
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsStructureRole(activeUser.role);
+    assertRoomsStructureRole(activeUser);
 
     const existing = await prisma.room.findUnique({ where: { id } });
     if (!existing) throw new Error("Chambre introuvable.");
@@ -296,7 +296,7 @@ export async function deleteRoom(id: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsStructureRole(activeUser.role);
+    assertRoomsStructureRole(activeUser);
 
     const existing = await prisma.room.findUnique({ where: { id }, include: { beds: { select: { id: true } } } });
     if (!existing) throw new Error("Chambre introuvable.");
@@ -323,7 +323,7 @@ export async function createBed(data: { roomId: string; label: string }) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsStructureRole(activeUser.role);
+    assertRoomsStructureRole(activeUser);
 
     const room = await prisma.room.findUnique({ where: { id: data.roomId } });
     if (!room) throw new Error("Chambre introuvable.");
@@ -352,7 +352,7 @@ export async function deleteBed(id: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsStructureRole(activeUser.role);
+    assertRoomsStructureRole(activeUser);
 
     const existing = await prisma.bed.findUnique({ where: { id } });
     if (!existing) throw new Error("Lit introuvable.");
@@ -381,7 +381,7 @@ export async function assignPatientToBed(data: { patientId: string; bedId: strin
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsOperateRole(activeUser.role);
+    assertRoomsOperateRole(activeUser);
 
     const hasAccess = await verifyPatientAccess(data.patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
@@ -442,7 +442,7 @@ export async function releaseBed(patientId: string) {
     const activeUser = await getCurrentUser();
     if (!activeUser) throw new Error("Non authentifié.");
     assertUserModule(activeUser, "HOSPITALISATION");
-    assertRoomsOperateRole(activeUser.role);
+    assertRoomsOperateRole(activeUser);
 
     const hasAccess = await verifyPatientAccess(patientId, activeUser);
     if (!hasAccess) throw new Error("Non autorisé. Ce patient ne fait pas partie de votre établissement.");
