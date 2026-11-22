@@ -64,6 +64,76 @@ export async function createOrUpdateSupplier(data: {
   }
 }
 
+const importSuppliersSchema = z.object({
+  organizationId: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        contactName: z.string().trim().max(120).optional(),
+        phone: z.string().trim().max(40).optional(),
+        email: z.string().trim().max(120).optional(),
+        address: z.string().trim().max(200).optional(),
+        notes: z.string().trim().max(500).optional(),
+      })
+    )
+    .min(1, "Aucune ligne à importer")
+    .max(2000),
+});
+
+// Import CSV des fournisseurs : un fournisseur de même nom (insensible à la casse) est mis à jour
+// (seules les cellules remplies remplacent les valeurs existantes).
+export async function importSuppliers(data: z.input<typeof importSuppliersSchema>) {
+  try {
+    const input = importSuppliersSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    await assertStockWrite(activeUser);
+    const targetOrgId = await resolveTargetOrgId(activeUser!, input.organizationId);
+
+    const existing = await prisma.supplier.findMany({ where: { organizationId: targetOrgId || null }, select: { id: true, name: true } });
+    const idByName = new Map(existing.map((s) => [s.name.trim().toLowerCase(), s.id]));
+    const seen = new Set<string>();
+    const failures: { name: string; error: string }[] = [];
+    let created = 0;
+    let updated = 0;
+    for (const item of input.items) {
+      const key = item.name.toLowerCase();
+      if (seen.has(key)) {
+        failures.push({ name: item.name, error: "En double dans le fichier : seule la première ligne est prise en compte." });
+        continue;
+      }
+      seen.add(key);
+      const fields = {
+        name: item.name,
+        ...(item.contactName ? { contactName: item.contactName } : {}),
+        ...(item.phone ? { phone: item.phone } : {}),
+        ...(item.email ? { email: item.email } : {}),
+        ...(item.address ? { address: item.address } : {}),
+        ...(item.notes ? { notes: item.notes } : {}),
+      };
+      try {
+        const id = idByName.get(key);
+        if (id) {
+          await prisma.supplier.update({ where: { id }, data: { ...fields, isActive: true } });
+          updated++;
+        } else {
+          await prisma.supplier.create({ data: { ...fields, organizationId: targetOrgId || null } });
+          created++;
+        }
+      } catch (error) {
+        failures.push({ name: item.name, error: toErrorMessage(error, "Erreur inconnue") });
+      }
+    }
+    await logAuditAction(activeUser!.id, "IMPORT_SUPPLIERS_CSV", "Supplier", "bulk", { created, updated, failures: failures.length });
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard/pharmacie");
+    if (targetOrgId) revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
+    return { success: true as const, data: { created, updated, failures } };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'import des fournisseurs.") };
+  }
+}
+
 export async function listSuppliers(organizationId?: string, options?: { page?: number; pageSize?: number }) {
   try {
     const activeUser = await getCurrentUser();

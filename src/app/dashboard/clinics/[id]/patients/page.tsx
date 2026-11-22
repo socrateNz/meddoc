@@ -4,6 +4,7 @@ import { listPatientsPage } from "@/actions/patient-list";
 import CacheWriter from "@/components/cache-writer";
 import { keepQuery } from "@/components/ui/pagination-nav";
 import NewPatientDialog from "@/app/dashboard/patients/new-patient-dialog";
+import PatientsImport from "@/components/imports/patients-import";
 import { EMPTY_PATIENT_PAGE, patientListOptions } from "@/app/dashboard/patients/patient-list-params";
 
 import PatientTable from "@/app/dashboard/patients/patient-table";
@@ -51,14 +52,17 @@ export default async function ClinicPatientsPage({ params, searchParams }: PageP
             Gérez la liste des patients, leurs statuts (actifs / clôturés) et leurs dossiers pour cette clinique.
           </p>
         </div>
-        {["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role) && (
-          <NewPatientDialog
-            isHoldingAdmin={isHoldingAdmin}
-            holdingId={activeUser.organizationId || ""}
-            clinics={clinics}
-            defaultOrganizationId={clinicId}
-          />
-        )}
+        <div className="flex flex-wrap gap-2">
+          {activeUser.role === "COORDINATOR" && <PatientsImport clinicId={clinicId} />}
+          {["COORDINATOR", "MEDECIN", "CAREGIVER"].includes(activeUser.role) && (
+            <NewPatientDialog
+              isHoldingAdmin={isHoldingAdmin}
+              holdingId={activeUser.organizationId || ""}
+              clinics={clinics}
+              defaultOrganizationId={clinicId}
+            />
+          )}
+        </div>
       </div>
 
       <PatientTable

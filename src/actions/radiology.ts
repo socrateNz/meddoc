@@ -93,6 +93,54 @@ export async function upsertRadiologyExam(data: z.input<typeof examSchema>) {
   }
 }
 
+const importExamsSchema = z.object({
+  clinicId: z.string().min(1),
+  items: z
+    .array(z.object({ name: z.string().trim().min(2).max(120), modality: z.enum(RADIOLOGY_MODALITIES), basePrice: z.number().finite().min(0) }))
+    .min(1, "Aucune ligne à importer")
+    .max(2000),
+});
+
+// Import CSV du catalogue d'imagerie : un examen de même nom (insensible à la casse) est mis à jour.
+export async function importRadiologyExams(data: z.input<typeof importExamsSchema>) {
+  try {
+    const input = importExamsSchema.parse(data);
+    const activeUser = await requireUser(CATALOG_ROLES, "Non autorisé. Le catalogue est géré par le coordinateur.");
+    await assertClinicScope(input.clinicId, activeUser);
+    const existing = await prisma.radiologyExam.findMany({ where: { organizationId: input.clinicId }, select: { id: true, name: true } });
+    const idByName = new Map(existing.map((e) => [e.name.trim().toLowerCase(), e.id]));
+    const seen = new Set<string>();
+    const failures: { name: string; error: string }[] = [];
+    let created = 0;
+    let updated = 0;
+    for (const item of input.items) {
+      const key = item.name.toLowerCase();
+      if (seen.has(key)) {
+        failures.push({ name: item.name, error: "En double dans le fichier : seule la première ligne est prise en compte." });
+        continue;
+      }
+      seen.add(key);
+      try {
+        const id = idByName.get(key);
+        if (id) {
+          await prisma.radiologyExam.update({ where: { id }, data: { name: item.name, modality: item.modality, basePrice: item.basePrice, isActive: true } });
+          updated++;
+        } else {
+          await prisma.radiologyExam.create({ data: { organizationId: input.clinicId, name: item.name, modality: item.modality, basePrice: item.basePrice } });
+          created++;
+        }
+      } catch (error) {
+        failures.push({ name: item.name, error: toErrorMessage(error, "Erreur inconnue") });
+      }
+    }
+    await logAuditAction(activeUser.id, "IMPORT_RADIOLOGY_EXAMS_CSV", "RadiologyExam", "bulk", { created, updated, failures: failures.length });
+    revalidateRadiology(input.clinicId);
+    return { success: true as const, data: { created, updated, failures } };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'import du catalogue d'imagerie.") };
+  }
+}
+
 // --- Prescription ---
 
 const orderSchema = z.object({

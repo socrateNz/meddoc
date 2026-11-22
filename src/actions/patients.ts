@@ -2,7 +2,7 @@
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import { prisma } from "@/lib/db";
-import { resolveTargetOrgId } from "@/lib/org-scope";
+import { assertOrganizationAccess, resolveTargetOrgId } from "@/lib/org-scope";
 import { Role, Priority, IncidentStatus } from "@prisma/client";
 import { getCurrentUser, verifyPatientAccess } from "@/lib/auth";
 import { logAuditAction } from "@/middlewares/auditLogger";
@@ -142,6 +142,72 @@ async function createPatientOnce(data: {
   } catch (error: any) {
     console.error("Error creating patient:", error);
     return { success: false, error: toErrorMessage(error, "Erreur lors de la création du patient") };
+  }
+}
+
+type ImportedPatient = Omit<Parameters<typeof createPatientOnce>[0], "organizationId"> & { serviceName?: string };
+
+// Import CSV de patients (reprise d'un fichier existant). Chaque ligne passe par la même création
+// que le formulaire (IPP, compte, contrôles). Un patient déjà enregistré dans la clinique avec les
+// mêmes nom, prénom et date de naissance est signalé et ignoré, jamais créé en double. La colonne
+// « Service » confie le dossier au service de ce nom.
+export async function importPatients(input: { clinicId: string; items: ImportedPatient[] }) {
+  try {
+    if (!input.clinicId || !Array.isArray(input.items) || input.items.length === 0) throw new Error("Aucune ligne à importer.");
+    if (input.items.length > 2000) throw new Error("2000 lignes au maximum par import.");
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    // Reprise d'un fichier : coordinateur ou accueil, pas les soignants au quotidien.
+    if (!["COORDINATOR", "ACCUEIL"].includes(activeUser.role)) throw new Error("Non autorisé. Réservé au coordinateur et à l'accueil.");
+    await assertOrganizationAccess(activeUser, input.clinicId);
+
+    const services = await prisma.clinicService.findMany({ where: { organizationId: input.clinicId, isActive: true }, select: { id: true, name: true } });
+    const serviceByName = new Map(services.map((s) => [s.name.trim().toLowerCase(), s.id]));
+    const existing = await prisma.patient.findMany({
+      where: { organizationId: input.clinicId },
+      select: { dateOfBirth: true, user: { select: { firstName: true, lastName: true } } },
+    });
+    const identity = (lastName: string, firstName: string, dob: string | Date) =>
+      `${lastName.trim().toLowerCase()}|${firstName.trim().toLowerCase()}|${new Date(dob).toISOString().slice(0, 10)}`;
+    const known = new Set(existing.map((p) => identity(p.user.lastName, p.user.firstName, p.dateOfBirth)));
+
+    const failures: { name: string; error: string }[] = [];
+    let created = 0;
+    for (const item of input.items) {
+      const label = `${item.lastName} ${item.firstName}`.trim();
+      const parsedDob = new Date(item.dateOfBirth);
+      if (Number.isNaN(parsedDob.getTime())) {
+        failures.push({ name: label, error: "Date de naissance invalide." });
+        continue;
+      }
+      const key = identity(item.lastName, item.firstName, item.dateOfBirth);
+      if (known.has(key)) {
+        failures.push({ name: label, error: "Déjà enregistré dans la clinique (même nom, prénom et date de naissance)." });
+        continue;
+      }
+      const serviceId = item.serviceName ? serviceByName.get(item.serviceName.trim().toLowerCase()) : undefined;
+      if (item.serviceName && !serviceId) {
+        failures.push({ name: label, error: `Service inconnu ou désactivé (« ${item.serviceName} »).` });
+        continue;
+      }
+      const { serviceName: _service, ...patient } = item;
+      void _service;
+      const res = await createPatientOnce({ ...patient, organizationId: input.clinicId });
+      if (!res.success || !res.data) {
+        failures.push({ name: label, error: res.error || "Erreur inconnue" });
+        continue;
+      }
+      known.add(key);
+      created++;
+      if (serviceId) await prisma.patient.update({ where: { id: res.data.patient.id }, data: { serviceId } });
+    }
+
+    await logAuditAction(activeUser.id, "IMPORT_PATIENTS_CSV", "Patient", "bulk", { created, failures: failures.length });
+    revalidatePath("/dashboard/patients");
+    revalidatePath(`/dashboard/clinics/${input.clinicId}/patients`);
+    return { success: true as const, data: { created, failures } };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'import des patients.") };
   }
 }
 

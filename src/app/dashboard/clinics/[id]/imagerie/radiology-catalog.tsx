@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { upsertRadiologyExam } from "@/actions/radiology";
+import RadiologyExamsImport from "@/components/imports/radiology-exams-import";
 import { RADIOLOGY_MODALITIES, RADIOLOGY_MODALITY_LABELS, type RadiologyModality } from "@/lib/radiology";
 
 type Exam = { id: string; name: string; modality: string; basePrice: number; isActive: boolean };
@@ -62,6 +63,9 @@ export default function RadiologyCatalog({ clinicId, exams }: { clinicId: string
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <RadiologyExamsImport clinicId={clinicId} />
+      </div>
       <form onSubmit={save} className="flex flex-wrap items-end gap-2 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 p-4 bg-slate-50/50 dark:bg-slate-900/40">
         <div className="space-y-1 flex-1 min-w-48">
           <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Examen</label>

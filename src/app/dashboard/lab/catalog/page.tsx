@@ -45,7 +45,7 @@ export default async function LabCatalogPage({ searchParams }: LabCatalogPagePro
         </div>
       </div>
 
-      <CatalogView labTests={labTests} pharmacyItems={pharmacyItems} />
+      <CatalogView labTests={labTests} pharmacyItems={pharmacyItems} organizationId={currentUser.organizationId ?? undefined} />
       {res.success && (
         <PaginationNav
           page={res.page}

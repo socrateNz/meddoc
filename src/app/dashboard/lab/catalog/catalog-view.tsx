@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FlaskConical, Trash2 } from "lucide-react";
 import LabTestDialog from "./lab-test-dialog";
+import LabTestsImport from "@/components/imports/lab-tests-import";
 import { deactivateLabTest } from "@/actions/lab";
 import { toast } from "sonner";
 
@@ -13,8 +14,14 @@ function formatFCFA(val: number) {
   return Math.round(val).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
 }
 
-export default function CatalogView({ labTests: initial, pharmacyItems }: { labTests: any[]; pharmacyItems: any[] }) {
+export default function CatalogView({ labTests: initial, pharmacyItems, organizationId }: { labTests: any[]; pharmacyItems: any[]; organizationId?: string }) {
   const [labTests, setLabTests] = useState(initial);
+  // Liste rechargée par le serveur (ex. après un import CSV) : elle remplace la liste locale.
+  const [prevInitial, setPrevInitial] = useState(initial);
+  if (initial !== prevInitial) {
+    setPrevInitial(initial);
+    setLabTests(initial);
+  }
 
   const handleUpsert = (test: any) => {
     setLabTests((prev) => {
@@ -35,7 +42,8 @@ export default function CatalogView({ labTests: initial, pharmacyItems }: { labT
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end animate-fade-up">
+      <div className="flex flex-wrap justify-end gap-2 animate-fade-up">
+        <LabTestsImport organizationId={organizationId} />
         <LabTestDialog pharmacyItems={pharmacyItems} onSuccess={handleUpsert} />
       </div>
 

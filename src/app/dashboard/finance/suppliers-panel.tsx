@@ -11,6 +11,7 @@ import { Truck, ClipboardList, Loader2, Send, XCircle, Phone, Mail } from "lucid
 import { listSuppliers } from "@/actions/suppliers";
 import { listPurchaseOrders, updatePurchaseOrderStatus } from "@/actions/purchase-orders";
 import NewSupplierDialog from "./new-supplier-dialog";
+import SuppliersImport from "@/components/imports/suppliers-import";
 import NewPurchaseOrderDialog from "./new-purchase-order-dialog";
 import ReceivePurchaseOrderDialog from "./receive-purchase-order-dialog";
 import { toast } from "sonner";
@@ -120,10 +121,16 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
             Fournisseurs ({suppliersTotal})
           </h3>
           {canWrite && (
-            <NewSupplierDialog
-              organizationId={organizationId}
-              onSuccess={() => queryClient.invalidateQueries({ queryKey: ["suppliers", organizationId] })}
-            />
+            <div className="flex flex-wrap gap-2">
+              <SuppliersImport
+                organizationId={organizationId}
+                onImported={() => queryClient.invalidateQueries({ queryKey: ["suppliers", organizationId] })}
+              />
+              <NewSupplierDialog
+                organizationId={organizationId}
+                onSuccess={() => queryClient.invalidateQueries({ queryKey: ["suppliers", organizationId] })}
+              />
+            </div>
           )}
         </div>
         {suppliers.length === 0 ? (

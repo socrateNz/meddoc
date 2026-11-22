@@ -12,7 +12,8 @@ import { computeLabOrderStatus, isCriticalValue, orderSamples, testsWithoutSampl
 import { randomUUID } from "crypto";
 import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
 import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
-import { evaluateResult, hasAnyValue, parseTemplate, type ResultData, type ResultTemplate, type StoredResultData } from "@/lib/lab-templates";
+import { evaluateResult, hasAnyValue, parseTemplate, presetById, type ResultData, type ResultTemplate, type StoredResultData } from "@/lib/lab-templates";
+import { z } from "zod";
 
 // null efface le modèle ; undefined (champ absent) aussi : le formulaire du catalogue envoie
 // toujours le modèle courant.
@@ -864,6 +865,89 @@ export async function createOrUpdateLabTest(data: {
     return { success: true, data: labTest };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de l'examen.") };
+  }
+}
+
+const importLabTestsSchema = z.object({
+  organizationId: z.string().optional(),
+  items: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(120),
+        department: z.string().trim().max(60).optional(),
+        basePrice: z.number().min(0),
+        baseCost: z.number().min(0).optional(),
+        partnerPrice: z.number().min(0).optional(),
+        durationMinutes: z.number().min(0).optional(),
+        templateId: z.string().optional(),
+      })
+    )
+    .min(1, "Aucune ligne à importer")
+    .max(2000),
+});
+
+// Import CSV du catalogue d'examens. Rapprochement par NOM (insensible à la casse) : un examen
+// déjà au catalogue est mis à jour (prix, paillasse, durée, modèle si fourni) — réimporter la
+// grille de prix ne crée pas de doublons. Les consommables et seuils critiques se règlent
+// ensuite examen par examen.
+export async function importLabTests(input: z.input<typeof importLabTestsSchema>) {
+  try {
+    const data = importLabTestsSchema.parse(input);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "LABORATOIRE");
+    if (activeUser.role !== "COORDINATOR") throw new Error("Non autorisé. Réservé aux coordinateurs.");
+    const organizationId = await resolveTargetOrgId(activeUser, data.organizationId);
+    if (!organizationId) throw new Error("Établissement requis.");
+
+    const existing = await prisma.labTest.findMany({ where: { organizationId }, select: { id: true, name: true } });
+    const idByName = new Map(existing.map((t) => [t.name.trim().toLowerCase(), t.id]));
+    const seen = new Set<string>();
+    const failures: { name: string; error: string }[] = [];
+    let created = 0;
+    let updated = 0;
+
+    for (const item of data.items) {
+      const key = item.name.toLowerCase();
+      if (seen.has(key)) {
+        failures.push({ name: item.name, error: "En double dans le fichier : seule la première ligne est prise en compte." });
+        continue;
+      }
+      seen.add(key);
+      const preset = item.templateId ? presetById(item.templateId) : undefined;
+      if (item.templateId && !preset) {
+        failures.push({ name: item.name, error: `Modèle de compte rendu inconnu (« ${item.templateId} »).` });
+        continue;
+      }
+      const fields = {
+        name: item.name,
+        department: item.department || preset?.bench || null,
+        basePrice: item.basePrice,
+        ...(item.baseCost != null ? { baseCost: item.baseCost } : {}),
+        ...(item.partnerPrice != null ? { partnerPrice: item.partnerPrice } : {}),
+        ...(item.durationMinutes != null ? { durationMinutes: item.durationMinutes } : {}),
+        ...(preset ? { resultTemplate: preset.template as unknown as Prisma.InputJsonValue } : {}),
+        isActive: true,
+      };
+      try {
+        const id = idByName.get(key);
+        if (id) {
+          await prisma.labTest.update({ where: { id }, data: fields });
+          updated++;
+        } else {
+          await prisma.labTest.create({ data: { ...fields, organizationId, consumables: [] } });
+          created++;
+        }
+      } catch (error) {
+        failures.push({ name: item.name, error: toErrorMessage(error, "Erreur inconnue") });
+      }
+    }
+
+    await logAuditAction(activeUser.id, "IMPORT_LAB_TESTS_CSV", "LabTest", "bulk", { created, updated, failures: failures.length });
+    revalidatePath("/dashboard/lab/catalog");
+    return { success: true as const, data: { created, updated, failures } };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'import du catalogue.") };
   }
 }
 
