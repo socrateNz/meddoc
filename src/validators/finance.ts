@@ -48,6 +48,9 @@ const invoiceItemSchema = z.object({
   quantity: z.number().min(0),
   unitPrice: z.number().min(0),
   amount: z.number().min(0),
+  // Réduction accordée sur la ligne (FCFA) et son motif — cf. src/lib/invoice-discount.ts.
+  discount: z.number().min(0).optional(),
+  discountReason: z.string().max(200).optional(),
 });
 
 export const recordExpenseSchema = z.object({
@@ -121,3 +124,13 @@ export const deletePendingInvoiceSchema = z.object({
 });
 
 
+
+// Réductions posées sur un ticket encore non réglé (cf. applyInvoiceDiscount) : une par ligne
+// (index dans le panier), 0 = retirer la réduction de la ligne.
+export const applyInvoiceDiscountSchema = z.object({
+  pendingInvoiceId: z.string().min(1),
+  discounts: z
+    .array(z.object({ index: z.number().int().min(0), discount: z.number().min(0), reason: z.string().max(200).optional() }))
+    .min(1)
+    .max(200),
+});

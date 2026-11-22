@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import SearchableSelect from "@/components/ui/searchable-select";
-import { ShoppingCart, Receipt, Trash2, Loader2, Printer, PlusCircle } from "lucide-react";
+import { ShoppingCart, Receipt, Trash2, Loader2, Printer, PlusCircle, BadgePercent } from "lucide-react";
+import { useCan } from "@/components/permissions-provider";
+import { DiscountNote, LineDiscountEditor } from "./line-discount-editor";
 import { createCaisseSale, payPendingInvoice } from "@/actions/finance";
 import { submitOrQueueOffline } from "@/lib/offline-submit";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
@@ -22,12 +24,29 @@ function formatFCFA(val: number) {
 
 interface CartItem {
   id: string;
-  type: "PHARMACY" | "SERVICE";
+  type: "PHARMACY" | "SERVICE" | "LAB";
   pharmacyItemId?: string;
   description: string;
   quantity: number;
   unitPrice: number;
   amount: number;
+  // Réduction de la ligne (FCFA) et son motif — cf. src/lib/invoice-discount.ts.
+  discount?: number;
+  discountReason?: string;
+}
+
+function cartFromPending(pendingInvoice: { id: string; items: any[] }): CartItem[] {
+  return (pendingInvoice.items || []).map((it: any, i: number) => ({
+    id: `pending-${pendingInvoice.id}-${i}`,
+    type: it.type,
+    pharmacyItemId: it.pharmacyItemId,
+    description: it.description,
+    quantity: it.quantity,
+    unitPrice: it.unitPrice,
+    amount: it.amount,
+    discount: it.discount,
+    discountReason: it.discountReason,
+  }));
 }
 
 interface CaisseCartDialogProps {
@@ -50,19 +69,10 @@ interface CaisseCartDialogProps {
 export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, patients = [], organizationId, pendingInvoice, onSuccess, canDispense = false }: CaisseCartDialogProps) {
   const [open, setOpen] = useState(false);
   const [dispenseNow, setDispenseNow] = useState(true);
-  const [cartItems, setCartItems] = useState<CartItem[]>(() =>
-    mode === "pay" && pendingInvoice
-      ? (pendingInvoice.items || []).map((it: any, i: number) => ({
-          id: `pending-${pendingInvoice.id}-${i}`,
-          type: it.type,
-          pharmacyItemId: it.pharmacyItemId,
-          description: it.description,
-          quantity: it.quantity,
-          unitPrice: it.unitPrice,
-          amount: it.amount,
-        }))
-      : []
-  );
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => (mode === "pay" && pendingInvoice ? cartFromPending(pendingInvoice) : []));
+  // Réduction par ligne : réservée au responsable (« invoices.discount »).
+  const canDiscount = useCan("invoices.discount");
+  const [discountingId, setDiscountingId] = useState<string | null>(null);
   const [cartPatientId, setCartPatientId] = useState("");
   const [customPatientNameInput, setCustomPatientNameInput] = useState("");
   const [customPatientPhoneInput, setCustomPatientPhoneInput] = useState("");
@@ -158,8 +168,24 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
   const handleRemove = (id: string) => setCartItems((prev) => prev.filter((i) => i.id !== id));
 
+  const grossOf = (item: CartItem) => Math.round(item.quantity * item.unitPrice);
+  const applyDiscount = (id: string, discount: number, reason: string) => {
+    setCartItems((prev) =>
+      prev.map((it) =>
+        it.id !== id
+          ? it
+          : discount > 0
+            ? { ...it, discount, discountReason: reason, amount: grossOf(it) - discount }
+            : { ...it, discount: undefined, discountReason: undefined, amount: it.discount ? grossOf(it) : it.amount }
+      )
+    );
+    setDiscountingId(null);
+  };
+
   const grandTotal = cartItems.reduce((sum, i) => sum + i.amount, 0);
-  const hasZeroAmountItem = cartItems.some((i) => i.amount <= 0);
+  // Ligne à 0 « à définir » (ex : frais de consultation non renseignés) — pas une ligne offerte
+  // par une réduction de 100 %.
+  const hasZeroAmountItem = cartItems.some((i) => i.amount <= 0 && !(Number(i.discount) > 0));
 
   // Calculé directement pendant le rendu plutôt que synchronisé par un effet (schéma recommandé
   // par React pour une valeur purement dérivée — cf. chat-panel.tsx pour le même principe) :
@@ -186,8 +212,9 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
     setMsg(null);
     try {
-      const items = cartItems.map(({ type, pharmacyItemId, description, quantity, unitPrice, amount }) => ({
+      const items = cartItems.map(({ type, pharmacyItemId, description, quantity, unitPrice, amount, discount, discountReason }) => ({
         type, pharmacyItemId, description, quantity, unitPrice, amount,
+        ...(discount && discount > 0 ? { discount, discountReason } : {}),
       }));
 
       const isPay = mode === "pay" && !!pendingInvoice;
@@ -276,7 +303,16 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
     : ((pendingInvoice as any)?.customPatientName || "Client comptant");
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) resetForm();
+        // Ticket à encaisser : rechargé à chaque ouverture (une réduction a pu y être posée depuis).
+        if (v && mode === "pay" && pendingInvoice) setCartItems(cartFromPending(pendingInvoice));
+        setDiscountingId(null);
+      }}
+    >
       {mode === "sale" ? (
         <DialogTrigger render={<Button className="gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs" />}>
           <PlusCircle className="h-4 w-4" />
@@ -397,9 +433,21 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                   {/* Mobile : designation + corbeille, puis qte x P.U et total */}
                   <div className="min-w-0 break-words text-sm sm:text-xs sm:col-span-5 font-semibold text-slate-900 dark:text-white">
                     <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-[9px] font-bold rounded ${item.type === "PHARMACY" ? "bg-blue-500/10 text-blue-600" : "bg-emerald-500/10 text-emerald-600"}`}>
-                      {item.type === "PHARMACY" ? "Pharma" : "Acte"}
+                      {item.type === "PHARMACY" ? "Pharma" : item.type === "LAB" ? "Labo" : "Acte"}
                     </span>
                     {item.description}
+                    <DiscountNote discount={item.discount} reason={item.discountReason} />
+                    {canDiscount && item.amount > 0 && discountingId !== item.id && (
+                      <button type="button" onClick={() => setDiscountingId(item.id)} className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                        <BadgePercent className="h-3 w-3" />
+                        {item.discount ? "Modifier la réduction" : "Réduction"}
+                      </button>
+                    )}
+                    {canDiscount && !!item.discount && discountingId !== item.id && (
+                      <button type="button" onClick={() => applyDiscount(item.id, 0, "")} className="text-[11px] text-muted-foreground hover:underline">
+                        Retirer la réduction
+                      </button>
+                    )}
                   </div>
                   <div className="col-start-1 row-start-2 text-slate-500 sm:hidden">
                     {item.quantity} × {formatFCFA(item.unitPrice)}
@@ -407,13 +455,24 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                   <div className="hidden sm:block sm:col-span-2 text-center">{item.quantity}</div>
                   <div className="hidden sm:block sm:col-span-2 text-right">{formatFCFA(item.unitPrice)}</div>
                   <div className={`col-start-2 row-start-2 sm:row-start-auto sm:col-start-auto sm:col-span-2 text-sm sm:text-xs text-right font-bold ${item.amount <= 0 ? "text-amber-600" : "text-slate-900 dark:text-white"}`}>
-                    {item.amount <= 0 ? "À définir" : formatFCFA(item.amount)}
+                    {item.amount <= 0 && !item.discount ? "À définir" : formatFCFA(item.amount)}
                   </div>
                   <div className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto sm:col-span-1 text-right sm:text-center">
                     <button type="button" onClick={() => handleRemove(item.id)} className="p-2 sm:p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all" title="Supprimer">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
+                  {discountingId === item.id && (
+                    <div className="col-span-2 sm:col-span-12">
+                      <LineDiscountEditor
+                        gross={grossOf(item)}
+                        initialDiscount={item.discount}
+                        initialReason={item.discountReason}
+                        onCancel={() => setDiscountingId(null)}
+                        onApply={(discount, reason) => applyDiscount(item.id, discount, reason)}
+                      />
+                    </div>
+                  )}
                 </div>
               ))
             )}

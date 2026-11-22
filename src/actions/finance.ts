@@ -1,6 +1,7 @@
 "use server";
 
-import { can, type PermissionSubject } from "@/lib/permissions-catalog";
+import { assertCan, can, type PermissionSubject } from "@/lib/permissions-catalog";
+import { applyItemDiscounts, totalDiscount, withDiscount } from "@/lib/invoice-discount";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
 import type { Prisma } from "@prisma/client";
@@ -25,6 +26,7 @@ import {
   importPharmacyItemsSchema,
   changeInvoiceStatusSchema,
   deletePendingInvoiceSchema,
+  applyInvoiceDiscountSchema,
 } from "@/validators/finance";
 import {
   assertStockWrite,
@@ -689,6 +691,8 @@ async function payPendingInvoiceOnce(
     quantity: number;
     unitPrice: number;
     amount: number;
+    discount?: number;
+    discountReason?: string;
   }>,
   paymentMethod?: string
 ) {
@@ -733,9 +737,12 @@ async function payPendingInvoiceOnce(
     // pour ne pas fausser rétroactivement ce qui a déjà été encaissé dessus. Reconcilié avec
     // dispensedQuantity (cf. reconcileItemsWithPriorDispense) pour ne jamais perdre la trace
     // d'une remise partielle déjà effectuée en pharmacie.
+    // Réductions : montants nets recalculés ici ; en créer ou en augmenter exige
+    // « invoices.discount » (cf. src/lib/invoice-discount.ts) — le caissier encaisse tel quel un
+    // ticket déjà réduit par le coordinateur.
     const currentItems: any[] =
       pending.status === "PENDING" && items
-        ? reconcileItemsWithPriorDispense((pending.items as any[]) || [], items)
+        ? reconcileItemsWithPriorDispense((pending.items as any[]) || [], applyItemDiscounts(activeUser, items, (pending.items as any[]) || []))
         : ((pending.items as any[]) || []);
     if (!currentItems.length) throw new Error("Le panier de facturation est vide.");
 
@@ -793,7 +800,11 @@ async function payPendingInvoiceOnce(
     // (cf. LabOrder.pendingInvoice dans ORDER_INCLUDE) — vente à crédit possible comme en
     // pharmacie, aucun déblocage à faire ici.
 
-    await logAuditAction(activeUser.id, "PAY_PENDING_INVOICE", "PendingInvoice", pendingInvoiceId, { transactionId: transaction.id, amount });
+    await logAuditAction(activeUser.id, "PAY_PENDING_INVOICE", "PendingInvoice", pendingInvoiceId, {
+      transactionId: transaction.id,
+      amount,
+      ...(totalDiscount(currentItems) > 0 ? { discount: totalDiscount(currentItems) } : {}),
+    });
     revalidatePath(`/dashboard/clinics/${pending.organizationId}/caisse`);
     revalidatePath(`/dashboard/clinics/${pending.organizationId}/pharmacie`);
     revalidatePath("/dashboard/lab");
@@ -834,6 +845,8 @@ async function createCaisseSaleOnce(data: {
     quantity: number;
     unitPrice: number;
     amount: number;
+    discount?: number;
+    discountReason?: string;
   }>;
   patientId?: string;
   customPatientName?: string;
@@ -857,6 +870,8 @@ async function createCaisseSaleOnce(data: {
     }
 
     await assertPharmacyItemsSellable(data.items);
+    // Réductions accordées au guichet : réservées à « invoices.discount », montants nets recalculés.
+    data = { ...data, items: applyItemDiscounts(activeUser, data.items) };
 
     const targetOrgId = data.organizationId || session.organizationId;
     const totalAmount = data.items.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -914,7 +929,13 @@ async function createCaisseSaleOnce(data: {
     });
     await accountSafely("Vente au comptoir", targetOrgId, () => accountTransaction(transaction.id));
 
-    await logAuditAction(activeUser.id, "CREATE_CAISSE_SALE", "FinancialTransaction", transaction.id);
+    await logAuditAction(
+      activeUser.id,
+      "CREATE_CAISSE_SALE",
+      "FinancialTransaction",
+      transaction.id,
+      totalDiscount(data.items) > 0 ? { discount: totalDiscount(data.items) } : undefined
+    );
     revalidatePath(`/dashboard/clinics/${targetOrgId}/caisse`);
     revalidatePath(`/dashboard/clinics/${targetOrgId}/pharmacie`);
     revalidatePath("/dashboard/finance");
@@ -932,6 +953,50 @@ async function createCaisseSaleOnce(data: {
     };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de la validation de la vente.") };
+  }
+}
+
+// Réduction accordée sur un ticket encore non réglé (examen, consultation, ordonnance, nuitées...) :
+// par ligne, en FCFA, avec un motif ; 0 retire la réduction. Réservé à « invoices.discount » (le
+// coordinateur par défaut). Seulement avant tout encaissement : une fois un règlement reçu, la vente
+// est comptabilisée et le panier verrouillé — un reste dû qu'on renonce à percevoir se clôture
+// (closeUnpaidInvoice, passé en perte).
+export async function applyInvoiceDiscount(data: { pendingInvoiceId: string; discounts: { index: number; discount: number; reason?: string }[] }) {
+  try {
+    applyInvoiceDiscountSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertCan(activeUser, "invoices.discount", "Non autorisé. Seul un responsable (coordinateur) peut accorder une réduction.");
+
+    const pending = await prisma.pendingInvoice.findUnique({ where: { id: data.pendingInvoiceId } });
+    if (!pending) throw new Error("Ticket introuvable.");
+    await assertOrganizationAccess(activeUser, pending.organizationId, TICKET_ACCESS_DENIED);
+    const paid = await prisma.financialTransaction.aggregate({ where: { pendingInvoiceId: pending.id }, _sum: { amount: true } });
+    if (pending.status !== "PENDING" || (paid._sum.amount || 0) > 0) {
+      throw new Error("Une réduction ne s'accorde qu'avant tout encaissement sur le ticket. Pour renoncer au reste dû, clôturez le ticket.");
+    }
+
+    const items = [...((pending.items as any[]) || [])];
+    for (const d of data.discounts) {
+      if (!items[d.index]) throw new Error("Ligne du ticket introuvable.");
+      items[d.index] = withDiscount(items[d.index], d.discount, d.reason);
+    }
+    // Ticket entièrement offert : plus rien à encaisser, il est soldé (aucune vente à comptabiliser).
+    const newTotal = items.reduce((sum, it) => sum + Number(it.amount || 0), 0);
+    const updated = await prisma.pendingInvoice.update({
+      where: { id: pending.id },
+      data: { items, ...(newTotal <= 0 ? { status: "PAID", paidAt: new Date() } : {}) },
+    });
+
+    await logAuditAction(activeUser.id, "APPLY_INVOICE_DISCOUNT", "PendingInvoice", pending.id, {
+      discounts: data.discounts.map((d) => ({ line: items[d.index]?.description, discount: Math.round(d.discount), reason: d.reason || null })),
+      totalDiscount: totalDiscount(items),
+    });
+    revalidatePath(`/dashboard/clinics/${pending.organizationId}/caisse`);
+    revalidatePath("/dashboard/caisse");
+    return { success: true as const, data: { items: updated.items as any[], total: newTotal, settled: newTotal <= 0 } };
+  } catch (error: any) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'application de la réduction.") };
   }
 }
 

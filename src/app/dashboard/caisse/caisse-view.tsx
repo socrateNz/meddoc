@@ -35,6 +35,7 @@ import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog, EditOpenin
 import CaisseCartDialog from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
 import RecordPaymentDialog from "./record-payment-dialog";
+import InvoiceDiscountDialog from "./invoice-discount-dialog";
 import CloseInvoiceDialog from "./close-invoice-dialog";
 import { EditInvoiceClientDialog } from "./edit-invoice-client-dialog";
 import { EditInvoiceStatusDialog } from "./edit-invoice-status-dialog";
@@ -138,6 +139,9 @@ export default function CaisseView({
   const hasUndispensedPharmacy = (inv: any) =>
     !inv.dispensedAt && ((inv.items as any[]) || []).some((i) => i.type === "PHARMACY" && (Number(i.dispensedQuantity) || 0) < Number(i.quantity));
   const canManageStatus = useCan("invoices.manage");
+  // Réduction sur un ticket pas encore réglé (cf. applyInvoiceDiscount) : le responsable.
+  const canDiscount = useCan("invoices.discount");
+  const discountable = (inv: any) => canDiscount && inv.status === "PENDING" && !(Number(inv.amountPaid) > 0);
 
   const selectedRegister = registers.find((r) => r.id === selectedRegisterId) || null;
 
@@ -547,6 +551,7 @@ export default function CaisseView({
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {discountable(inv) && <InvoiceDiscountDialog pendingInvoice={inv} patientName={name} onSuccess={() => handleMutationSuccess()} />}
                       {canOperate && openSessionId && (
                         inv.status === "PARTIAL" ? (
                           <RecordPaymentDialog
@@ -763,6 +768,13 @@ export default function CaisseView({
                             <Printer className="h-3.5 w-3.5 text-blue-600" />
                             Imprimer
                           </Button>
+                          {discountable(inv) && (
+                            <InvoiceDiscountDialog
+                              pendingInvoice={inv}
+                              patientName={inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : inv.customPatientName || "Client comptant"}
+                              onSuccess={() => handleMutationSuccess()}
+                            />
+                          )}
                           {canOperate && selectedRegister?.openSession && !["PAID", "CANCELLED"].includes(inv.status) && (
                             inv.status === "PARTIAL" ? (
                               <RecordPaymentDialog

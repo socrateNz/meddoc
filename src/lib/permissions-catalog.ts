@@ -134,6 +134,7 @@ export const PERMISSIONS = {
   // --- Ajoutées ensuite : TOUJOURS à la fin (l'ordre du catalogue encode les permissions dans le
   // jeton de session, cf. encodePermissions) ---
   "roles.manage": { group: "Administration", label: "Gérer les rôles et leurs permissions", roles: ["COORDINATOR"] },
+  "invoices.discount": { group: "Caisse", label: "Accorder une réduction sur une facture (examen, consultation, médicaments...)", roles: ["COORDINATOR"] },
 } as const satisfies Record<string, PermissionDef>;
 
 export type Permission = keyof typeof PERMISSIONS;

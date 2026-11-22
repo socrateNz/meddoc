@@ -110,7 +110,8 @@ export default function InvoiceModal({ transaction, organizationName, organizati
         description: desc,
         quantity: itemQty,
         unitPrice: itemPu,
-        amount: item.amount || (itemPu * itemQty)
+        // Ligne réduite (cf. src/lib/invoice-discount.ts) : son montant net, même à 0 (gratuité).
+        amount: Number(item.discount) > 0 ? Number(item.amount) || 0 : item.amount || (itemPu * itemQty)
       };
     });
   }
@@ -244,7 +245,14 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                 {itemList.map((item: any, idx: number) => (
                   <div key={idx} className="flex text-[11px] items-start">
                     <span className="w-10 font-bold text-slate-800">{item.quantity || 1}</span>
-                    <span className="flex-1 font-medium text-slate-900 pr-1 break-words">{item.description}</span>
+                    <span className="flex-1 font-medium text-slate-900 pr-1 break-words">
+                      {item.description}
+                      {Number(item.discount) > 0 && (
+                        <span className="block text-[10px] font-semibold text-slate-700">
+                          Réduction -{formatFCFA(item.discount).replace(" FCFA", "")}{item.discountReason ? ` (${item.discountReason})` : ""}
+                        </span>
+                      )}
+                    </span>
                     <span className="w-16 text-right text-slate-700">{formatFCFA(item.unitPrice || item.amount).replace(" FCFA", "")}</span>
                     <span className="w-18 text-right font-bold text-slate-900">{formatFCFA(item.amount).replace(" FCFA", "")}</span>
                   </div>
@@ -367,7 +375,14 @@ export default function InvoiceModal({ transaction, organizationName, organizati
 
                 {itemList.map((item: any, idx: number) => (
                   <div key={idx} className="grid grid-cols-12 p-3 font-medium border-t border-slate-100 items-center">
-                    <div className="col-span-6 font-semibold text-slate-900">{item.description}</div>
+                    <div className="col-span-6 font-semibold text-slate-900">
+                      {item.description}
+                      {Number(item.discount) > 0 && (
+                        <span className="block text-xs font-medium text-violet-700">
+                          Réduction −{formatFCFA(item.discount)}{item.discountReason ? ` (${item.discountReason})` : ""}
+                        </span>
+                      )}
+                    </div>
                     <div className="col-span-2 text-center">{item.quantity || 1}</div>
                     <div className="col-span-2 text-right">{formatFCFA(item.unitPrice || item.amount)}</div>
                     <div className="col-span-2 text-right font-bold text-slate-900">{formatFCFA(item.amount)}</div>

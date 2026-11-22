@@ -520,12 +520,15 @@ export default function InvoicePDFDocument({ transaction, organizationName, orga
       }
       const itemQty = item.quantity || 1;
       const itemPu = item.unitPrice || (item.amount ? Math.round(item.amount / itemQty) : 0);
+      // Ligne réduite (cf. src/lib/invoice-discount.ts) : réduction sous la désignation, montant net.
+      const discount = Number(item.discount) || 0;
       return {
         ...item,
-        description: desc,
+        description: discount > 0 ? `${desc}
+Réduction -${formatFCFA(discount)}${item.discountReason ? ` (${item.discountReason})` : ""}` : desc,
         quantity: itemQty,
         unitPrice: itemPu,
-        amount: item.amount || (itemPu * itemQty)
+        amount: discount > 0 ? Number(item.amount) || 0 : item.amount || (itemPu * itemQty)
       };
     });
   }
