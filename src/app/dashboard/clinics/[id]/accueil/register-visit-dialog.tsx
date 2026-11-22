@@ -114,7 +114,10 @@ export default function RegisterVisitDialog({
     setSaving(false);
     if (res.success) {
       const serviceName = needsService ? services.find((s) => s.id === serviceId)?.name : null;
-      toast.success(`Ticket ${res.data.ticket} — ${patient.name}${serviceName ? ` → ${serviceName}` : ""}`, { duration: 8000 });
+      toast.success(`Ticket ${res.data.ticket} — ${patient.name}${serviceName ? ` → ${serviceName}` : ""}`, {
+        duration: 8000,
+        description: res.data.billedOnArrival ? "Consultation à régler : le patient passe d'abord à la caisse." : undefined,
+      });
       setOpen(false);
       reset();
       onRegistered();

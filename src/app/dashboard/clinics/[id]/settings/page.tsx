@@ -101,7 +101,12 @@ export default async function ClinicSettingsPage(props: { params: Promise<{ id: 
             partners={partners.map((p) => ({ id: p.id, name: p.name, logoUrl: p.logoUrl, address: p.address, phone: p.phone, email: p.email, billing: p.billing, isActive: p.isActive }))}
           />
         )}
-        <StaffAccessCard clinicId={clinic.id} pharmacistCanUseRegister={clinic.pharmacistCanUseRegister !== false} readOnly={!canEdit} />
+        <StaffAccessCard
+          clinicId={clinic.id}
+          pharmacistCanUseRegister={clinic.pharmacistCanUseRegister !== false}
+          consultationBilling={clinic.consultationBilling === "ON_ARRIVAL" ? "ON_ARRIVAL" : "ON_CLOSE"}
+          readOnly={!canEdit}
+        />
         {!isSuperAdmin && (
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/50 p-5 space-y-3">
             <div>

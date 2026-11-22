@@ -12,6 +12,7 @@ import { computeLabOrderStatus, isCriticalValue, orderSamples, testsWithoutSampl
 import { randomUUID } from "crypto";
 import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
 import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
+import { decrementStockForItems } from "@/lib/stock-decrement";
 import { evaluateResult, hasAnyValue, parseTemplate, presetById, type ResultData, type ResultTemplate, type StoredResultData } from "@/lib/lab-templates";
 import { z } from "zod";
 
@@ -198,7 +199,9 @@ async function createLabOrderOnce(data: {
       const p = pricedByName.get(testName.toLowerCase());
       if (!p) return;
       // Partenaire : prix partenaire de l'examen s'il est défini, sinon prix maison.
-      const price = partner ? labTestPrice(p, true) : p.totalPrice;
+      // Partenaire : son tarif propre (Partner.prices), sinon le prix partenaire commun, sinon le prix maison.
+      const ownPrice = partner ? (partner.prices as Record<string, number> | null)?.[p.id] : undefined;
+      const price = partner ? (typeof ownPrice === "number" ? ownPrice : labTestPrice(p, true)) : p.totalPrice;
       testDetails.push({
         testName,
         labTestId: p.id,
@@ -537,12 +540,43 @@ export async function collectSample(data: {
       },
     });
 
-    await logAuditAction(activeUser.id, "COLLECT_LAB_SAMPLE", "LabOrder", data.labOrderId, { sampleType: data.sampleType, tests });
+    // Examen facturé au partenaire en fin de mois : aucun ticket de caisse, donc aucune remise en
+    // pharmacie pour décompter les produits consommés — ils sortent du stock au premier
+    // prélèvement, une seule fois. Un stock insuffisant n'empêche pas le prélèvement : il est
+    // signalé, à régulariser par la pharmacie.
+    let stockWarning: string | null = null;
+    if (order.partnerId && !order.pendingInvoiceId && !order.consumablesConsumedAt) {
+      const consumables = ((order.testDetails as any[]) || []).flatMap((td) =>
+        ((td.consumables as any[]) || []).map((c) => ({
+          type: "PHARMACY" as const,
+          pharmacyItemId: c.pharmacyItemId as string,
+          description: c.name as string,
+          quantity: Number(c.quantity) || 0,
+        }))
+      );
+      if (consumables.length > 0) {
+        try {
+          const alerts = await prisma.$transaction(async (tx) => {
+            const claimed = await tx.labOrder.updateMany({ where: { id: order.id, consumablesConsumedAt: null }, data: { consumablesConsumedAt: new Date() } });
+            if (claimed.count === 0) return [];
+            return decrementStockForItems(tx, consumables, order.organizationId);
+          });
+          if (alerts.length > 0) {
+            const { appEvents } = await import("@/lib/events");
+            for (const alert of alerts) appEvents.emit("stock.low", alert);
+          }
+        } catch (e) {
+          stockWarning = `Produits consommés non décomptés du stock : ${toErrorMessage(e, "erreur inconnue")}`;
+        }
+      }
+    }
+
+    await logAuditAction(activeUser.id, "COLLECT_LAB_SAMPLE", "LabOrder", data.labOrderId, { sampleType: data.sampleType, tests, stockWarning });
 
     revalidatePath("/dashboard/lab");
     revalidatePath(`/dashboard/lab/${data.labOrderId}`);
 
-    return { success: true, data: updated };
+    return { success: true, data: updated, stockWarning };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement du prélèvement.") };
   }

@@ -151,6 +151,9 @@ model Organization {
   // le coordinateur de la clinique (cf. src/lib/register-access.ts). Absent = oui : comportement
   // historique, aucune migration nécessaire. Faux = séparation stricte caisse / pharmacie.
   pharmacistCanUseRegister Boolean?
+  // Facturation de la consultation : ON_CLOSE (à la clôture par le médecin, défaut historique)
+  // ou ON_ARRIVAL (ticket de caisse dès l'orientation à l'accueil, payé avant de voir le médecin).
+  consultationBilling      String?
 
   // Comptabilité (cf. src/lib/accounting) — renseignés sur la clinique, qui est la « structure »
   // comptable. accountingLockedUntil : aucune écriture datée de ce jour (AAAA-MM-JJ) ou d'avant.
@@ -311,9 +314,12 @@ model Patient {
 
   // Service qui a la charge du dossier (orientation à l'accueil, puis transferts — cf.
   // PatientTransfer). Absent = dossier commun, visible de tous les services (dossiers antérieurs).
-  serviceId String?           @db.ObjectId
-  service   ClinicService?    @relation(fields: [serviceId], references: [id])
-  transfers PatientTransfer[]
+  serviceId       String?           @db.ObjectId
+  service         ClinicService?    @relation(fields: [serviceId], references: [id])
+  transfers       PatientTransfer[]
+  // Nouveau-né : dossier de la mère (créé à l'accouchement, cf. Newborn.patientId).
+  motherPatientId String?           @db.ObjectId
+  partogram       PartogramEntry[]
 
   consultationDrafts ConsultationDraft[]
   pregnancies        Pregnancy[]
@@ -546,13 +552,16 @@ model LabOrder {
   samples             LabSample[]
 
   // Visite prénatale d'origine (maternité), comme appointmentId pour une consultation.
-  prenatalVisitId  String?        @db.ObjectId
+  prenatalVisitId       String?        @db.ObjectId
   // Examen externe demandé par une clinique partenaire : prix partenaire, rapport à son en-tête,
   // relevé mensuel. partnerReference = numéro du bon de demande du partenaire.
-  partnerId        String?        @db.ObjectId
-  partner          Partner?       @relation(fields: [partnerId], references: [id])
-  partnerReference String?
-  prenatalVisit    PrenatalVisit? @relation(fields: [prenatalVisitId], references: [id])
+  partnerId             String?        @db.ObjectId
+  partner               Partner?       @relation(fields: [partnerId], references: [id])
+  partnerReference      String?
+  // Consommables des examens décomptés du stock hors ticket de caisse (examen facturé au
+  // partenaire en fin de mois) — une seule fois par demande.
+  consumablesConsumedAt DateTime?
+  prenatalVisit         PrenatalVisit? @relation(fields: [prenatalVisitId], references: [id])
 
   results LabResult[]
 
@@ -963,6 +972,7 @@ model Pregnancy {
 
   prenatalVisits PrenatalVisit[]
   delivery       Delivery?
+  partogram      PartogramEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1043,6 +1053,8 @@ model Newborn {
   apgarScore5 Int? // score d'Apgar à 5 minutes
   vitalStatus String  @default("LIVE_BIRTH") // LIVE_BIRTH, STILLBIRTH
   notes       String?
+  // Dossier patient propre du bébé (néonatalogie, couveuse), créé à l'accouchement.
+  patientId   String? @db.ObjectId
 
   createdAt DateTime @default(now())
 
@@ -1768,34 +1780,36 @@ model BedStay {
 // Passage à l'accueil (étape C2 de l'audit d'évolution) : arrivée d'un patient, ticket du jour,
 // orientation et suivi dans la file d'attente jusqu'à sa prise en charge (cf. src/lib/visits.ts).
 model Visit {
-  id             String         @id @default(auto()) @map("_id") @db.ObjectId
-  organizationId String         @db.ObjectId
-  patientId      String         @db.ObjectId
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId   String         @db.ObjectId
+  patientId        String         @db.ObjectId
   // Jour de la clinique (AAAA-MM-JJ, fuseau de Douala) et numéro de ticket de ce jour (1, 2...) —
   // compteur atomique par clinique et par jour (Counter « visit-<clinique>-<jour> »).
-  visitDate      String
-  ticketNumber   Int
-  destination    String // CONSULTATION, LAB, PHARMACY, NURSING, EMERGENCY, ADMINISTRATIVE
-  priority       String         @default("NORMAL") // NORMAL, URGENT
-  reason         String?
+  visitDate        String
+  ticketNumber     Int
+  destination      String // CONSULTATION, LAB, PHARMACY, NURSING, EMERGENCY, ADMINISTRATIVE
+  priority         String         @default("NORMAL") // NORMAL, URGENT
+  reason           String?
   // Médecin souhaité pour une consultation (facultatif : sinon le premier disponible).
-  assignedToId   String?        @db.ObjectId
+  assignedToId     String?        @db.ObjectId
   // Service vers lequel l'accueil oriente le patient (consultation) — le dossier lui est alors confié.
-  serviceId      String?        @db.ObjectId
-  service        ClinicService? @relation(fields: [serviceId], references: [id])
-  status         String         @default("WAITING") // WAITING, CALLED, IN_PROGRESS, DONE, CANCELLED
+  serviceId        String?        @db.ObjectId
+  service          ClinicService? @relation(fields: [serviceId], references: [id])
+  // Ticket de caisse de la consultation créé à l'arrivée (Organization.consultationBilling = ON_ARRIVAL).
+  pendingInvoiceId String?        @db.ObjectId
+  status           String         @default("WAITING") // WAITING, CALLED, IN_PROGRESS, DONE, CANCELLED
   // Dernier niveau de tri CIMU (1 = vitale immédiate … 5 = non urgent) d'un passage aux urgences —
   // recopié depuis EmergencyTriage pour ordonner le tableau des urgences.
-  triageLevel    Int?
-  triagedAt      DateTime?
-  arrivedAt      DateTime       @default(now())
-  calledAt       DateTime?
-  startedAt      DateTime?
-  completedAt    DateTime?
-  createdById    String         @db.ObjectId
-  handledById    String?        @db.ObjectId
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  triageLevel      Int?
+  triagedAt        DateTime?
+  arrivedAt        DateTime       @default(now())
+  calledAt         DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdById      String         @db.ObjectId
+  handledById      String?        @db.ObjectId
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
 
   @@index([organizationId, visitDate, status])
   @@index([patientId, visitDate])
@@ -2193,12 +2207,65 @@ model Partner {
   // PARTNER : rien à la caisse, les examens figurent sur le relevé mensuel du partenaire.
   // PATIENT : le patient règle à la caisse, au prix partenaire.
   billing        String       @default("PARTNER")
+  // Tarifs propres à ce partenaire : { [labTestId]: prix FCFA }, prioritaires sur
+  // LabTest.partnerPrice (tarif partenaire commun), lui-même prioritaire sur le prix maison.
+  prices         Json?
   isActive       Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  labOrders LabOrder[]
+  labOrders   LabOrder[]
+  settlements PartnerSettlement[]
 
   @@unique([organizationId, name])
   @@index([organizationId, isActive])
+}
+
+// Règlement reçu d'un partenaire pour son relevé d'un mois (AAAA-MM) : un ou plusieurs versements.
+model PartnerSettlement {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  partnerId      String   @db.ObjectId
+  partner        Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  organizationId String   @db.ObjectId
+  month          String
+  amount         Float
+  paymentMethod  String // CASH, MOBILE_MONEY, BANK_TRANSFER, CHEQUE
+  reference      String?
+  notes          String?
+  paidAt         DateTime @default(now())
+  recordedById   String   @db.ObjectId
+  createdAt      DateTime @default(now())
+
+  @@index([partnerId, month])
+  @@index([organizationId, paidAt])
+}
+
+// Partogramme (OMS) : une mesure pendant le travail — dilatation, descente, contractions, cœur
+// fœtal, constantes de la mère. Alerte et action se lisent sur la courbe de dilatation.
+model PartogramEntry {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  pregnancyId         String    @db.ObjectId
+  pregnancy           Pregnancy @relation(fields: [pregnancyId], references: [id], onDelete: Cascade)
+  patientId           String    @db.ObjectId
+  patient             Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  recordedAt          DateTime  @default(now())
+  cervicalDilation    Float? // cm (0-10)
+  headDescent         Int? // en cinquièmes palpables (5 à 0)
+  contractionsPer10   Int? // contractions par 10 minutes
+  contractionDuration Int? // secondes
+  fetalHeartRate      Int? // bpm
+  amnioticFluid       String? // I (intactes), C (claire), M (méconiale), B (sanglante), A (absente)
+  moulding            String? // 0, +, ++, +++
+  maternalPulse       Int?
+  systolicBp          Int?
+  diastolicBp         Int?
+  temperature         Float?
+  urineVolume         Int? // mL
+  oxytocin            String?
+  drugs               String?
+  notes               String?
+  recordedById        String    @db.ObjectId
+  createdAt           DateTime  @default(now())
+
+  @@index([pregnancyId, recordedAt])
 }

@@ -195,6 +195,7 @@ describe("recordDelivery", () => {
     vi.doMock("@/lib/db", () => ({
       prisma: {
         pregnancy: { findUnique: vi.fn(async () => ({ id: "preg1", patientId: "p1", status: "ACTIVE" })) },
+        newborn: { findMany: vi.fn(async () => [{ id: "nb1" }, { id: "nb2" }]) },
         $transaction: vi.fn(async (fn: any) => fn(tx)),
       },
     }));
@@ -202,6 +203,9 @@ describe("recordDelivery", () => {
       getCurrentUser: vi.fn(async () => activeUser),
       verifyPatientAccess: vi.fn(async () => true),
     }));
+    // Dossier de chaque bébé né vivant (jumeaux : « Bébé 1 », « Bébé 2 »).
+    const createNewbornPatient = vi.fn(async () => "baby");
+    vi.doMock("@/lib/newborn-server", () => ({ createNewbornPatient }));
     const { recordDelivery } = await import("./maternity");
 
     const result = await recordDelivery({
@@ -214,6 +218,9 @@ describe("recordDelivery", () => {
     });
 
     expect(result.success).toBe(true);
+    expect(createNewbornPatient).toHaveBeenCalledTimes(2);
+    expect(createNewbornPatient).toHaveBeenCalledWith({ newbornId: "nb2", motherPatientId: "p1", rank: 2, twins: true });
+    expect(result.data).toMatchObject({ newbornRecords: 2 });
     expect(deliveryCreate).toHaveBeenCalledTimes(1);
     expect(newbornCreateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.arrayContaining([expect.objectContaining({ sex: "F" }), expect.objectContaining({ sex: "M" })]) })

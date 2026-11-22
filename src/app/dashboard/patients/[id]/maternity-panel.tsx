@@ -7,10 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Baby, Loader2, Stethoscope, HeartPulse } from "lucide-react";
-import { updatePregnancyStatus } from "@/actions/maternity";
+import { createNewbornRecord, updatePregnancyStatus } from "@/actions/maternity";
 import NewPregnancyDialog from "./new-pregnancy-dialog";
 import AddPrenatalVisitDialog from "./add-prenatal-visit-dialog";
 import RecordDeliveryDialog from "./record-delivery-dialog";
+import PartogramDialog from "./partogram-dialog";
 import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
 import NewRadiologyOrderDialog from "@/app/dashboard/clinics/[id]/imagerie/new-radiology-order-dialog";
 import NewPrescriptionDialog from "./new-prescription-dialog";
@@ -90,6 +91,22 @@ export default function MaternityPanel({
         router.refresh();
       } else {
         toast.error(res.error || "Erreur lors de la mise à jour.");
+      }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Dossier du nouveau-né (néonatalogie, couveuse) pour un accouchement enregistré sans lui.
+  const handleCreateNewborn = async (newbornId: string) => {
+    setBusyId(newbornId);
+    try {
+      const res = await createNewbornRecord(newbornId);
+      if (res.success) {
+        toast.success("Dossier du bébé créé.");
+        router.refresh();
+      } else {
+        toast.error(res.error);
       }
     } finally {
       setBusyId(null);
@@ -275,9 +292,10 @@ export default function MaternityPanel({
                     )}
                   </div>
 
-                  {isActive && canWrite && !isDischarged && (
-                    <div className="pt-1">
-                      <RecordDeliveryDialog pregnancyId={pregnancy.id} />
+                  {isActive && !isDischarged && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <PartogramDialog pregnancyId={pregnancy.id} canWrite={canWrite} />
+                      {canWrite && <RecordDeliveryDialog pregnancyId={pregnancy.id} />}
                     </div>
                   )}
 
@@ -307,6 +325,22 @@ export default function MaternityPanel({
                               <Badge variant="outline" className="ml-1.5 text-[10px] border-red-500/30 text-red-600 bg-red-500/5">Mort-né(e)</Badge>
                             )}
                             {newborn.notes && <p className="text-muted-foreground mt-1 italic">{newborn.notes}</p>}
+                            {newborn.vitalStatus !== "STILLBIRTH" && (
+                              <div className="mt-1.5">
+                                {newborn.patientId ? (
+                                  <Link href={`/dashboard/patients/${newborn.patientId}`} className="font-semibold text-blue-600 hover:underline dark:text-blue-400">
+                                    Ouvrir le dossier du bébé →
+                                  </Link>
+                                ) : (
+                                  canWrite && (
+                                    <Button size="sm" variant="outline" className="h-8 text-xs" disabled={busyId === newborn.id} onClick={() => handleCreateNewborn(newborn.id)}>
+                                      {busyId === newborn.id && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                                      Créer le dossier du bébé
+                                    </Button>
+                                  )
+                                )}
+                              </div>
+                            )}
                           </li>
                         ))}
                       </ul>

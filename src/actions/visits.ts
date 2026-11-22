@@ -73,10 +73,16 @@ export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
       const activeServices = await prisma.clinicService.count({ where: { organizationId: input.clinicId, isActive: true, isTransversal: false } });
       if (activeServices > 0 && !serviceId) throw new Error("Choisissez le service vers lequel orienter le patient.");
     }
-    if (serviceId) {
-      const service = await prisma.clinicService.findFirst({ where: { id: serviceId, organizationId: input.clinicId, isActive: true, isTransversal: false }, select: { id: true } });
-      if (!service) throw new Error("Service invalide pour cette clinique.");
-    }
+    const service = serviceId
+      ? await prisma.clinicService.findFirst({
+          where: { id: serviceId, organizationId: input.clinicId, isActive: true, isTransversal: false },
+          select: { id: true, name: true, consultationPrice: true },
+        })
+      : null;
+    if (serviceId && !service) throw new Error("Service invalide pour cette clinique.");
+    // Clinique qui fait payer la consultation avant de voir le médecin : ticket de caisse dès l'arrivée.
+    const clinic = await prisma.organization.findUnique({ where: { id: input.clinicId }, select: { consultationBilling: true } });
+    const billOnArrival = input.destination === "CONSULTATION" && clinic?.consultationBilling === "ON_ARRIVAL";
 
     if (input.assignedToId) {
       const doctor = await prisma.user.findUnique({ where: { id: input.assignedToId }, select: { role: true, organizationId: true, isActive: true, serviceIds: true } });
@@ -115,6 +121,21 @@ export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
           createdById: activeUser.id,
         },
       });
+      // Consultation payée à l'arrivée : ticket au tarif du service (0 si le service n'a pas de tarif,
+      // la caisse saisit alors le montant), relié au passage.
+      if (billOnArrival) {
+        const price = service?.consultationPrice ?? 0;
+        const invoice = await tx.pendingInvoice.create({
+          data: {
+            status: "PENDING",
+            patientId: input.patientId,
+            organizationId: input.clinicId,
+            items: [{ type: "SERVICE", description: service ? `Consultation — ${service.name}` : "Frais de consultation", quantity: 1, unitPrice: price, amount: price }],
+            createdById: activeUser.id,
+          },
+        });
+        await tx.visit.update({ where: { id: created.id }, data: { pendingInvoiceId: invoice.id } });
+      }
       // Orienté vers un autre service que celui qui suit le dossier : le dossier lui est confié,
       // et le changement est tracé comme une orientation.
       if (reoriented) {
@@ -142,7 +163,8 @@ export async function registerVisit(data: z.input<typeof registerVisitSchema>) {
       reoriented,
     });
     revalidatePath(`/dashboard/clinics/${input.clinicId}/accueil`);
-    return { success: true as const, data: { id: visit.id, ticket: formatTicket(ticketNumber) } };
+    if (billOnArrival) revalidatePath(`/dashboard/clinics/${input.clinicId}/caisse`);
+    return { success: true as const, data: { id: visit.id, ticket: formatTicket(ticketNumber), billedOnArrival: billOnArrival } };
   } catch (error) {
     return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'enregistrement de l'arrivée.") };
   }

@@ -14,10 +14,12 @@ type Options = {
   claimFails?: boolean;
   // Services actifs (non transversaux) de la clinique.
   services?: string[];
+  // Facturation de la consultation de la clinique.
+  billing?: "ON_CLOSE" | "ON_ARRIVAL";
 };
 
 function mockDb(options: Options = {}) {
-  const { patientClinic = "clinicA", patientServiceId = null, activeVisit = false, doctor = null, visit, claimFails = false, services = [] } = options;
+  const { patientClinic = "clinicA", patientServiceId = null, activeVisit = false, doctor = null, visit, claimFails = false, services = [], billing } = options;
   const runCommandRaw = vi.fn(async () => ({ value: { value: 7 } }));
   const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "v1", ...data }));
   const updateMany = vi.fn(async () => ({ count: claimFails ? 0 : 1 }));
@@ -32,18 +34,20 @@ function mockDb(options: Options = {}) {
       findMany: vi.fn(async () => []),
       create,
       updateMany,
+      update: vi.fn(async () => ({})),
     },
+    pendingInvoice: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "inv1", ...data })) },
     clinicService: {
       count: vi.fn(async () => services.length),
-      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => (services.includes(where.id) ? { id: where.id } : null)),
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) => (services.includes(where.id) ? { id: where.id, name: "Ophtalmologie", consultationPrice: 5000 } : null)),
     },
     patientTransfer: { create: transferCreate },
-    organization: { findFirst: vi.fn(async () => null) },
+    organization: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => ({ consultationBilling: billing ?? null })) },
     $runCommandRaw: runCommandRaw,
     $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma)),
   };
   vi.doMock("@/lib/db", () => ({ prisma }));
-  return { runCommandRaw, create, updateMany, patientUpdate, transferCreate };
+  return { runCommandRaw, create, updateMany, patientUpdate, transferCreate, prisma };
 }
 
 beforeEach(() => {
@@ -67,7 +71,7 @@ describe("registerVisit", () => {
 
     const result = await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION", reason: "Fièvre" });
 
-    expect(result).toEqual({ success: true, data: { id: "v1", ticket: "007" } });
+    expect(result).toEqual({ success: true, data: { id: "v1", ticket: "007", billedOnArrival: false } });
     expect(runCommandRaw).toHaveBeenCalledWith(expect.objectContaining({ query: { key: "visit-clinicA-2026-10-13" } }));
     expect(create).toHaveBeenCalledWith({
       data: expect.objectContaining({ organizationId: "clinicA", patientId: "p1", visitDate: "2026-10-13", ticketNumber: 7, priority: "NORMAL", createdById: "u1" }),
@@ -133,6 +137,26 @@ describe("registerVisit", () => {
     const result = await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION", serviceId: "svc-ophtalmo", assignedToId: "doc1" });
 
     expect(result.success ? "" : result.error).toMatch(/pas rattaché au service/);
+  });
+
+  it("crée le ticket de consultation dès l'arrivée quand la clinique fait payer avant le médecin", async () => {
+    const { prisma } = mockDb({ services: ["svc-ophtalmo"], billing: "ON_ARRIVAL" });
+    const { registerVisit } = await import("./visits");
+
+    const result = await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "CONSULTATION", serviceId: "svc-ophtalmo" });
+
+    expect(result).toMatchObject({ success: true, data: { billedOnArrival: true } });
+    expect(prisma.pendingInvoice.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ patientId: "p1", items: [expect.objectContaining({ description: "Consultation — Ophtalmologie", amount: 5000 })] }),
+    });
+    expect(prisma.visit.update).toHaveBeenCalledWith({ where: { id: "v1" }, data: { pendingInvoiceId: "inv1" } });
+  });
+
+  it("ne crée aucun ticket à l'arrivée en mode « à la clôture » ni pour un passage hors consultation", async () => {
+    const { prisma } = mockDb({ billing: "ON_ARRIVAL" });
+    const { registerVisit } = await import("./visits");
+    await registerVisit({ clinicId: "clinicA", patientId: "p1", destination: "LAB" });
+    expect(prisma.pendingInvoice.create).not.toHaveBeenCalled();
   });
 
   it("laisse l'admin de holding en lecture seule", async () => {

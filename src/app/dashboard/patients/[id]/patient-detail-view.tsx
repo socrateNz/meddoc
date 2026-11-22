@@ -295,6 +295,11 @@ export default function PatientDetailView({
                 {patient.ipp && <span className="font-mono font-semibold text-foreground/80">{patient.ipp} • </span>}
                 {calculatePatientAge(patient.dateOfBirth)} ans • {patient.sex === "M" ? "Homme" : patient.sex === "F" ? "Femme" : patient.sex || "Sexe non renseigné"} • Né(e) le {formatPatientDate(patient.dateOfBirth)}
               </p>
+              {patient.motherPatientId && (
+                <Link href={`${basePath}/${patient.motherPatientId}`} className="mt-1 inline-block text-sm font-medium text-pink-600 hover:underline dark:text-pink-400">
+                  Nouveau-né — voir le dossier de la mère →
+                </Link>
+              )}
               <div className="mt-2">
                 <PatientServicePanel
                   patientId={patient.id}

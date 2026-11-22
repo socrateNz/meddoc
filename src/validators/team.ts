@@ -16,6 +16,8 @@ export const createTeamMemberSchema = z.object({
   specialties: z.string().optional(),
   licenseNumber: z.string().optional(),
   organizationId: z.string().optional(),
+  // Services de rattachement (médecin, infirmier) — vide = tous les services.
+  serviceIds: z.array(z.string().min(1)).max(30).optional(),
 });
 
 export const reassignTeamMemberSchema = z.object({

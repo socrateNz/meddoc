@@ -90,6 +90,43 @@ describe("recordLabResult — compte rendu structuré", () => {
   });
 });
 
+describe("collectSample — consommables d'un examen facturé au partenaire", () => {
+  function mockCollectDb(order: Record<string, unknown>) {
+    const decrement = vi.fn(async () => []);
+    const claim = vi.fn(async () => ({ count: 1 }));
+    const prisma: any = {
+      labOrder: {
+        findUnique: vi.fn(async () => ({ id: "o1", status: "PRESCRIBED", patientId: "p1", organizationId: "org1", tests: ["NFS"], samples: [], ...order })),
+        update: vi.fn(async ({ data }: any) => ({ id: "o1", ...data })),
+        updateMany: claim,
+      },
+    };
+    prisma.$transaction = vi.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
+    vi.doMock("@/lib/db", () => ({ prisma }));
+    vi.doMock("@/lib/stock-decrement", () => ({ decrementStockForItems: decrement }));
+    return { decrement, claim };
+  }
+  const details = [{ testName: "NFS", consumables: [{ pharmacyItemId: "tube", name: "Tube EDTA", quantity: 1 }] }];
+
+  it("décompte les produits consommés au premier prélèvement, une seule fois", async () => {
+    const m = mockCollectDb({ partnerId: "pa1", pendingInvoiceId: null, consumablesConsumedAt: null, testDetails: details });
+    const { collectSample } = await import("./lab");
+
+    const res = await collectSample({ labOrderId: "o1", sampleType: "BLOOD" });
+
+    expect(res.success).toBe(true);
+    expect(m.claim).toHaveBeenCalledWith({ where: { id: "o1", consumablesConsumedAt: null }, data: { consumablesConsumedAt: expect.any(Date) } });
+    expect(m.decrement).toHaveBeenCalledWith(expect.anything(), [expect.objectContaining({ pharmacyItemId: "tube", quantity: 1 })], "org1");
+  });
+
+  it("laisse la pharmacie décompter quand il y a un ticket de caisse", async () => {
+    const m = mockCollectDb({ partnerId: "pa1", pendingInvoiceId: "inv1", consumablesConsumedAt: null, testDetails: details });
+    const { collectSample } = await import("./lab");
+    await collectSample({ labOrderId: "o1", sampleType: "BLOOD" });
+    expect(m.decrement).not.toHaveBeenCalled();
+  });
+});
+
 describe("createLabOrder pour un partenaire", () => {
   it("applique le prix partenaire (prix maison à défaut) et ne crée aucun ticket de caisse quand le partenaire paie", async () => {
     const { labOrderCreate, pendingInvoiceCreate } = mockDb({ id: "pa1", name: "Clinique Espoir", billing: "PARTNER" });
@@ -109,6 +146,19 @@ describe("createLabOrder pour un partenaire", () => {
       }),
     });
     expect(pendingInvoiceCreate).not.toHaveBeenCalled();
+  });
+
+  it("applique d'abord le tarif propre du partenaire, prioritaire sur le prix partenaire commun", async () => {
+    const { labOrderCreate } = mockDb({ id: "pa1", name: "Clinique Espoir", billing: "PARTNER", prices: { "lt-NFS": 3000 } } as any);
+    const { createLabOrder } = await import("./lab");
+
+    await createLabOrder({ patientId: "p1", tests: ["NFS", "Glycémie"], partnerId: "pa1" });
+
+    expect(labOrderCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        testDetails: [expect.objectContaining({ testName: "NFS", totalPrice: 3000 }), expect.objectContaining({ testName: "Glycémie", totalPrice: 5000 })],
+      }),
+    });
   });
 
   it("fait régler le patient au prix partenaire quand le partenaire est en mode « patient »", async () => {

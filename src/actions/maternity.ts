@@ -15,6 +15,8 @@ import {
 import { revalidatePath } from "next/cache";
 import { assertUserModule } from "@/lib/modules-server";
 import { assertClinicScope } from "@/lib/clinic-scope";
+import { createNewbornPatient } from "@/lib/newborn-server";
+import { z } from "zod";
 import { patientServiceWhere, restrictedServiceIds } from "@/lib/service-access";
 import { prenatalFollowUp, comparePrenatalFollowUp } from "@/lib/maternity-labels";
 
@@ -262,15 +264,122 @@ async function recordDeliveryOnce(data: {
       return created;
     });
 
+    // Dossier propre de chaque enfant né vivant (néonatalogie, couveuse, vaccins) : un échec ici
+    // n'annule pas l'accouchement enregistré, il se rattrape depuis la fiche (createNewbornRecord).
+    const born = await prisma.newborn.findMany({ where: { deliveryId: delivery.id, vitalStatus: "LIVE_BIRTH" }, orderBy: { id: "asc" } });
+    let newbornRecords = 0;
+    for (const [i, n] of born.entries()) {
+      try {
+        await createNewbornPatient({ newbornId: n.id, motherPatientId: pregnancy.patientId, rank: i + 1, twins: born.length > 1 });
+        newbornRecords++;
+      } catch (e) {
+        console.error("Création du dossier du nouveau-né impossible :", e);
+      }
+    }
+
     await logAuditAction(activeUser.id, "RECORD_DELIVERY", "Pregnancy", data.pregnancyId, {
       mode: data.mode,
       newbornCount: data.newborns.length,
+      newbornRecords,
     });
     revalidatePath(`/dashboard/patients/${pregnancy.patientId}`);
 
-    return { success: true, data: delivery };
+    return { success: true, data: { ...delivery, newbornRecords } };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors de l'enregistrement de l'accouchement.") };
+  }
+}
+
+const partogramEntrySchema = z.object({
+  pregnancyId: z.string().min(1),
+  recordedAt: z.string().optional(),
+  cervicalDilation: z.number().min(0).max(10).optional(),
+  headDescent: z.number().int().min(0).max(5).optional(),
+  contractionsPer10: z.number().int().min(0).max(10).optional(),
+  contractionDuration: z.number().int().min(0).max(300).optional(),
+  fetalHeartRate: z.number().int().min(40).max(250).optional(),
+  amnioticFluid: z.enum(["I", "C", "M", "B", "A"]).optional(),
+  moulding: z.enum(["0", "+", "++", "+++"]).optional(),
+  maternalPulse: z.number().int().min(20).max(250).optional(),
+  systolicBp: z.number().int().min(40).max(300).optional(),
+  diastolicBp: z.number().int().min(20).max(200).optional(),
+  temperature: z.number().min(30).max(45).optional(),
+  urineVolume: z.number().int().min(0).max(5000).optional(),
+  oxytocin: z.string().trim().max(100).optional(),
+  drugs: z.string().trim().max(300).optional(),
+  notes: z.string().trim().max(1000).optional(),
+});
+
+// Partogramme : une mesure pendant le travail (sage-femme, médecin).
+export async function addPartogramEntry(input: z.input<typeof partogramEntrySchema>) {
+  try {
+    const data = partogramEntrySchema.parse(input);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
+    assertMaternityWriteRole(activeUser.role);
+    const pregnancy = await prisma.pregnancy.findUnique({ where: { id: data.pregnancyId }, select: { id: true, patientId: true, status: true } });
+    if (!pregnancy) throw new Error("Grossesse introuvable.");
+    if (pregnancy.status !== "ACTIVE") throw new Error("Le partogramme se remplit pendant le travail, avant l'accouchement.");
+    if (!(await verifyPatientAccess(pregnancy.patientId, activeUser))) throw new Error("Non autorisé.");
+    const recordedAt = data.recordedAt ? new Date(data.recordedAt) : new Date();
+    if (Number.isNaN(recordedAt.getTime()) || recordedAt.getTime() > Date.now() + 5 * 60_000) throw new Error("Heure de la mesure invalide.");
+    const { pregnancyId, recordedAt: _r, ...measures } = data;
+    void _r;
+    if (Object.values(measures).every((v) => v === undefined || v === "")) throw new Error("Saisissez au moins une mesure.");
+    const entry = await prisma.partogramEntry.create({
+      data: { ...measures, pregnancyId, patientId: pregnancy.patientId, recordedAt, recordedById: activeUser.id },
+    });
+    await logAuditAction(activeUser.id, "ADD_PARTOGRAM_ENTRY", "Pregnancy", pregnancyId, { entryId: entry.id });
+    revalidatePath(`/dashboard/patients/${pregnancy.patientId}`);
+    return { success: true as const, data: entry };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'enregistrement de la mesure.") };
+  }
+}
+
+export async function listPartogram(pregnancyId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
+    assertMaternityReadRole(activeUser.role);
+    const pregnancy = await prisma.pregnancy.findUnique({ where: { id: pregnancyId }, select: { patientId: true } });
+    if (!pregnancy || !(await verifyPatientAccess(pregnancy.patientId, activeUser))) throw new Error("Non autorisé.");
+    const entries = await prisma.partogramEntry.findMany({ where: { pregnancyId }, orderBy: { recordedAt: "asc" }, take: 500 });
+    return { success: true as const, data: entries.map((e) => ({ ...e, recordedAt: e.recordedAt.toISOString(), createdAt: e.createdAt.toISOString() })) };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du partogramme.") };
+  }
+}
+
+// Crée le dossier d'un nouveau-né qui n'en a pas encore (accouchement antérieur à cette fonction,
+// ou échec lors de l'enregistrement de l'accouchement).
+export async function createNewbornRecord(newbornId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertUserModule(activeUser, "MATERNITE");
+    assertMaternityWriteRole(activeUser.role);
+    const newborn = await prisma.newborn.findUnique({
+      where: { id: newbornId },
+      include: { delivery: { include: { pregnancy: { select: { patientId: true } }, newborns: { select: { id: true, vitalStatus: true }, orderBy: { id: "asc" } } } } },
+    });
+    if (!newborn) throw new Error("Nouveau-né introuvable.");
+    const motherId = newborn.delivery.pregnancy.patientId;
+    if (!(await verifyPatientAccess(motherId, activeUser))) throw new Error("Non autorisé.");
+    const alive = newborn.delivery.newborns.filter((n) => n.vitalStatus === "LIVE_BIRTH");
+    const patientId = await createNewbornPatient({
+      newbornId,
+      motherPatientId: motherId,
+      rank: Math.max(1, alive.findIndex((n) => n.id === newbornId) + 1),
+      twins: alive.length > 1,
+    });
+    await logAuditAction(activeUser.id, "CREATE_NEWBORN_RECORD", "Patient", patientId, { newbornId, motherId });
+    revalidatePath(`/dashboard/patients/${motherId}`);
+    return { success: true as const, data: { patientId } };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de la création du dossier du nouveau-né.") };
   }
 }
 

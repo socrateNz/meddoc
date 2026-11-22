@@ -177,7 +177,11 @@ export async function completeConsultation(data: {
 
       const patientRecord = await tx.patient.findUnique({
         where: { id: data.patientId },
-        select: { organizationId: true, service: { select: { name: true, consultationPrice: true } } },
+        select: {
+          organizationId: true,
+          service: { select: { name: true, consultationPrice: true } },
+          organization: { select: { consultationBilling: true } },
+        },
       });
 
       // 3. Ordonnance électronique : un médicament reconnu au catalogue pharmacie (par nom,
@@ -232,15 +236,20 @@ export async function completeConsultation(data: {
         // caisse saisit le montant comme avant.
         const service = patientRecord.service;
         const consultationPrice = service?.consultationPrice ?? 0;
-        const items: any[] = [
-          {
-            type: "SERVICE",
-            description: service ? `Consultation — ${service.name}` : "Frais de consultation",
-            quantity: 1,
-            unitPrice: consultationPrice,
-            amount: consultationPrice,
-          },
-        ];
+        // Consultation déjà facturée à l'arrivée (Organization.consultationBilling = ON_ARRIVAL) :
+        // ce ticket ne porte que les médicaments prescrits.
+        const billedOnArrival = patientRecord.organization?.consultationBilling === "ON_ARRIVAL";
+        const items: any[] = billedOnArrival
+          ? []
+          : [
+              {
+                type: "SERVICE",
+                description: service ? `Consultation — ${service.name}` : "Frais de consultation",
+                quantity: 1,
+                unitPrice: consultationPrice,
+                amount: consultationPrice,
+              },
+            ];
 
         for (const match of pharmacyMatches) {
           if (!match.pharmacyItemId) continue;
@@ -254,18 +263,22 @@ export async function completeConsultation(data: {
           });
         }
 
-        pendingInvoice = await tx.pendingInvoice.create({
-          data: {
-            status: "PENDING",
-            patientId: data.patientId,
-            medicalRecordId: medicalRecord.id,
-            organizationId: patientRecord.organizationId,
-            items,
-            createdById: activeUser.id,
-          },
-        });
+        // Rien à facturer (consultation payée à l'arrivée, aucun médicament du catalogue) : pas de
+        // ticket vide.
+        if (items.length > 0) {
+          pendingInvoice = await tx.pendingInvoice.create({
+            data: {
+              status: "PENDING",
+              patientId: data.patientId,
+              medicalRecordId: medicalRecord.id,
+              organizationId: patientRecord.organizationId,
+              items,
+              createdById: activeUser.id,
+            },
+          });
+        }
 
-        if (prescription) {
+        if (prescription && pendingInvoice) {
           prescription = await tx.prescription.update({
             where: { id: prescription.id },
             data: { status: "SENT_TO_PHARMACY", pendingInvoiceId: pendingInvoice.id, sentToPharmacyAt: new Date() },

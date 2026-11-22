@@ -4,6 +4,9 @@ import { Handshake } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
 import { getPartnerStatement, listPartners } from "@/actions/partners";
 import PrintButton from "./print-button";
+import SettlementForm from "./settlement-form";
+
+const SETTLEMENT_METHODS: Record<string, string> = { CASH: "Espèces", MOBILE_MONEY: "Mobile money", BANK_TRANSFER: "Virement", CHEQUE: "Chèque" };
 
 const LAB_STATUS_LABELS: Record<string, string> = {
   PRESCRIBED: "Prescrit",
@@ -56,6 +59,8 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
   const partnerId = typeof query.partenaire === "string" ? query.partenaire : partners[0]?.id;
   const statementRes = partnerId ? await getPartnerStatement({ partnerId, month }) : null;
   const basePath = `/dashboard/clinics/${clinicId}/partenaires`;
+  // Enregistrer un règlement : coordinateur et comptable de la clinique (l'admin de holding consulte).
+  const canSettle = ["COORDINATOR", "COMPTABLE"].includes(user.role) && user.organizationId === clinicId;
   const href = (p: string | undefined, m: string) => `${basePath}?${new URLSearchParams({ ...(p ? { partenaire: p } : {}), mois: m })}`;
 
   return (
@@ -118,8 +123,35 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
                   </p>
                   <p className="text-2xl font-extrabold text-violet-700 dark:text-violet-300">{formatFCFA(statementRes.data.total)}</p>
                   <p className="text-[11px] text-muted-foreground">dû par le partenaire</p>
+                  {statementRes.data.total > 0 && (
+                    <p className={`mt-1 text-sm font-semibold ${statementRes.data.balance === 0 ? "text-emerald-600" : statementRes.data.paid > 0 ? "text-amber-600" : "text-red-600"}`}>
+                      {statementRes.data.balance === 0
+                        ? "Réglé"
+                        : statementRes.data.paid > 0
+                          ? `Partiellement réglé — reste ${formatFCFA(statementRes.data.balance)}`
+                          : "Non réglé"}
+                    </p>
+                  )}
                 </div>
               </div>
+
+              {statementRes.data.settlements.length > 0 && (
+                <div className="space-y-1 rounded-xl border border-slate-200/70 p-3 text-sm dark:border-slate-800">
+                  <p className="text-xs font-bold uppercase text-slate-500">Règlements reçus</p>
+                  {statementRes.data.settlements.map((s) => (
+                    <p key={s.id} className="flex flex-wrap justify-between gap-2">
+                      <span>
+                        {new Date(s.paidAt).toLocaleDateString("fr-FR")} — {SETTLEMENT_METHODS[s.paymentMethod] ?? s.paymentMethod}
+                        {s.reference ? ` (${s.reference})` : ""}
+                      </span>
+                      <span className="font-semibold">{formatFCFA(s.amount)}</span>
+                    </p>
+                  ))}
+                </div>
+              )}
+              {canSettle && statementRes.data.balance > 0 && (
+                <SettlementForm partnerId={statementRes.data.partner.id} month={month} balance={statementRes.data.balance} />
+              )}
 
               {statementRes.data.rows.length === 0 ? (
                 <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Aucun examen ce mois-ci.</p>

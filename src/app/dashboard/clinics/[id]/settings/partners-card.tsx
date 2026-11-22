@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, FileText, Handshake, ImageUp, Loader2, Pencil, Plus } from "lucide-react";
+import { Building2, FileText, Handshake, ImageUp, Loader2, Pencil, Plus, Tags } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { savePartner } from "@/actions/partners";
 import { fileToResizedDataUrl } from "./settings-form";
+import PartnerPricesDialog from "./partner-prices-dialog";
 import { toast } from "sonner";
 
 export type PartnerRow = {
@@ -32,6 +33,7 @@ export default function PartnersCard({ clinicId, partners, readOnly }: { clinicI
   const fileRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<(Omit<PartnerRow, "id"> & { id?: string }) | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pricing, setPricing] = useState<PartnerRow | null>(null);
 
   const set = (patch: Partial<PartnerRow>) => setEditing((prev) => (prev ? { ...prev, ...patch } : prev));
 
@@ -127,15 +129,23 @@ export default function PartnersCard({ clinicId, partners, readOnly }: { clinicI
                 </div>
               </div>
               {!readOnly && (
-                <Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={() => setEditing({ ...p })}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  Modifier
-                </Button>
+                <div className="flex shrink-0 gap-1">
+                  <Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={() => setPricing(p)}>
+                    <Tags className="h-3.5 w-3.5" />
+                    Tarifs
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={() => setEditing({ ...p })}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    Modifier
+                  </Button>
+                </div>
               )}
             </li>
           ))}
         </ul>
       )}
+
+      {pricing && <PartnerPricesDialog partnerId={pricing.id} partnerName={pricing.name} open={!!pricing} onOpenChange={(v) => !v && setPricing(null)} />}
 
       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
         <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto p-4 sm:max-w-md sm:p-6">

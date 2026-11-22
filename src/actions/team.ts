@@ -143,6 +143,14 @@ export async function createTeamMember(data: any) {
       throw new Error("Un utilisateur avec cet email existe déjà.");
     }
 
+    // Services de rattachement : seulement pour médecins et infirmiers, et de cette clinique.
+    const serviceIds: string[] =
+      (role === "MEDECIN" || role === "CAREGIVER") && Array.isArray(data.serviceIds) ? [...new Set<string>(data.serviceIds)] : [];
+    if (serviceIds.length > 0) {
+      const count = await prisma.clinicService.count({ where: { id: { in: serviceIds }, organizationId: targetOrgId ?? undefined } });
+      if (count !== serviceIds.length) throw new Error("Service invalide pour cette clinique.");
+    }
+
     const defaultPassword = "ChangeMe!123";
     const passwordHash = await bcrypt.hash(defaultPassword, 10);
 
@@ -157,6 +165,7 @@ export async function createTeamMember(data: any) {
         isActive: true,
         requiresPasswordChange: true,
         organizationId: targetOrgId,
+        serviceIds,
       }
     });
 

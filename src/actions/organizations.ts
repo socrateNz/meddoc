@@ -123,6 +123,24 @@ export async function setPharmacistRegisterAccess(clinicId: string, allowed: boo
   }
 }
 
+// Quand la consultation est facturée : à la clôture par le médecin (défaut) ou dès l'arrivée, le
+// patient payant à la caisse avant de voir le médecin. Coordinateur de la clinique uniquement.
+export async function setConsultationBilling(clinicId: string, mode: "ON_CLOSE" | "ON_ARRIVAL") {
+  try {
+    z.object({ clinicId: z.string().min(1), mode: z.enum(["ON_CLOSE", "ON_ARRIVAL"]) }).parse({ clinicId, mode });
+    const user = await getCurrentUser();
+    if (!user || user.role !== "COORDINATOR" || user.organizationId !== clinicId) {
+      throw new Error("Non autorisé. Seul le coordinateur de la clinique peut modifier ce réglage.");
+    }
+    await prisma.organization.update({ where: { id: clinicId }, data: { consultationBilling: mode } });
+    await logAuditAction(user.id, "SET_CONSULTATION_BILLING", "Organization", clinicId, { mode });
+    revalidatePath(`/dashboard/clinics/${clinicId}`, "layout");
+    return { success: true as const };
+  } catch (error: any) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de l'enregistrement du réglage.") };
+  }
+}
+
 export async function updateClinic(id: string, data: { name: string; logoUrl?: string }) {
   try {
     updateClinicSchema.parse({ id, name: data.name, logoUrl: data.logoUrl || "" });

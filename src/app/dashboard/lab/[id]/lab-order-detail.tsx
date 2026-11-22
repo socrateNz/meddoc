@@ -99,6 +99,7 @@ export default function LabOrderDetail({ order: initialOrder, currentUserRole }:
       if (res.success) {
         const left = remainingTests.length - nextTubeTests.length;
         toast.success(left > 0 ? `Prélèvement enregistré. ${left} examen(s) reste(nt) à prélever.` : "Prélèvement enregistré.");
+        if (res.stockWarning) toast.warning(res.stockWarning, { duration: 10000 });
         setOrder((prev: any) => ({ ...prev, ...res.data }));
         setExcludedTests([]);
         setSampleQuantity("");

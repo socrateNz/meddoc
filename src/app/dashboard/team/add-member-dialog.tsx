@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 
 import { createTeamMember } from "@/actions/team";
+import { listClinicServices } from "@/actions/clinic-services";
 import { CLINIC_STAFF_ROLES, STAFF_ROLE_DESCRIPTIONS, STAFF_ROLE_LABELS } from "@/lib/staff-roles";
 
 const formSchema = z.object({
@@ -80,15 +81,33 @@ export default function AddMemberDialog({
   const selectedRole = watch("role");
   const selectedOrgId = watch("organizationId");
 
+  // Services de la clinique choisie : un médecin ou un infirmier peut y être rattaché dès sa création
+  // (sinon : tous les services).
+  const clinicForServices = selectedOrgId || defaultOrganizationId;
+  const servicesApply = selectedRole === "MEDECIN" || selectedRole === "CAREGIVER";
+  const [services, setServices] = useState<{ id: string; name: string; isTransversal: boolean }[]>([]);
+  const [serviceIds, setServiceIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open || !clinicForServices || !servicesApply) return;
+    let cancelled = false;
+    listClinicServices(clinicForServices).then((res) => {
+      if (!cancelled) setServices(res.success ? res.data.map((s) => ({ id: s.id, name: s.name, isTransversal: s.isTransversal })) : []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, clinicForServices, servicesApply]);
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     setLoading(true);
-    const result = await createTeamMember(values);
+    const result = await createTeamMember({ ...values, serviceIds: servicesApply ? serviceIds : [] });
     setLoading(false);
 
     if (result.success) {
       toast.success("Membre ajouté avec succès. Mot de passe par défaut : ChangeMe!123");
       setOpen(false);
       reset();
+      setServiceIds([]);
     } else {
       toast.error(result.error);
     }
@@ -165,6 +184,26 @@ export default function AddMemberDialog({
                 {...register("specialties")}
                 placeholder={selectedRole === "MEDECIN" ? "ex: Médecine générale, Cardiologie..." : "ex: Infirmier, Kinésithérapeute..."}
               />
+            </div>
+          )}
+
+          {servicesApply && services.length > 0 && (
+            <div className="space-y-2">
+              <Label>Services</Label>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {services.map((s) => (
+                  <label key={s.id} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200/70 px-2.5 py-2 text-sm dark:border-slate-800">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={serviceIds.includes(s.id)}
+                      onChange={() => setServiceIds((prev) => (prev.includes(s.id) ? prev.filter((x) => x !== s.id) : [...prev, s.id]))}
+                    />
+                    {s.name}
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">Ne verra que les patients des services cochés. Aucun coché : tous les services.</p>
             </div>
           )}
 
