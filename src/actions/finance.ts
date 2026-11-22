@@ -237,6 +237,133 @@ export async function createOrUpdatePharmacyItem(data: {
   }
 }
 
+async function assertNoInventoryInProgress(organizationId: string, message: string) {
+  const inProgress = await prisma.inventoryCount.findFirst({ where: { organizationId, status: "IN_PROGRESS" }, select: { id: true } });
+  if (inProgress) throw new Error(message);
+}
+
+// Applique des quantités réellement comptées par un inventaire démarré, compté et clôturé
+// automatiquement (completeInventoryCount) : pertes valorisées en charge, surplus remis en lot,
+// le tout tracé dans l'historique des inventaires. Partagé par l'import CSV du stock et la
+// correction de stock depuis la fiche d'un produit. Lève une erreur si rien n'a pu être appliqué
+// (l'inventaire automatique est alors annulé). `staleProducts` : produits dont le stock a bougé
+// pendant l'opération, non corrigés.
+async function applyCountedQuantities(
+  organizationId: string,
+  changes: { id: string; quantity: number }[],
+  cancelReason: string
+): Promise<{ applied: number; staleProducts: string[] }> {
+  let inventoryId: string | null = null;
+  try {
+    const started: any = await startInventoryCount(organizationId);
+    if (!started.success) throw new Error(started.error);
+    inventoryId = started.data.id as string;
+    const lineByItem = new Map<string, string>(started.data.lines.map((line: any) => [line.pharmacyItemId, line.id]));
+    const lines = changes
+      .filter((change) => lineByItem.has(change.id))
+      .map((change) => ({ lineId: lineByItem.get(change.id)!, countedQuantity: change.quantity }));
+    const saved: any = await saveInventoryCounts(inventoryId, lines);
+    if (!saved.success) throw new Error(saved.error);
+    const done: any = await completeInventoryCount(inventoryId);
+    if (!done.success) throw new Error(done.error);
+    inventoryId = null;
+    const staleProducts: string[] = done.data?.staleProducts || [];
+    return { applied: lines.length - staleProducts.length, staleProducts };
+  } catch (error) {
+    if (inventoryId) await cancelInventoryCount(inventoryId, cancelReason);
+    throw error;
+  }
+}
+
+// Coût d'achat actuel d'un produit (moyenne des lots en stock) et part du stock sans prix d'achat
+// connu (stock initial « hérité »), pour la fiche du produit.
+export async function getPharmacyItemCost(pharmacyItemId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    await assertStockWrite(activeUser);
+    const item = await prisma.pharmacyItem.findUnique({ where: { id: pharmacyItemId }, select: { id: true, organizationId: true, stockQuantity: true } });
+    if (!item) throw new Error("Produit introuvable.");
+    await assertOrganizationAccess(activeUser!, item.organizationId);
+    const lots = await prisma.stockPurchase.findMany({ where: { pharmacyItemId, remainingQuantity: { gt: 0 } }, select: { remainingQuantity: true, purchasePrice: true } });
+    const lotQuantity = lots.reduce((sum, l) => sum + l.remainingQuantity, 0);
+    const avgCost = lotQuantity > 0 ? lots.reduce((sum, l) => sum + l.remainingQuantity * l.purchasePrice, 0) / lotQuantity : null;
+    return { success: true as const, data: { avgCost, lotQuantity, stockQuantity: item.stockQuantity, uncosted: Math.max(0, item.stockQuantity - lotQuantity) } };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du coût d'achat.") };
+  }
+}
+
+// Correction du stock et/ou du prix d'achat d'un produit depuis sa fiche.
+// - Prix d'achat : appliqué à tout le stock restant (lots en stock) ; le stock sans prix d'achat
+//   connu reçoit un lot à ce prix (sans dépense, il est déjà là). Les achats passés et leurs
+//   écritures ne changent pas : seule la valeur du stock restant (marges, pertes, inventaires) suit.
+// - Quantité : la quantité réellement en stock, appliquée par un inventaire automatique (cf.
+//   applyCountedQuantities) — jamais une simple réécriture du chiffre.
+// Le prix est corrigé avant la quantité : un surplus constaté est ainsi valorisé au nouveau prix.
+export async function adjustPharmacyItemStock(data: { id: string; stockQuantity?: number; purchasePrice?: number }) {
+  try {
+    z.object({
+      id: z.string().min(1),
+      stockQuantity: z.number().int("Quantité entière attendue").min(0).max(10_000_000).optional(),
+      purchasePrice: z.number().min(0).max(100_000_000).optional(),
+    }).parse(data);
+    const activeUser = await getCurrentUser();
+    await assertStockWrite(activeUser);
+    const item = await prisma.pharmacyItem.findUnique({ where: { id: data.id }, select: { id: true, name: true, organizationId: true, stockQuantity: true } });
+    if (!item || !item.organizationId) throw new Error("Produit introuvable.");
+    await assertOrganizationAccess(activeUser!, item.organizationId);
+    const quantityChanges = data.stockQuantity != null && data.stockQuantity !== item.stockQuantity;
+    if (quantityChanges) {
+      await assertNoInventoryInProgress(item.organizationId, "Un inventaire est en cours (onglet Inventaire) : clôturez-le ou annulez-le avant de corriger le stock.");
+    }
+
+    let revalued = false;
+    if (data.purchasePrice != null) {
+      const price = data.purchasePrice;
+      await prisma.$transaction(async (tx) => {
+        await tx.stockPurchase.updateMany({ where: { pharmacyItemId: item.id, remainingQuantity: { gt: 0 } }, data: { purchasePrice: price } });
+        const lots = await tx.stockPurchase.aggregate({ where: { pharmacyItemId: item.id, remainingQuantity: { gt: 0 } }, _sum: { remainingQuantity: true } });
+        const uncosted = item.stockQuantity - (lots._sum.remainingQuantity ?? 0);
+        if (uncosted > 0) {
+          await tx.stockPurchase.create({
+            data: {
+              pharmacyItemId: item.id,
+              quantity: uncosted,
+              remainingQuantity: uncosted,
+              purchasePrice: price,
+              totalCost: uncosted * price,
+              batchNumber: "AJUSTEMENT-COUT",
+              purchasedById: activeUser!.id,
+              organizationId: item.organizationId,
+            },
+          });
+        }
+      });
+      revalued = true;
+    }
+
+    let stockChanged = false;
+    if (quantityChanges) {
+      const applied = await applyCountedQuantities(item.organizationId, [{ id: item.id, quantity: data.stockQuantity! }], "Correction de stock interrompue");
+      if (applied.staleProducts.length > 0) throw new Error("Le stock de ce produit a bougé pendant la correction (vente ou achat) : recommencez.");
+      stockChanged = applied.applied > 0;
+    }
+
+    await logAuditAction(activeUser!.id, "ADJUST_PHARMACY_ITEM_STOCK", "PharmacyItem", item.id, {
+      from: item.stockQuantity,
+      to: data.stockQuantity ?? item.stockQuantity,
+      purchasePrice: data.purchasePrice ?? null,
+    });
+    revalidatePath("/dashboard/pharmacie");
+    revalidatePath(`/dashboard/clinics/${item.organizationId}/pharmacie`);
+    revalidatePath("/dashboard/finance");
+    revalidatePath("/dashboard", "layout");
+    return { success: true as const, data: { revalued, stockChanged } };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de la correction du stock.") };
+  }
+}
+
 // Import CSV en masse.
 // - Ligne SANS id : CRÉATION. Pas de rapprochement par nom, pour ne jamais écraser un produit
 //   existant à cause d'un nom mal orthographié dans le fichier.
@@ -341,15 +468,10 @@ export async function importPharmacyItems(data: {
       // doublé par l'import.
       if (quantityChanges.length > 0) {
         if (!targetOrgId) throw new Error("Établissement requis pour modifier des quantités en stock.");
-        const inProgress = await prisma.inventoryCount.findFirst({
-          where: { organizationId: targetOrgId, status: "IN_PROGRESS" },
-          select: { id: true },
-        });
-        if (inProgress) {
-          throw new Error(
-            "Un inventaire est en cours (onglet Inventaire) : clôturez-le ou annulez-le avant d'importer des quantités modifiées. Rien n'a été importé."
-          );
-        }
+        await assertNoInventoryInProgress(
+          targetOrgId,
+          "Un inventaire est en cours (onglet Inventaire) : clôturez-le ou annulez-le avant d'importer des quantités modifiées. Rien n'a été importé."
+        );
       }
 
       for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
@@ -374,24 +496,11 @@ export async function importPharmacyItems(data: {
       }
 
       if (quantityChanges.length > 0) {
-        let inventoryId: string | null = null;
         try {
-          const started: any = await startInventoryCount(targetOrgId!);
-          if (!started.success) throw new Error(started.error);
-          inventoryId = started.data.id as string;
-          const lineByItem = new Map<string, string>(started.data.lines.map((line: any) => [line.pharmacyItemId, line.id]));
-          const lines = quantityChanges
-            .filter((change) => lineByItem.has(change.id))
-            .map((change) => ({ lineId: lineByItem.get(change.id)!, countedQuantity: change.quantity }));
-          const saved: any = await saveInventoryCounts(inventoryId, lines);
-          if (!saved.success) throw new Error(saved.error);
-          const done: any = await completeInventoryCount(inventoryId);
-          if (!done.success) throw new Error(done.error);
-          inventoryId = null;
-          staleProducts = done.data?.staleProducts || [];
-          stockChanged = lines.length - staleProducts.length;
+          const applied = await applyCountedQuantities(targetOrgId!, quantityChanges, "Import CSV interrompu");
+          staleProducts = applied.staleProducts;
+          stockChanged = applied.applied;
         } catch (stockError) {
-          if (inventoryId) await cancelInventoryCount(inventoryId, "Import CSV interrompu");
           failures.push({
             name: "Quantités en stock",
             error: `Non appliquées (les autres informations des produits sont bien mises à jour) : ${toErrorMessage(stockError, "erreur inconnue")}`,

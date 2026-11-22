@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Package, Edit, Loader2 } from "lucide-react";
-import { createOrUpdatePharmacyItem } from "@/actions/finance";
+import { adjustPharmacyItemStock, createOrUpdatePharmacyItem, getPharmacyItemCost } from "@/actions/finance";
+import { toast } from "sonner";
 
 const CATEGORY_OPTIONS = [
   { value: "MEDICATION", label: "Médicament" },
@@ -37,6 +38,25 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
     location: item?.location || "",
   });
 
+  // Stock et coût (produit existant) : quantité réellement en stock et prix d'achat unitaire,
+  // appliqués par adjustPharmacyItemStock (inventaire automatique, réévaluation des lots).
+  const [stockQty, setStockQty] = useState(item ? String(item.stockQuantity ?? 0) : "");
+  const [purchasePrice, setPurchasePrice] = useState("");
+  const [cost, setCost] = useState<{ avgCost: number | null; uncosted: number } | null>(null);
+  useEffect(() => {
+    if (!open || !item?.id) return;
+    let cancelled = false;
+    getPharmacyItemCost(item.id).then((res) => {
+      if (cancelled || !res.success) return;
+      setCost({ avgCost: res.data.avgCost, uncosted: res.data.uncosted });
+      setPurchasePrice(res.data.avgCost != null ? String(Math.round(res.data.avgCost)) : "");
+      setStockQty(String(res.data.stockQuantity));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, item?.id]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -56,6 +76,27 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
         location: formData.location || undefined,
         organizationId,
       });
+
+      if (res.success && item?.id) {
+        // Correction du stock / du prix d'achat, seulement si l'utilisateur les a modifiés.
+        const qty = stockQty.trim() === "" ? undefined : Math.round(Number(stockQty));
+        const price = purchasePrice.trim() === "" ? undefined : Number(purchasePrice.replace(",", "."));
+        const qtyChanged = qty !== undefined && Number.isFinite(qty) && qty !== Number(item.stockQuantity ?? 0);
+        const currentCost = cost?.avgCost != null ? Math.round(cost.avgCost) : null;
+        const priceChanged = price !== undefined && Number.isFinite(price) && (price !== currentCost || (cost?.uncosted ?? 0) > 0);
+        if (qtyChanged || priceChanged) {
+          const adj = await adjustPharmacyItemStock({
+            id: item.id,
+            stockQuantity: qtyChanged ? qty : undefined,
+            purchasePrice: priceChanged ? price : undefined,
+          });
+          if (!adj.success) {
+            setError(`Fiche enregistrée, mais stock / prix d'achat non corrigés : ${adj.error}`);
+            return;
+          }
+          toast.success(qtyChanged ? "Produit enregistré. Écart de stock enregistré comme inventaire." : "Produit enregistré, prix d'achat corrigé.");
+        }
+      }
 
       if (res.success) {
         setOpen(false);
@@ -102,7 +143,7 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
           </DialogTitle>
           <DialogDescription>
             {item
-              ? "Ces informations décrivent le produit. Le stock évolue uniquement via un achat, une vente ou un inventaire."
+              ? "Informations du produit, prix de vente, et correction du stock ou du prix d'achat."
               : "Créez la fiche du produit. Le stock démarre à zéro : utilisez ensuite \"Nouvel achat\" pour réceptionner une quantité avec son prix d'achat."}
           </DialogDescription>
         </DialogHeader>
@@ -243,6 +284,36 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
           <div className="space-y-1.5">
             <p className="text-[11px] text-muted-foreground">Une alerte de stock faible sera déclenchée si le stock descend au niveau du seuil d'alerte ou en-dessous.</p>
           </div>
+
+          {item && (
+            <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">Stock et prix d&apos;achat</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="stockQty">Quantité en stock</Label>
+                  <Input id="stockQty" type="number" min="0" step="1" value={stockQty} onChange={(e) => setStockQty(e.target.value)} className="rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="purchasePrice">Prix d&apos;achat unitaire (FCFA)</Label>
+                  <Input
+                    id="purchasePrice"
+                    type="number"
+                    min="0"
+                    value={purchasePrice}
+                    onChange={(e) => setPurchasePrice(e.target.value)}
+                    placeholder={cost === null ? "…" : "Non renseigné"}
+                    className="rounded-xl"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Quantité : un écart avec le stock affiché ({item.stockQuantity ?? 0}) est enregistré comme un inventaire (perte ou surplus), visible dans
+                l&apos;historique et en comptabilité. Prix d&apos;achat : corrige le coût de tout le stock restant (marges, valeur du stock) ; les achats
+                passés ne changent pas.
+                {cost && cost.uncosted > 0 && ` ${cost.uncosted} unité(s) n'ont pas encore de prix d'achat.`}
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">
