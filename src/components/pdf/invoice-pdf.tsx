@@ -451,10 +451,11 @@ interface InvoicePDFProps {
   transaction: any;
   organizationName?: string;
   organizationLogoUrl?: string | null;
+  organizationContact?: { phone?: string | null; address?: string | null } | null;
   format?: "thermal" | "a4";
 }
 
-export default function InvoicePDFDocument({ transaction, organizationName, organizationLogoUrl, format = "thermal" }: InvoicePDFProps) {
+export default function InvoicePDFDocument({ transaction, organizationName, organizationLogoUrl, organizationContact, format = "thermal" }: InvoicePDFProps) {
   const formatFCFA = (val: number) => {
     const num = Math.round(Number(val) || 0);
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
@@ -557,7 +558,8 @@ Réduction -${formatFCFA(discount)}${item.discountReason ? ` (${item.discountRea
             <Text style={thermalStyles.receiptTitle}>*** REÇU DE CAISSE ***</Text>
             {organizationLogoUrl && <Image src={organizationLogoUrl} style={thermalStyles.logoImage} />}
             <Text style={thermalStyles.companyName}>{organizationName || "MEDDOC - CENTRE MÉDICAL"}</Text>
-            <Text style={thermalStyles.companySub}>Plateforme Médicale & Pharmacie</Text>
+            {organizationContact?.address ? <Text style={thermalStyles.companySub}>{organizationContact.address}</Text> : null}
+            {organizationContact?.phone ? <Text style={thermalStyles.companySub}>Tél : {organizationContact.phone}</Text> : null}
           </View>
 
           <View style={thermalStyles.divider} />
@@ -658,7 +660,8 @@ Réduction -${formatFCFA(discount)}${item.discountReason ? ` (${item.discountRea
           <View style={a4Styles.clinicInfo}>
             {organizationLogoUrl && <Image src={organizationLogoUrl} style={a4Styles.logoImage} />}
             <Text style={a4Styles.companyName}>{organizationName || "MEDDOC - CENTRE MÉDICAL"}</Text>
-            <Text style={a4Styles.companySub}>Plateforme de Gestion Médicale & Pharmacie</Text>
+            {organizationContact?.address ? <Text style={a4Styles.companySub}>{organizationContact.address}</Text> : null}
+            {organizationContact?.phone ? <Text style={a4Styles.companySub}>Tél : {organizationContact.phone}</Text> : null}
           </View>
           <View style={a4Styles.invoiceMeta}>
             <Text style={a4Styles.invoiceTitle}>{docTitle}</Text>

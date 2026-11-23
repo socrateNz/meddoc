@@ -124,9 +124,9 @@ export async function setConsultationBilling(clinicId: string, mode: "ON_CLOSE" 
   }
 }
 
-export async function updateClinic(id: string, data: { name: string; logoUrl?: string }) {
+export async function updateClinic(id: string, data: { name: string; logoUrl?: string; phone?: string; address?: string }) {
   try {
-    updateClinicSchema.parse({ id, name: data.name, logoUrl: data.logoUrl || "" });
+    const parsed = updateClinicSchema.parse({ id, name: data.name, logoUrl: data.logoUrl || "", phone: data.phone ?? "", address: data.address ?? "" });
     const user = await getCurrentUser();
     if (!user) throw new Error("Unauthorized");
 
@@ -149,7 +149,7 @@ export async function updateClinic(id: string, data: { name: string; logoUrl?: s
 
     const clinic = await prisma.organization.update({
       where: { id },
-      data: { name: data.name, logoUrl: data.logoUrl || null }
+      data: { name: data.name, logoUrl: data.logoUrl || null, phone: parsed.phone || null, address: parsed.address || null }
     });
 
     revalidatePath(`/dashboard/clinics/${id}`);

@@ -52,10 +52,18 @@ function cartFromPending(pendingInvoice: { id: string; items: any[] }): CartItem
   }));
 }
 
+export type SaleLabTest = { id: string; name: string; department?: string | null; price: number };
+export type SaleService = { id: string; name: string; consultationPrice?: number | null };
+
+type AddMode = "PHARMACY" | "LAB" | "CONSULTATION" | "SERVICE";
+
 interface CaisseCartDialogProps {
   mode: "sale" | "pay";
   cashSessionId: string;
   pharmacyItems: any[];
+  // Catalogues des onglets « Examens » et « Consultations » (absents = onglets masqués).
+  labTests?: SaleLabTest[];
+  services?: SaleService[];
   patients?: any[];
   organizationId?: string;
   pendingInvoice?: {
@@ -69,7 +77,7 @@ interface CaisseCartDialogProps {
   canDispense?: boolean;
 }
 
-export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, patients = [], organizationId, pendingInvoice, onSuccess, canDispense = false }: CaisseCartDialogProps) {
+export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, labTests, services, patients = [], organizationId, pendingInvoice, onSuccess, canDispense = false }: CaisseCartDialogProps) {
   const [open, setOpen] = useState(false);
   const [dispenseNow, setDispenseNow] = useState(true);
   const [cartItems, setCartItems] = useState<CartItem[]>(() => (mode === "pay" && pendingInvoice ? cartFromPending(pendingInvoice) : []));
@@ -89,7 +97,11 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
   const [amountTouched, setAmountTouched] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
 
-  const [addItemMode, setAddItemMode] = useState<"PHARMACY" | "SERVICE">(mode === "pay" ? "SERVICE" : "PHARMACY");
+  const [addItemMode, setAddItemMode] = useState<AddMode>(mode === "pay" ? "SERVICE" : "PHARMACY");
+  // Examen / consultation choisi dans le catalogue, et son prix : repris du catalogue, saisi à la
+  // main seulement quand le catalogue n'en a pas.
+  const [addCatalogId, setAddCatalogId] = useState("");
+  const [addCatalogPrice, setAddCatalogPrice] = useState("");
   const [addPharmacyItemId, setAddPharmacyItemId] = useState("");
   const [addPharmacyQty, setAddPharmacyQty] = useState<number | string>(1);
   const [addServiceDesc, setAddServiceDesc] = useState("");
@@ -100,6 +112,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
     setAddPharmacyQty(1);
     setAddServiceDesc("");
     setAddServiceAmount("");
+    setAddCatalogId("");
+    setAddCatalogPrice("");
     setMsg(null);
     setAmountTouched(false);
     setPaymentMethod("CASH");
@@ -149,6 +163,27 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       ]);
       setAddPharmacyItemId("");
       setAddPharmacyQty(1);
+    } else if (addItemMode === "LAB" || addItemMode === "CONSULTATION") {
+      const entry = catalogEntry(addCatalogId);
+      if (!entry) return;
+      const price = entry.price > 0 ? entry.price : Number(addCatalogPrice);
+      if (!(price > 0)) {
+        setMsg({ type: "error", text: "Indiquez le prix (le catalogue n'en a pas pour cette ligne)." });
+        return;
+      }
+      setCartItems((prev) => [
+        ...prev,
+        {
+          id: `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: addItemMode === "LAB" ? "LAB" : "SERVICE",
+          description: addItemMode === "LAB" ? `Analyse : ${entry.name}` : `Consultation — ${entry.name}`,
+          quantity: 1,
+          unitPrice: price,
+          amount: price,
+        },
+      ]);
+      setAddCatalogId("");
+      setAddCatalogPrice("");
     } else {
       if (!addServiceDesc.trim() || !addServiceAmount) return;
       const amt = Number(addServiceAmount);
@@ -168,6 +203,27 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
       setAddServiceAmount("");
     }
   };
+
+  // Entrées du catalogue de l'onglet ouvert (examens ou consultations), prix unifié.
+  const catalogEntries =
+    addItemMode === "LAB"
+      ? (labTests || []).map((t) => ({ id: t.id, name: t.name, hint: t.department || "", price: Number(t.price) || 0 }))
+      : (services || []).map((s) => ({ id: s.id, name: s.name, hint: "", price: Number(s.consultationPrice) || 0 }));
+  function catalogEntry(id: string) {
+    return catalogEntries.find((e) => e.id === id);
+  }
+  const selectedCatalogEntry = catalogEntry(addCatalogId);
+  const switchAddMode = (next: AddMode) => {
+    setAddItemMode(next);
+    setAddCatalogId("");
+    setAddCatalogPrice("");
+  };
+  const tabs: { key: AddMode; label: string; active: string }[] = [
+    { key: "PHARMACY", label: "Médicaments", active: "bg-blue-600 text-white" },
+    ...(labTests ? [{ key: "LAB" as const, label: "Examens", active: "bg-violet-600 text-white" }] : []),
+    ...(services ? [{ key: "CONSULTATION" as const, label: "Consultations", active: "bg-amber-600 text-white" }] : []),
+    { key: "SERVICE", label: "Autres", active: "bg-emerald-600 text-white" },
+  ];
 
   const handleRemove = (id: string) => setCartItems((prev) => prev.filter((i) => i.id !== id));
 
@@ -349,7 +405,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
           </DialogTitle>
           <DialogDescription>
             {mode === "sale"
-              ? "Composez le panier (médicaments et/ou frais) puis validez l'encaissement."
+              ? "Composez le panier (médicaments, examens, consultations, autres frais) puis validez l'encaissement."
               : `${patientName} — ${pendingInvoice?.medicalRecord?.title ? `« ${pendingInvoice.medicalRecord.title} »` : "facture en attente"}. Ajustez les montants avant d'encaisser.`}
           </DialogDescription>
         </DialogHeader>
@@ -362,13 +418,19 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
           <div className="p-3 sm:p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 space-y-3 sm:space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-200/60 dark:border-slate-800/60 pb-2">
               <span className="hidden text-xs font-bold text-slate-500 uppercase tracking-wider sm:inline">Ajouter un article :</span>
-              <div className="grid w-full grid-cols-2 gap-1 sm:ml-auto sm:flex sm:w-auto">
-                <button type="button" onClick={() => setAddItemMode("PHARMACY")} className={`px-3 py-2 sm:py-1 text-sm sm:text-sm font-semibold rounded-lg transition-all ${addItemMode === "PHARMACY" ? "bg-blue-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
-                  + Médicament
-                </button>
-                <button type="button" onClick={() => setAddItemMode("SERVICE")} className={`px-3 py-2 sm:py-1 text-sm sm:text-sm font-semibold rounded-lg transition-all ${addItemMode === "SERVICE" ? "bg-emerald-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
-                  + Autres frais
-                </button>
+              <div className="grid w-full grid-cols-2 gap-1 sm:ml-auto sm:flex sm:w-auto" role="tablist">
+                {tabs.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={addItemMode === t.key}
+                    onClick={() => switchAddMode(t.key)}
+                    className={`px-3 py-2 sm:py-1 text-sm font-semibold rounded-lg transition-all ${addItemMode === t.key ? `${t.active} shadow-xs` : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -409,6 +471,55 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                     <Button type="submit" disabled={!addPharmacyItemId} className="w-full h-11 sm:h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs">+ Ajouter au Panier</Button>
                   </div>
                 </div>
+              ) : addItemMode === "LAB" || addItemMode === "CONSULTATION" ? (
+                <div className="grid grid-cols-2 sm:grid-cols-12 gap-3 items-end">
+                  <div className="col-span-2 sm:col-span-6 space-y-1">
+                    <Label htmlFor="addCatalogId" className="text-xs">{addItemMode === "LAB" ? "Examen *" : "Consultation (service) *"}</Label>
+                    <SearchableSelect
+                      id="addCatalogId"
+                      value={addCatalogId}
+                      onValueChange={(v) => {
+                        setAddCatalogId(v);
+                        setAddCatalogPrice("");
+                      }}
+                      placeholder={addItemMode === "LAB" ? "-- Rechercher un examen --" : "-- Choisir un service --"}
+                      emptyText={addItemMode === "LAB" ? "Aucun examen dans le catalogue." : "Aucun service configuré."}
+                      options={catalogEntries.map((e) => ({
+                        value: e.id,
+                        label: e.name,
+                        description: [e.hint, e.price > 0 ? formatFCFA(e.price) : "Prix à saisir"].filter(Boolean).join(" · "),
+                      }))}
+                    />
+                  </div>
+                  <div className="col-span-1 sm:col-span-3 space-y-1">
+                    <Label htmlFor="addCatalogPrice" className="text-xs">Prix (FCFA)</Label>
+                    {selectedCatalogEntry && selectedCatalogEntry.price > 0 ? (
+                      <div className="flex h-11 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold sm:h-9 dark:border-slate-700 dark:bg-slate-900">
+                        {formatFCFA(selectedCatalogEntry.price)}
+                      </div>
+                    ) : (
+                      <Input
+                        id="addCatalogPrice"
+                        type="number"
+                        min="1"
+                        placeholder={selectedCatalogEntry ? "À saisir" : "—"}
+                        disabled={!selectedCatalogEntry}
+                        value={addCatalogPrice}
+                        onChange={(e) => setAddCatalogPrice(e.target.value)}
+                        className="h-11 text-base sm:h-9 sm:text-sm rounded-xl"
+                      />
+                    )}
+                  </div>
+                  <div className="col-span-1 sm:col-span-3">
+                    <Button
+                      type="submit"
+                      disabled={!selectedCatalogEntry || (selectedCatalogEntry.price <= 0 && !(Number(addCatalogPrice) > 0))}
+                      className={`w-full h-11 sm:h-9 text-white rounded-xl text-xs ${addItemMode === "LAB" ? "bg-violet-600 hover:bg-violet-700" : "bg-amber-600 hover:bg-amber-700"}`}
+                    >
+                      + Ajouter au Panier
+                    </Button>
+                  </div>
+                </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-12 gap-3 items-end">
                   <div className="col-span-2 sm:col-span-6 space-y-1">
@@ -442,8 +553,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                 <div key={item.id} className={`grid grid-cols-[1fr_auto] sm:grid-cols-12 gap-x-2 gap-y-1 p-3 font-medium border-t first:border-t-0 sm:first:border-t border-slate-100 dark:border-slate-800 items-center ${item.amount <= 0 ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}`}>
                   {/* Mobile : designation + corbeille, puis qte x P.U et total */}
                   <div className="min-w-0 break-words text-sm sm:text-sm sm:col-span-5 font-semibold text-slate-900 dark:text-white">
-                    <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-xs font-bold rounded ${item.type === "PHARMACY" ? "bg-blue-500/10 text-blue-600" : "bg-emerald-500/10 text-emerald-600"}`}>
-                      {item.type === "PHARMACY" ? "Pharma" : item.type === "LAB" ? "Labo" : "Acte"}
+                    <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-xs font-bold rounded ${item.type === "PHARMACY" ? "bg-blue-500/10 text-blue-600" : item.type === "LAB" ? "bg-violet-500/10 text-violet-600" : "bg-emerald-500/10 text-emerald-600"}`}>
+                      {item.type === "PHARMACY" ? "Pharma" : item.type === "LAB" ? "Examen" : item.description.startsWith("Consultation") ? "Consult." : "Acte"}
                     </span>
                     {item.description}
                     <DiscountNote discount={item.discount} reason={item.discountReason} />

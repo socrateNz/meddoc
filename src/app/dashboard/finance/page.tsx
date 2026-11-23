@@ -71,6 +71,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         summary={summary}
         organizationName={orgName}
         organizationLogoUrl={orgLogoUrl}
+        organizationContact={activeUser.organization as any}
         currentUserRole={activeUser.role}
         period={period}
         sessions={sessions as any}

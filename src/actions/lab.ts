@@ -815,6 +815,28 @@ export async function updateLabOrderStatus(labOrderId: string, status: "PRESCRIB
   }
 }
 
+// Examens vendables au guichet (Caisse > Nouvelle vente > Examens) : nom et prix maison courant
+// (tarif + produits consommés), pour ceux qui tiennent la caisse. Sans module Laboratoire : liste vide.
+export async function listLabTestsForSale(organizationId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    if (!can(activeUser, "register.operate")) throw new Error("Non autorisé.");
+    if (!modulesOfUser(activeUser).includes("LABORATOIRE")) return { success: true as const, data: [] };
+    const targetOrgId = await resolveTargetOrgId(activeUser, organizationId);
+    if (!targetOrgId) return { success: true as const, data: [] };
+    const labTests = await prisma.labTest.findMany({
+      where: { isActive: true, organizationId: targetOrgId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, department: true, basePrice: true, consumables: true },
+    });
+    const priced = await priceLabTests(labTests, modulesOfUser(activeUser).includes("PHARMACIE"));
+    return { success: true as const, data: priced.map((t) => ({ id: t.id, name: t.name, department: t.department, price: t.totalPrice })) };
+  } catch (error: any) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des examens.") };
+  }
+}
+
 // --- Catalogue d'examens (COORDINATOR uniquement) ---
 
 export async function listLabTests(organizationId?: string, options?: { page?: number; pageSize?: number; search?: string }) {

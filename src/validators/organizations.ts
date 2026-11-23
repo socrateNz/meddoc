@@ -17,4 +17,6 @@ export const updateClinicSchema = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(2, "Le nom de la clinique est requis"),
   logoUrl: logoUrlSchema,
+  phone: z.string().trim().max(60, "Numéro trop long.").optional().or(z.literal("")),
+  address: z.string().trim().max(200, "Adresse trop longue.").optional().or(z.literal("")),
 });

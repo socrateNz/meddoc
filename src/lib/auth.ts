@@ -114,6 +114,8 @@ export const getCurrentUser = cache(async function getCurrentUser() {
             type: true,
             isActive: true,
             logoUrl: true,
+            phone: true,
+            address: true,
             subscriptionStatus: true,
             licenseExpiresAt: true,
             // Modules de la licence (cf. src/lib/modules.ts) : portés par la holding.

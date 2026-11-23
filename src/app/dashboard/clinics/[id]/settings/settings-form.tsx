@@ -44,7 +44,7 @@ export async function fileToResizedDataUrl(file: File, maxDim = 320): Promise<st
 }
 
 interface ClinicSettingsFormProps {
-  clinic: { id: string; name: string; logoUrl?: string | null };
+  clinic: { id: string; name: string; logoUrl?: string | null; phone?: string | null; address?: string | null };
   readOnly?: boolean;
 }
 
@@ -55,8 +55,14 @@ export default function ClinicSettingsForm({ clinic, readOnly = false }: ClinicS
   const [isProcessingLogo, setIsProcessingLogo] = useState(false);
   const [name, setName] = useState(clinic.name);
   const [logoUrl, setLogoUrl] = useState(clinic.logoUrl || "");
+  const [phone, setPhone] = useState(clinic.phone || "");
+  const [address, setAddress] = useState(clinic.address || "");
 
-  const isDirty = name !== clinic.name || logoUrl !== (clinic.logoUrl || "");
+  const isDirty =
+    name !== clinic.name ||
+    logoUrl !== (clinic.logoUrl || "") ||
+    phone !== (clinic.phone || "") ||
+    address !== (clinic.address || "");
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -92,7 +98,7 @@ export default function ClinicSettingsForm({ clinic, readOnly = false }: ClinicS
 
     setIsSubmitting(true);
     try {
-      const { error } = await updateClinic(clinic.id, { name, logoUrl });
+      const { error } = await updateClinic(clinic.id, { name, logoUrl, phone, address });
 
       if (error) {
         toast.error(error);
@@ -186,6 +192,33 @@ export default function ClinicSettingsForm({ clinic, readOnly = false }: ClinicS
               disabled={isSubmitting || readOnly}
               required
             />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="clinicPhone" className="text-sm font-semibold">Téléphone</Label>
+              <Input
+                id="clinicPhone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="ex : +241 01 23 45 67"
+                className="h-11 border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-950/50"
+                disabled={isSubmitting || readOnly}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="clinicAddress" className="text-sm font-semibold">Adresse</Label>
+              <Input
+                id="clinicAddress"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="ex : Quartier Louis, Libreville"
+                className="h-11 border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-950/50"
+                disabled={isSubmitting || readOnly}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground sm:col-span-2">Imprimés en en-tête des tickets de caisse et des factures.</p>
           </div>
         </CardContent>
         {!readOnly && (

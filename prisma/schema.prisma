@@ -104,6 +104,10 @@ model Organization {
   // PDF (@react-pdf/renderer accepte un data URI nativement) et reste minuscule pour un simple
   // logo redimensionné côté client avant l'envoi (cf. src/app/dashboard/clinics/[id]/settings).
   logoUrl  String?
+  // Coordonnées imprimées en en-tête des tickets de caisse et factures (facultatives : la ligne
+  // n'apparaît pas tant qu'elles ne sont pas renseignées dans les paramètres de la clinique).
+  phone    String?
+  address  String?
   parentId String?        @db.ObjectId
   parent   Organization?  @relation("OrgHierarchy", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children Organization[] @relation("OrgHierarchy")

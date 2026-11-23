@@ -11,12 +11,14 @@ interface InvoiceModalProps {
   transaction: any;
   organizationName?: string;
   organizationLogoUrl?: string | null;
+  // Téléphone / adresse de la clinique (Paramètres) — lignes omises s'ils ne sont pas renseignés.
+  organizationContact?: { phone?: string | null; address?: string | null } | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   triggerBtn?: React.ReactNode;
 }
 
-export default function InvoiceModal({ transaction, organizationName, organizationLogoUrl, open: externalOpen, onOpenChange: externalOnOpenChange, triggerBtn }: InvoiceModalProps) {
+export default function InvoiceModal({ transaction, organizationName, organizationLogoUrl, organizationContact, open: externalOpen, onOpenChange: externalOnOpenChange, triggerBtn }: InvoiceModalProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [viewFormat, setViewFormat] = useState<"thermal" | "a4">("thermal");
 
@@ -202,8 +204,8 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                   <img src={organizationLogoUrl} alt="" className="h-10 w-10 object-contain mx-auto" />
                 )}
                 <p className="text-xs font-extrabold uppercase text-slate-800">{organizationName || "MEDDOC - CENTRE MÉDICAL"}</p>
-                <p className="text-[10px] text-slate-600">Plateforme Médicale & Pharmacie</p>
-                <p className="text-[10px] text-slate-600">Tél: +241 01 02 03 04</p>
+                {organizationContact?.address && <p className="text-[10px] text-slate-600">{organizationContact.address}</p>}
+                {organizationContact?.phone && <p className="text-[10px] text-slate-600">Tél : {organizationContact.phone}</p>}
               </div>
 
               {/* Dashed Separator */}
@@ -435,7 +437,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
             <PDFDownloadButton
               documentName={`Ticket_${invoiceNum}`}
               type="invoice"
-              data={{ transaction, organizationName, organizationLogoUrl, format: viewFormat }}
+              data={{ transaction, organizationName, organizationLogoUrl, organizationContact, format: viewFormat }}
               buttonText="Télécharger PDF"
               variant="outline"
               size="default"

@@ -38,7 +38,7 @@ export default async function ClinicFinancePage({ params, searchParams }: Clinic
     getFinanceSummary(clinicId, periodInput),
     prisma.organization.findUnique({
       where: { id: clinicId },
-      select: { name: true, logoUrl: true }
+      select: { name: true, logoUrl: true, phone: true, address: true }
     }),
     getStockValuation(clinicId),
     listCashSessions(clinicId, periodInput, { page: pageFromParam(rawParams.page) }),
@@ -79,6 +79,7 @@ export default async function ClinicFinancePage({ params, searchParams }: Clinic
         organizationId={clinicId}
         organizationName={orgName}
         organizationLogoUrl={clinicOrg?.logoUrl}
+        organizationContact={clinicOrg}
         currentUserRole={activeUser.role}
         period={period}
         sessions={sessions as any}

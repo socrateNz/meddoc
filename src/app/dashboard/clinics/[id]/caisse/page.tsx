@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { listRegistersWithStatus } from "@/actions/registers";
 import { getPharmacyItems, listCaisseHistoryInvoices } from "@/actions/finance";
+import { listLabTestsForSale } from "@/actions/lab";
 import CaisseView from "@/app/dashboard/caisse/caisse-view";
 import { redirect } from "next/navigation";
 import { can } from "@/lib/permissions-catalog";
@@ -25,16 +26,23 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
     redirect(`/dashboard/clinics/${clinicId}${can(activeUser, "pharmacy.access") ? "/pharmacie" : ""}`);
   }
 
-  const [registersRes, patients, clinicOrg, pharmacyItemsRes, historyRes] = await Promise.all([
+  const [registersRes, patients, clinicOrg, pharmacyItemsRes, historyRes, labTestsRes, services] = await Promise.all([
     listRegistersWithStatus(clinicId),
     prisma.patient.findMany({
       where: { organizationId: clinicId },
       include: { user: true },
       orderBy: { user: { lastName: "asc" } },
     }),
-    prisma.organization.findUnique({ where: { id: clinicId }, select: { name: true, logoUrl: true } }),
+    prisma.organization.findUnique({ where: { id: clinicId }, select: { name: true, logoUrl: true, phone: true, address: true } }),
     getPharmacyItems(clinicId),
     listCaisseHistoryInvoices(clinicId),
+    // Catalogues de la vente au guichet : examens (tarif maison) et consultations (tarif des services).
+    listLabTestsForSale(clinicId),
+    prisma.clinicService.findMany({
+      where: { organizationId: clinicId, isActive: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, consultationPrice: true },
+    }),
   ]);
 
   const registers = registersRes.success ? registersRes.data || [] : [];
@@ -59,10 +67,13 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
         organizationId={clinicId}
         organizationName={orgName}
         organizationLogoUrl={clinicOrg?.logoUrl}
+        organizationContact={clinicOrg}
         currentUserId={activeUser.id}
         currentUserRole={activeUser.role}
         patients={patients}
         pharmacyItems={pharmacyItems}
+        labTests={labTestsRes.success ? labTestsRes.data : []}
+        services={services}
       />
     </div>
   );

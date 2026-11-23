@@ -235,6 +235,7 @@ interface FinanceViewProps {
   organizationId?: string;
   organizationName?: string;
   organizationLogoUrl?: string | null;
+  organizationContact?: { phone?: string | null; address?: string | null } | null;
   currentUserRole?: string;
   // Période du filtre global (cf. period-filter.tsx) : recettes, dépenses, bénéfice, journal et
   // sessions de caisse ne montrent que cette période.
@@ -257,7 +258,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   EQUIPMENT: "Matériel médical",
 };
 
-export default function FinanceView({ summary, organizationId, organizationName, organizationLogoUrl, currentUserRole, period, sessions = [], sessionsPagination, valuation }: FinanceViewProps) {
+export default function FinanceView({ summary, organizationId, organizationName, organizationLogoUrl, organizationContact, currentUserRole, period, sessions = [], sessionsPagination, valuation }: FinanceViewProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -856,6 +857,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
         transaction={selectedInvoiceTransaction}
         organizationName={organizationName}
         organizationLogoUrl={organizationLogoUrl}
+        organizationContact={organizationContact}
         open={!!selectedInvoiceTransaction}
         onOpenChange={(open) => !open && setSelectedInvoiceTransaction(null)}
       />

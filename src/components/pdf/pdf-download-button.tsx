@@ -63,6 +63,7 @@ export default function PDFDownloadButton({
             transaction={data.transaction}
             organizationName={data.organizationName}
             organizationLogoUrl={data.organizationLogoUrl}
+            organizationContact={data.organizationContact}
             format={data.format}
           />
         );

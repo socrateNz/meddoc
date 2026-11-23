@@ -32,7 +32,7 @@ import PaymentStatusBadge from "@/components/payment-status-badge";
 import { listRegistersWithStatus, openRegisterSession, getSessionSummary, closeRegisterSession, correctOpeningFloat } from "@/actions/registers";
 import { listPendingInvoices, listCaisseHistoryInvoices } from "@/actions/finance";
 import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog, EditOpeningFloatDialog } from "./register-session-dialogs";
-import CaisseCartDialog from "./caisse-cart-dialog";
+import CaisseCartDialog, { type SaleLabTest, type SaleService } from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
 import RecordPaymentDialog from "./record-payment-dialog";
 import TicketActionsMenu from "./ticket-actions-menu";
@@ -62,10 +62,14 @@ interface CaisseViewProps {
   organizationId: string;
   organizationName?: string;
   organizationLogoUrl?: string | null;
+  organizationContact?: { phone?: string | null; address?: string | null } | null;
   currentUserId: string;
   currentUserRole?: string;
   patients: any[];
   pharmacyItems: any[];
+  // Catalogues proposés dans « Nouvelle vente » (cf. caisse-cart-dialog.tsx).
+  labTests?: SaleLabTest[];
+  services?: SaleService[];
 }
 
 const HISTORY_PAGE_SIZE = 20;
@@ -77,9 +81,12 @@ export default function CaisseView({
   organizationId,
   organizationName,
   organizationLogoUrl,
+  organizationContact,
   currentUserId,
   patients,
   pharmacyItems,
+  labTests = [],
+  services = [],
 }: CaisseViewProps) {
   const [registers, setRegisters] = useState<RegisterRow[]>(initialRegisters);
   const [selectedRegisterId, setSelectedRegisterId] = useState<string>(() => {
@@ -391,7 +398,7 @@ export default function CaisseView({
 
                   {canOperate && (
                     <div className="flex flex-wrap gap-3">
-                      <CaisseCartDialog mode="sale" cashSessionId={selectedRegister.openSession.id} pharmacyItems={pharmacyItems} patients={patients} organizationId={organizationId} onSuccess={handleMutationSuccess} canDispense={canDispense} />
+                      <CaisseCartDialog mode="sale" cashSessionId={selectedRegister.openSession.id} pharmacyItems={pharmacyItems} labTests={labTests} services={services} patients={patients} organizationId={organizationId} onSuccess={handleMutationSuccess} canDispense={canDispense} />
                       <CaisseExpenseDialog cashSessionId={selectedRegister.openSession.id} organizationId={organizationId} onSuccess={handleMutationSuccess} />
                     </div>
                   )}
@@ -830,6 +837,7 @@ export default function CaisseView({
         transaction={selectedTransaction}
         organizationName={organizationName}
         organizationLogoUrl={organizationLogoUrl}
+        organizationContact={organizationContact}
         open={!!selectedTransaction}
         onOpenChange={(open) => !open && setSelectedTransaction(null)}
       />
