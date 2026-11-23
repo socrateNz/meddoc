@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   createCustomRole,
   deleteCustomRole,
@@ -164,6 +165,7 @@ function RoleForm({
   onDeleted: () => void;
 }) {
   const isBuiltIn = selection.kind === "builtIn";
+  const confirm = useConfirm();
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription);
   const [perms, setPerms] = useState<Set<string>>(() => new Set(initialPermissions));
@@ -214,7 +216,7 @@ function RoleForm({
 
   const reset = async () => {
     if (selection.kind !== "builtIn") return;
-    if (!confirm("Revenir aux permissions par défaut de ce rôle ?")) return;
+    if (!(await confirm({ title: "Revenir aux permissions par défaut ?", description: "Les réglages faits pour ce rôle dans votre clinique seront perdus.", confirmLabel: "Rétablir" }))) return;
     setBusy("reset");
     const res = await resetBuiltInRole(clinicId, selection.role);
     setBusy(null);
@@ -226,7 +228,7 @@ function RoleForm({
   const remove = async () => {
     if (selection.kind !== "custom") return;
     const who = memberCount > 0 ? ` Il sera retiré à ${memberCount} membre${memberCount > 1 ? "s" : ""}.` : "";
-    if (!confirm(`Supprimer le rôle « ${initialName} » ?${who}`)) return;
+    if (!(await confirm({ title: `Supprimer le rôle « ${initialName} » ?`, description: who.trim() || undefined, confirmLabel: "Supprimer", destructive: true }))) return;
     setBusy("delete");
     const res = await deleteCustomRole(clinicId, selection.id);
     setBusy(null);

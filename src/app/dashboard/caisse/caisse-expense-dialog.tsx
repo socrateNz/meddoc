@@ -10,6 +10,7 @@ import { MinusCircle, Loader2, Info } from "lucide-react";
 import { recordExpense } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { EXPENSE_CATEGORIES, WITHDRAWAL_CATEGORIES, type CashOutCategory } from "@/lib/accounting/plan";
+import { FormMessage } from "@/components/ui/form-message";
 
 // Catégories proposées à la caisse : une vraie dépense (compte de charge) ou un retrait qui n'en est
 // pas une (propriétaire, banque, avance...) et n'entre donc pas dans le résultat.
@@ -77,9 +78,7 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
         </DialogHeader>
 
         {msg && (
-          <div className={`p-3 text-xs font-medium rounded-xl border ${msg.type === "success" ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/30" : "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/30"}`}>
-            {msg.text}
-          </div>
+          <FormMessage type={msg.type} text={msg.text} />
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">

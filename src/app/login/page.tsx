@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { PasswordInput } from "@/components/ui/password-input";
 
 export default function LoginPage() {
   const [error, setError] = useState("");
@@ -85,9 +86,8 @@ export default function LoginPage() {
                 <Label htmlFor="password">Mot de passe</Label>
                 <a href="/forgot-password" className="text-sm text-primary hover:underline">Mot de passe oublié ?</a>
               </div>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 {...register("password")}
               />
               {errors.password && (

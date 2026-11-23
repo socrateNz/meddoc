@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,7 @@ import { MAX_PAGE_SIZE } from "@/lib/pagination";
 import { listPrescriptionTemplates, createPrescriptionTemplate, listPrescriptions, renewPrescription } from "@/actions/prescriptions";
 import { getPatientVitalSigns } from "@/actions/vitals";
 import { transcribeConsultationAudio } from "@/actions/ai";
-import { Loader2, FileText, Activity, Stethoscope, Pill, Plus, Trash2, Search, X, ShieldAlert, HeartPulse, FlaskConical, Mic, Square, ChevronRight, AlertTriangle, History, RotateCcw, Save, Thermometer } from "lucide-react";
+import { Loader2, FileText, Activity, Pill, Plus, Trash2, Search, X, ShieldAlert, HeartPulse, FlaskConical, Mic, Square, ChevronRight, ChevronLeft, Check, AlertTriangle, History, RotateCcw, Save, Thermometer } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { searchIcd10Codes, type Icd10Code } from "@/lib/icd10-codes";
 import NewLabOrderDialog from "@/app/dashboard/lab/new-lab-order-dialog";
@@ -39,7 +39,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
-  const [activeTab, setActiveTab] = useState("notes");
+  const [activeTab, setActiveTab] = useState("motif");
 
   // Form State — pré-rempli depuis un brouillon existant (ConsultationDraft) le cas échéant.
   const [symptoms, setSymptoms] = useState<string>(draft?.symptoms || "");
@@ -292,8 +292,8 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
 
   const handleSubmit = async () => {
     if (!symptoms || !diagnosis || !plan) {
-      toast.error("Veuillez remplir tous les champs de notes cliniques.");
-      setActiveTab("notes");
+      toast.error(!symptoms ? "Indiquez le motif et vos observations." : !diagnosis ? "Indiquez votre diagnostic." : "Indiquez le plan de traitement.");
+      setActiveTab(!symptoms ? "motif" : !diagnosis ? "diagnostic" : "cloture");
       return;
     }
 
@@ -330,6 +330,18 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
       setLoading(false);
     }
   };
+
+  // Étapes de la consultation, dans l'ordre du raisonnement médical. Les examens de labo n'existent
+  // que si le module est dans la licence ; l'ordonnance et les examens sont facultatifs (cochés dès
+  // qu'il y a quelque chose).
+  const steps: { value: string; label: string; done: boolean; summary?: string }[] = [
+    { value: "motif", label: "Motif & examen", done: !!symptoms.trim() },
+    { value: "diagnostic", label: "Diagnostic", done: !!diagnosis.trim(), summary: diagnosisCode?.code },
+    { value: "prescriptions", label: "Ordonnance", done: medications.length > 0, summary: medications.length ? `${medications.length} médicament${medications.length > 1 ? "s" : ""}` : "aucun médicament" },
+    ...(hasLab ? [{ value: "lab", label: "Examens labo", done: labOrders.length > 0, summary: labOrders.length ? `${labOrders.length} demande${labOrders.length > 1 ? "s" : ""}` : "aucune demande" }] : []),
+    { value: "cloture", label: "Clôture", done: !!plan.trim() },
+  ];
+  const stepIndex = steps.findIndex((step) => step.value === activeTab);
 
   return (
     <div className="space-y-6">
@@ -372,26 +384,41 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
         {/* Colonne principale : onglets */}
         <div className="md:col-span-8 lg:col-span-9">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl mb-6 h-auto flex-wrap justify-start">
-              <TabsTrigger value="history" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
+            {/* Étapes de la consultation (cf. STEPS) : coche verte quand l'étape est remplie. */}
+            <div className="mb-6 flex flex-wrap items-center gap-2">
+              <ol className="flex flex-1 flex-wrap gap-2">
+                {steps.map((step, i) => {
+                  const active = activeTab === step.value;
+                  return (
+                    <li key={step.value}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab(step.value)}
+                        aria-current={active ? "step" : undefined}
+                        className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                          active
+                            ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                        }`}
+                      >
+                        <span
+                          className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+                            step.done ? "bg-emerald-500 text-white" : active ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                          }`}
+                        >
+                          {step.done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                        </span>
+                        {step.label}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+              <Button type="button" variant={activeTab === "history" ? "secondary" : "ghost"} size="sm" className="gap-1.5" onClick={() => setActiveTab("history")}>
                 <Activity className="h-4 w-4" />
-                Historique
-              </TabsTrigger>
-              <TabsTrigger value="notes" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
-                <Stethoscope className="h-4 w-4" />
-                Consultation
-              </TabsTrigger>
-              <TabsTrigger value="prescriptions" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
-                <Pill className="h-4 w-4" />
-                Ordonnances
-              </TabsTrigger>
-              {hasLab && (
-                <TabsTrigger value="lab" className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white">
-                  <FlaskConical className="h-4 w-4" />
-                  Laboratoire
-                </TabsTrigger>
-              )}
-            </TabsList>
+                Antécédents
+              </Button>
+            </div>
 
             <TabsContent value="history" className="space-y-4">
               <Card>
@@ -433,7 +460,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
               </Card>
             </TabsContent>
 
-            <TabsContent value="notes" className="space-y-4">
+            <TabsContent value="motif" className="space-y-4">
               {!isCompleted && hasAi && (
                 <Card className="border-violet-200/60 dark:border-violet-900/40 bg-violet-50/30 dark:bg-violet-950/10">
                   <CardContent className="py-4 flex items-center justify-between gap-4 flex-wrap">
@@ -466,14 +493,12 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
               )}
               <Card>
                 <CardHeader>
-                  <CardTitle>Évaluation Clinique</CardTitle>
-                  <CardDescription>
-                    Remplissez vos observations et votre diagnostic pour cette consultation.
-                  </CardDescription>
+                  <CardTitle>Motif et examen</CardTitle>
+                  <CardDescription>Pourquoi le patient consulte, ce que vous observez à l&apos;examen.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="space-y-2">
-                    <Label htmlFor="symptoms" className="text-base font-semibold text-primary">1. Symptômes & Observations</Label>
+                    <Label htmlFor="symptoms" className="text-base font-semibold text-primary">Motif de consultation, symptômes et examen clinique</Label>
                     <Textarea
                       id="symptoms"
                       placeholder="Décrivez les symptômes présentés par le patient..."
@@ -483,9 +508,19 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                       disabled={isCompleted}
                     />
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
+            <TabsContent value="diagnostic" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Diagnostic</CardTitle>
+                  <CardDescription>Votre évaluation, et le code CIM-10 si vous le connaissez (facultatif).</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
                   <div className="space-y-2">
-                    <Label htmlFor="diagnosis" className="text-base font-semibold text-primary">2. Diagnostic / Évaluation</Label>
+                    <Label htmlFor="diagnosis" className="text-base font-semibold text-primary">Diagnostic / évaluation</Label>
                     <Textarea
                       id="diagnosis"
                       placeholder="Votre évaluation clinique et diagnostic..."
@@ -495,20 +530,59 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                       disabled={isCompleted}
                     />
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="plan" className="text-base font-semibold text-primary">3. Plan de Traitement</Label>
-                    <Textarea
-                      id="plan"
-                      placeholder="Recommandations, suivi prévu, soins à apporter..."
-                      className="min-h-[120px] resize-y"
-                      value={plan}
-                      onChange={(e) => setPlan(e.target.value)}
-                      disabled={isCompleted}
-                    />
-                  </div>
                 </CardContent>
               </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Code CIM-10</CardTitle>
+                  <CardDescription className="text-xs">Recherchez un code CIM-10 (facultatif).</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {diagnosisCode ? (
+                    <div className="flex items-start justify-between gap-2 p-3 rounded-lg border bg-primary/5">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs font-bold text-primary">{diagnosisCode.code}</p>
+                        <p className="text-sm mt-0.5">{diagnosisCode.label}</p>
+                      </div>
+                      {!isCompleted && (
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setDiagnosisCode(null)}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    !isCompleted && (
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                          placeholder="Ex: paludisme, J00, hypertension..."
+                          className="pl-8 h-9 text-sm"
+                          value={icdQuery}
+                          onChange={(e) => { setIcdQuery(e.target.value); setIcdOpen(true); }}
+                          onFocus={() => setIcdOpen(true)}
+                          onBlur={() => setTimeout(() => setIcdOpen(false), 150)}
+                        />
+                        {icdOpen && icdResults.length > 0 && (
+                          <div className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border bg-popover shadow-md">
+                            {icdResults.map((c) => (
+                              <button
+                                key={c.code}
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors"
+                                onClick={() => { setDiagnosisCode(c); setIcdQuery(""); setIcdOpen(false); }}
+                              >
+                                <span className="font-mono font-bold text-primary mr-1.5">{c.code}</span>
+                                {c.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  )}
+                </CardContent>
+              </Card>
+
             </TabsContent>
 
             <TabsContent value="prescriptions" className="space-y-4">
@@ -778,6 +852,64 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                 </CardContent>
               </Card>
             </TabsContent>
+
+            <TabsContent value="cloture" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Clôture</CardTitle>
+                  <CardDescription>Dernière étape : le plan de traitement, puis la clôture de la consultation.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="plan" className="text-base font-semibold text-primary">Plan de traitement et suivi</Label>
+                    <Textarea
+                      id="plan"
+                      placeholder="Recommandations, suivi prévu, soins à apporter..."
+                      className="min-h-[120px] resize-y"
+                      value={plan}
+                      onChange={(e) => setPlan(e.target.value)}
+                      disabled={isCompleted}
+                    />
+                  </div>
+                  <ul className="grid gap-2 rounded-xl border bg-slate-50/60 p-4 text-sm dark:bg-slate-900/40 sm:grid-cols-2">
+                    {steps.filter((step) => step.value !== "cloture").map((step) => (
+                      <li key={step.value} className="flex items-center gap-2">
+                        {step.done ? <Check className="h-4 w-4 text-emerald-600" /> : <span className="h-4 w-4 rounded-full border-2 border-slate-300" />}
+                        <button type="button" className="text-left hover:underline" onClick={() => setActiveTab(step.value)}>
+                          {step.label}
+                          {step.summary ? <span className="text-muted-foreground"> — {step.summary}</span> : null}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    className="w-full"
+                    size="lg"
+                    onClick={handleSubmit}
+                    disabled={loading || isCompleted}
+                  >
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isCompleted ? "Consultation Terminée" : "Clôturer la consultation"}
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Navigation entre les étapes. */}
+            {stepIndex >= 0 && (
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <Button type="button" variant="outline" disabled={stepIndex === 0} onClick={() => setActiveTab(steps[stepIndex - 1].value)} className="gap-1.5">
+                  <ChevronLeft className="h-4 w-4" />
+                  Étape précédente
+                </Button>
+                {stepIndex < steps.length - 1 && (
+                  <Button type="button" onClick={() => setActiveTab(steps[stepIndex + 1].value)} className="gap-1.5">
+                    Étape suivante : {steps[stepIndex + 1].label}
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            )}
           </Tabs>
         </div>
 
@@ -821,57 +953,6 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Diagnostic</CardTitle>
-              <CardDescription className="text-xs">Recherchez un code CIM-10 (facultatif).</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {diagnosisCode ? (
-                <div className="flex items-start justify-between gap-2 p-3 rounded-lg border bg-primary/5">
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs font-bold text-primary">{diagnosisCode.code}</p>
-                    <p className="text-sm mt-0.5">{diagnosisCode.label}</p>
-                  </div>
-                  {!isCompleted && (
-                    <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setDiagnosisCode(null)}>
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                !isCompleted && (
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                    <Input
-                      placeholder="Ex: paludisme, J00, hypertension..."
-                      className="pl-8 h-9 text-sm"
-                      value={icdQuery}
-                      onChange={(e) => { setIcdQuery(e.target.value); setIcdOpen(true); }}
-                      onFocus={() => setIcdOpen(true)}
-                      onBlur={() => setTimeout(() => setIcdOpen(false), 150)}
-                    />
-                    {icdOpen && icdResults.length > 0 && (
-                      <div className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border bg-popover shadow-md">
-                        {icdResults.map((c) => (
-                          <button
-                            key={c.code}
-                            type="button"
-                            className="w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors"
-                            onClick={() => { setDiagnosisCode(c); setIcdQuery(""); setIcdOpen(false); }}
-                          >
-                            <span className="font-mono font-bold text-primary mr-1.5">{c.code}</span>
-                            {c.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              )}
-            </CardContent>
-          </Card>
-
           {!isCompleted && (
             <Button
               variant="outline"
@@ -884,15 +965,6 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
             </Button>
           )}
 
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={handleSubmit}
-            disabled={loading || isCompleted}
-          >
-            {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isCompleted ? "Consultation Terminée" : "Clôturer la consultation"}
-          </Button>
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ import { AlertCircle, LockKeyhole } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { updateInitialPassword } from "@/actions/users";
 import { toast } from "sonner";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const setupPasswordSchema = z.object({
   password: z.string().min(8, "Le mot de passe doit contenir au moins 8 caractères"),
@@ -71,9 +72,8 @@ export default function SetupPasswordPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="password">Nouveau mot de passe</Label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 {...register("password")}
               />
               {errors.password && (
@@ -82,9 +82,8 @@ export default function SetupPasswordPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
-              <Input
+              <PasswordInput
                 id="confirmPassword"
-                type="password"
                 {...register("confirmPassword")}
               />
               {errors.confirmPassword && (

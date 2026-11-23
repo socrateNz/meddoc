@@ -41,6 +41,7 @@ import PharmacyItemMenu from "./pharmacy-item-menu";
 import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
 import { dispensePendingInvoice, cancelDispense } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
+import { FormMessage } from "@/components/ui/form-message";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -293,9 +294,7 @@ export default function PharmacieView({
           )}
 
           {msg && (
-            <div className={`p-3 text-xs font-medium rounded-xl border ${msg.type === "success" ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/30" : "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/30"}`}>
-              {msg.text}
-            </div>
+            <FormMessage type={msg.type} text={msg.text} />
           )}
 
           <p className="text-xs font-bold uppercase tracking-wider text-slate-500 pt-2">

@@ -12,6 +12,7 @@ import { AlertCircle, KeyRound } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { resetPassword } from "@/actions/auth";
 import { toast } from "sonner";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const resetFormSchema = z.object({
   password: z.string().min(8, "Le mot de passe doit contenir au moins 8 caractères"),
@@ -69,14 +70,14 @@ export default function ResetPasswordPage({ params }: { params: Promise<{ token:
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="password">Nouveau mot de passe</Label>
-              <Input id="password" type="password" {...register("password")} />
+              <PasswordInput id="password" {...register("password")} />
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password.message}</p>
               )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
-              <Input id="confirmPassword" type="password" {...register("confirmPassword")} />
+              <PasswordInput id="confirmPassword" {...register("confirmPassword")} />
               {errors.confirmPassword && (
                 <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
               )}

@@ -5,6 +5,7 @@ import { verifyPatientAccess } from "@/lib/auth";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 import { modulesOfUser } from "@/lib/modules-server";
 import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
+import { toErrorMessage } from "@/lib/utils";
 
 export async function POST(req: Request) {
   try {
@@ -31,6 +32,6 @@ export async function POST(req: Request) {
     const analysis = await AiService.analyzePatient(patientId);
     return NextResponse.json(analysis, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Erreur serveur" }, { status: 500 });
+    return NextResponse.json({ error: toErrorMessage(error, "Erreur serveur") }, { status: 500 });
   }
 }

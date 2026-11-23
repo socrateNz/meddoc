@@ -17,6 +17,7 @@ import { createCaisseSale, payPendingInvoice } from "@/actions/finance";
 import { submitOrQueueOffline } from "@/lib/offline-submit";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { toast } from "sonner";
+import { FormMessage } from "@/components/ui/form-message";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -354,9 +355,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
 
         <div className="space-y-4 pt-1 sm:space-y-6 sm:pt-2">
           {msg && (
-            <div className={`p-3 text-xs font-medium rounded-xl border ${msg.type === "success" ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/30" : "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/30"}`}>
-              {msg.text}
-            </div>
+            <FormMessage type={msg.type} text={msg.text} />
           )}
 
           <div className="p-3 sm:p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60 space-y-3 sm:space-y-4">

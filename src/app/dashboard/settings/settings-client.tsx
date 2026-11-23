@@ -29,6 +29,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { updateProfile, changePassword, updateNotificationPreferences } from "@/actions/users";
 import { getPushStatus, subscribeAndPersist, unsubscribeAndForget, type PushStatus } from "@/lib/push-client";
 import { toast } from "sonner";
+import { PasswordInput } from "@/components/ui/password-input";
 
 interface SettingsUser {
   id: string;
@@ -482,9 +483,8 @@ function SecurityTab({ user }: { user: SettingsUser }) {
 
             <div className="space-y-2">
               <Label htmlFor="confirm-pw">Confirmer le nouveau mot de passe</Label>
-              <Input
+              <PasswordInput
                 id="confirm-pw"
-                type="password"
                 value={confirmPw}
                 onChange={(e) => setConfirmPw(e.target.value)}
                 required

@@ -37,7 +37,6 @@ import {
   Droplet,
   Bed as BedIcon,
   Pill,
-  Baby,
   Thermometer,
   LayoutGrid,
   ClipboardList,
@@ -46,7 +45,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PaginationNav } from "@/components/ui/pagination-nav";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import AddRecordDialog from "./add-record-dialog";
 import AddIncidentDialog from "./add-incident-dialog";
 import RunAiButton from "./run-ai-button";
@@ -358,85 +357,96 @@ export default function PatientDetailView({
 
       {/* Tabs Menu */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="bg-slate-100/80 dark:bg-slate-800/60 p-1 rounded-xl h-auto flex-wrap justify-start">
-          <TabsTrigger
-            value="apercu"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            <LayoutGrid className="h-4 w-4 text-indigo-500" />
-            Aperçu
-          </TabsTrigger>
-          <TabsTrigger
-            value="vitals"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            Évolution & Constantes ({vitalSignsPage.total})
-          </TabsTrigger>
-          <TabsTrigger
-            value="records"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            Dossier médical ({patient.medicalRecords.length})
-          </TabsTrigger>
-          <TabsTrigger
-            value="prescriptions"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            Ordonnances ({prescriptionsPage.total})
-          </TabsTrigger>
-          {hasModule("LABORATOIRE") && (
-            <TabsTrigger
-              value="lab"
-              className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-            >
-              Laboratoire ({labOrdersPage.total})
-            </TabsTrigger>
-          )}
-          {hasModule("IMAGERIE") && (
-            <TabsTrigger
-              value="imagery"
-              className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-            >
-              Imagerie
-            </TabsTrigger>
-          )}
-          {showMaternityTab && (
-            <TabsTrigger
-              value="maternity"
-              className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-            >
-              <Baby className="h-4 w-4 text-pink-500" />
-              Maternité ({pregnanciesPage.total})
-            </TabsTrigger>
-          )}
-          <TabsTrigger
-            value="careplans"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            Plan de soins ({patient.carePlans.length})
-          </TabsTrigger>
-          <TabsTrigger
-            value="appointments"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            Rendez-vous ({patient.appointments.length})
-          </TabsTrigger>
-          <TabsTrigger
-            value="incidents"
-            className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-          >
-            Incidents ({patient.incidents.length})
-          </TabsTrigger>
-          {hasModule("IA") && (
-            <TabsTrigger
-              value="ai"
-              className="rounded-lg text-xs font-semibold gap-1.5 text-slate-600 dark:text-slate-300 data-active:bg-white dark:data-active:bg-slate-900 data-active:text-slate-900 dark:data-active:text-white"
-            >
-              <BrainCircuit className="h-4 w-4 text-indigo-500" />
-              Analyse IA
-            </TabsTrigger>
-          )}
-        </TabsList>
+        {/* Onglets regroupés par famille : la famille en haut, ses sous-onglets en dessous — au lieu
+            d'une dizaine d'onglets à plat. Les contenus (TabsContent) sont inchangés. */}
+        {(() => {
+          const groups: { key: string; label: string; icon: typeof LayoutGrid; tabs: { value: string; label: string; show?: boolean }[] }[] = [
+            { key: "apercu", label: "Aperçu", icon: LayoutGrid, tabs: [{ value: "apercu", label: "Aperçu" }] },
+            {
+              key: "soins",
+              label: "Soins",
+              icon: HeartPulse,
+              tabs: [
+                { value: "vitals", label: `Constantes (${vitalSignsPage.total})` },
+                { value: "careplans", label: `Plan de soins (${patient.carePlans.length})` },
+                { value: "maternity", label: `Maternité (${pregnanciesPage.total})`, show: showMaternityTab },
+              ],
+            },
+            {
+              key: "dossier",
+              label: "Consultations & documents",
+              icon: FileText,
+              tabs: [
+                { value: "records", label: `Dossier médical (${patient.medicalRecords.length})` },
+                { value: "prescriptions", label: `Ordonnances (${prescriptionsPage.total})` },
+                { value: "appointments", label: `Rendez-vous (${patient.appointments.length})` },
+              ],
+            },
+            {
+              key: "examens",
+              label: "Examens",
+              icon: FlaskConical,
+              tabs: [
+                { value: "lab", label: `Laboratoire (${labOrdersPage.total})`, show: hasModule("LABORATOIRE") },
+                { value: "imagery", label: "Imagerie", show: hasModule("IMAGERIE") },
+              ],
+            },
+            {
+              key: "autres",
+              label: "Autres",
+              icon: BrainCircuit,
+              tabs: [
+                { value: "incidents", label: `Incidents (${patient.incidents.length})` },
+                { value: "ai", label: "Analyse IA", show: hasModule("IA") },
+              ],
+            },
+          ]
+            .map((g) => ({ ...g, tabs: g.tabs.filter((t) => t.show !== false) }))
+            .filter((g) => g.tabs.length > 0);
+          const current = groups.find((g) => g.tabs.some((t) => t.value === activeTab)) ?? groups[0];
+          return (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2" role="tablist" aria-label="Sections du dossier">
+                {groups.map((g) => {
+                  const active = g.key === current.key;
+                  return (
+                    <button
+                      key={g.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      onClick={() => setActiveTab(g.tabs[0].value)}
+                      className={`flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition-colors ${
+                        active
+                          ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-200"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                      }`}
+                    >
+                      <g.icon className="h-4 w-4" />
+                      {g.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {current.tabs.length > 1 && (
+                <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100/80 p-1 dark:bg-slate-800/60">
+                  {current.tabs.map((t) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setActiveTab(t.value)}
+                      className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                        activeTab === t.value ? "bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white" : "text-slate-600 hover:text-slate-900 dark:text-slate-300"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Onglet Aperçu — résumé + fil d'activité croisant tous les autres onglets */}
         <TabsContent value="apercu" className="pt-6 space-y-6">

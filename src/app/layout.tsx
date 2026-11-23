@@ -52,7 +52,7 @@ export default function RootLayout({
           <QueryProvider>
             <PwaRegister />
             {children}
-            <Toaster richColors />
+            <Toaster richColors closeButton position="top-center" duration={5000} />
           </QueryProvider>
         </ThemeProvider>
       </body>

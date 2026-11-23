@@ -5,6 +5,7 @@ import SidebarData from "./sidebar-data";
 import SidebarSkeleton from "./sidebar-skeleton";
 import { ModulesProvider } from "@/components/modules-provider";
 import { PermissionsProvider } from "@/components/permissions-provider";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { modulesOfUser } from "@/lib/modules-server";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ export default async function DashboardLayout({
   return (
     <ModulesProvider modules={modulesOfUser(currentUser)}>
     <PermissionsProvider permissions={currentUser?.permissions ?? []}>
+    <ConfirmProvider>
     <div className="flex flex-col lg:flex-row h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-slate-50/80 to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/20 relative">
       {/* Decorative background glow circles */}
       <div className="absolute -top-[20%] -right-[10%] w-[600px] h-[600px] rounded-full bg-blue-400/10 dark:bg-blue-600/5 blur-[120px] pointer-events-none z-0" />
@@ -56,6 +58,7 @@ export default async function DashboardLayout({
         </div>
       </main>
     </div>
+    </ConfirmProvider>
     </PermissionsProvider>
     </ModulesProvider>
   );

@@ -129,6 +129,15 @@
     @apply bg-background text-foreground;
     font-family: 'Inter', sans-serif;
   }
+  /* Cases à cocher et boutons radio natifs : même couleur et même taille partout (les composants
+     du kit, eux, ont leur propre style). Une classe utilitaire sur l'élément l'emporte. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--primary);
+    width: 1rem;
+    height: 1rem;
+    cursor: pointer;
+  }
   html {
     @apply font-sans;
     scroll-behavior: smooth;

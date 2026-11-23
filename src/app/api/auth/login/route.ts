@@ -4,6 +4,7 @@ import { loginSchema } from "@/validators/auth";
 import { AuthService } from "@/services/AuthService";
 import { rateLimit } from "@/middlewares/rateLimiter";
 import { z } from "zod";
+import { isTechnicalError, isUnavailableError, SERVICE_UNAVAILABLE_MESSAGE } from "@/lib/utils";
 
 export async function POST(req: Request) {
   const ip = req.headers.get("x-forwarded-for") || "127.0.0.1";
@@ -102,6 +103,15 @@ export async function POST(req: Request) {
     }
     const message = error instanceof Error ? error.message : "Erreur interne";
     Sentry.captureException(error);
+    // Base indisponible ou bug : message clair pour l'utilisateur, détail technique gardé pour
+    // Sentry et les journaux du serveur (jamais affiché à l'écran).
+    if (isTechnicalError(error)) {
+      console.error("Échec technique de la connexion :", error);
+      return NextResponse.json(
+        { error: isUnavailableError(error) ? SERVICE_UNAVAILABLE_MESSAGE : "La connexion a échoué. Réessayez dans un instant." },
+        { status: 503 }
+      );
+    }
 
     // Même logique que sur le chemin de succès : le journal d'audit d'un échec de connexion
     // ne doit pas retarder la réponse d'erreur renvoyée à l'utilisateur.
