@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { listRegistersWithStatus } from "@/actions/registers";
 import { getPharmacyItems, listCaisseHistoryInvoices } from "@/actions/finance";
 import { listLabTestsForSale } from "@/actions/lab";
+import { listRadiologyExamsForSale } from "@/actions/radiology";
 import CaisseView from "@/app/dashboard/caisse/caisse-view";
 import { redirect } from "next/navigation";
 import { can } from "@/lib/permissions-catalog";
@@ -26,7 +27,7 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
     redirect(`/dashboard/clinics/${clinicId}${can(activeUser, "pharmacy.access") ? "/pharmacie" : ""}`);
   }
 
-  const [registersRes, patients, clinicOrg, pharmacyItemsRes, historyRes, labTestsRes, services] = await Promise.all([
+  const [registersRes, patients, clinicOrg, pharmacyItemsRes, historyRes, labTestsRes, services, imagingRes] = await Promise.all([
     listRegistersWithStatus(clinicId),
     prisma.patient.findMany({
       where: { organizationId: clinicId },
@@ -43,6 +44,7 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
       orderBy: { name: "asc" },
       select: { id: true, name: true, consultationPrice: true },
     }),
+    listRadiologyExamsForSale(clinicId),
   ]);
 
   const registers = registersRes.success ? registersRes.data || [] : [];
@@ -74,6 +76,7 @@ export default async function ClinicCaissePage({ params }: ClinicCaissePageProps
         pharmacyItems={pharmacyItems}
         labTests={labTestsRes.success ? labTestsRes.data : []}
         services={services}
+        imagingExams={imagingRes.success ? imagingRes.data : []}
       />
     </div>
   );

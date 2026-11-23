@@ -12,7 +12,7 @@ import { toErrorMessage } from "@/lib/utils";
 import { resolvePage } from "@/lib/pagination";
 import { revalidatePath } from "next/cache";
 import { RADIOLOGY_MODALITIES, nextRadiologyStatus, snapshotExams, type RadiologyAction, type RadiologyExamSnapshot } from "@/lib/radiology";
-import { assertUserModule } from "@/lib/modules-server";
+import { assertUserModule, modulesOfUser } from "@/lib/modules-server";
 import { assertPrenatalVisitOfPatient } from "@/lib/maternity-server";
 import { hiddenPatientIds, restrictedServiceIds } from "@/lib/service-access";
 
@@ -35,6 +35,26 @@ function revalidateRadiology(organizationId: string, patientId?: string) {
 }
 
 // --- Catalogue ---
+
+// Examens d'imagerie vendables au guichet (Caisse > Nouvelle vente > Imagerie), pour ceux qui
+// tiennent la caisse. Sans module Imagerie : liste vide.
+export async function listRadiologyExamsForSale(clinicId: string) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    if (!can(activeUser, "register.operate")) throw new Error("Non autorisé.");
+    if (!modulesOfUser(activeUser).includes("IMAGERIE")) return { success: true as const, data: [] };
+    await assertClinicScope(clinicId, activeUser);
+    const exams = await prisma.radiologyExam.findMany({
+      where: { organizationId: clinicId, isActive: true },
+      orderBy: [{ modality: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, modality: true, basePrice: true },
+    });
+    return { success: true as const, data: exams.map((e) => ({ id: e.id, name: e.name, modality: e.modality, price: Math.max(0, e.basePrice || 0) })) };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du catalogue d'imagerie.") };
+  }
+}
 
 export async function listRadiologyExams(clinicId: string, options: { includeInactive?: boolean } = {}) {
   try {

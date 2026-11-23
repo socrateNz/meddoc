@@ -19,6 +19,7 @@ import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { toast } from "sonner";
 import { FormMessage } from "@/components/ui/form-message";
 import { toErrorMessage } from "@/lib/utils";
+import { RADIOLOGY_MODALITY_LABELS, type RadiologyModality } from "@/lib/radiology";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -54,8 +55,11 @@ function cartFromPending(pendingInvoice: { id: string; items: any[] }): CartItem
 
 export type SaleLabTest = { id: string; name: string; department?: string | null; price: number };
 export type SaleService = { id: string; name: string; consultationPrice?: number | null };
+export type SaleImagingExam = { id: string; name: string; modality: string; price: number };
 
-type AddMode = "PHARMACY" | "LAB" | "CONSULTATION" | "SERVICE";
+type AddMode = "PHARMACY" | "LAB" | "IMAGING" | "CONSULTATION" | "SERVICE";
+// Onglets tirés d'un catalogue (examen, imagerie, consultation) : même formulaire.
+const isCatalogMode = (m: AddMode) => m === "LAB" || m === "IMAGING" || m === "CONSULTATION";
 
 interface CaisseCartDialogProps {
   mode: "sale" | "pay";
@@ -64,6 +68,7 @@ interface CaisseCartDialogProps {
   // Catalogues des onglets « Examens » et « Consultations » (absents = onglets masqués).
   labTests?: SaleLabTest[];
   services?: SaleService[];
+  imagingExams?: SaleImagingExam[];
   patients?: any[];
   organizationId?: string;
   pendingInvoice?: {
@@ -77,7 +82,7 @@ interface CaisseCartDialogProps {
   canDispense?: boolean;
 }
 
-export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, labTests, services, patients = [], organizationId, pendingInvoice, onSuccess, canDispense = false }: CaisseCartDialogProps) {
+export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, labTests, services, imagingExams, patients = [], organizationId, pendingInvoice, onSuccess, canDispense = false }: CaisseCartDialogProps) {
   const [open, setOpen] = useState(false);
   const [dispenseNow, setDispenseNow] = useState(true);
   const [cartItems, setCartItems] = useState<CartItem[]>(() => (mode === "pay" && pendingInvoice ? cartFromPending(pendingInvoice) : []));
@@ -163,7 +168,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
       ]);
       setAddPharmacyItemId("");
       setAddPharmacyQty(1);
-    } else if (addItemMode === "LAB" || addItemMode === "CONSULTATION") {
+    } else if (isCatalogMode(addItemMode)) {
       const entry = catalogEntry(addCatalogId);
       if (!entry) return;
       const price = entry.price > 0 ? entry.price : Number(addCatalogPrice);
@@ -176,7 +181,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
         {
           id: `cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           type: addItemMode === "LAB" ? "LAB" : "SERVICE",
-          description: addItemMode === "LAB" ? `Analyse : ${entry.name}` : `Consultation — ${entry.name}`,
+          // Libellés identiques à ceux des demandes faites au labo / en imagerie / en consultation.
+          description: addItemMode === "LAB" ? `Analyse : ${entry.name}` : addItemMode === "IMAGING" ? `Imagerie : ${entry.name}` : `Consultation — ${entry.name}`,
           quantity: 1,
           unitPrice: price,
           amount: price,
@@ -208,7 +214,9 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
   const catalogEntries =
     addItemMode === "LAB"
       ? (labTests || []).map((t) => ({ id: t.id, name: t.name, hint: t.department || "", price: Number(t.price) || 0 }))
-      : (services || []).map((s) => ({ id: s.id, name: s.name, hint: "", price: Number(s.consultationPrice) || 0 }));
+      : addItemMode === "IMAGING"
+        ? (imagingExams || []).map((e) => ({ id: e.id, name: e.name, hint: RADIOLOGY_MODALITY_LABELS[e.modality as RadiologyModality] ?? e.modality, price: Number(e.price) || 0 }))
+        : (services || []).map((s) => ({ id: s.id, name: s.name, hint: "", price: Number(s.consultationPrice) || 0 }));
   function catalogEntry(id: string) {
     return catalogEntries.find((e) => e.id === id);
   }
@@ -221,6 +229,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
   const tabs: { key: AddMode; label: string; active: string }[] = [
     { key: "PHARMACY", label: "Médicaments", active: "bg-blue-600 text-white" },
     ...(labTests ? [{ key: "LAB" as const, label: "Examens", active: "bg-violet-600 text-white" }] : []),
+    ...(imagingExams ? [{ key: "IMAGING" as const, label: "Imagerie", active: "bg-cyan-600 text-white" }] : []),
     ...(services ? [{ key: "CONSULTATION" as const, label: "Consultations", active: "bg-amber-600 text-white" }] : []),
     { key: "SERVICE", label: "Autres", active: "bg-emerald-600 text-white" },
   ];
@@ -405,7 +414,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
           </DialogTitle>
           <DialogDescription>
             {mode === "sale"
-              ? "Composez le panier (médicaments, examens, consultations, autres frais) puis validez l'encaissement."
+              ? "Composez le panier (médicaments, examens, imagerie, consultations, autres frais) puis validez l'encaissement."
               : `${patientName} — ${pendingInvoice?.medicalRecord?.title ? `« ${pendingInvoice.medicalRecord.title} »` : "facture en attente"}. Ajustez les montants avant d'encaisser.`}
           </DialogDescription>
         </DialogHeader>
@@ -471,10 +480,10 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
                     <Button type="submit" disabled={!addPharmacyItemId} className="w-full h-11 sm:h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs">+ Ajouter au Panier</Button>
                   </div>
                 </div>
-              ) : addItemMode === "LAB" || addItemMode === "CONSULTATION" ? (
+              ) : isCatalogMode(addItemMode) ? (
                 <div className="grid grid-cols-2 sm:grid-cols-12 gap-3 items-end">
                   <div className="col-span-2 sm:col-span-6 space-y-1">
-                    <Label htmlFor="addCatalogId" className="text-xs">{addItemMode === "LAB" ? "Examen *" : "Consultation (service) *"}</Label>
+                    <Label htmlFor="addCatalogId" className="text-xs">{addItemMode === "LAB" ? "Examen *" : addItemMode === "IMAGING" ? "Examen d'imagerie *" : "Consultation (service) *"}</Label>
                     <SearchableSelect
                       id="addCatalogId"
                       value={addCatalogId}
@@ -482,8 +491,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
                         setAddCatalogId(v);
                         setAddCatalogPrice("");
                       }}
-                      placeholder={addItemMode === "LAB" ? "-- Rechercher un examen --" : "-- Choisir un service --"}
-                      emptyText={addItemMode === "LAB" ? "Aucun examen dans le catalogue." : "Aucun service configuré."}
+                      placeholder={addItemMode === "LAB" ? "-- Rechercher un examen --" : addItemMode === "IMAGING" ? "-- Rechercher un examen d'imagerie --" : "-- Choisir un service --"}
+                      emptyText={addItemMode === "LAB" ? "Aucun examen dans le catalogue." : addItemMode === "IMAGING" ? "Aucun examen dans le catalogue d'imagerie." : "Aucun service configuré."}
                       options={catalogEntries.map((e) => ({
                         value: e.id,
                         label: e.name,
@@ -514,7 +523,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
                     <Button
                       type="submit"
                       disabled={!selectedCatalogEntry || (selectedCatalogEntry.price <= 0 && !(Number(addCatalogPrice) > 0))}
-                      className={`w-full h-11 sm:h-9 text-white rounded-xl text-xs ${addItemMode === "LAB" ? "bg-violet-600 hover:bg-violet-700" : "bg-amber-600 hover:bg-amber-700"}`}
+                      className={`w-full h-11 sm:h-9 text-white rounded-xl text-xs ${addItemMode === "LAB" ? "bg-violet-600 hover:bg-violet-700" : addItemMode === "IMAGING" ? "bg-cyan-600 hover:bg-cyan-700" : "bg-amber-600 hover:bg-amber-700"}`}
                     >
                       + Ajouter au Panier
                     </Button>
@@ -553,8 +562,8 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, l
                 <div key={item.id} className={`grid grid-cols-[1fr_auto] sm:grid-cols-12 gap-x-2 gap-y-1 p-3 font-medium border-t first:border-t-0 sm:first:border-t border-slate-100 dark:border-slate-800 items-center ${item.amount <= 0 ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}`}>
                   {/* Mobile : designation + corbeille, puis qte x P.U et total */}
                   <div className="min-w-0 break-words text-sm sm:text-sm sm:col-span-5 font-semibold text-slate-900 dark:text-white">
-                    <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-xs font-bold rounded ${item.type === "PHARMACY" ? "bg-blue-500/10 text-blue-600" : item.type === "LAB" ? "bg-violet-500/10 text-violet-600" : "bg-emerald-500/10 text-emerald-600"}`}>
-                      {item.type === "PHARMACY" ? "Pharma" : item.type === "LAB" ? "Examen" : item.description.startsWith("Consultation") ? "Consult." : "Acte"}
+                    <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-xs font-bold rounded ${item.type === "PHARMACY" ? "bg-blue-500/10 text-blue-600" : item.type === "LAB" ? "bg-violet-500/10 text-violet-600" : item.description.startsWith("Imagerie") ? "bg-cyan-500/10 text-cyan-700" : "bg-emerald-500/10 text-emerald-600"}`}>
+                      {item.type === "PHARMACY" ? "Pharma" : item.type === "LAB" ? "Examen" : item.description.startsWith("Imagerie") ? "Imagerie" : item.description.startsWith("Consultation") ? "Consult." : "Acte"}
                     </span>
                     {item.description}
                     <DiscountNote discount={item.discount} reason={item.discountReason} />

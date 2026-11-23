@@ -32,7 +32,7 @@ import PaymentStatusBadge from "@/components/payment-status-badge";
 import { listRegistersWithStatus, openRegisterSession, getSessionSummary, closeRegisterSession, correctOpeningFloat } from "@/actions/registers";
 import { listPendingInvoices, listCaisseHistoryInvoices } from "@/actions/finance";
 import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog, EditOpeningFloatDialog } from "./register-session-dialogs";
-import CaisseCartDialog, { type SaleLabTest, type SaleService } from "./caisse-cart-dialog";
+import CaisseCartDialog, { type SaleImagingExam, type SaleLabTest, type SaleService } from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
 import RecordPaymentDialog from "./record-payment-dialog";
 import TicketActionsMenu from "./ticket-actions-menu";
@@ -70,6 +70,7 @@ interface CaisseViewProps {
   // Catalogues proposés dans « Nouvelle vente » (cf. caisse-cart-dialog.tsx).
   labTests?: SaleLabTest[];
   services?: SaleService[];
+  imagingExams?: SaleImagingExam[];
 }
 
 const HISTORY_PAGE_SIZE = 20;
@@ -87,6 +88,7 @@ export default function CaisseView({
   pharmacyItems,
   labTests = [],
   services = [],
+  imagingExams = [],
 }: CaisseViewProps) {
   const [registers, setRegisters] = useState<RegisterRow[]>(initialRegisters);
   const [selectedRegisterId, setSelectedRegisterId] = useState<string>(() => {
@@ -398,7 +400,7 @@ export default function CaisseView({
 
                   {canOperate && (
                     <div className="flex flex-wrap gap-3">
-                      <CaisseCartDialog mode="sale" cashSessionId={selectedRegister.openSession.id} pharmacyItems={pharmacyItems} labTests={labTests} services={services} patients={patients} organizationId={organizationId} onSuccess={handleMutationSuccess} canDispense={canDispense} />
+                      <CaisseCartDialog mode="sale" cashSessionId={selectedRegister.openSession.id} pharmacyItems={pharmacyItems} labTests={labTests} services={services} imagingExams={imagingExams} patients={patients} organizationId={organizationId} onSuccess={handleMutationSuccess} canDispense={canDispense} />
                       <CaisseExpenseDialog cashSessionId={selectedRegister.openSession.id} organizationId={organizationId} onSuccess={handleMutationSuccess} />
                     </div>
                   )}
