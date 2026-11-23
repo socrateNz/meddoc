@@ -476,3 +476,109 @@ export async function updateHoldingModules(data: z.input<typeof modulesSchema>) 
     return { success: false as const, error: toErrorMessage(error, "Erreur lors de la mise à jour des modules.") };
   }
 }
+
+// Fiche détaillée d'une holding (page /dashboard/holdings/[id]) : abonnement, cliniques avec leurs
+// effectifs et leur chiffre d'affaires, équipe par rôle, administrateurs, dernières connexions.
+// Réservée au SUPER_ADMIN. null si la holding n'existe pas.
+export async function getHoldingDetails(holdingId: string) {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "SUPER_ADMIN") throw new Error("Unauthorized");
+  if (!/^[a-f0-9]{24}$/i.test(holdingId)) return null;
+
+  const holding = await prisma.organization.findFirst({
+    where: { id: holdingId, type: "HOLDING" },
+    include: {
+      children: {
+        where: { type: "CLINIC" },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, name: true, phone: true, address: true, isActive: true, createdAt: true },
+      },
+    },
+  });
+  if (!holding) return null;
+
+  const clinicIds = holding.children.map((c) => c.id);
+  const orgIds = [holding.id, ...clinicIds];
+  const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const STAFF_EXCLUDED: Role[] = ["PATIENT", "FAMILY", "SUPER_ADMIN"];
+
+  const [
+    usersByOrg,
+    patientsByOrg,
+    usersByRole,
+    financeAll,
+    finance30,
+    admins,
+    recentUsers,
+    labOrdersCount,
+    radiologyOrdersCount,
+    newPatients30,
+  ] = await Promise.all([
+    prisma.user.groupBy({ by: ["organizationId"], where: { organizationId: { in: orgIds }, role: { notIn: STAFF_EXCLUDED } }, _count: { _all: true } }),
+    prisma.patient.groupBy({ by: ["organizationId"], where: { organizationId: { in: orgIds } }, _count: { _all: true } }),
+    prisma.user.groupBy({ by: ["role", "isActive"], where: { organizationId: { in: orgIds }, role: { notIn: STAFF_EXCLUDED } }, _count: { _all: true } }),
+    prisma.financialTransaction.groupBy({ by: ["organizationId", "type"], where: { organizationId: { in: orgIds } }, _sum: { amount: true } }),
+    prisma.financialTransaction.groupBy({ by: ["organizationId", "type"], where: { organizationId: { in: orgIds }, createdAt: { gte: since30 } }, _sum: { amount: true } }),
+    prisma.user.findMany({
+      where: { organizationId: holding.id, role: "ADMIN" },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, firstName: true, lastName: true, email: true, phone: true, isActive: true, lastActiveAt: true, createdAt: true },
+    }),
+    prisma.user.findMany({
+      where: { organizationId: { in: orgIds }, role: { notIn: STAFF_EXCLUDED }, lastActiveAt: { not: null } },
+      orderBy: { lastActiveAt: "desc" },
+      take: 8,
+      select: { id: true, firstName: true, lastName: true, role: true, organizationId: true, lastActiveAt: true },
+    }),
+    prisma.labOrder.count({ where: { organizationId: { in: orgIds } } }),
+    prisma.radiologyOrder.count({ where: { organizationId: { in: orgIds } } }),
+    prisma.patient.count({ where: { organizationId: { in: orgIds }, createdAt: { gte: since30 } } }),
+  ]);
+
+  const countFor = (rows: { organizationId: string | null; _count: { _all: number } }[], id: string) =>
+    rows.find((r) => r.organizationId === id)?._count._all ?? 0;
+  const sumFor = (rows: { organizationId: string | null; type: string; _sum: { amount: number | null } }[], id: string | null, type: "INCOME" | "EXPENSE") =>
+    rows.filter((r) => (id === null || r.organizationId === id) && r.type === type).reduce((s, r) => s + (r._sum.amount ?? 0), 0);
+
+  const clinics = holding.children.map((c) => ({
+    ...c,
+    staff: countFor(usersByOrg, c.id),
+    patients: countFor(patientsByOrg, c.id),
+    income: sumFor(financeAll, c.id, "INCOME"),
+    expense: sumFor(financeAll, c.id, "EXPENSE"),
+    income30: sumFor(finance30, c.id, "INCOME"),
+  }));
+
+  const roles = new Map<string, { active: number; inactive: number }>();
+  for (const r of usersByRole) {
+    const entry = roles.get(r.role) ?? { active: 0, inactive: 0 };
+    if (r.isActive) entry.active += r._count._all;
+    else entry.inactive += r._count._all;
+    roles.set(r.role, entry);
+  }
+
+  const orgNames = new Map<string, string>([[holding.id, holding.name], ...holding.children.map((c) => [c.id, c.name] as [string, string])]);
+  const { children: _children, ...holdingFields } = holding;
+
+  return {
+    holding: holdingFields,
+    clinics,
+    admins,
+    staffByRole: [...roles.entries()].map(([role, v]) => ({ role, ...v })).sort((a, b) => b.active + b.inactive - (a.active + a.inactive)),
+    recentUsers: recentUsers.map((u) => ({ ...u, organizationName: (u.organizationId && orgNames.get(u.organizationId)) || "" })),
+    totals: {
+      clinics: clinics.length,
+      activeClinics: clinics.filter((c) => c.isActive).length,
+      staff: usersByOrg.reduce((s, r) => s + r._count._all, 0),
+      activeStaff: usersByRole.filter((r) => r.isActive).reduce((s, r) => s + r._count._all, 0),
+      patients: patientsByOrg.reduce((s, r) => s + r._count._all, 0),
+      newPatients30,
+      labOrders: labOrdersCount,
+      radiologyOrders: radiologyOrdersCount,
+      income: sumFor(financeAll, null, "INCOME"),
+      expense: sumFor(financeAll, null, "EXPENSE"),
+      income30: sumFor(finance30, null, "INCOME"),
+      expense30: sumFor(finance30, null, "EXPENSE"),
+    },
+  };
+}

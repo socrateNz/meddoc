@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,24 +12,16 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Edit, Loader2, Eye, FileDown, Crown, Building2, Users, Activity, UserX, UserCheck, Trash2, KeyRound, Copy, Check, Blocks } from "lucide-react";
+import { MoreHorizontal, Edit, Loader2, Eye, FileDown, UserX, UserCheck, Trash2, KeyRound, Copy, Check, Blocks } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SubscriptionPlan, SubscriptionStatus, PaymentFrequency, PaymentPlan } from "@prisma/client";
 import { updateHoldingSubscription, deactivateHolding, reactivateHolding, deleteHolding, resetHoldingAdminPassword } from "@/actions/super-admin";
 import { toast } from "sonner";
 import HoldingModulesDialog from "./holding-modules-dialog";
-
-const PLAN_LABELS: Record<string, string> = {
-  TRIAL: "Essai (Trial)",
-  BASIC: "Basique",
-  PREMIUM: "Premium",
-  ENTERPRISE: "Entreprise",
-};
 
 const PLAN_OPTIONS = [
   { value: "TRIAL", label: "Essai (Trial)" },
@@ -54,11 +47,6 @@ const PAYMENT_PLAN_OPTIONS = [
   { value: "INSTALLMENTS", label: "Paiement échelonné (en tranches)" },
 ];
 
-const PAYMENT_PLAN_LABELS: Record<string, string> = {
-  FULL: "Paiement intégral",
-  INSTALLMENTS: "Paiement échelonné",
-};
-
 interface HoldingActionsMenuProps {
   holding: {
     id: string;
@@ -78,12 +66,15 @@ interface HoldingActionsMenuProps {
     nextPaymentDate?: Date | string | null;
     disabledModules?: string[] | null;
   };
+  // "detail" : menu affiché sur la fiche de la holding (pas de lien vers elle-même ; retour à la
+  // liste après suppression).
+  variant?: "list" | "detail";
 }
 
-export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps) {
+export default function HoldingActionsMenu({ holding, variant = "list" }: HoldingActionsMenuProps) {
+  const router = useRouter();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showModulesDialog, setShowModulesDialog] = useState(false);
-  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showResetPasswordDialog, setShowResetPasswordDialog] = useState(false);
@@ -120,6 +111,7 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
     } else {
       toast.success("Holding supprimée.");
       setShowDeleteDialog(false);
+      if (variant === "detail") router.push("/dashboard/holdings");
     }
   };
 
@@ -248,10 +240,12 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
           <DropdownMenuGroup>
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setShowDetailsDialog(true)} className="cursor-pointer">
-              <Eye className="h-4 w-4 mr-2" />
-              Voir les détails
-            </DropdownMenuItem>
+            {variant === "list" && (
+              <DropdownMenuItem onClick={() => router.push(`/dashboard/holdings/${holding.id}`)} className="cursor-pointer">
+                <Eye className="h-4 w-4 mr-2" />
+                Voir les détails
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => setShowEditDialog(true)} className="cursor-pointer">
               <Edit className="h-4 w-4 mr-2" />
               Modifier
@@ -391,100 +385,6 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
               </DialogFooter>
             </>
           )}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {holding.name}
-              <Badge variant="outline" className={`text-xs uppercase font-bold tracking-wider ${holding.plan === "ENTERPRISE" ? "border-purple-500/30 text-purple-600 bg-purple-500/10" :
-                holding.plan === "PREMIUM" ? "border-blue-500/30 text-blue-600 bg-blue-500/10" :
-                  "border-slate-500/30 text-slate-600 bg-slate-500/10"
-                }`}>
-                {holding.plan === "ENTERPRISE" && <Crown className="h-3 w-3 mr-1 inline" />}
-                {PLAN_LABELS[holding.plan] || holding.plan}
-              </Badge>
-            </DialogTitle>
-            <DialogDescription>Fiche détaillée de la holding.</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-800/50">
-                <Building2 className="h-4 w-4 mx-auto text-slate-400 mb-1" />
-                <p className="text-lg font-bold">{holding._count?.children ?? 0}</p>
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Cliniques</p>
-              </div>
-              <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-800/50">
-                <Users className="h-4 w-4 mx-auto text-slate-400 mb-1" />
-                <p className="text-lg font-bold">{holding._count?.users ?? 0}</p>
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Utilisateurs</p>
-              </div>
-              <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-800/50">
-                <Activity className="h-4 w-4 mx-auto text-slate-400 mb-1" />
-                <p className="text-lg font-bold">{holding._count?.patients ?? 0}</p>
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Patients</p>
-              </div>
-            </div>
-
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-500">Statut</span>
-                <Badge variant={holding.subscriptionStatus === "ACTIVE" ? "default" : "secondary"} className="uppercase text-xs font-bold">
-                  {holding.subscriptionStatus}
-                </Badge>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-500">Créée le</span>
-                <span className="font-medium">{holding.createdAt ? new Date(holding.createdAt).toLocaleDateString("fr-FR") : "-"}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-500">Licence</span>
-                <span className="font-medium">
-                  {holding.licenseExpiresAt ? `Expire le ${new Date(holding.licenseExpiresAt).toLocaleDateString("fr-FR")}` : "Illimitée"}
-                </span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-500">Tarif</span>
-                <span className="font-medium">
-                  {holding.paymentAmount != null
-                    ? `${new Intl.NumberFormat("fr-FR").format(holding.paymentAmount)} FCFA / ${holding.paymentFrequency === "YEARLY" ? "an" : "mois"}`
-                    : "Non défini"}
-                </span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-500">Mode de paiement</span>
-                <span className="font-medium">
-                  {PAYMENT_PLAN_LABELS[holding.paymentPlan || "FULL"]}
-                  {holding.paymentPlan === "INSTALLMENTS" && holding.installmentsCount ? ` (${holding.installmentsCount} tranches)` : ""}
-                </span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-500">Prochain paiement</span>
-                <span className="font-medium">
-                  {holding.nextPaymentDate ? new Date(holding.nextPaymentDate).toLocaleDateString("fr-FR") : "-"}
-                </span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="text-slate-500">Administrateur</span>
-                <span className="font-medium">{adminName || "-"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Email</span>
-                <span className="font-medium">{holding.adminUser?.email || "-"}</span>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDetailsDialog(false)}>Fermer</Button>
-            <Button onClick={handleDownloadReceipt} disabled={downloading} className="gap-2">
-              {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-              Télécharger le reçu
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

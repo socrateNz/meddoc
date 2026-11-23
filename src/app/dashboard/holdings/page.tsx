@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getHoldings } from "@/actions/super-admin";
@@ -54,7 +55,9 @@ export default async function HoldingsPage({ searchParams }: HoldingsPageProps) 
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                    {holding.name}
+                    <Link href={`/dashboard/holdings/${holding.id}`} className="hover:text-primary hover:underline underline-offset-4">
+                      {holding.name}
+                    </Link>
                     <Badge variant="outline" className={`text-xs uppercase font-bold tracking-wider ${
                       holding.plan === "ENTERPRISE" ? "border-purple-500/30 text-purple-600 bg-purple-500/10" :
                       holding.plan === "PREMIUM" ? "border-blue-500/30 text-blue-600 bg-blue-500/10" :
