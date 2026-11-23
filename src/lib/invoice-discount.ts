@@ -106,3 +106,25 @@ export function applyItemDiscounts<T extends DiscountableItem>(
     return withDiscount({ ...item, discountById: undefined, discountAt: undefined }, d, item.discountReason, userId ? { id: userId } : undefined);
   });
 }
+
+// Réduction sur TOUT le ticket : répartie sur les lignes au prorata de leur prix (au franc près,
+// plus forts restes), chaque ligne restant bornée à son prix — la comptabilité garde ainsi la
+// remise de chaque nature (7019 pharmacie, 7069 prestations).
+export function spreadDiscount(grossByLine: readonly number[], total: number): number[] {
+  const gross = grossByLine.map((g) => Math.max(0, round(g)));
+  const sum = gross.reduce((s, g) => s + g, 0);
+  const target = Math.min(sum, Math.max(0, round(total)));
+  if (sum <= 0 || target <= 0) return gross.map(() => 0);
+  const exact = gross.map((g) => (g * target) / sum);
+  const parts = exact.map((e) => Math.floor(e));
+  let rest = target - parts.reduce((s, p) => s + p, 0);
+  const order = exact.map((e, i) => ({ i, frac: e - Math.floor(e) })).sort((a, b) => b.frac - a.frac);
+  for (const { i } of order) {
+    if (rest <= 0) break;
+    if (parts[i] < gross[i]) {
+      parts[i]++;
+      rest--;
+    }
+  }
+  return parts;
+}

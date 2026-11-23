@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyItemDiscounts, totalDiscount, withDiscount, type DiscountableItem } from "./invoice-discount";
+import { applyItemDiscounts, spreadDiscount, totalDiscount, withDiscount, type DiscountableItem } from "./invoice-discount";
 
 const exam = { type: "LAB", description: "NFS", quantity: 1, unitPrice: 10000, amount: 10000 };
 const boss = { role: "COORDINATOR" };
@@ -63,5 +63,15 @@ describe("auteur de la réduction", () => {
   it("ignore un auteur transmis par le navigateur", () => {
     const [line] = applyItemDiscounts({ id: "boss1", role: "COORDINATOR" }, [{ ...exam, discount: 1000, discountReason: "x", discountById: "pirate" }]);
     expect(line.discountById).toBe("boss1");
+  });
+});
+
+describe("spreadDiscount", () => {
+  it("répartit la réduction du ticket au prorata, au franc près", () => {
+    expect(spreadDiscount([13000, 5000], 3000)).toEqual([2167, 833]);
+    expect(spreadDiscount([13000, 5000], 18000)).toEqual([13000, 5000]);
+    expect(spreadDiscount([13000, 5000], 99999)).toEqual([13000, 5000]);
+    expect(spreadDiscount([1000, 1000, 1000], 1000).reduce((s, n) => s + n, 0)).toBe(1000);
+    expect(spreadDiscount([0, 0], 500)).toEqual([0, 0]);
   });
 });

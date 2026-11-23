@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { applyInvoiceDiscount } from "@/actions/finance";
 import { DiscountNote, LineDiscountEditor } from "./line-discount-editor";
+import { spreadDiscount } from "@/lib/invoice-discount";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -30,16 +31,28 @@ export default function InvoiceDiscountDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Item[]>(pendingInvoice.items || []);
-  const [editing, setEditing] = useState<number | null>(null);
+  // Ligne en cours de réduction, ou "all" : tout le ticket.
+  const [editing, setEditing] = useState<number | "all" | null>(null);
   const [busy, setBusy] = useState(false);
 
   const gross = (it: Item) => Math.round(Number(it.quantity) * Number(it.unitPrice)) || Number(it.amount) || 0;
   const total = items.reduce((sum, it) => sum + Number(it.amount || 0), 0);
   const discounted = items.reduce((sum, it) => sum + (Number(it.discount) || 0), 0);
+  const grossTotal = items.reduce((sum, it) => sum + gross(it), 0);
 
-  const save = async (index: number, discount: number, reason: string) => {
+  const save = (index: number, discount: number, reason: string) => submit([{ index, discount, reason }], discount > 0);
+
+  // Tout le ticket : réduction répartie sur les lignes au prorata de leur prix (cf. spreadDiscount),
+  // en remplaçant les réductions déjà posées ligne par ligne.
+  const saveAll = (discount: number, reason: string) =>
+    submit(
+      spreadDiscount(items.map(gross), discount).map((d, index) => ({ index, discount: d, reason })),
+      discount > 0
+    );
+
+  const submit = async (discounts: { index: number; discount: number; reason: string }[], applied: boolean) => {
     setBusy(true);
-    const res = await applyInvoiceDiscount({ pendingInvoiceId: pendingInvoice.id, discounts: [{ index, discount, reason }] });
+    const res = await applyInvoiceDiscount({ pendingInvoiceId: pendingInvoice.id, discounts });
     setBusy(false);
     if (!res.success) return void toast.error(res.error);
     setItems(res.data.items as Item[]);
@@ -48,7 +61,7 @@ export default function InvoiceDiscountDialog({
       toast.success("Ticket entièrement offert : il est soldé, rien à encaisser.");
       setOpen(false);
     } else {
-      toast.success(discount > 0 ? "Réduction appliquée." : "Réduction retirée.");
+      toast.success(applied ? "Réduction appliquée." : "Réduction retirée.");
     }
     onSuccess?.();
     router.refresh();
@@ -73,8 +86,38 @@ export default function InvoiceDiscountDialog({
             <BadgePercent className="h-5 w-5 text-violet-600" />
             Réduction — {patientName}
           </DialogTitle>
-          <DialogDescription>Choisissez la ligne à réduire (examen, consultation, médicament...). Le caissier encaissera le montant réduit.</DialogDescription>
+          <DialogDescription>Réduisez tout le ticket, ou une ligne précise (examen, consultation, médicament...). Le caissier encaissera le montant réduit.</DialogDescription>
         </DialogHeader>
+        <div className="space-y-2 rounded-xl border border-violet-200 bg-violet-50/40 p-3 dark:border-violet-900/40 dark:bg-violet-950/10">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span>
+              <span className="block font-semibold">Tout le ticket</span>
+              <span className="block text-xs text-muted-foreground">Répartie sur les lignes au prorata de leur prix.</span>
+            </span>
+            {editing !== "all" && (
+              <span className="flex shrink-0 gap-3 text-xs">
+                <button type="button" className="font-semibold text-violet-700 hover:underline dark:text-violet-300" onClick={() => setEditing("all")}>
+                  Réduire tout le ticket
+                </button>
+                {discounted > 0 && (
+                  <button type="button" className="text-muted-foreground hover:underline" disabled={busy} onClick={() => saveAll(0, "")}>
+                    Tout retirer
+                  </button>
+                )}
+              </span>
+            )}
+          </div>
+          {editing === "all" && (
+            <LineDiscountEditor
+              gross={grossTotal}
+              initialDiscount={discounted}
+              initialReason={items.find((it) => it.discountReason)?.discountReason}
+              busy={busy}
+              onCancel={() => setEditing(null)}
+              onApply={(discount, reason) => saveAll(discount, reason)}
+            />
+          )}
+        </div>
         <div className="space-y-2">
           {items.map((it, i) => (
             <div key={i} className="space-y-2 rounded-xl border border-slate-200/70 p-3 dark:border-slate-800">

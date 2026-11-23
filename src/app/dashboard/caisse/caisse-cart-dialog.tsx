@@ -12,6 +12,7 @@ import SearchableSelect from "@/components/ui/searchable-select";
 import { ShoppingCart, Receipt, Trash2, Loader2, Printer, PlusCircle, BadgePercent } from "lucide-react";
 import { useCan } from "@/components/permissions-provider";
 import { DiscountNote, LineDiscountEditor } from "./line-discount-editor";
+import { spreadDiscount } from "@/lib/invoice-discount";
 import { createCaisseSale, payPendingInvoice } from "@/actions/finance";
 import { submitOrQueueOffline } from "@/lib/offline-submit";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
@@ -181,6 +182,20 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
     );
     setDiscountingId(null);
   };
+
+  // Tout le panier : réduction répartie sur les lignes au prorata de leur prix (cf. spreadDiscount).
+  const applyDiscountToAll = (discount: number, reason: string) => {
+    const parts = spreadDiscount(cartItems.map(grossOf), discount);
+    setCartItems((prev) =>
+      prev.map((it, i) =>
+        parts[i] > 0
+          ? { ...it, discount: parts[i], discountReason: reason, amount: grossOf(it) - parts[i] }
+          : { ...it, discount: undefined, discountReason: undefined, amount: it.discount ? grossOf(it) : it.amount }
+      )
+    );
+    setDiscountingId(null);
+  };
+  const cartDiscount = cartItems.reduce((sum, it) => sum + (Number(it.discount) || 0), 0);
 
   const grandTotal = cartItems.reduce((sum, i) => sum + i.amount, 0);
   // Ligne à 0 « à définir » (ex : frais de consultation non renseignés) — pas une ligne offerte
@@ -523,6 +538,31 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
               </div>
             )}
             <div className="min-w-0 space-y-2 rounded-2xl border border-slate-200/70 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-900/40 sm:col-start-2">
+              {canDiscount && cartItems.length > 0 && discountingId !== "all" && (
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-violet-700 dark:text-violet-300">{cartDiscount > 0 ? `Réductions : −${formatFCFA(cartDiscount)}` : ""}</span>
+                  <span className="flex gap-3">
+                    <button type="button" onClick={() => setDiscountingId("all")} className="flex items-center gap-1 font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                      <BadgePercent className="h-3 w-3" />
+                      Réduire tout le panier
+                    </button>
+                    {cartDiscount > 0 && (
+                      <button type="button" onClick={() => applyDiscountToAll(0, "")} className="text-muted-foreground hover:underline">
+                        Tout retirer
+                      </button>
+                    )}
+                  </span>
+                </div>
+              )}
+              {discountingId === "all" && (
+                <LineDiscountEditor
+                  gross={cartItems.reduce((sum, it) => sum + grossOf(it), 0)}
+                  initialDiscount={cartDiscount}
+                  initialReason={cartItems.find((it) => it.discountReason)?.discountReason}
+                  onCancel={() => setDiscountingId(null)}
+                  onApply={(discount, reason) => applyDiscountToAll(discount, reason)}
+                />
+              )}
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total du panier</span>
                 <span className="text-2xl font-extrabold text-slate-800 dark:text-slate-200">{formatFCFA(grandTotal)}</span>
