@@ -83,13 +83,16 @@ export const CHART_OF_ACCOUNTS: Record<string, string> = {
   "664": "Charges sociales",
   "681": "Dotations aux amortissements",
   "701": "Ventes de marchandises (pharmacie)",
+  "7019": "Remises accordées sur ventes de marchandises",
   "702": "Ventes de produits finis",
   "704": "Travaux facturés",
   "706": "Prestations de services",
   "7061": "Consultations",
   "7062": "Actes, soins, examens, imagerie, laboratoire",
   "7063": "Hospitalisation",
+  "7069": "Remises accordées sur prestations (consultations, actes, hospitalisation)",
   "707": "Produits accessoires",
+  "7079": "Remises accordées sur produits accessoires",
   "758": "Produits divers (excédents de caisse)",
 };
 
@@ -126,11 +129,13 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 
 // Natures de produits d'une clinique → compte de produit et compte de TVA collectée (si taxable).
 export const SALES_ACCOUNTS = {
-  CONSULTATION: { account: "7061", vat: "4432" },
-  ACT: { account: "7062", vat: "4432" },
-  HOSPITALIZATION: { account: "7063", vat: "4432" },
-  PHARMACY: { account: "701", vat: "4431" },
-  ACCESSORY: { account: "707", vat: "4431" },
+  // discount : compte des réductions accordées sur la facture (rabais, remises — SYSCOHADA 70x9),
+  // débité du montant de la réduction ; le produit est crédité au prix plein.
+  CONSULTATION: { account: "7061", vat: "4432", discount: "7069" },
+  ACT: { account: "7062", vat: "4432", discount: "7069" },
+  HOSPITALIZATION: { account: "7063", vat: "4432", discount: "7069" },
+  PHARMACY: { account: "701", vat: "4431", discount: "7019" },
+  ACCESSORY: { account: "707", vat: "4431", discount: "7079" },
 } as const;
 export type SalesNature = keyof typeof SALES_ACCOUNTS;
 

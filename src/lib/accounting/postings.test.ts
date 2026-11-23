@@ -82,3 +82,40 @@ describe("comptes de trésorerie et de charges", () => {
     ]);
   });
 });
+
+describe("vente d'un ticket avec réduction", () => {
+  it("crédite le produit au prix plein et débite la remise sur 7069 / 7019", () => {
+    const lines = saleLines(
+      [
+        { type: "LAB", description: "NFS", amount: 7000, discount: 3000 },
+        { type: "PHARMACY", description: "Paracétamol", amount: 900, discount: 100 },
+        { type: "SERVICE", description: "Consultation générale", amount: 5000 },
+      ],
+      "p1"
+    );
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        { account: "411", debit: 12900, customerId: "p1" },
+        { account: "7069", debit: 3000 },
+        { account: "7019", debit: 100 },
+        { account: "7062", credit: 10000 },
+        { account: "701", credit: 1000 },
+        { account: "7061", credit: 5000 },
+      ])
+    );
+    const debit = lines.reduce((s, l) => s + (l.debit ?? 0), 0);
+    const credit = lines.reduce((s, l) => s + (l.credit ?? 0), 0);
+    expect(debit).toBe(credit);
+  });
+
+  it("une ligne offerte à 100 % reste visible en remise", () => {
+    const lines = saleLines(
+      [
+        { type: "LAB", description: "Glycémie", amount: 0, discount: 2000 },
+        { type: "SERVICE", description: "Consultation", amount: 5000 },
+      ],
+      null
+    );
+    expect(lines).toEqual(expect.arrayContaining([{ account: "7069", debit: 2000 }, { account: "7062", credit: 2000 }, { account: "411", debit: 5000, customerId: null }]));
+  });
+});

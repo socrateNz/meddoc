@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { getFinanceSummary } from "@/actions/finance";
+import { getFinanceSummary, listInvoiceDiscounts } from "@/actions/finance";
+import DiscountsCard from "@/app/dashboard/finance/discounts-card";
 import { getStockValuation } from "@/actions/stock";
 import { listCashSessions } from "@/actions/registers";
 import FinanceView from "@/app/dashboard/finance/finance-view";
@@ -33,7 +34,7 @@ export default async function ClinicFinancePage({ params, searchParams }: Clinic
 
   // Les 4 requêtes ci-dessous ne dépendent que de clinicId / activeUser (déjà résolus),
   // elles sont indépendantes entre elles et peuvent donc partir en parallèle.
-  const [financeRes, clinicOrg, valuationRes, sessionsRes] = await Promise.all([
+  const [financeRes, clinicOrg, valuationRes, sessionsRes, discountsRes] = await Promise.all([
     getFinanceSummary(clinicId, periodInput),
     prisma.organization.findUnique({
       where: { id: clinicId },
@@ -41,6 +42,7 @@ export default async function ClinicFinancePage({ params, searchParams }: Clinic
     }),
     getStockValuation(clinicId),
     listCashSessions(clinicId, periodInput, { page: pageFromParam(rawParams.page) }),
+    listInvoiceDiscounts(clinicId, periodInput),
   ]);
 
   const summary = financeRes.success && financeRes.data ? financeRes.data : {
@@ -83,6 +85,7 @@ export default async function ClinicFinancePage({ params, searchParams }: Clinic
         sessionsPagination={sessionsRes.success ? { page: sessionsRes.page, pageSize: sessionsRes.pageSize, total: sessionsRes.total, pathname: `/dashboard/clinics/${clinicId}/finance`, query: keepQuery(rawParams) } : undefined}
         valuation={valuation}
       />
+      {discountsRes.success && <DiscountsCard data={discountsRes.data} />}
     </div>
   );
 }

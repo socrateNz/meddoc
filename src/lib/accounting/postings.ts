@@ -38,6 +38,8 @@ export interface InvoiceItem {
   type: string;
   description?: string;
   amount: number | string;
+  // Réduction accordée sur la ligne (cf. src/lib/invoice-discount.ts) : `amount` est alors le net.
+  discount?: number | string;
 }
 
 // Nature comptable d'une ligne de ticket : pharmacie → 701, laboratoire et actes → 7062,
@@ -61,6 +63,9 @@ export function natureOfPayment(category: string, description: string): SalesNat
 
 // Lignes de la vente d'un ticket : D 411 du total, C produits répartis par nature au prorata des
 // montants facturés (somme exacte grâce à allocate). Actes médicaux exonérés : pas de TVA.
+// Réductions accordées : le produit est crédité au PRIX PLEIN et la réduction débitée sur le compte
+// de remises de sa nature (7019, 7069...) — le chiffre d'affaires net est inchangé, mais les remises
+// restent visibles au grand livre et au compte de résultat.
 // `received` : total effectivement encaissé sur le ticket. S'il dépasse le facturé (anciens tickets
 // dont la ligne était restée à 0), l'écart est aussi un produit, rangé selon `extraNature` — sinon
 // la créance du patient deviendrait négative.
@@ -78,9 +83,19 @@ export function saleLines(items: InvoiceItem[], customerId: string | null, recei
   const total = Math.max(billed, roundAmount(received));
   if (total <= 0) return [];
   const parts = allocate(total, weights as Record<SalesNature, number>);
+  const discounts: Partial<Record<SalesNature, number>> = {};
+  for (const item of items) {
+    const discount = roundAmount(Math.max(0, Number(item.discount) || 0));
+    if (discount > 0) discounts[natureOfItem(item)] = (discounts[natureOfItem(item)] ?? 0) + discount;
+  }
   const lines: LineInput[] = [{ account: "411", debit: total, customerId }];
-  for (const [nature, amount] of Object.entries(parts) as [SalesNature, number][]) {
-    if (amount > 0) lines.push({ account: SALES_ACCOUNTS[nature].account, credit: amount });
+  for (const [nature, discount] of Object.entries(discounts) as [SalesNature, number][]) {
+    lines.push({ account: SALES_ACCOUNTS[nature].discount, debit: discount });
+  }
+  const natures = new Set([...Object.keys(parts), ...Object.keys(discounts)] as SalesNature[]);
+  for (const nature of natures) {
+    const credit = (parts[nature] ?? 0) + (discounts[nature] ?? 0);
+    if (credit > 0) lines.push({ account: SALES_ACCOUNTS[nature].account, credit });
   }
   return lines;
 }

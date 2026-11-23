@@ -1,5 +1,6 @@
 import { getCurrentUser } from "@/lib/auth";
-import { getFinanceSummary } from "@/actions/finance";
+import { getFinanceSummary, listInvoiceDiscounts } from "@/actions/finance";
+import DiscountsCard from "@/app/dashboard/finance/discounts-card";
 import { getStockValuation } from "@/actions/stock";
 import { listCashSessions } from "@/actions/registers";
 import FinanceView from "./finance-view";
@@ -29,10 +30,11 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
   }
 
   // Les 3 requêtes ci-dessous sont indépendantes entre elles, on les lance en parallèle.
-  const [financeRes, valuationRes, sessionsRes] = await Promise.all([
+  const [financeRes, valuationRes, sessionsRes, discountsRes] = await Promise.all([
     getFinanceSummary(undefined, periodInput),
     getStockValuation(),
     listCashSessions(undefined, periodInput, { page: pageFromParam(rawParams.page) }),
+    listInvoiceDiscounts(undefined, periodInput),
   ]);
 
   const summary = financeRes.success && financeRes.data ? financeRes.data : {
@@ -75,6 +77,7 @@ export default async function FinancePage({ searchParams }: FinancePageProps) {
         sessionsPagination={sessionsRes.success ? { page: sessionsRes.page, pageSize: sessionsRes.pageSize, total: sessionsRes.total, pathname: "/dashboard/finance", query: keepQuery(rawParams) } : undefined}
         valuation={valuation}
       />
+      {discountsRes.success && <DiscountsCard data={discountsRes.data} />}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyItemDiscounts, totalDiscount, withDiscount } from "./invoice-discount";
+import { applyItemDiscounts, totalDiscount, withDiscount, type DiscountableItem } from "./invoice-discount";
 
 const exam = { type: "LAB", description: "NFS", quantity: 1, unitPrice: 10000, amount: 10000 };
 const boss = { role: "COORDINATOR" };
@@ -47,5 +47,21 @@ describe("applyItemDiscounts", () => {
   it("une ligne sans réduction reste inchangée", () => {
     const odd = { type: "SERVICE", description: "Nuitées", quantity: 3, unitPrice: 0, amount: 45000 };
     expect(applyItemDiscounts(cashier, [odd])).toEqual([odd]);
+  });
+});
+
+describe("auteur de la réduction", () => {
+  it("enregistre qui l'a accordée ; un encaissement ultérieur la conserve", () => {
+    const [line] = applyItemDiscounts<DiscountableItem>({ id: "boss1", role: "COORDINATOR" }, [{ ...exam, discount: 2000, discountReason: "personnel" }]);
+    expect(line.discountById).toBe("boss1");
+    expect(typeof line.discountAt).toBe("string");
+    const [paid] = applyItemDiscounts<DiscountableItem>({ id: "cash1", role: "CASHIER" }, [{ ...exam, discount: 2000, discountReason: "personnel" }], [line]);
+    expect(paid.discountById).toBe("boss1");
+    expect(paid.discountAt).toBe(line.discountAt);
+  });
+
+  it("ignore un auteur transmis par le navigateur", () => {
+    const [line] = applyItemDiscounts({ id: "boss1", role: "COORDINATOR" }, [{ ...exam, discount: 1000, discountReason: "x", discountById: "pirate" }]);
+    expect(line.discountById).toBe("boss1");
   });
 });

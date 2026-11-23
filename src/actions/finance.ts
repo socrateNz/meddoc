@@ -979,7 +979,7 @@ export async function applyInvoiceDiscount(data: { pendingInvoiceId: string; dis
     const items = [...((pending.items as any[]) || [])];
     for (const d of data.discounts) {
       if (!items[d.index]) throw new Error("Ligne du ticket introuvable.");
-      items[d.index] = withDiscount(items[d.index], d.discount, d.reason);
+      items[d.index] = withDiscount(items[d.index], d.discount, d.reason, { id: activeUser.id });
     }
     // Ticket entièrement offert : plus rien à encaisser, il est soldé (aucune vente à comptabiliser).
     const newTotal = items.reduce((sum, it) => sum + Number(it.amount || 0), 0);
@@ -2206,6 +2206,88 @@ async function invoicesWithLabConsumables(orgIds: string[]): Promise<Oid[]> {
   const ids = new Set<string>((res.cursor?.firstBatch || []).map((row: any) => rawId(row.pendingInvoiceId)));
   return [...ids].map(toOid);
 }
+
+// Réductions accordées sur la période (cf. src/lib/invoice-discount.ts) : total, et détail ligne
+// par ligne — patient, prestation, montant, motif, qui l'a accordée. Datée du moment où la réduction
+// a été accordée (à défaut, de la création du ticket). Mêmes droits que la synthèse financière.
+export async function listInvoiceDiscounts(organizationId?: string, periodInput?: PeriodInput) {
+  try {
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    assertFinanceReadRole(activeUser);
+    const orgIds = await scopeOrganizationIds(activeUser, organizationId);
+    if (orgIds.length === 0) return { success: true as const, data: { total: 0, count: 0, lines: [] as DiscountLine[] } };
+
+    const period = resolvePeriod(periodInput);
+    const range = periodCreatedAtFilter(period);
+    const res: any = await prisma.$runCommandRaw({
+      find: "PendingInvoice",
+      filter: { organizationId: { $in: orgIds.map(toOid) }, items: { $elemMatch: { discount: { $gt: 0 } } } },
+      projection: { items: 1, patientId: 1, customPatientName: 1, createdAt: 1, status: 1 },
+      sort: { createdAt: -1 },
+      limit: 5000,
+      batchSize: 5000,
+    });
+    const rawDate = (v: any): Date => new Date(v?.$date ?? v);
+    const lines: DiscountLine[] = [];
+    for (const inv of res.cursor?.firstBatch || []) {
+      const invoiceId = rawId(inv._id);
+      for (const it of (inv.items as any[]) || []) {
+        const discount = Math.round(Number(it?.discount) || 0);
+        if (discount <= 0) continue;
+        const at = it.discountAt ? new Date(it.discountAt) : rawDate(inv.createdAt);
+        if (range?.gte && at < range.gte) continue;
+        if (range?.lte && at > range.lte) continue;
+        lines.push({
+          invoiceId,
+          ticketRef: `TCK-${invoiceId.slice(-6).toUpperCase()}`,
+          at: at.toISOString(),
+          patientId: inv.patientId ? rawId(inv.patientId) : null,
+          patientName: inv.customPatientName || null,
+          description: String(it.description || ""),
+          gross: Math.round(Number(it.quantity) * Number(it.unitPrice)) || Math.round(Number(it.amount) || 0) + discount,
+          discount,
+          reason: it.discountReason || null,
+          grantedById: it.discountById || null,
+          grantedByName: null,
+          status: String(inv.status || ""),
+        });
+      }
+    }
+
+    const patientIds = [...new Set(lines.map((l) => l.patientId).filter(Boolean) as string[])];
+    const userIds = [...new Set(lines.map((l) => l.grantedById).filter(Boolean) as string[])];
+    const [patients, users] = await Promise.all([
+      patientIds.length ? prisma.patient.findMany({ where: { id: { in: patientIds } }, select: { id: true, user: { select: { firstName: true, lastName: true } } } }) : [],
+      userIds.length ? prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } }) : [],
+    ]);
+    const patientName = new Map(patients.map((p) => [p.id, `${p.user.lastName} ${p.user.firstName}`]));
+    const userName = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
+    for (const l of lines) {
+      if (l.patientId) l.patientName = patientName.get(l.patientId) ?? l.patientName;
+      if (l.grantedById) l.grantedByName = userName.get(l.grantedById) ?? null;
+    }
+    lines.sort((a, b) => b.at.localeCompare(a.at));
+    return { success: true as const, data: { total: lines.reduce((sum, l) => sum + l.discount, 0), count: lines.length, lines } };
+  } catch (error: any) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des réductions.") };
+  }
+}
+
+type DiscountLine = {
+  invoiceId: string;
+  ticketRef: string;
+  at: string;
+  patientId: string | null;
+  patientName: string | null;
+  description: string;
+  gross: number;
+  discount: number;
+  reason: string | null;
+  grantedById: string | null;
+  grantedByName: string | null;
+  status: string;
+};
 
 // Filtre « au moins un médicament, ou un consommable d'examen ».
 function dispensableClause(labInvoiceIds: Oid[]) {
