@@ -570,7 +570,7 @@ function AppearanceTab() {
                   <p className={`text-xs font-semibold ${selected ? "text-primary" : "text-muted-foreground"}`}>
                     {t.label}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">{t.desc}</p>
+                  <p className="text-xs text-muted-foreground">{t.desc}</p>
                   {selected && (
                     <CheckCircle2 className="h-4 w-4 text-primary" />
                   )}

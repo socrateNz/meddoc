@@ -452,13 +452,13 @@ export default function PatientDetailView({
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Pathologies</p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Pathologies</p>
                   {patient.pathologies.length === 0 ? (
                     <p className="text-xs text-muted-foreground">Aucune pathologie déclarée.</p>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {patient.pathologies.map((pathology: string) => (
-                        <Badge key={pathology} variant="secondary" className="text-[11px] px-2 py-0.5">
+                        <Badge key={pathology} variant="secondary" className="text-xs px-2 py-0.5">
                           {pathology}
                         </Badge>
                       ))}
@@ -466,13 +466,13 @@ export default function PatientDetailView({
                   )}
                 </div>
                 <div className="pt-2 border-t border-border/50">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Allergies</p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Allergies</p>
                   {patient.allergies.length === 0 ? (
                     <p className="text-xs text-muted-foreground">Aucune allergie déclarée.</p>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {patient.allergies.map((allergy: string) => (
-                        <Badge key={allergy} variant="outline" className="text-[11px] px-2 py-0.5 border-amber-500/30 text-amber-600 bg-amber-500/5">
+                        <Badge key={allergy} variant="outline" className="text-xs px-2 py-0.5 border-amber-500/30 text-amber-600 bg-amber-500/5">
                           {allergy}
                         </Badge>
                       ))}
@@ -583,7 +583,7 @@ export default function PatientDetailView({
                         <p className="font-semibold">{latestVitals.oxygenSaturation ? `${latestVitals.oxygenSaturation} %` : "—"}</p>
                       </div>
                     </div>
-                    <p className="text-[11px] text-muted-foreground pt-1 border-t border-border/50">
+                    <p className="text-xs text-muted-foreground pt-1 border-t border-border/50">
                       Relevé le {formatPatientDateTime(latestVitals.createdAt)}
                       {latestVitals.recordedBy && ` par ${latestVitals.recordedBy.firstName} ${latestVitals.recordedBy.lastName}`}
                     </p>
@@ -615,14 +615,14 @@ export default function PatientDetailView({
                       return (
                         <div key={incident.id} className="flex items-center justify-between gap-2 text-xs">
                           <span className="font-medium truncate">{incident.title}</span>
-                          <Badge variant="outline" className={`shrink-0 text-[10px] ${priority.className}`}>
+                          <Badge variant="outline" className={`shrink-0 text-xs ${priority.className}`}>
                             {priority.label}
                           </Badge>
                         </div>
                       );
                     })}
                     {openIncidents.length > 3 && (
-                      <p className="text-[11px] text-muted-foreground">+ {openIncidents.length - 3} autre(s)</p>
+                      <p className="text-xs text-muted-foreground">+ {openIncidents.length - 3} autre(s)</p>
                     )}
                   </div>
                 )}
@@ -654,7 +654,7 @@ export default function PatientDetailView({
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium truncate">{entry.title}</p>
-                          <p className="text-[11px] text-muted-foreground">
+                          <p className="text-xs text-muted-foreground">
                             {meta.label} • {formatPatientDateTime(entry.date)}
                             {entry.meta ? ` • ${entry.meta}` : ""}
                           </p>
@@ -722,7 +722,7 @@ export default function PatientDetailView({
                           <span>Ajouté le {formatPatientDateTime(record.createdAt)}</span>
                           {record.appointment && (
                             <Link href={`/dashboard/appointments/${record.appointment.id}/consultation`}>
-                              <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors">
+                              <Badge variant="outline" className="text-xs gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors">
                                 <Stethoscope className="h-2.5 w-2.5" />
                                 {record.appointment.title}
                               </Badge>
@@ -800,22 +800,22 @@ export default function PatientDetailView({
                       <div className="min-w-0">
                         <div className="flex flex-wrap gap-1.5 items-center">
                           {order.tests.map((t: string) => (
-                            <Badge key={t} variant="outline" className="text-[11px]">{t}</Badge>
+                            <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
                           ))}
                           {order.appointment && (
-                            <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5">
+                            <Badge variant="outline" className="text-xs gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5">
                               <Stethoscope className="h-2.5 w-2.5" />
                               {order.appointment.title}
                             </Badge>
                           )}
                           {order.pendingInvoice && <PaymentStatusBadge status={order.pendingInvoice.status} />}
                           {hasCritical && (
-                            <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20 gap-1 animate-pulse">
+                            <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-500/20 gap-1 animate-pulse">
                               <AlertTriangle className="h-3 w-3" /> Critique
                             </Badge>
                           )}
                         </div>
-                        <p className="text-[11px] text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           Prescrit le {formatPatientDateTime(order.createdAt)} • Statut : {order.status}
                         </p>
                       </div>
@@ -939,7 +939,7 @@ export default function PatientDetailView({
                                   {task.title}
                                 </p>
                                 {task.description && <p className="text-xs text-muted-foreground mt-0.5">{task.description}</p>}
-                                <p className="text-[11px] text-muted-foreground mt-1">Planifié pour le {formatPatientDateTime(task.scheduledFor)}</p>
+                                <p className="text-xs text-muted-foreground mt-1">Planifié pour le {formatPatientDateTime(task.scheduledFor)}</p>
                               </div>
                               <Badge variant={task.status === "COMPLETED" ? "default" : "secondary"} className="shrink-0">
                                 {task.status === "COMPLETED" ? "Terminée" : "En attente"}
@@ -998,7 +998,7 @@ export default function PatientDetailView({
                       </p>
                       {apt.caregiver && (
                         <div className="pt-3 border-t mt-3 flex items-center gap-2">
-                          <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                          <div className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-xs font-bold text-muted-foreground">
                             {apt.caregiver.user.lastName[0]}{apt.caregiver.user.firstName[0]}
                           </div>
                           <span className="text-xs text-foreground font-medium">
@@ -1042,10 +1042,10 @@ export default function PatientDetailView({
                         <div>
                           <div className="flex items-center gap-2">
                             <CardTitle className="text-base font-bold text-destructive">{incident.title}</CardTitle>
-                            <Badge variant="outline" className={`text-[10px] px-2 py-0.5 ${priority.className}`}>
+                            <Badge variant="outline" className={`text-xs px-2 py-0.5 ${priority.className}`}>
                               {priority.label}
                             </Badge>
-                            <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+                            <Badge variant="outline" className="text-xs px-2 py-0.5">
                               {INCIDENT_STATUS_LABEL[incident.status] || incident.status}
                             </Badge>
                           </div>

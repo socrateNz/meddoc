@@ -174,7 +174,7 @@ export default function ReserveUnitDialog({ clinicId }: { clinicId: string }) {
                       <span className="font-black w-10">{u.group}</span>
                       <span className="text-sm font-mono flex-1">n° {u.unitNumber}</span>
                       <span className="text-xs text-muted-foreground">périme le {formatDate(u.expiresAt)}</span>
-                      {u.warning && <span className="text-[10px] text-amber-700 block">{u.warning}</span>}
+                      {u.warning && <span className="text-xs text-amber-700 block">{u.warning}</span>}
                     </label>
                   ))}
                 </div>

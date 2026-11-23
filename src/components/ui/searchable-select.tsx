@@ -74,7 +74,7 @@ export default function SearchableSelect({
                   className="px-2.5 py-2.5 sm:py-1.5 text-sm sm:text-xs rounded-lg cursor-pointer text-slate-700 dark:text-slate-300 data-[highlighted]:bg-blue-50 dark:data-[highlighted]:bg-blue-950/30 data-[selected]:font-semibold data-[selected]:text-slate-900 dark:data-[selected]:text-white data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed"
                 >
                   <div>{item.label}</div>
-                  {item.description && <div className="text-[10px] text-slate-400">{item.description}</div>}
+                  {item.description && <div className="text-xs text-slate-400">{item.description}</div>}
                 </Combobox.Item>
               )}
             </Combobox.List>

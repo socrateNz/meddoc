@@ -27,6 +27,8 @@ interface CloseInvoiceDialogProps {
   // reçu/transaction à afficher — appeler onSuccess(res.data) exposerait le PendingInvoice brut
   // à un composant appelant qui l'interpréterait à tort comme une transaction à imprimer.
   onSuccess: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 // Clôture un ticket à crédit/acompte dont on sait qu'il ne sera jamais réglé intégralement.
@@ -35,8 +37,12 @@ interface CloseInvoiceDialogProps {
 // caisse ne fait que confirmer la clôture. Rien n'est retourné en stock (ce qui n'a jamais été
 // remis n'a jamais quitté le stock) et aucune nouvelle écriture financière n'est créée (l'argent
 // déjà encaissé reste acquis tel quel).
-export default function CloseInvoiceDialog({ pendingInvoice, onSuccess }: CloseInvoiceDialogProps) {
-  const [open, setOpen] = useState(false);
+export default function CloseInvoiceDialog({ pendingInvoice, onSuccess, open: openProp, onOpenChange: onOpenChangeProp }: CloseInvoiceDialogProps) {
+  const [innerOpen, setInnerOpen] = useState(false);
+  // Ouverte depuis un menu « … » (cf. ticket-actions-menu.tsx) : pilotée par le parent, sans bouton.
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : innerOpen;
+  const setOpen = (v: boolean) => (controlled ? onOpenChangeProp?.(v) : setInnerOpen(v));
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -57,7 +63,7 @@ export default function CloseInvoiceDialog({ pendingInvoice, onSuccess }: CloseI
         setOpen(false);
         onSuccess();
       } else {
-        setMsg(res.error || "Erreur lors de la clôture du ticket.");
+        setMsg(res.error || "Erreur lors de l'enregistrement.");
       }
     } catch (err: any) {
       setMsg(err.message || "Erreur de connexion.");
@@ -68,15 +74,17 @@ export default function CloseInvoiceDialog({ pendingInvoice, onSuccess }: CloseI
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setMsg(null); }}>
-      <DialogTrigger render={<Button size="sm" variant="outline" className="gap-1.5 rounded-lg text-xs h-8 border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" />}>
-        <XCircle className="h-3.5 w-3.5" />
-        Clôturer
-      </DialogTrigger>
+      {!controlled && (
+        <DialogTrigger render={<Button size="sm" variant="outline" className="gap-1.5 rounded-lg text-xs h-8 border-slate-300 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800" />}>
+          <XCircle className="h-3.5 w-3.5" />
+          Abandonner le reste
+        </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[440px] rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg text-slate-700 dark:text-slate-300">
             <XCircle className="h-5 w-5" />
-            Clôturer ce ticket non réglé
+            Abandonner le reste à payer
           </DialogTitle>
           <DialogDescription>
             {patientName} — cette action est définitive : le ticket ne sera plus proposé au règlement.
@@ -92,22 +100,22 @@ export default function CloseInvoiceDialog({ pendingInvoice, onSuccess }: CloseI
 
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60">
-              <p className="text-[10px] font-bold uppercase text-slate-400">Total facture</p>
+              <p className="text-xs font-bold uppercase text-slate-400">Total facture</p>
               <p className="text-sm font-extrabold mt-1">{formatFCFA(pendingInvoice.invoiceTotalAmount)}</p>
             </div>
             <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
-              <p className="text-[10px] font-bold uppercase text-emerald-600">Déjà réglé (reste acquis)</p>
+              <p className="text-xs font-bold uppercase text-emerald-600">Déjà réglé (reste acquis)</p>
               <p className="text-sm font-extrabold mt-1 text-emerald-700 dark:text-emerald-400">{formatFCFA(pendingInvoice.amountPaid)}</p>
             </div>
             <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 col-span-2">
-              <p className="text-[10px] font-bold uppercase text-amber-600">Solde abandonné</p>
+              <p className="text-xs font-bold uppercase text-amber-600">Solde abandonné</p>
               <p className="text-sm font-extrabold mt-1 text-amber-700 dark:text-amber-400">{formatFCFA(remainingDue)}</p>
             </div>
           </div>
 
           {(cartLines.length > 0 || labLines.length > 0) && (
             <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 divide-y divide-slate-100 dark:divide-slate-800/60 overflow-hidden">
-              <p className="p-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/60 dark:bg-slate-800/30">
+              <p className="p-2.5 text-xs font-bold uppercase tracking-wider text-slate-400 bg-slate-50/60 dark:bg-slate-800/30">
                 Déjà remis en pharmacie (le reste retourne simplement en stock, rien à faire)
               </p>
               {cartLines.length === 0 ? (
@@ -130,9 +138,9 @@ export default function CloseInvoiceDialog({ pendingInvoice, onSuccess }: CloseI
 
           <Button onClick={handleSubmit} disabled={loading} variant="outline" className="w-full rounded-xl py-2.5 font-bold text-sm border-slate-300 dark:border-slate-700">
             {loading ? (
-              <><Loader2 className="h-4 w-4 animate-spin mr-2" />Clôture...</>
+              <><Loader2 className="h-4 w-4 animate-spin mr-2" />Enregistrement...</>
             ) : (
-              <><XCircle className="h-4 w-4 mr-2" />Confirmer la clôture</>
+              <><XCircle className="h-4 w-4 mr-2" />Confirmer l&apos;abandon</>
             )}
           </Button>
         </div>

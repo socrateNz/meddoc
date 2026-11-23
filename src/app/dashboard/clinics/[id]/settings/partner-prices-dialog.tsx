@@ -131,7 +131,7 @@ export default function PartnerPricesDialog({ partnerId, partnerName, open, onOp
                 <div key={t.id} className="flex items-center justify-between gap-3 px-3 py-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{t.name}</p>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       Maison {formatFCFA(t.basePrice)}
                       {t.partnerPrice != null ? ` • partenaire commun ${formatFCFA(t.partnerPrice)}` : ""}
                     </p>

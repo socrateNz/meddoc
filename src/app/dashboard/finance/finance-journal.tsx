@@ -165,7 +165,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
       {/* Filtres détaillés */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/40">
         <div className="space-y-1">
-          <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Catégorie</Label>
+          <Label className="text-xs uppercase tracking-wider font-bold text-slate-400">Catégorie</Label>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
@@ -178,11 +178,11 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
           </select>
         </div>
         <div className="space-y-1">
-          <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Montant min (FCFA)</Label>
+          <Label className="text-xs uppercase tracking-wider font-bold text-slate-400">Montant min (FCFA)</Label>
           <Input type="number" min="0" placeholder="0" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} className="h-9 text-xs rounded-xl" />
         </div>
         <div className="space-y-1">
-          <Label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Montant max (FCFA)</Label>
+          <Label className="text-xs uppercase tracking-wider font-bold text-slate-400">Montant max (FCFA)</Label>
           <Input type="number" min="0" placeholder="—" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} className="h-9 text-xs rounded-xl" />
         </div>
         <div className="flex items-end">
@@ -204,21 +204,21 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
         <div className="flex items-center gap-2.5 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
           <TrendingUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400">Total encaissé (filtré)</p>
+            <p className="text-xs font-bold uppercase text-emerald-600 dark:text-emerald-400">Total encaissé (filtré)</p>
             <p className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300">+{formatFCFA(data.filteredIncome)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/30">
           <TrendingDown className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0" />
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase text-rose-600 dark:text-rose-400">Total dépensé (filtré)</p>
+            <p className="text-xs font-bold uppercase text-rose-600 dark:text-rose-400">Total dépensé (filtré)</p>
             <p className="text-sm font-extrabold text-rose-700 dark:text-rose-300">-{formatFCFA(data.filteredExpenses)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60">
           <Scale className="h-4 w-4 text-slate-500 shrink-0" />
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase text-slate-400">Solde net (filtré)</p>
+            <p className="text-xs font-bold uppercase text-slate-400">Solde net (filtré)</p>
             <p className={`text-sm font-extrabold ${netBalance >= 0 ? "text-slate-800 dark:text-slate-200" : "text-rose-600 dark:text-rose-400"}`}>
               {netBalance >= 0 ? "+" : ""}{formatFCFA(netBalance)}
             </p>
@@ -264,7 +264,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
                     <TableCell className="py-3.5">
                       <Badge
                         variant="outline"
-                        className={`text-[11px] font-semibold ${isIncome ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}
+                        className={`text-xs font-semibold ${isIncome ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}
                       >
                         {TRANSACTION_CATEGORY_LABELS[t.category] || (isIncome ? "Encaissement" : "Dépense")}
                       </Badge>
@@ -279,7 +279,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
                           <Badge
                             variant="outline"
                             title="Ce retrait a été utilisé pour régler un achat pharmacie — exclu des dépenses totales pour ne pas compter cet argent deux fois."
-                            className="text-[10px] shrink-0 bg-slate-500/10 text-slate-500 border-slate-500/20"
+                            className="text-xs shrink-0 bg-slate-500/10 text-slate-500 border-slate-500/20"
                           >
                             Absorbée
                           </Badge>
@@ -288,7 +288,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
                           <Badge
                             variant="outline"
                             title="Écriture annulée par une contrepassation : conservée pour l'historique de caisse, exclue des recettes et dépenses."
-                            className="text-[10px] shrink-0 bg-slate-500/10 text-slate-500 border-slate-500/20"
+                            className="text-xs shrink-0 bg-slate-500/10 text-slate-500 border-slate-500/20"
                           >
                             Contrepassé
                           </Badge>

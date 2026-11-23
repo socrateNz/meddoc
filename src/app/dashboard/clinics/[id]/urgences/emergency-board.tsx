@@ -104,7 +104,7 @@ export default function EmergencyBoard({ clinicId, initialRows, canTriage }: { c
                         <span className="font-mono text-muted-foreground mr-1.5">{r.ticket}</span>
                         {r.patientName}
                       </p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         {[r.ipp, a != null ? `${a} ans` : null, r.sex].filter(Boolean).join(" • ")}
                       </p>
                     </div>
@@ -114,11 +114,11 @@ export default function EmergencyBoard({ clinicId, initialRows, canTriage }: { c
                       <Clock className="h-3 w-3" />
                       {formatWait(r.arrivedAt, now)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {info ? `${info.label} — cible ${info.targetMinutes === 0 ? "immédiate" : `${info.targetMinutes} min`}` : "Non trié"}
                     </p>
-                    {overdue && r.status !== "IN_PROGRESS" && <Badge className="bg-red-600 text-white text-[10px] mt-1">Délai dépassé</Badge>}
-                    {r.status === "IN_PROGRESS" && <Badge className="bg-blue-600 text-white text-[10px] mt-1">Pris en charge{r.handledByName ? ` — ${r.handledByName}` : ""}</Badge>}
+                    {overdue && r.status !== "IN_PROGRESS" && <Badge className="bg-red-600 text-white text-xs mt-1">Délai dépassé</Badge>}
+                    {r.status === "IN_PROGRESS" && <Badge className="bg-blue-600 text-white text-xs mt-1">Pris en charge{r.handledByName ? ` — ${r.handledByName}` : ""}</Badge>}
                   </div>
                 </div>
 
@@ -144,7 +144,7 @@ export default function EmergencyBoard({ clinicId, initialRows, canTriage }: { c
                         .filter(Boolean)
                         .join(" • ") || "Constantes non relevées"}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">Trié par {r.triage.triagedBy || "-"} à {new Date(r.triage.triagedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
+                    <p className="text-xs text-muted-foreground">Trié par {r.triage.triagedBy || "-"} à {new Date(r.triage.triagedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
                   </div>
                 ) : (
                   r.reason && <p className="text-xs text-muted-foreground">Motif à l&apos;accueil : {r.reason}</p>
@@ -190,7 +190,7 @@ export default function EmergencyBoard({ clinicId, initialRows, canTriage }: { c
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Sortis des urgences aujourd&apos;hui ({finished.length})</p>
           <div className="flex flex-wrap gap-2">
             {finished.map((r) => (
-              <Badge key={r.id} variant="outline" className="text-[11px] gap-1">
+              <Badge key={r.id} variant="outline" className="text-xs gap-1">
                 {r.triageLevel && <span className={`px-1 rounded ${TRIAGE_STYLES[r.triageLevel].badge}`}>{r.triageLevel}</span>}
                 {r.ticket} {r.patientName}
               </Badge>

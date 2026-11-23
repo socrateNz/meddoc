@@ -73,7 +73,7 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
             <MinusCircle className="h-5 w-5" />
             Dépense / Retrait de caisse
           </DialogTitle>
-          <DialogDescription>Sortie de trésorerie sur la session en cours (achats de fournitures, retraits d&apos;urgence...).</DialogDescription>
+          <DialogDescription>Argent sorti de la caisse (achat de fournitures, retrait d&apos;urgence...).</DialogDescription>
         </DialogHeader>
 
         {msg && (
@@ -102,7 +102,7 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
             <Label htmlFor="expenseAmount">Montant du retrait (FCFA) *</Label>
             <Input id="expenseAmount" type="number" min="1" required placeholder="ex: 2000" value={data.amount} onChange={(e) => setData({ ...data, amount: e.target.value })} className="h-11 text-base sm:h-9 sm:text-sm rounded-xl" />
           </div>
-          <p className="flex items-start gap-1.5 text-[11px] text-slate-400">
+          <p className="flex items-start gap-1.5 text-xs text-slate-400">
             <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
             Si ce retrait sert à financer un achat de médicaments, enregistrez ensuite cet achat
             depuis Pharmacie → Achats en répondant « Non » à « Prélever sur une caisse ouverte ? »

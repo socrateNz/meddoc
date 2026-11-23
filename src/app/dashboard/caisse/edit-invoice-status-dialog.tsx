@@ -29,13 +29,15 @@ interface EditInvoiceStatusDialogProps {
   };
   onSuccess?: () => void;
   triggerBtn?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const STATUS_LABELS: Record<string, { label: string; desc: string }> = {
-  PENDING: { label: "Non payé (PENDING)", desc: "Le ticket repasse en attente de paiement complet." },
-  PARTIAL: { label: "Payé partiellement (PARTIAL)", desc: "Le ticket garde un solde restant dû." },
-  PAID: { label: "Payé (PAID)", desc: "Le ticket est marqué comme intégralement réglé." },
-  CANCELLED: { label: "Annulé / Clôturé (CANCELLED)", desc: "Le solde restant du ticket est abandonné." },
+  PENDING: { label: "Non payé", desc: "Le ticket repasse en attente de paiement complet." },
+  PARTIAL: { label: "Payé en partie", desc: "Le ticket garde un solde restant dû." },
+  PAID: { label: "Payé", desc: "Le ticket est marqué comme intégralement réglé." },
+  CANCELLED: { label: "Reste à payer abandonné", desc: "Le solde restant du ticket est abandonné." },
 };
 
 function formatFCFA(val: number) {
@@ -47,8 +49,14 @@ export function EditInvoiceStatusDialog({
   pendingInvoice,
   onSuccess,
   triggerBtn,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
 }: EditInvoiceStatusDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  // Ouverte depuis un menu « … » (cf. ticket-actions-menu.tsx) : pilotée par le parent, sans bouton.
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : innerOpen;
+  const setOpen = (v: boolean) => (controlled ? onOpenChangeProp?.(v) : setInnerOpen(v));
   const [newStatus, setNewStatus] = useState<"PENDING" | "PARTIAL" | "PAID" | "CANCELLED">(
     (pendingInvoice.status as any) || "PENDING"
   );
@@ -101,12 +109,12 @@ export function EditInvoiceStatusDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {triggerBtn ? (
+      {controlled ? null : triggerBtn ? (
         <DialogTrigger render={triggerBtn as any}>{triggerBtn}</DialogTrigger>
       ) : (
         <DialogTrigger render={<Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs rounded-xl border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20" />}>
           <RotateCcw className="h-3.5 w-3.5" />
-          Rectifier le statut
+          Corriger le statut
         </DialogTrigger>
       )}
 
@@ -114,7 +122,7 @@ export function EditInvoiceStatusDialog({
         <DialogHeader>
           <DialogTitle className="text-base font-bold flex items-center gap-2 text-slate-900 dark:text-white">
             <ShieldAlert className="h-5 w-5 text-amber-500 shrink-0" />
-            Rectifier le statut du ticket #{ticketNum}
+            Corriger le statut du ticket #{ticketNum}
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
             Réservé aux coordonnateurs. Permet de corriger une erreur de saisie ou d&apos;encaissement.
@@ -156,7 +164,7 @@ export function EditInvoiceStatusDialog({
                   }`}
                 >
                   <span className="font-bold">{STATUS_LABELS[st].label}</span>
-                  <span className="text-[11px] text-slate-500 mt-0.5">{STATUS_LABELS[st].desc}</span>
+                  <span className="text-xs text-slate-500 mt-0.5">{STATUS_LABELS[st].desc}</span>
                 </button>
               ))}
             </div>
@@ -175,7 +183,7 @@ export function EditInvoiceStatusDialog({
                 <Label htmlFor="withdraw-payments" className="text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
                   Annuler et retirer les encaissements enregistrés du solde
                 </Label>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-snug">
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-snug">
                   Si cette case est cochée, toutes les transactions financières d&apos;encaissement liées à ce ticket seront supprimées. L&apos;argent sera déduit du solde de caisse et du bilan financier.
                 </p>
               </div>

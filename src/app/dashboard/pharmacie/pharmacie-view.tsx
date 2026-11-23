@@ -37,8 +37,7 @@ import StockPurchaseDialog from "@/app/dashboard/finance/stock-purchase-dialog";
 import ImportPharmacyCsvDialog, { ExportPharmacyCsvButton } from "@/app/dashboard/finance/import-pharmacy-csv-dialog";
 import InventoryPanel from "@/app/dashboard/finance/inventory-panel";
 import PurchaseHistoryPanel from "@/app/dashboard/finance/purchase-history-panel";
-import SaleBlockDialog from "@/app/dashboard/finance/sale-block-dialog";
-import DeletePharmacyItemDialog from "@/app/dashboard/finance/delete-pharmacy-item-dialog";
+import PharmacyItemMenu from "./pharmacy-item-menu";
 import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
 import { dispensePendingInvoice, cancelDispense } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
@@ -336,7 +335,7 @@ export default function PharmacieView({
                               />
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
+                          <p className="text-xs text-slate-500 mt-0.5">
                             Créé le {formatDateTime(inv.createdAt)} • {formatFCFA(total)}
                           </p>
                         </div>
@@ -425,16 +424,16 @@ export default function PharmacieView({
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-bold text-sm text-slate-800 dark:text-slate-200">{name}</p>
                           {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
-                          <Badge variant="outline" className="text-[10px] font-mono bg-slate-500/10 text-slate-500 border-slate-500/20">
+                          <Badge variant="outline" className="text-xs font-mono bg-slate-500/10 text-slate-500 border-slate-500/20">
                             #{ticketNum}
                           </Badge>
                           {inv.dispensedAt ? (
-                            <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1">
+                            <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1">
                               <CheckCircle2 className="h-2.5 w-2.5" />
                               Remis
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="text-[10px] bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 gap-1">
+                            <Badge variant="outline" className="text-xs bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 gap-1">
                               Clôturé — partiel
                             </Badge>
                           )}
@@ -449,20 +448,20 @@ export default function PharmacieView({
                             />
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                        <p className="text-xs text-slate-500 mt-0.5 truncate">
                           {[...cartLines, ...labLines].map((line: any) => line.description).join(", ") || "Aucun médicament listé"}
                         </p>
                       </div>
                       <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
                         <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{formatFCFA(total)}</p>
-                        <p className="text-[10px] text-slate-400">{inv.dispensedAt ? formatDateTime(inv.dispensedAt) : "-"}</p>
+                        <p className="text-xs text-slate-400">{inv.dispensedAt ? formatDateTime(inv.dispensedAt) : "-"}</p>
                         {canCancelDispense && hasSomethingDispensed && (
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
                             onClick={() => setCancellingInvoice(inv)}
-                            className="h-7 text-[11px] gap-1 rounded-lg border-rose-500/30 text-rose-600 hover:bg-rose-500/10"
+                            className="h-7 text-xs gap-1 rounded-lg border-rose-500/30 text-rose-600 hover:bg-rose-500/10"
                           >
                             <Undo2 className="h-3 w-3" />
                             Annuler la remise
@@ -554,7 +553,7 @@ export default function PharmacieView({
                             <div>
                               <span>{item.name}</span>
                               {item.supplier && (
-                                <p className="text-[10px] text-slate-400 font-normal">Fournisseur: {item.supplier}</p>
+                                <p className="text-xs text-slate-400 font-normal">Fournisseur: {item.supplier}</p>
                               )}
                             </div>
                           </div>
@@ -562,21 +561,21 @@ export default function PharmacieView({
                         <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
                           <div>{item.dosage || "-"}</div>
                           {item.location && (
-                            <div className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">{item.location}</div>
+                            <div className="text-xs text-blue-600 dark:text-blue-400 font-semibold">{item.location}</div>
                           )}
                         </TableCell>
                         <TableCell className="text-slate-600 dark:text-slate-400 text-xs font-medium py-3.5">
                           {item.batchNumber ? (
-                            <span className="font-mono text-[11px] font-bold text-slate-700 dark:text-slate-300 block">{item.batchNumber}</span>
+                            <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300 block">{item.batchNumber}</span>
                           ) : (
                             <span className="text-slate-400 block">-</span>
                           )}
                           {expDate ? (
-                            <span className={`text-[10px] ${isExpired ? "text-rose-600 font-bold" : isExpiringSoon ? "text-amber-600 font-bold" : "text-slate-500"}`}>
+                            <span className={`text-xs ${isExpired ? "text-rose-600 font-bold" : isExpiringSoon ? "text-amber-600 font-bold" : "text-slate-500"}`}>
                               Exp: {new Intl.DateTimeFormat("fr-FR", { month: "short", year: "numeric" }).format(expDate)}
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-400">Pas de date</span>
+                            <span className="text-xs text-slate-400">Pas de date</span>
                           )}
                         </TableCell>
                         <TableCell className="font-bold text-slate-800 dark:text-slate-200 py-3.5">
@@ -587,40 +586,40 @@ export default function PharmacieView({
                         </TableCell>
                         <TableCell className="py-3.5 space-y-1">
                           {isOutOfStock ? (
-                            <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20 gap-1 text-[11px]">
+                            <Badge variant="outline" className="bg-red-500/10 text-red-600 border-red-500/20 gap-1 text-xs">
                               <XCircle className="h-3 w-3" />
                               Rupture de stock
                             </Badge>
                           ) : isLowStock ? (
-                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-[11px]">
+                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-xs">
                               <AlertTriangle className="h-3 w-3" />
                               Stock faible ({item.reorderLevel})
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1 text-[11px]">
+                            <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1 text-xs">
                               <CheckCircle2 className="h-3 w-3" />
                               En stock
                             </Badge>
                           )}
 
                           {isExpired ? (
-                            <Badge variant="outline" className="bg-rose-600 text-white border-rose-600 gap-1 text-[10px] font-bold block w-fit">
+                            <Badge variant="outline" className="bg-rose-600 text-white border-rose-600 gap-1 text-xs font-bold block w-fit">
                               ⚠️ Périmé !
                             </Badge>
                           ) : isExpiringSoon ? (
-                            <Badge variant="outline" className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-[10px] font-bold block w-fit">
+                            <Badge variant="outline" className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30 gap-1 text-xs font-bold block w-fit">
                               ⏳ Péremption ({daysUntilExp}j)
                             </Badge>
                           ) : null}
 
                           {item.saleBlockedAt ? (
                             <div className="pt-0.5">
-                              <Badge variant="outline" className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-transparent gap-1 text-[10px] font-bold w-fit">
+                              <Badge variant="outline" className="bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 border-transparent gap-1 text-xs font-bold w-fit">
                                 <Ban className="h-3 w-3" />
                                 Vente et achat bloqués
                               </Badge>
                               {item.saleBlockedReason && (
-                                <p className="text-[10px] text-slate-500 mt-0.5 max-w-[220px] whitespace-normal">
+                                <p className="text-xs text-slate-500 mt-0.5 max-w-[220px] whitespace-normal">
                                   Motif : {item.saleBlockedReason}
                                 </p>
                               )}
@@ -629,9 +628,8 @@ export default function PharmacieView({
                         </TableCell>
                         <TableCell className="text-right py-3.5">
                           <div className="flex items-center justify-end gap-2">
-                            {isCoordinator && <SaleBlockDialog item={item} />}
                             {canWrite && <PharmacyDialog item={item} organizationId={organizationId} />}
-                            {isCoordinator && <DeletePharmacyItemDialog item={item} />}
+                            {isCoordinator && <PharmacyItemMenu item={item} />}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -703,7 +701,7 @@ export default function PharmacieView({
                       <div key={line.index} className="flex items-center justify-between gap-3 px-3 py-2 text-xs bg-slate-50/60 dark:bg-slate-800/30">
                         <div className="min-w-0">
                           <span className="font-medium text-slate-700 dark:text-slate-300 block truncate">{line.description}</span>
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-xs text-slate-400">
                             Commandé {line.quantity}{line.dispensedQuantity > 0 && ` · déjà remis ${line.dispensedQuantity}`}
                           </span>
                         </div>
@@ -723,7 +721,7 @@ export default function PharmacieView({
 
                 {labLines.length > 0 && (
                   <div className="rounded-xl border border-slate-100 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-800/20 p-3 space-y-1">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
                       Consommables labo — {finalizingInvoice.labConsumablesDispensedAt ? "déjà remis" : "remis automatiquement avec cette remise"}
                     </p>
                     {labLines.map((l: any, idx: number) => (
@@ -736,7 +734,7 @@ export default function PharmacieView({
                 )}
 
                 {cartLines.length > 0 && (
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-xs text-slate-400">
                     Valeur remise lors de cette visite : <span className="font-semibold text-slate-600 dark:text-slate-300">{formatFCFA(valeurRemiseCetteVisite)}</span>
                     {" · "}Montant payé au total : {formatFCFA(finalizingInvoice.amountPaid || 0)}
                   </p>

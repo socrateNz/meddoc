@@ -131,7 +131,7 @@ export default function TriageDialog({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {VITAL_FIELDS.map((f) => (
                 <div key={f.key} className="space-y-1">
-                  <span className="text-[11px] text-muted-foreground">{f.label}</span>
+                  <span className="text-xs text-muted-foreground">{f.label}</span>
                   <Input
                     inputMode={f.numeric ? "decimal" : "text"}
                     value={vitals[f.key]}

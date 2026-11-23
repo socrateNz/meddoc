@@ -205,7 +205,7 @@ export default function NewHoldingDialog() {
                 <div className="space-y-2">
                   <Label htmlFor="name">Nom de la Holding *</Label>
                   <Input id="name" {...register("name")} placeholder="ex: Groupe Santé ABC" />
-                  {errors.name && <p className="text-[10px] text-red-500">{errors.name.message}</p>}
+                  {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Forfait *</Label>
@@ -244,7 +244,7 @@ export default function NewHoldingDialog() {
                           {...register("licenseExpiresAt")}
                           min={new Date().toISOString().split('T')[0]}
                         />
-                        {errors.licenseExpiresAt && <p className="text-[10px] text-red-500">{errors.licenseExpiresAt.message}</p>}
+                        {errors.licenseExpiresAt && <p className="text-xs text-red-500">{errors.licenseExpiresAt.message}</p>}
                       </div>
                     )}
                   </div>
@@ -258,7 +258,7 @@ export default function NewHoldingDialog() {
                     {...register("paymentAmount")}
                     placeholder="ex: 150000"
                   />
-                  {errors.paymentAmount && <p className="text-[10px] text-red-500">{errors.paymentAmount.message}</p>}
+                  {errors.paymentAmount && <p className="text-xs text-red-500">{errors.paymentAmount.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label>Fréquence de facturation</Label>
@@ -313,17 +313,17 @@ export default function NewHoldingDialog() {
                 <div className="space-y-2">
                   <Label htmlFor="adminFirstName">Prénom *</Label>
                   <Input id="adminFirstName" {...register("adminFirstName")} placeholder="Prénom" />
-                  {errors.adminFirstName && <p className="text-[10px] text-red-500">{errors.adminFirstName.message}</p>}
+                  {errors.adminFirstName && <p className="text-xs text-red-500">{errors.adminFirstName.message}</p>}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="adminLastName">Nom *</Label>
                   <Input id="adminLastName" {...register("adminLastName")} placeholder="Nom" />
-                  {errors.adminLastName && <p className="text-[10px] text-red-500">{errors.adminLastName.message}</p>}
+                  {errors.adminLastName && <p className="text-xs text-red-500">{errors.adminLastName.message}</p>}
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="adminEmail">Email de connexion *</Label>
                   <Input id="adminEmail" type="email" {...register("adminEmail")} placeholder="admin@holding.com" />
-                  {errors.adminEmail && <p className="text-[10px] text-red-500">{errors.adminEmail.message}</p>}
+                  {errors.adminEmail && <p className="text-xs text-red-500">{errors.adminEmail.message}</p>}
                   <p className="text-xs text-slate-500">Un mot de passe par défaut sera généré et l'utilisateur devra le changer.</p>
                 </div>
               </div>

@@ -99,7 +99,7 @@ export default function MedicalFileUploader({ patientId, category, radiologyOrde
         {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
         {uploading ? "Envoi..." : buttonLabel}
       </Button>
-      <span className="text-[11px] text-muted-foreground">PDF, JPEG ou PNG — 20 Mo max.</span>
+      <span className="text-xs text-muted-foreground">PDF, JPEG ou PNG — 20 Mo max.</span>
     </div>
   );
 }

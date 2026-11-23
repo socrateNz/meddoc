@@ -38,24 +38,24 @@ export default function RadiologyOrderList({ orders, clinicId, showPatient = tru
             <div className="min-w-0 space-y-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 {showPatient && <span className="font-semibold text-sm">{o.patientName}</span>}
-                {showPatient && o.ipp && <span className="text-[11px] font-mono text-muted-foreground">{o.ipp}</span>}
+                {showPatient && o.ipp && <span className="text-xs font-mono text-muted-foreground">{o.ipp}</span>}
                 {o.exams.map((e) => (
-                  <Badge key={e.name} variant="outline" className="text-[11px]">{e.name}</Badge>
+                  <Badge key={e.name} variant="outline" className="text-xs">{e.name}</Badge>
                 ))}
                 {o.priority === "URGENT" && (
-                  <Badge className="bg-red-600 text-white text-[10px] gap-1">
+                  <Badge className="bg-red-600 text-white text-xs gap-1">
                     <AlertTriangle className="h-3 w-3" />
                     Urgent
                   </Badge>
                 )}
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Prescrit le {formatDateTime(o.createdAt)}
                 {o.orderedBy ? ` par ${o.orderedBy}` : ""}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Badge variant="outline" className={`text-[10px] ${STATUS_STYLES[o.status] || ""}`}>{RADIOLOGY_STATUS_LABELS[o.status] || o.status}</Badge>
+              <Badge variant="outline" className={`text-xs ${STATUS_STYLES[o.status] || ""}`}>{RADIOLOGY_STATUS_LABELS[o.status] || o.status}</Badge>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </div>
           </div>

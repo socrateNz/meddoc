@@ -98,7 +98,7 @@ export default function RoomDialog({ wardId, room, wardNightlyRate, onSuccess }:
               placeholder={wardNightlyRate != null ? `Tarif du service : ${wardNightlyRate} FCFA` : "Aucun tarif de service"}
               className="rounded-xl"
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Laissez vide pour appliquer le tarif du service (réservez un tarif propre aux chambres VIP, par exemple).
             </p>
           </div>

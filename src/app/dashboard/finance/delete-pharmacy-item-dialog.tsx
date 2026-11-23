@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -21,14 +21,40 @@ interface DeletionInfo {
 // suite pourquoi la suppression est impossible plutôt que de laisser cliquer pour rien. Le
 // contrôle de rôle et d'éligibilité est refait côté serveur (deletePharmacyItem) — ce composant
 // n'est que la commodité d'interface, jamais la protection.
-export default function DeletePharmacyItemDialog({ item }: { item: { id: string; name: string; dosage?: string | null } }) {
+// `autoOpen` : ouverte directement depuis un menu « … » (sans bouton) ; `onClosed` à la fermeture.
+export default function DeletePharmacyItemDialog({
+  item,
+  autoOpen = false,
+  onClosed,
+}: {
+  item: { id: string; name: string; dosage?: string | null };
+  autoOpen?: boolean;
+  onClosed?: () => void;
+}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [info, setInfo] = useState<DeletionInfo | null>(null);
-  const [loadingInfo, setLoadingInfo] = useState(false);
+  const [loadingInfo, setLoadingInfo] = useState(autoOpen);
   const [confirmed, setConfirmed] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+
+  // Ouverte d'emblée : vérification immédiate de l'éligibilité (comme à l'ouverture par le bouton).
+  useEffect(() => {
+    if (!autoOpen) return;
+    let cancelled = false;
+    getPharmacyItemDeletionInfo(item.id)
+      .then((res) => {
+        if (cancelled) return;
+        if (res.success && res.data) setInfo(res.data as DeletionInfo);
+        else setError(res.error || "Impossible de vérifier ce produit.");
+      })
+      .catch((err) => !cancelled && setError(err?.message || "Erreur de connexion."))
+      .finally(() => !cancelled && setLoadingInfo(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [autoOpen, item.id]);
 
   const label = `${item.name}${item.dosage ? ` (${item.dosage})` : ""}`;
 
@@ -38,6 +64,7 @@ export default function DeletePharmacyItemDialog({ item }: { item: { id: string;
       setInfo(null);
       setConfirmed(false);
       setError("");
+      onClosed?.();
       return;
     }
     setLoadingInfo(true);
@@ -75,6 +102,7 @@ export default function DeletePharmacyItemDialog({ item }: { item: { id: string;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
+      {!autoOpen && (
       <DialogTrigger
         render={
           <Button
@@ -88,6 +116,7 @@ export default function DeletePharmacyItemDialog({ item }: { item: { id: string;
       >
         <Trash2 className="h-3.5 w-3.5" />
       </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[480px] rounded-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-rose-600 dark:text-rose-400">

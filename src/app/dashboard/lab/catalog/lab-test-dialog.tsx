@@ -157,7 +157,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
             <div className="space-y-1.5">
               <Label>Coût de base (FCFA)</Label>
               <Input type="number" min="0" value={baseCost} onChange={(e) => setBaseCost(e.target.value)} placeholder="0" className="rounded-xl" />
-              <p className="text-[10px] text-muted-foreground">Réactifs/matériel non suivis en stock — sert au calcul de la marge.</p>
+              <p className="text-xs text-muted-foreground">Réactifs/matériel non suivis en stock — sert au calcul de la marge.</p>
             </div>
           </div>
 
@@ -176,7 +176,7 @@ export default function LabTestDialog({ labTest, pharmacyItems = [], onSuccess }
           <div className="space-y-1.5">
             <Label>Prix partenaire (FCFA)</Label>
             <Input type="number" min="0" value={partnerPrice} onChange={(e) => setPartnerPrice(e.target.value)} placeholder="Vide = prix maison" className="rounded-xl" />
-            <p className="text-[10px] text-muted-foreground">Appliqué aux examens demandés par une clinique partenaire, à la place du prix maison.</p>
+            <p className="text-xs text-muted-foreground">Appliqué aux examens demandés par une clinique partenaire, à la place du prix maison.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

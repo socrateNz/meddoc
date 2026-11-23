@@ -339,7 +339,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold tracking-tight">{patient.user.lastName} {patient.user.firstName}</h2>
-              <Badge variant={isCompleted ? "secondary" : "default"} className="text-[10px]">
+              <Badge variant={isCompleted ? "secondary" : "default"} className="text-xs">
                 {isCompleted ? "Consultation terminée" : "Consultation en cours"}
               </Badge>
             </div>
@@ -352,7 +352,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
             <div className="flex items-center gap-1.5 flex-wrap">
               <ShieldAlert className="h-3.5 w-3.5 text-red-500 shrink-0" />
               {patient.allergies.map((a: string, i: number) => (
-                <Badge key={i} variant="outline" className="text-[10px] border-red-500/30 text-red-600 bg-red-500/5">{a}</Badge>
+                <Badge key={i} variant="outline" className="text-xs border-red-500/30 text-red-600 bg-red-500/5">{a}</Badge>
               ))}
             </div>
           )}
@@ -361,7 +361,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
             <div className="flex items-center gap-1.5 flex-wrap">
               <HeartPulse className="h-3.5 w-3.5 text-amber-500 shrink-0" />
               {patient.pathologies.map((p: string, i: number) => (
-                <Badge key={i} variant="outline" className="text-[10px]">{p}</Badge>
+                <Badge key={i} variant="outline" className="text-xs">{p}</Badge>
               ))}
             </div>
           )}
@@ -413,7 +413,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                             </h4>
                             <div className="flex items-center gap-2 shrink-0">
                               {record.diagnosisCode && (
-                                <Badge variant="outline" className="text-[10px] font-mono">{record.diagnosisCode}</Badge>
+                                <Badge variant="outline" className="text-xs font-mono">{record.diagnosisCode}</Badge>
                               )}
                               <span className="text-xs text-muted-foreground">
                                 {new Date(record.createdAt).toLocaleDateString('fr-FR')}
@@ -523,7 +523,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                 </CardHeader>
                 <CardContent>
                   {prescriptionHistory.length >= MAX_PAGE_SIZE && (
-                    <p className="mb-3 text-[11px] text-muted-foreground">
+                    <p className="mb-3 text-xs text-muted-foreground">
                       {MAX_PAGE_SIZE} ordonnances les plus récentes affichées. L&apos;historique complet est dans le dossier patient.
                     </p>
                   )}
@@ -542,16 +542,16 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                               <span className="text-xs text-muted-foreground">
                                 {new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(p.createdAt))}
                               </span>
-                              <Badge variant="outline" className={`text-[10px] ${p.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : p.status === "SUPERSEDED" ? "bg-slate-500/10 text-slate-500 border-slate-500/20" : ""}`}>
+                              <Badge variant="outline" className={`text-xs ${p.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : p.status === "SUPERSEDED" ? "bg-slate-500/10 text-slate-500 border-slate-500/20" : ""}`}>
                                 {p.status === "ACTIVE" ? "Active" : p.status === "SUPERSEDED" ? "Remplacée" : p.status}
                               </Badge>
                               {p.prescribedBy && (
-                                <span className="text-[11px] text-muted-foreground">Dr. {p.prescribedBy.firstName} {p.prescribedBy.lastName}</span>
+                                <span className="text-xs text-muted-foreground">Dr. {p.prescribedBy.firstName} {p.prescribedBy.lastName}</span>
                               )}
                             </div>
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {p.items.map((item: any) => (
-                                <Badge key={item.id} variant="secondary" className="text-[11px]">{item.drugName} — {item.dosage}</Badge>
+                                <Badge key={item.id} variant="secondary" className="text-xs">{item.drugName} — {item.dosage}</Badge>
                               ))}
                             </div>
                           </div>
@@ -737,7 +737,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {labOrders.length >= MAX_PAGE_SIZE && (
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {MAX_PAGE_SIZE} demandes les plus récentes affichées. L&apos;historique complet est dans le dossier patient.
                     </p>
                   )}
@@ -759,15 +759,15 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                             <div className="min-w-0">
                               <div className="flex flex-wrap gap-1.5">
                                 {order.tests.map((t: string) => (
-                                  <Badge key={t} variant="outline" className="text-[11px]">{t}</Badge>
+                                  <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
                                 ))}
                                 {hasCritical && (
-                                  <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20 gap-1 animate-pulse">
+                                  <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-500/20 gap-1 animate-pulse">
                                     <AlertTriangle className="h-3 w-3" /> Critique
                                   </Badge>
                                 )}
                               </div>
-                              <p className="text-[11px] text-muted-foreground mt-1">Statut : {order.status}</p>
+                              <p className="text-xs text-muted-foreground mt-1">Statut : {order.status}</p>
                             </div>
                             <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                           </div>
@@ -802,7 +802,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                 <p className="text-xs text-muted-foreground text-center py-2">Aucune constante enregistrée pour ce patient.</p>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(latestVital.createdAt))}
                     {latestVital.recordedBy && ` • ${latestVital.recordedBy.firstName} ${latestVital.recordedBy.lastName}`}
                   </p>

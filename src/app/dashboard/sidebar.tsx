@@ -42,6 +42,8 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SECTION_PERMISSIONS, can } from "@/lib/permissions-catalog";
+import { STAFF_ROLE_LABELS } from "@/lib/staff-roles";
+import { ChevronDown } from "lucide-react";
 
 interface SidebarProps {
   currentUser: {
@@ -73,6 +75,15 @@ interface SidebarProps {
 
 export default function Sidebar({ currentUser, unreadCounts, clinics = [], superAdminAlerts }: SidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
+  // Groupes du menu dépliés à la main (en plus de celui de la page ouverte, toujours déplié).
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set());
+  const toggleSection = (section: string) =>
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
   const pathname = usePathname();
   const enabledModules = useModules();
   const params = useParams();
@@ -132,7 +143,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/medecin`,
         icon: HeartPulse,
         permission: SECTION_PERMISSIONS.medecin,
-        section: "Clinique",
+        section: "Aperçu",
       },
       {
         name: "Accueil & file d'attente",
@@ -140,7 +151,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/accueil`,
         icon: Ticket,
         permission: SECTION_PERMISSIONS.accueil,
-        section: "Clinique",
+        section: "Patients",
       },
       {
         name: "Urgences",
@@ -149,7 +160,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Siren,
         iconClassName: "text-red-500",
         permission: SECTION_PERMISSIONS.urgences,
-        section: "Clinique",
+        section: "Patients",
       },
       {
         name: "Bloc opératoire",
@@ -158,7 +169,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Scissors,
         iconClassName: "text-teal-600",
         permission: SECTION_PERMISSIONS.bloc,
-        section: "Clinique",
+        section: "Soins",
       },
       {
         name: "Banque de sang",
@@ -167,14 +178,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         icon: Droplet,
         iconClassName: "text-red-600",
         permission: SECTION_PERMISSIONS["banque-sang"],
-        section: "Clinique",
+        section: "Soins",
       },
       {
         name: "Patients",
         href: `/dashboard/clinics/${activeClinicId}/patients`,
         icon: Users,
         permission: SECTION_PERMISSIONS.patients,
-        section: "Clinique",
+        section: "Patients",
       },
       {
         name: "Calendrier",
@@ -183,7 +194,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         count: unreadCounts?.appointment || 0,
         badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
         permission: SECTION_PERMISSIONS.appointments,
-        section: "Clinique",
+        section: "Patients",
       },
       {
         name: "Incidents",
@@ -192,7 +203,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         count: unreadCounts?.incident || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
         permission: SECTION_PERMISSIONS.incidents,
-        section: "Clinique",
+        section: "Outils",
       },
       {
         name: "Laboratoire",
@@ -202,7 +213,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         count: unreadCounts?.lab || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
         permission: SECTION_PERMISSIONS.lab,
-        section: "Clinique",
+        section: "Examens",
       },
       {
         name: "Imagerie",
@@ -210,7 +221,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/imagerie`,
         icon: ScanLine,
         permission: SECTION_PERMISSIONS.imagerie,
-        section: "Clinique",
+        section: "Examens",
       },
       {
         name: "Maternité",
@@ -218,7 +229,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/maternite`,
         icon: Baby,
         permission: SECTION_PERMISSIONS.maternite,
-        section: "Clinique",
+        section: "Soins",
       },
       {
         name: "Chambres & Lits",
@@ -226,7 +237,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/rooms`,
         icon: BedDouble,
         permission: SECTION_PERMISSIONS.rooms,
-        section: "Clinique",
+        section: "Soins",
       },
       {
         name: "Ronde médicale",
@@ -234,7 +245,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/ronde`,
         icon: Stethoscope,
         permission: SECTION_PERMISSIONS.ronde,
-        section: "Clinique",
+        section: "Soins",
       },
       {
         name: "Assistant Clinique IA",
@@ -245,14 +256,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         count: unreadCounts?.ai || 0,
         badgeColor: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
         permission: SECTION_PERMISSIONS["ai-assistant"],
-        section: "Clinique",
+        section: "Outils",
       },
       {
         name: "Caisse",
         href: `/dashboard/clinics/${activeClinicId}/caisse`,
         icon: Banknote,
         permission: SECTION_PERMISSIONS.caisse,
-        section: "Finance",
+        section: "Caisse & pharmacie",
       },
       {
         name: "Pharmacie",
@@ -260,14 +271,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/pharmacie`,
         icon: PackageSearch,
         permission: SECTION_PERMISSIONS.pharmacie,
-        section: "Finance",
+        section: "Caisse & pharmacie",
       },
       {
         name: "Finance",
         href: `/dashboard/clinics/${activeClinicId}/finance`,
         icon: Wallet,
         permission: SECTION_PERMISSIONS.finance,
-        section: "Finance",
+        section: "Gestion",
       },
       {
         name: "Comptabilité",
@@ -275,7 +286,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/comptabilite`,
         icon: BookOpenCheck,
         permission: SECTION_PERMISSIONS.comptabilite,
-        section: "Finance",
+        section: "Gestion",
       },
       {
         name: "Relevés partenaires",
@@ -283,7 +294,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/partenaires`,
         icon: Handshake,
         permission: SECTION_PERMISSIONS.partenaires,
-        section: "Finance",
+        section: "Gestion",
       },
       {
         name: "Contrats aidants",
@@ -291,7 +302,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: `/dashboard/clinics/${activeClinicId}/contracts`,
         icon: FileSignature,
         permission: SECTION_PERMISSIONS.contracts,
-        section: "Finance",
+        section: "Gestion",
       },
       {
         // Paramètres de la clinique : services, partenaires, logo, fonctionnement (caisse, consultation).
@@ -330,14 +341,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         count: unreadCounts?.message || 0,
         badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
         permission: SECTION_PERMISSIONS.messages,
-        section: "Autres",
+        section: "Outils",
       },
       {
         name: "Manuel d'utilisation",
         href: `/dashboard/clinics/${activeClinicId}/manual`,
         icon: BookOpen,
         permission: SECTION_PERMISSIONS.manual,
-        section: "Autres",
+        section: "Outils",
       },
     ] : [
       {
@@ -348,14 +359,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         count: unreadCounts?.lab || 0,
         badgeColor: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 animate-pulse",
         permission: SECTION_PERMISSIONS.lab,
-        section: "Clinique",
+        section: "Examens",
       },
       {
         name: "Caisse",
         href: "/dashboard/caisse",
         icon: Banknote,
         permission: SECTION_PERMISSIONS.caisse,
-        section: "Finance",
+        section: "Caisse & pharmacie",
       },
       {
         name: "Pharmacie",
@@ -363,14 +374,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: "/dashboard/pharmacie",
         icon: PackageSearch,
         permission: SECTION_PERMISSIONS.pharmacie,
-        section: "Finance",
+        section: "Caisse & pharmacie",
       },
       {
         name: "Finance",
         href: "/dashboard/finance",
         icon: Wallet,
         permission: SECTION_PERMISSIONS.finance,
-        section: "Finance",
+        section: "Gestion",
       },
       {
         name: "Contrats aidants",
@@ -378,7 +389,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         href: "/dashboard/contracts",
         icon: FileSignature,
         permission: SECTION_PERMISSIONS.contracts,
-        section: "Finance",
+        section: "Gestion",
       },
       {
         name: "Équipe médicale",
@@ -401,14 +412,14 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         count: unreadCounts?.message || 0,
         badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
         permission: SECTION_PERMISSIONS.messages,
-        section: "Autres",
+        section: "Outils",
       },
       {
         name: "Manuel d'utilisation",
         href: "/dashboard/manual",
         icon: BookOpen,
         permission: SECTION_PERMISSIONS.manual,
-        section: "Autres",
+        section: "Outils",
       },
     ]),
     ...(!activeClinicId ? [
@@ -443,7 +454,9 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
 
   // Ordre d'affichage des sections dans la sidebar (une section vide après filtrage par rôle
   // ne s'affiche simplement pas — cf. renderNavLinks).
-  const SECTION_ORDER = ["Aperçu", "Clinique", "Finance", "Administration", "Plateforme", "Autres"];
+  // Groupes du menu, par métier. « Aperçu » reste toujours ouvert ; les autres se replient (cf.
+  // renderNavLinks) pour ne pas noyer l'utilisateur sous une vingtaine d'entrées.
+  const SECTION_ORDER = ["Aperçu", "Patients", "Soins", "Examens", "Caisse & pharmacie", "Gestion", "Administration", "Outils", "Plateforme"];
 
   const isActive = (item: typeof navItems[0]) => {
     if (item.exact) {
@@ -483,7 +496,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
 
     return (
       <div className="mb-4 space-y-1.5">
-        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block px-2">
+        <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block px-2">
           Clinique active
         </label>
         <select
@@ -534,7 +547,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
           />
           <span>{item.name}</span>
           {item.count !== undefined && item.count > 0 && (
-            <span className={`ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold border transition-all duration-300 ${item.badgeColor}`}>
+            <span className={`ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-bold border transition-all duration-300 ${item.badgeColor}`}>
               {item.count}
             </span>
           )}
@@ -542,17 +555,32 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       );
     };
 
+    // Peu d'entrées (accueil, laborantin, caissier...) : tout reste déplié, rien à chercher.
+    const collapsible = filteredNavItems.length > 10;
     return (
-      <nav className="grid items-start gap-4">
+      <nav className="grid items-start gap-3">
         {SECTION_ORDER.map((section) => {
           const items = filteredNavItems.filter((item: any) => item.section === section);
           if (items.length === 0) return null;
+          const hasActive = items.some((item: any) => isActive(item));
+          const canCollapse = collapsible && section !== "Aperçu";
+          const open = !canCollapse || hasActive || openSections.has(section);
           return (
             <div key={section} className="grid gap-1">
-              <p className="px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                {section}
-              </p>
-              {items.map(renderLink)}
+              {canCollapse ? (
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section)}
+                  aria-expanded={open}
+                  className="flex items-center justify-between rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wider text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/60"
+                >
+                  {section}
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+                </button>
+              ) : (
+                <p className="px-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{section}</p>
+              )}
+              {open && items.map(renderLink)}
             </div>
           );
         })}
@@ -574,8 +602,8 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
           <p className="text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-200 leading-none truncate">
             {currentUser.firstName} {currentUser.lastName}
           </p>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold mt-1.5 leading-none">
-            {currentUser.role.toLowerCase()}
+          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1.5 leading-none">
+            {STAFF_ROLE_LABELS[currentUser.role] ?? ({ SUPER_ADMIN: "Équipe MedDoc", PATIENT: "Patient", FAMILY: "Proche" } as Record<string, string>)[currentUser.role] ?? currentUser.role}
           </p>
         </div>
       </div>

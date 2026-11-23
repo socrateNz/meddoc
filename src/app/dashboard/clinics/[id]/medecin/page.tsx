@@ -17,6 +17,7 @@ import { listPatientsPage } from "@/actions/patient-list";
 import { keepQuery } from "@/components/ui/pagination-nav";
 import { EMPTY_PATIENT_PAGE, patientListOptions } from "@/app/dashboard/patients/patient-list-params";
 import { modulesOfUser } from "@/lib/modules-server";
+import QuickActions from "@/components/dashboard/quick-actions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -120,6 +121,8 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
         </p>
       </div>
 
+      <QuickActions clinicId={clinicId} user={currentUser} modules={modulesOfUser(currentUser)} exclude="medecin" />
+
       {/* Cartes de statistiques */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="rounded-2xl">
@@ -190,7 +193,7 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
                       <p className="text-xs text-slate-500 truncate">{apt.title}</p>
                     </div>
                   </div>
-                  <Badge variant="outline" className="shrink-0 text-[10px]">{apt.status === "COMPLETED" ? "Terminée" : "À faire"}</Badge>
+                  <Badge variant="outline" className="shrink-0 text-xs">{apt.status === "COMPLETED" ? "Terminée" : "À faire"}</Badge>
                 </Link>
               ))
             )}
@@ -255,7 +258,7 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
                       <p className="text-sm font-semibold truncate">{order.patient?.user?.lastName} {order.patient?.user?.firstName}</p>
                       <p className="text-xs text-slate-500 truncate">{(order.tests || []).slice(0, 2).join(", ")}</p>
                     </div>
-                    <Badge variant="outline" className={`shrink-0 text-[10px] ${statusInfo.className}`}>{statusInfo.label}</Badge>
+                    <Badge variant="outline" className={`shrink-0 text-xs ${statusInfo.className}`}>{statusInfo.label}</Badge>
                   </Link>
                 );
               })
@@ -280,7 +283,7 @@ export default async function MedecinDashboardPage({ params, searchParams }: Pag
                     <p className="text-sm font-semibold truncate">{record.patient?.user?.lastName} {record.patient?.user?.firstName}</p>
                     <p className="text-xs text-slate-500 truncate">{record.title}</p>
                   </div>
-                  <span className="text-[10px] text-slate-400 shrink-0">
+                  <span className="text-xs text-slate-400 shrink-0">
                     {new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" }).format(new Date(record.createdAt))}
                   </span>
                 </Link>

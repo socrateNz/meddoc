@@ -147,7 +147,7 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
                     {statementRes.data.rows.length} demande(s) • {statementRes.data.examCount} examen(s)
                   </p>
                   <p className="text-2xl font-extrabold text-violet-700 dark:text-violet-300">{formatFCFA(statementRes.data.total)}</p>
-                  <p className="text-[11px] text-muted-foreground">dû par le partenaire</p>
+                  <p className="text-xs text-muted-foreground">dû par le partenaire</p>
                   {statementRes.data.total > 0 && (
                     <p className={`mt-1 text-sm font-semibold ${statementRes.data.balance === 0 ? "text-emerald-600" : statementRes.data.paid > 0 ? "text-amber-600" : "text-red-600"}`}>
                       {statementRes.data.balance === 0
@@ -218,7 +218,7 @@ export default async function PartnersStatementPage({ params, searchParams }: Pa
                           <td className="py-2 pr-3 text-xs">{LAB_STATUS_LABELS[r.status] ?? r.status}</td>
                           <td className="py-2 text-right font-semibold whitespace-nowrap">
                             {formatFCFA(r.total)}
-                            {r.paidByPatient && <span className="block text-[10px] font-normal text-muted-foreground">réglé par le patient</span>}
+                            {r.paidByPatient && <span className="block text-xs font-normal text-muted-foreground">réglé par le patient</span>}
                           </td>
                         </tr>
                       ))}

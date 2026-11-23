@@ -251,7 +251,7 @@ export default async function IncidentsPage({ searchParams }: PageProps) {
                     <Link href={`/dashboard/patients/${incident.patientId}`} className="font-semibold text-primary hover:underline block">
                       {incident.patient.user.lastName} {incident.patient.user.firstName}
                     </Link>
-                    <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                       Niveau {incident.patient.dependencyLevel}
                     </span>
                   </TableCell>

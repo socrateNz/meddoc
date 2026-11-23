@@ -62,8 +62,8 @@ export default function SurgeryDayPlan({ clinicId, rooms, cases }: { clinicId: s
                       {clinicTimeLabel(c.scheduledStart)} – {clinicTimeLabel(c.scheduledEnd)}
                     </span>
                     <div className="flex items-center gap-1">
-                      {c.priority === "URGENT" && <Badge className="bg-red-600 text-white text-[10px]">Urgent</Badge>}
-                      <Badge variant="outline" className="text-[10px]">
+                      {c.priority === "URGENT" && <Badge className="bg-red-600 text-white text-xs">Urgent</Badge>}
+                      <Badge variant="outline" className="text-xs">
                         {SURGERY_STATUS_LABELS[c.status] ?? c.status}
                       </Badge>
                     </div>
@@ -75,7 +75,7 @@ export default function SurgeryDayPlan({ clinicId, rooms, cases }: { clinicId: s
                   <p className="text-xs">
                     {c.patientName} {c.ipp && <span className="font-mono text-muted-foreground">{c.ipp}</span>}
                   </p>
-                  <div className="flex items-center justify-between mt-1 text-[11px] text-muted-foreground">
+                  <div className="flex items-center justify-between mt-1 text-xs text-muted-foreground">
                     <span className="truncate">Dr {c.surgeonName ?? "-"}{c.anesthetistName ? ` • Anesth. ${c.anesthetistName}` : ""}</span>
                     <span className={`inline-flex items-center gap-0.5 shrink-0 ${c.checklistDone === 3 ? "text-emerald-600" : ""}`}>
                       <ClipboardCheck className="h-3 w-3" />

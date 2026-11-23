@@ -97,8 +97,8 @@ export default function ServicesCard({ clinicId, services, readOnly }: { clinicI
               <div className="min-w-0">
                 <p className="text-sm font-medium">
                   {s.name}
-                  {s.isTransversal && <span className="ml-2 rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300">Transversal</span>}
-                  {!s.isActive && <span className="ml-2 rounded bg-slate-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">Désactivé</span>}
+                  {s.isTransversal && <span className="ml-2 rounded bg-violet-500/10 px-1.5 py-0.5 text-xs font-semibold text-violet-700 dark:text-violet-300">Transversal</span>}
+                  {!s.isActive && <span className="ml-2 rounded bg-slate-500/10 px-1.5 py-0.5 text-xs font-semibold text-slate-600">Désactivé</span>}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {s.consultationPrice != null ? `Consultation ${formatFCFA(s.consultationPrice)}` : "Tarif saisi à la caisse"} • {s.patientCount} dossier

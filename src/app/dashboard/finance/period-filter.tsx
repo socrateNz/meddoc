@@ -119,7 +119,7 @@ export default function PeriodFilter({ period, pending, onChange }: PeriodFilter
       {showCustom && (
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <div className="space-y-1">
-            <Label htmlFor="finance-period-from" className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+            <Label htmlFor="finance-period-from" className="text-xs uppercase tracking-wider font-bold text-slate-400">
               Du
             </Label>
             <Input
@@ -132,7 +132,7 @@ export default function PeriodFilter({ period, pending, onChange }: PeriodFilter
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="finance-period-to" className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+            <Label htmlFor="finance-period-to" className="text-xs uppercase tracking-wider font-bold text-slate-400">
               Au
             </Label>
             <Input
@@ -156,7 +156,7 @@ export default function PeriodFilter({ period, pending, onChange }: PeriodFilter
         </div>
       )}
 
-      <p className="text-[11px] text-slate-400">
+      <p className="text-xs text-slate-400">
         Recettes, dépenses, bénéfice, journal et sessions de caisse suivent cette période (les dates futures ne sont pas
         sélectionnables). Le solde de caisse, les alertes de stock et la valorisation montrent l&apos;état actuel.
       </p>

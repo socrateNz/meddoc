@@ -92,7 +92,7 @@ export default function PrescriptionsPanel({ prescriptions, canPrescribe }: { pr
                   <span>Par {p.prescribedBy?.firstName} {p.prescribedBy?.lastName}</span>
                   {p.appointment && (
                     <Link href={`/dashboard/appointments/${p.appointment.id}/consultation`}>
-                      <Badge variant="outline" className="text-[10px] gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors">
+                      <Badge variant="outline" className="text-xs gap-1 text-blue-600 border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10 transition-colors">
                         <Stethoscope className="h-2.5 w-2.5" />
                         {p.appointment.title}
                       </Badge>

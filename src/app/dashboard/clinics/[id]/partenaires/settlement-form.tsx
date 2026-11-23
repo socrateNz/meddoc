@@ -71,11 +71,11 @@ export default function SettlementForm({
   return (
     <form onSubmit={submit} className="flex flex-wrap items-end gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 print:hidden">
       <div className="space-y-1">
-        <label className="text-[11px] font-semibold text-slate-500">Montant reçu (FCFA)</label>
+        <label className="text-xs font-semibold text-slate-500">Montant reçu (FCFA)</label>
         <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" className="h-10 w-36" />
       </div>
       <div className="space-y-1">
-        <label className="text-[11px] font-semibold text-slate-500">Mode</label>
+        <label className="text-xs font-semibold text-slate-500">Mode</label>
         <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-800 dark:bg-slate-900">
           {methods.map(([v, l]) => (
             <option key={v} value={v}>
@@ -86,7 +86,7 @@ export default function SettlementForm({
       </div>
       {method === "CASH" && (
         <div className="space-y-1">
-          <label className="text-[11px] font-semibold text-slate-500">Caisse</label>
+          <label className="text-xs font-semibold text-slate-500">Caisse</label>
           {openSessions.length === 0 ? (
             <p className="h-10 text-xs leading-10 text-red-600">Aucune caisse ouverte</p>
           ) : (
@@ -101,7 +101,7 @@ export default function SettlementForm({
         </div>
       )}
       <div className="min-w-40 flex-1 space-y-1">
-        <label className="text-[11px] font-semibold text-slate-500">Référence (n° de virement, chèque…)</label>
+        <label className="text-xs font-semibold text-slate-500">Référence (n° de virement, chèque…)</label>
         <Input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={80} className="h-10" />
       </div>
       <Button type="submit" disabled={saving} className="h-10 gap-2">

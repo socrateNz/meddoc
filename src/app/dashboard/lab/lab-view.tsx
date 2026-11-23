@@ -165,35 +165,35 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-fade-up">
         <Card className="rounded-2xl border-border/70 shadow-xs">
           <CardContent className="py-3.5 px-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">En attente</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">En attente</p>
             <p className="text-2xl font-extrabold mt-1 text-foreground">{stats.pending}</p>
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl border-border/70 shadow-xs">
           <CardContent className="py-3.5 px-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">En analyse</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">En analyse</p>
             <p className="text-2xl font-extrabold mt-1 text-violet-600 dark:text-violet-400">{stats.inAnalysis}</p>
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl border-amber-300/60 dark:border-amber-900/40 shadow-xs">
           <CardContent className="py-3.5 px-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600">À valider</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-amber-600">À valider</p>
             <p className="text-2xl font-extrabold mt-1 text-amber-600">{stats.toValidate}</p>
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl border-emerald-300/60 dark:border-emerald-900/40 shadow-xs">
           <CardContent className="py-3.5 px-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Validés (24h)</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Validés (24h)</p>
             <p className="text-2xl font-extrabold mt-1 text-emerald-600">{stats.validatedToday}</p>
           </CardContent>
         </Card>
 
         <Card className="rounded-2xl border-blue-300/60 dark:border-blue-900/40 shadow-xs">
           <CardContent className="py-3.5 px-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1">
+            <p className="text-xs font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1">
               <Zap className="h-3 w-3" /> Urgents
             </p>
             <p className="text-2xl font-extrabold mt-1 text-blue-600">{stats.urgent}</p>
@@ -202,7 +202,7 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
 
         <Card className={`rounded-2xl shadow-xs ${stats.critical > 0 ? "border-red-400/60 dark:border-red-900/50 bg-red-500/5" : "border-border/70"}`}>
           <CardContent className="py-3.5 px-4">
-            <p className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${stats.critical > 0 ? "text-red-600 font-extrabold" : "text-muted-foreground"}`}>
+            <p className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${stats.critical > 0 ? "text-red-600 font-extrabold" : "text-muted-foreground"}`}>
               <AlertTriangle className="h-3 w-3" /> Critiques
             </p>
             <p className={`text-2xl font-extrabold mt-1 ${stats.critical > 0 ? "text-red-600 animate-pulse" : "text-foreground"}`}>
@@ -326,7 +326,7 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
               <div className="flex items-center justify-between pb-2 border-b border-border/50">
                 <div>
                   <h4 className="font-bold text-xs uppercase tracking-wider text-foreground">{col.title}</h4>
-                  <p className="text-[10px] text-muted-foreground">{col.subtitle}</p>
+                  <p className="text-xs text-muted-foreground">{col.subtitle}</p>
                 </div>
                 <Badge variant="outline" className={`${col.badgeColor} font-bold text-xs px-2 py-0.5`}>
                   {col.orders.length}
@@ -358,30 +358,30 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
                           <div className="flex items-center justify-between gap-1.5 flex-wrap">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {isUrgent && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-[10px] font-bold">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-bold">
                                   <Zap className="h-3 w-3" /> URGENT
                                 </span>
                               )}
                               {order.status !== "PRESCRIBED" && order.status !== "CANCELLED" && testsWithoutSample(order).length > 0 && (
-                                <span className="inline-flex items-center px-1.5 py-0.2 rounded-md bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[10px] font-bold">
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded-md bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-xs font-bold">
                                   Prélèvement partiel
                                 </span>
                               )}
                               {hasCritical && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-red-500/20 text-red-700 dark:text-red-300 border border-red-500/40 text-[10px] font-bold animate-pulse">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-md bg-red-500/20 text-red-700 dark:text-red-300 border border-red-500/40 text-xs font-bold animate-pulse">
                                   <AlertTriangle className="h-3 w-3" /> CRITIQUE
                                 </span>
                               )}
                             </div>
 
                             {order.pendingInvoice && (
-                              <PaymentStatusBadge status={order.pendingInvoice.status} className="text-[10px]" />
+                              <PaymentStatusBadge status={order.pendingInvoice.status} className="text-xs" />
                             )}
                           </div>
 
                           {/* Patient name */}
                           <div className="flex items-center gap-2">
-                            <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0 text-[11px]">
+                            <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0 text-xs">
                               {order.patient?.user?.lastName?.[0] || "P"}
                             </div>
                             <span className="font-bold text-sm text-foreground truncate group-hover:text-primary transition-colors">
@@ -392,14 +392,14 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
                           {/* Tests list */}
                           <div className="flex flex-wrap gap-1">
                             {order.tests.map((t: string) => (
-                              <Badge key={t} variant="outline" className="text-[10px] py-0 px-1.5 bg-muted/40 font-medium">
+                              <Badge key={t} variant="outline" className="text-xs py-0 px-1.5 bg-muted/40 font-medium">
                                 {t}
                               </Badge>
                             ))}
                           </div>
 
                           {/* Footer */}
-                          <div className="pt-2 border-t border-border/50 flex items-center justify-between text-[10px] text-muted-foreground">
+                          <div className="pt-2 border-t border-border/50 flex items-center justify-between text-xs text-muted-foreground">
                             <span className="truncate">
                               Dr. {order.orderedBy?.lastName || "Médecin"}
                             </span>
@@ -443,27 +443,27 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
                           {order.patient?.user ? `${order.patient.user.lastName} ${order.patient.user.firstName}` : "Patient"}
                         </p>
                         {isUrgent && (
-                          <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[10px] gap-1 font-bold">
+                          <Badge variant="outline" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 text-xs gap-1 font-bold">
                             <Zap className="h-3 w-3" /> Urgent
                           </Badge>
                         )}
                         {hasCritical && (
-                          <Badge variant="outline" className="bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30 text-[10px] gap-1 animate-pulse font-bold">
+                          <Badge variant="outline" className="bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30 text-xs gap-1 animate-pulse font-bold">
                             <AlertTriangle className="h-3 w-3" /> Critique
                           </Badge>
                         )}
-                        {order.pendingInvoice && <PaymentStatusBadge status={order.pendingInvoice.status} className="text-[10px]" />}
+                        {order.pendingInvoice && <PaymentStatusBadge status={order.pendingInvoice.status} className="text-xs" />}
                       </div>
 
                       <div className="flex flex-wrap gap-1">
                         {order.tests.map((t: string) => (
-                          <Badge key={t} variant="outline" className="text-[10px] font-medium">
+                          <Badge key={t} variant="outline" className="text-xs font-medium">
                             {t}
                           </Badge>
                         ))}
                       </div>
 
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-xs text-muted-foreground">
                         Prescrit par {order.orderedBy?.firstName} {order.orderedBy?.lastName} • {formatDateTime(order.createdAt)}
                       </p>
                     </div>

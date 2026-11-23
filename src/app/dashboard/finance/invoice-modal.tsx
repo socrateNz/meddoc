@@ -293,7 +293,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
 
               {hasRemainingDue && (
                 <div className={`text-center text-[11px] font-extrabold my-2 uppercase tracking-wider border border-dashed rounded py-1 ${isCancelled ? "text-red-800 border-red-600" : "text-amber-800 border-amber-600"}`}>
-                  {isCancelled ? "Clôturé — non réglé intégralement" : "Paiement partiel — solde à régler"}
+                  {isCancelled ? "Reste à payer abandonné" : "Paiement partiel — solde à régler"}
                 </div>
               )}
 
@@ -418,7 +418,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
 
               {hasRemainingDue && (
                 <div className={`text-center text-xs font-extrabold uppercase tracking-wider border border-dashed rounded-xl py-2 ${isCancelled ? "text-red-800 border-red-500" : "text-amber-800 border-amber-500"}`}>
-                  {isCancelled ? "Clôturé — vente à crédit non honorée" : "Paiement partiel — vente à crédit"}
+                  {isCancelled ? "Vente à crédit : reste à payer abandonné" : "Paiement partiel — vente à crédit"}
                 </div>
               )}
             </div>

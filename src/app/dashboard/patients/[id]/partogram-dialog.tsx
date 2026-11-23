@@ -141,13 +141,13 @@ export default function PartogramDialog({ pregnancyId, canWrite }: { pregnancyId
   const alerts = entries ? partogramAlerts(entries) : [];
   const field = (k: string, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <div className="space-y-1">
-      <label className="text-[11px] font-semibold text-slate-500">{label}</label>
+      <label className="text-xs font-semibold text-slate-500">{label}</label>
       <Input value={form[k] ?? ""} onChange={(e) => set(k, e.target.value)} className="h-10 text-base sm:h-9 sm:text-sm" inputMode="decimal" {...props} />
     </div>
   );
   const select = (k: string, label: string, options: [string, string][]) => (
     <div className="space-y-1">
-      <label className="text-[11px] font-semibold text-slate-500">{label}</label>
+      <label className="text-xs font-semibold text-slate-500">{label}</label>
       <select value={form[k] ?? ""} onChange={(e) => set(k, e.target.value)} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm sm:h-9 dark:border-slate-800 dark:bg-slate-900">
         <option value="">—</option>
         {options.map(([v, l]) => (

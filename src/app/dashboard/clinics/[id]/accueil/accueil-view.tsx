@@ -111,22 +111,22 @@ export default function AccueilView({ clinicId, currentUserId, currentUserRole, 
             <span className="font-mono text-lg font-black text-slate-800 dark:text-slate-100 shrink-0">{v.ticket}</span>
             <div className="min-w-0">
               <p className="text-sm font-semibold truncate">{v.patientName}</p>
-              {v.ipp && <p className="text-[11px] font-mono text-muted-foreground">{v.ipp}</p>}
+              {v.ipp && <p className="text-xs font-mono text-muted-foreground">{v.ipp}</p>}
             </div>
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
             {urgent && (
-              <Badge className="bg-red-600 text-white text-[10px] gap-1">
+              <Badge className="bg-red-600 text-white text-xs gap-1">
                 <AlertTriangle className="h-3 w-3" />
                 Urgent
               </Badge>
             )}
-            {v.status === "CALLED" && <Badge className="bg-amber-500 text-white text-[10px]">Appelé</Badge>}
+            {v.status === "CALLED" && <Badge className="bg-amber-500 text-white text-xs">Appelé</Badge>}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-          <Badge variant="outline" className={`text-[10px] ${DESTINATION_STYLES[v.destination] || ""}`}>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <Badge variant="outline" className={`text-xs ${DESTINATION_STYLES[v.destination] || ""}`}>
             {VISIT_DESTINATION_LABELS[v.destination as VisitDestination] || v.destination}
             {v.serviceName ? ` · ${v.serviceName}` : ""}
           </Badge>

@@ -118,7 +118,7 @@ export default function NewRadiologyOrderDialog({
                     <input type="checkbox" checked={selected.includes(exam.id)} onChange={() => toggle(exam.id)} className="h-4 w-4" />
                     <span className="flex-1 text-sm">
                       {exam.name}
-                      <span className="ml-2 text-[11px] text-muted-foreground">{RADIOLOGY_MODALITY_LABELS[exam.modality as RadiologyModality] || exam.modality}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">{RADIOLOGY_MODALITY_LABELS[exam.modality as RadiologyModality] || exam.modality}</span>
                     </span>
                     <span className="text-xs font-semibold">{formatFCFA(exam.basePrice)}</span>
                   </label>

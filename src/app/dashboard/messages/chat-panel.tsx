@@ -360,7 +360,7 @@ export default function ChatPanel({
             <>
               {/* Canaux par service */}
               <div className="px-4 pt-3 pb-1.5 flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Canaux</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Canaux</span>
                 {canCreateChannel(currentUser.role) && <NewChannelDialog organizationId={channelsOrganizationId} basePath={basePath} />}
               </div>
               {channels.length === 0 ? (
@@ -393,7 +393,7 @@ export default function ChatPanel({
 
               {/* Discussions privées */}
               <div className="px-4 pt-2 pb-1.5">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Messages privés</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Messages privés</span>
               </div>
               {directMessages.length === 0 ? (
                 <p className="px-4 pb-4 text-xs text-muted-foreground">Aucune discussion privée.</p>
@@ -427,7 +427,7 @@ export default function ChatPanel({
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-baseline">
                             <p className="font-semibold text-sm truncate">{other.lastName} {other.firstName}</p>
-                            <span className="text-[10px] text-muted-foreground uppercase tracking-wider bg-muted px-1.5 py-0.5 rounded font-medium">
+                            <span className="text-xs text-muted-foreground uppercase tracking-wider bg-muted px-1.5 py-0.5 rounded font-medium">
                               {other.role.toLowerCase()}
                             </span>
                           </div>
@@ -510,14 +510,14 @@ export default function ChatPanel({
                       <div className={`flex gap-2 max-w-[70%] ${isMe ? "flex-row-reverse" : "flex-row"}`}>
                         <Avatar className="h-8 w-8 border shrink-0">
                           <AvatarImage src={msg.sender.avatarUrl || ""} />
-                          <AvatarFallback className="text-[10px]">
+                          <AvatarFallback className="text-xs">
                             {msg.sender.lastName[0]}
                             {msg.sender.firstName[0]}
                           </AvatarFallback>
                         </Avatar>
                         <div className="space-y-1.5">
                           {isChannel && !isMe && (
-                            <p className="text-[11px] font-semibold text-muted-foreground px-1">{msg.sender.lastName} {msg.sender.firstName}</p>
+                            <p className="text-xs font-semibold text-muted-foreground px-1">{msg.sender.lastName} {msg.sender.firstName}</p>
                           )}
 
                           {msg.sharedPatient && (
@@ -547,7 +547,7 @@ export default function ChatPanel({
                               <p className="leading-relaxed whitespace-pre-wrap">{msg.content}</p>
                             </div>
                           )}
-                          <span className={`text-[10px] text-muted-foreground block ${isMe ? "text-right" : "text-left"}`}>
+                          <span className={`text-xs text-muted-foreground block ${isMe ? "text-right" : "text-left"}`}>
                             {new Intl.DateTimeFormat('fr-FR', {
                               hour: '2-digit',
                               minute: '2-digit'

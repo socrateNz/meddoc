@@ -40,7 +40,7 @@ export function LineDiscountEditor({
     <div className="space-y-2 rounded-xl border border-violet-200 bg-violet-50/60 p-3 dark:border-violet-900/40 dark:bg-violet-950/20">
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1">
-          <label className="text-[11px] font-semibold text-violet-700 dark:text-violet-300">Réduction</label>
+          <label className="text-xs font-semibold text-violet-700 dark:text-violet-300">Réduction</label>
           <div className="flex">
             <Input
               type="number"
@@ -63,7 +63,7 @@ export function LineDiscountEditor({
           </div>
         </div>
         <div className="min-w-40 flex-1 space-y-1">
-          <label className="text-[11px] font-semibold text-violet-700 dark:text-violet-300">Motif *</label>
+          <label className="text-xs font-semibold text-violet-700 dark:text-violet-300">Motif *</label>
           <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="ex : patient indigent, personnel, geste commercial" maxLength={200} className="h-9 text-sm" />
         </div>
       </div>
@@ -88,7 +88,7 @@ export function LineDiscountEditor({
 export function DiscountNote({ discount, reason }: { discount?: number; reason?: string }) {
   if (!discount || discount <= 0) return null;
   return (
-    <span className="block text-[11px] font-semibold text-violet-600 dark:text-violet-400">
+    <span className="block text-xs font-semibold text-violet-600 dark:text-violet-400">
       Réduction −{formatFCFA(discount)}
       {reason ? ` (${reason})` : ""}
     </span>

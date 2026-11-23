@@ -46,7 +46,7 @@ export default function ClinicStatusToggle({ clinicId, isActive }: ClinicStatusT
         )}
         {isActive ? "Suspendre" : "Réactiver"}
       </Button>
-      {error && <p className="text-[10px] text-rose-600 max-w-[140px] text-right">{error}</p>}
+      {error && <p className="text-xs text-rose-600 max-w-[140px] text-right">{error}</p>}
     </div>
   );
 }

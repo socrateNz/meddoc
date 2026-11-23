@@ -302,7 +302,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
               </button>
             </div>
 
-            <p className="flex items-start gap-1.5 text-[11px] text-slate-400">
+            <p className="flex items-start gap-1.5 text-xs text-slate-400">
               <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               Répondez « Oui » uniquement si l&apos;argent n&apos;a pas déjà quitté la caisse autrement
               (ex : un retrait via « Nouvelle dépense » pour aller faire cet achat). Sinon, la même
@@ -331,7 +331,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
               )
             ) : (
               <div className="space-y-1">
-                <Label htmlFor="linkedExpense" className="text-[11px] text-slate-500">
+                <Label htmlFor="linkedExpense" className="text-xs text-slate-500">
                   Cet achat provient-il d&apos;un retrait déjà enregistré (« Nouvelle dépense ») ?
                 </Label>
                 <select
@@ -349,7 +349,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
                   ))}
                 </select>
                 {formData.linkedExpenseTransactionId && (
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-xs text-slate-400">
                     Ce retrait sera marqué comme réglé par cet achat et ne comptera plus dans les dépenses totales à part.
                   </p>
                 )}

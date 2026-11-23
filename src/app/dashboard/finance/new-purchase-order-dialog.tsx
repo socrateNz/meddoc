@@ -189,7 +189,7 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
             <div className="space-y-1.5">
               {lines.map((l) => (
                 <div key={l.id} className="flex items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-xs">
-                  <span className="truncate">{l.label} <Badge variant="outline" className="ml-1 text-[10px]">x{l.quantityOrdered}</Badge></span>
+                  <span className="truncate">{l.label} <Badge variant="outline" className="ml-1 text-xs">x{l.quantityOrdered}</Badge></span>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-muted-foreground">{(l.quantityOrdered * l.unitCost).toLocaleString("fr-FR")} FCFA</span>
                     <button type="button" onClick={() => handleRemoveLine(l.id)} className="text-muted-foreground hover:text-destructive">

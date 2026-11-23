@@ -193,7 +193,7 @@ export default function SuppliersPanel({ organizationId, pharmacyItems, canWrite
                   <CardContent className="space-y-3">
                     <div className="flex flex-wrap gap-1.5">
                       {order.lines.map((l: any) => (
-                        <Badge key={l.id} variant="outline" className="text-[10px]">
+                        <Badge key={l.id} variant="outline" className="text-xs">
                           {l.pharmacyItem?.name || l.newItemName} — {l.quantityReceived}/{l.quantityOrdered}
                         </Badge>
                       ))}

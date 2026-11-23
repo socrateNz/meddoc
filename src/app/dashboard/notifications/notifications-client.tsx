@@ -323,11 +323,11 @@ export default function NotificationsClient({
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
                     <Badge
                       variant="outline"
-                      className={`text-[10px] px-2 py-0 border ${config.border} ${config.text} ${config.bg}`}
+                      className={`text-xs px-2 py-0 border ${config.border} ${config.text} ${config.bg}`}
                     >
                       {config.label}
                     </Badge>
-                    <span className="text-[10px] text-muted-foreground/70">
+                    <span className="text-xs text-muted-foreground/70">
                       {formatDate(n.createdAt)}
                     </span>
                   </div>

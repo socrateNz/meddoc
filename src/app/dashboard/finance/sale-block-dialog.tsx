@@ -17,10 +17,11 @@ interface SaleBlockDialogProps {
 // plus de vente à la caisse, ni d'achat, de commande ou de réception — cf. setPharmacyItemSaleBlock,
 // qui refait le contrôle de rôle côté serveur (ce composant n'est que la commodité d'interface,
 // jamais la protection).
-export default function SaleBlockDialog({ item }: SaleBlockDialogProps) {
+// `autoOpen` : ouverte directement depuis un menu « … » (sans bouton) ; `onClosed` à la fermeture.
+export default function SaleBlockDialog({ item, autoOpen = false, onClosed }: SaleBlockDialogProps & { autoOpen?: boolean; onClosed?: () => void }) {
   const router = useRouter();
   const isBlocked = !!item.saleBlockedAt;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -33,6 +34,7 @@ export default function SaleBlockDialog({ item }: SaleBlockDialogProps) {
     if (!v) {
       setReason("");
       setError("");
+      onClosed?.();
     }
   };
 
@@ -61,13 +63,14 @@ export default function SaleBlockDialog({ item }: SaleBlockDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
+      {!autoOpen && (
       <DialogTrigger
         render={
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className={`h-8 gap-1 rounded-lg text-[11px] ${
+            className={`h-8 gap-1 rounded-lg text-xs ${
               isBlocked
                 ? "border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
                 : "border-rose-500/30 text-rose-600 hover:bg-rose-500/10"
@@ -78,6 +81,7 @@ export default function SaleBlockDialog({ item }: SaleBlockDialogProps) {
         {isBlocked ? <ShieldCheck className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
         {isBlocked ? "Débloquer" : "Bloquer"}
       </DialogTrigger>
+      )}
       <DialogContent className="sm:max-w-[440px] rounded-2xl">
         <DialogHeader>
           <DialogTitle className={`flex items-center gap-2 ${isBlocked ? "text-emerald-600" : "text-rose-600 dark:text-rose-400"}`}>

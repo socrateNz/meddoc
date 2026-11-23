@@ -1137,7 +1137,7 @@ export default function UserManual({ userRole = "ADMIN", clinicId }: UserManualP
                           </p>
 
                           <div className="space-y-2 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
-                            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
+                            <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
                               Procédures & Règles :
                             </span>
                             <ul className="space-y-1.5">

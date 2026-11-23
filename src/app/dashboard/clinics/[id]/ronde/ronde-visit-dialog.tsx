@@ -170,7 +170,7 @@ function RoundVisitBody({ clinicId, entry, sessionOpen, onDone }: { clinicId: st
                 {vitals.bloodPressure && `TA ${vitals.bloodPressure} · `}
                 {vitals.heartRate !== null && `FC ${vitals.heartRate} · `}
                 {vitals.oxygenSaturation !== null && `SpO₂ ${vitals.oxygenSaturation} %`}
-                <span className="block text-[11px] text-slate-400">relevé le {formatDateTime(vitals.createdAt)}</span>
+                <span className="block text-xs text-slate-400">relevé le {formatDateTime(vitals.createdAt)}</span>
               </p>
             ) : (
               <p className="text-slate-400">Aucune constante enregistrée</p>

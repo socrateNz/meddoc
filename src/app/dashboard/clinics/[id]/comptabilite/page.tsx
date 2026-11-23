@@ -33,7 +33,7 @@ function Kpi({ label, value, hint, tone = "slate" }: { label: string; value: num
     <div className="rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`mt-1 text-2xl font-extrabold ${color}`}>{fcfa(value)}</p>
-      <p className="mt-1 text-[11px] text-slate-400">{hint}</p>
+      <p className="mt-1 text-xs text-slate-400">{hint}</p>
     </div>
   );
 }
@@ -251,7 +251,7 @@ async function OverviewTab({ tab, clinicId, periodInput, flow, at }: { tab: "tab
               </div>
             </div>
           )}
-          <p className="text-[11px] text-slate-400">Résultat de l&apos;exercice selon le compte de résultat ({flow}) : {fcfa(o.income.result)}.</p>
+          <p className="text-xs text-slate-400">Résultat de l&apos;exercice selon le compte de résultat ({flow}) : {fcfa(o.income.result)}.</p>
         </section>
   );
 }
@@ -301,8 +301,8 @@ async function JournalTab({ clinicId, sp, periodInput, base, query }: TabProps &
               <span className="font-mono font-semibold">{e.number}</span>
               <span className="text-slate-500">{fr(e.entryDate)}</span>
               <span className="flex-1 truncate font-medium">{e.label}</span>
-              {e.reversed && <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-600">Contrepassée</span>}
-              {e.isReversal && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700">Contrepassation</span>}
+              {e.reversed && <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-bold text-rose-600">Contrepassée</span>}
+              {e.isReversal && <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-700">Contrepassation</span>}
             </div>
             <table className="w-full text-xs">
               <tbody>
@@ -346,10 +346,10 @@ async function BalanceTab({ clinicId, periodInput, base, query }: TabProps) {
                 </p>
                 <p className="shrink-0 text-right text-sm font-bold">
                   {amount(Math.abs(solde)) || "0"}
-                  <span className="block text-[10px] font-medium text-slate-400">{solde > 0 ? "débiteur" : solde < 0 ? "créditeur" : "soldé"}</span>
+                  <span className="block text-xs font-medium text-slate-400">{solde > 0 ? "débiteur" : solde < 0 ? "créditeur" : "soldé"}</span>
                 </p>
               </div>
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-xs text-slate-500">
                 Débits {amount(r.debit) || "0"} · Crédits {amount(r.credit) || "0"}
               </p>
             </Link>
@@ -361,7 +361,7 @@ async function BalanceTab({ clinicId, periodInput, base, query }: TabProps) {
       </div>
       <div className="hidden overflow-x-auto md:block rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
             <tr>
               <th className="px-3 py-2 text-left">Compte</th>
               <th className="px-3 py-2 text-left">Libellé</th>
@@ -435,7 +435,7 @@ async function LedgerTab({ clinicId, account, page, periodInput, base, query }: 
         )}
         {l.rows.map((r, i) => (
           <div key={i} className="space-y-1.5 p-3">
-            <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+            <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
               <span>{fr(r.entryDate)}</span>
               <span className="font-mono">{r.entryNumber}</span>
             </div>
@@ -443,10 +443,10 @@ async function LedgerTab({ clinicId, account, page, periodInput, base, query }: 
             <div className="flex items-end justify-between gap-2 text-sm">
               <span className={r.debit ? "font-semibold text-emerald-600" : "font-semibold text-rose-600"}>
                 {r.debit ? `+ ${amount(r.debit)}` : `− ${amount(r.credit)}`}
-                <span className="ml-1 text-[10px] font-medium text-slate-400">{r.debit ? "débit" : "crédit"}</span>
+                <span className="ml-1 text-xs font-medium text-slate-400">{r.debit ? "débit" : "crédit"}</span>
               </span>
               <span className="text-right font-bold">
-                <span className="mr-1 text-[10px] font-medium text-slate-400">solde</span>
+                <span className="mr-1 text-xs font-medium text-slate-400">solde</span>
                 {amount(r.running) || "0"}
               </span>
             </div>
@@ -465,7 +465,7 @@ async function LedgerTab({ clinicId, account, page, periodInput, base, query }: 
       </div>
       <div className="hidden overflow-x-auto md:block rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60">
         <table className="w-full text-xs">
-          <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-800/50">
             <tr>
               <th className="px-3 py-2 text-left">Date</th>
               <th className="px-3 py-2 text-left">N°</th>

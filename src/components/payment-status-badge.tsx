@@ -25,7 +25,7 @@ export default function PaymentStatusBadge({ status, amountPaid, totalAmount, cl
   // "Payé" par défaut ci-dessous, ce qui serait faux.
   if (status === "CANCELLED") {
     return (
-      <Badge variant="outline" className={`text-[10px] shrink-0 bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 ${className}`}>
+      <Badge variant="outline" className={`text-xs shrink-0 bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20 ${className}`}>
         Clôturé — non réglé intégralement
       </Badge>
     );
@@ -34,20 +34,20 @@ export default function PaymentStatusBadge({ status, amountPaid, totalAmount, cl
     const knowsRemaining = amountPaid != null && totalAmount != null;
     const remaining = knowsRemaining ? Math.max(0, totalAmount! - amountPaid!) : null;
     return (
-      <Badge variant="outline" className={`text-[10px] shrink-0 bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 ${className}`}>
+      <Badge variant="outline" className={`text-xs shrink-0 bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20 ${className}`}>
         {remaining != null ? `Partiel — reste ${formatFCFA(remaining)}` : "Partiel"}
       </Badge>
     );
   }
   if (status === "PENDING") {
     return (
-      <Badge variant="outline" className={`text-[10px] shrink-0 bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20 ${className}`}>
+      <Badge variant="outline" className={`text-xs shrink-0 bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20 ${className}`}>
         Non payé — vente à crédit
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className={`text-[10px] shrink-0 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 ${className}`}>
+    <Badge variant="outline" className={`text-xs shrink-0 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 ${className}`}>
       Payé
     </Badge>
   );

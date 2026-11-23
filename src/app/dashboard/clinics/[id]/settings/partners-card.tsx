@@ -123,7 +123,7 @@ export default function PartnersCard({ clinicId, partners, readOnly }: { clinicI
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">
                     {p.name}
-                    {!p.isActive && <span className="ml-2 text-[10px] font-semibold text-slate-500">Désactivé</span>}
+                    {!p.isActive && <span className="ml-2 text-xs font-semibold text-slate-500">Désactivé</span>}
                   </p>
                   <p className="text-xs text-muted-foreground">{p.billing === "PARTNER" ? "Facturé au partenaire (relevé mensuel)" : "Réglé par le patient, au prix partenaire"}</p>
                 </div>

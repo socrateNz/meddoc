@@ -183,7 +183,7 @@ function ProfitBreakdownCard({
             {formatFCFA(profit)}
           </span>
         </div>
-        <div className="text-[11px] text-slate-400">{footer}</div>
+        <div className="text-xs text-slate-400">{footer}</div>
       </CardContent>
     </Card>
   );
@@ -601,7 +601,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
                     <div key={t.id} className="flex items-center justify-between gap-3 text-sm">
                       <div className="min-w-0">
                         <p className="font-medium text-slate-700 dark:text-slate-300 truncate">{t.description}</p>
-                        <p className="text-[10px] text-slate-400">{formatDateTime(t.createdAt)}</p>
+                        <p className="text-xs text-slate-400">{formatDateTime(t.createdAt)}</p>
                       </div>
                       <span className={`font-bold shrink-0 ${isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                         {isIncome ? "+" : "-"}{formatFCFA(t.amount)}
@@ -640,7 +640,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
                     <span className="font-medium text-slate-700 dark:text-slate-300 truncate">{item.name}</span>
                     <Badge
                       variant="outline"
-                      className={`text-[10px] shrink-0 ${item.severity === "critical" ? "bg-rose-500/10 text-rose-600 border-rose-500/20" : "bg-amber-500/10 text-amber-600 border-amber-500/20"}`}
+                      className={`text-xs shrink-0 ${item.severity === "critical" ? "bg-rose-500/10 text-rose-600 border-rose-500/20" : "bg-amber-500/10 text-amber-600 border-amber-500/20"}`}
                     >
                       {item.reason}
                     </Badge>
@@ -722,7 +722,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
                       </TableCell>
                       <TableCell className="text-xs font-medium text-slate-600 dark:text-slate-400 py-3.5">
                         <div>{formatDateTime(s.openedAt)}</div>
-                        <div className="text-[10px] text-slate-400">
+                        <div className="text-xs text-slate-400">
                           {s.openedBy ? `${s.openedBy.firstName} ${s.openedBy.lastName}` : "-"}
                         </div>
                       </TableCell>
@@ -730,12 +730,12 @@ export default function FinanceView({ summary, organizationId, organizationName,
                         {s.closedAt ? (
                           <>
                             <div>{formatDateTime(s.closedAt)}</div>
-                            <div className="text-[10px] text-slate-400">
+                            <div className="text-xs text-slate-400">
                               {s.closedBy ? `${s.closedBy.firstName} ${s.closedBy.lastName}` : "-"}
                             </div>
                           </>
                         ) : (
-                          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px] font-semibold">
+                          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-xs font-semibold">
                             En cours
                           </Badge>
                         )}
@@ -771,7 +771,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
                             organizationLogoUrl={organizationLogoUrl}
                           />
                         ) : (
-                          <span className="text-[11px] text-slate-400">Session ouverte</span>
+                          <span className="text-xs text-slate-400">Caisse ouverte</span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -803,21 +803,21 @@ export default function FinanceView({ summary, organizationId, organizationName,
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Valeur au coût</p>
+                    <p className="text-xs uppercase tracking-wider font-bold text-slate-400">Valeur au coût</p>
                     <p className="text-lg font-extrabold">{formatFCFA(valuation.totalCostValue)}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Valeur à la vente</p>
+                    <p className="text-xs uppercase tracking-wider font-bold text-slate-400">Valeur à la vente</p>
                     <p className="text-lg font-extrabold">{formatFCFA(valuation.totalSaleValue)}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Marge potentielle</p>
+                    <p className="text-xs uppercase tracking-wider font-bold text-slate-400">Marge potentielle</p>
                     <p className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400">{formatFCFA(valuation.potentialMargin)}</p>
                   </div>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1.5">Par catégorie</p>
+                    <p className="text-xs uppercase tracking-wider font-bold text-slate-400 mb-1.5">Par catégorie</p>
                     <div className="space-y-1">
                       {valuation.byCategory.map((c) => (
                         <div key={c.category} className="flex items-center justify-between text-xs">
@@ -828,7 +828,7 @@ export default function FinanceView({ summary, organizationId, organizationName,
                     </div>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-1.5">Par emplacement</p>
+                    <p className="text-xs uppercase tracking-wider font-bold text-slate-400 mb-1.5">Par emplacement</p>
                     <div className="space-y-1">
                       {valuation.byLocation.map((l) => (
                         <div key={l.location} className="flex items-center justify-between text-xs">

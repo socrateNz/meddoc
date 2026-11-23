@@ -220,7 +220,7 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
             <div className="flex items-center gap-1.5 flex-wrap">
               <ShieldAlert className="h-3.5 w-3.5 text-red-500" />
               {patient.allergies.map((a: string, i: number) => (
-                <Badge key={i} variant="outline" className="text-[10px] border-red-500/30 text-red-600 bg-red-500/5">{a}</Badge>
+                <Badge key={i} variant="outline" className="text-xs border-red-500/30 text-red-600 bg-red-500/5">{a}</Badge>
               ))}
             </div>
           )}
@@ -267,7 +267,7 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
           )}
           <div className="flex flex-wrap gap-1.5 pt-1">
             <span className="text-muted-foreground text-sm">Examens demandés :</span>
-            {order.tests.map((t: string) => <Badge key={t} variant="secondary" className="text-[11px]">{t}</Badge>)}
+            {order.tests.map((t: string) => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
           </div>
         </CardContent>
       </Card>
@@ -307,7 +307,7 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
           <CardTitle className="text-base flex items-center gap-2">
             <PackageCheck className="h-4 w-4" /> Prélèvements
-            {samples.length > 0 && <Badge variant="secondary" className="text-[11px]">{samples.length} tube{samples.length > 1 ? "s" : ""}</Badge>}
+            {samples.length > 0 && <Badge variant="secondary" className="text-xs">{samples.length} tube{samples.length > 1 ? "s" : ""}</Badge>}
           </CardTitle>
           {canWrite && pendingReception.length > 1 && (
             <Button size="sm" variant="outline" className="gap-1.5 rounded-lg" onClick={() => handleReceive()} disabled={busy}>
@@ -326,15 +326,15 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
                   Tube {index + 1} — {SAMPLE_TYPE_OPTIONS.find((o) => o.value === sample.sampleType)?.label || sample.sampleType}
                 </p>
                 {sample.receivedAt ? (
-                  <Badge variant="outline" className="gap-1 text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                  <Badge variant="outline" className="gap-1 text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                     <CheckCircle2 className="h-3 w-3" /> Reçu au laboratoire
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">En attente de réception</Badge>
+                  <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">En attente de réception</Badge>
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {sample.tests.map((t) => <Badge key={t} variant="secondary" className="text-[11px]">{t}</Badge>)}
+                {sample.tests.map((t) => <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>)}
               </div>
               <p className="text-xs text-muted-foreground">
                 Prélevé le {formatDateTime(sample.collectedAt)}{sample.collectedByName ? ` par ${sample.collectedByName}` : ""}
@@ -404,7 +404,7 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
                   })}
                 </div>
                 {remainingTests.length > 1 && (
-                  <p className="text-[11px] text-muted-foreground">Décochez les examens qui seront prélevés dans un autre tube (ex. urines, selles).</p>
+                  <p className="text-xs text-muted-foreground">Décochez les examens qui seront prélevés dans un autre tube (ex. urines, selles).</p>
                 )}
               </div>
               <div className="grid gap-3 sm:grid-cols-4 items-end">
@@ -467,12 +467,12 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
                             </>
                           )}
                           {r.isAbnormal && (
-                            <Badge variant="outline" className="ml-2 bg-red-500/10 text-red-600 border-red-500/20 text-[10px]">Anormal</Badge>
+                            <Badge variant="outline" className="ml-2 bg-red-500/10 text-red-600 border-red-500/20 text-xs">Anormal</Badge>
                           )}
                           {r.notes && <p className="mt-1 text-xs text-muted-foreground">{r.notes}</p>}
                         </div>
                         {r.validatedAt ? (
-                          <Badge variant="outline" className="gap-1 text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
+                          <Badge variant="outline" className="gap-1 text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20">
                             <Lock className="h-3 w-3" />
                             Validé par {r.validatedBy?.firstName} {r.validatedBy?.lastName} • {formatDateTime(r.validatedAt)}
                           </Badge>
@@ -482,7 +482,7 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
                             Valider
                           </Button>
                         ) : (
-                          <Badge variant="outline" className="text-[10px]">En attente de validation</Badge>
+                          <Badge variant="outline" className="text-xs">En attente de validation</Badge>
                         )}
                       </div>
                       );

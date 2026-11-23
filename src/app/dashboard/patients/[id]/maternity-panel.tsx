@@ -180,7 +180,7 @@ export default function MaternityPanel({
                   {pregnancy.riskFactors?.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {pregnancy.riskFactors.map((factor: string) => (
-                        <Badge key={factor} variant="outline" className="text-[10px] border-amber-500/30 text-amber-600 bg-amber-500/5">
+                        <Badge key={factor} variant="outline" className="text-xs border-amber-500/30 text-amber-600 bg-amber-500/5">
                           {factor}
                         </Badge>
                       ))}
@@ -226,7 +226,7 @@ export default function MaternityPanel({
                             {visit.preventiveTreatments?.length > 0 && (
                               <div className="flex flex-wrap gap-1">
                                 {visit.preventiveTreatments.map((t: string) => (
-                                  <Badge key={t} variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-700 bg-emerald-500/5">
+                                  <Badge key={t} variant="outline" className="text-xs border-emerald-500/30 text-emerald-700 bg-emerald-500/5">
                                     {PREVENTIVE_TREATMENT_LABELS[t] || t}
                                   </Badge>
                                 ))}
@@ -240,14 +240,14 @@ export default function MaternityPanel({
                                   <Link key={o.id} href={`/dashboard/lab/${o.id}`} className="flex flex-wrap items-center gap-1.5 rounded-md bg-background/60 px-2 py-1.5 hover:bg-background">
                                     <span className="font-medium text-blue-600 dark:text-blue-400">Examens :</span>
                                     <span className="min-w-0 flex-1">{o.tests.join(", ")}</span>
-                                    <Badge variant="outline" className="text-[10px]">{LAB_STATUS_LABELS[o.status] || o.status}</Badge>
+                                    <Badge variant="outline" className="text-xs">{LAB_STATUS_LABELS[o.status] || o.status}</Badge>
                                   </Link>
                                 ))}
                                 {(visit.radiologyOrders || []).map((o: any) => (
                                   <Link key={o.id} href={`/dashboard/clinics/${patient?.organizationId}/imagerie/${o.id}`} className="flex flex-wrap items-center gap-1.5 rounded-md bg-background/60 px-2 py-1.5 hover:bg-background">
                                     <span className="font-medium text-violet-600 dark:text-violet-400">Imagerie :</span>
                                     <span className="min-w-0 flex-1">{((o.exams as any[]) || []).map((e) => e.name).join(", ")}</span>
-                                    <Badge variant="outline" className="text-[10px]">{RADIOLOGY_STATUS_LABELS[o.status] || o.status}</Badge>
+                                    <Badge variant="outline" className="text-xs">{RADIOLOGY_STATUS_LABELS[o.status] || o.status}</Badge>
                                   </Link>
                                 ))}
                                 {(visit.prescriptions || []).map((rx: any) => (
@@ -308,7 +308,7 @@ export default function MaternityPanel({
                       {pregnancy.delivery.complications?.length > 0 && (
                         <div className="flex flex-wrap gap-1.5">
                           {pregnancy.delivery.complications.map((c: string) => (
-                            <Badge key={c} variant="outline" className="text-[10px] border-red-500/30 text-red-600 bg-red-500/5">{c}</Badge>
+                            <Badge key={c} variant="outline" className="text-xs border-red-500/30 text-red-600 bg-red-500/5">{c}</Badge>
                           ))}
                         </div>
                       )}
@@ -322,7 +322,7 @@ export default function MaternityPanel({
                               <span> • Apgar {newborn.apgarScore1 ?? "—"}/{newborn.apgarScore5 ?? "—"}</span>
                             )}
                             {newborn.vitalStatus === "STILLBIRTH" && (
-                              <Badge variant="outline" className="ml-1.5 text-[10px] border-red-500/30 text-red-600 bg-red-500/5">Mort-né(e)</Badge>
+                              <Badge variant="outline" className="ml-1.5 text-xs border-red-500/30 text-red-600 bg-red-500/5">Mort-né(e)</Badge>
                             )}
                             {newborn.notes && <p className="text-muted-foreground mt-1 italic">{newborn.notes}</p>}
                             {newborn.vitalStatus !== "STILLBIRTH" && (

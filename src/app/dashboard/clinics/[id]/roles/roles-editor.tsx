@@ -280,7 +280,7 @@ function RoleForm({
                   <label key={p.key} className="flex cursor-pointer items-start gap-2 text-sm">
                     <input type="checkbox" className="mt-0.5 h-4 w-4 accent-emerald-600" checked={perms.has(p.key)} onChange={(e) => toggle(p.key, e.target.checked)} />
                     <span className="flex-1">{p.label}</span>
-                    {defaultSet?.has(p.key) && <span className="shrink-0 rounded bg-slate-100 px-1.5 text-[10px] uppercase text-slate-500 dark:bg-slate-800">défaut</span>}
+                    {defaultSet?.has(p.key) && <span className="shrink-0 rounded bg-slate-100 px-1.5 text-xs uppercase text-slate-500 dark:bg-slate-800">défaut</span>}
                   </label>
                 ))}
               </div>

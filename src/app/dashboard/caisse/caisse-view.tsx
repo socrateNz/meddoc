@@ -35,11 +35,8 @@ import { OpenSessionDialog, CloseSessionDialog, CreateRegisterDialog, EditOpenin
 import CaisseCartDialog from "./caisse-cart-dialog";
 import CaisseExpenseDialog from "./caisse-expense-dialog";
 import RecordPaymentDialog from "./record-payment-dialog";
-import InvoiceDiscountDialog from "./invoice-discount-dialog";
-import CloseInvoiceDialog from "./close-invoice-dialog";
+import TicketActionsMenu from "./ticket-actions-menu";
 import { EditInvoiceClientDialog } from "./edit-invoice-client-dialog";
-import { EditInvoiceStatusDialog } from "./edit-invoice-status-dialog";
-import { DeleteInvoiceDialog } from "./delete-invoice-dialog";
 import InvoiceModal from "@/app/dashboard/finance/invoice-modal";
 
 function formatFCFA(val: number) {
@@ -141,7 +138,6 @@ export default function CaisseView({
   const canManageStatus = useCan("invoices.manage");
   // Réduction sur un ticket pas encore réglé (cf. applyInvoiceDiscount) : le responsable.
   const canDiscount = useCan("invoices.discount");
-  const discountable = (inv: any) => canDiscount && inv.status === "PENDING" && !(Number(inv.amountPaid) > 0);
 
   const selectedRegister = registers.find((r) => r.id === selectedRegisterId) || null;
 
@@ -205,7 +201,7 @@ export default function CaisseView({
   };
 
   const handleClose = async (countedAmount: number, notes?: string) => {
-    if (!selectedRegister?.openSession) return { success: false, error: "Aucune session ouverte." };
+    if (!selectedRegister?.openSession) return { success: false, error: "La caisse n'est pas ouverte." };
     const res = await closeRegisterSession({ sessionId: selectedRegister.openSession.id, countedAmount, notes });
     if (res.success) {
       await refreshRegisters();
@@ -215,7 +211,7 @@ export default function CaisseView({
   };
 
   const handleCorrectOpeningFloat = async (newOpeningFloat: number, reason?: string) => {
-    if (!selectedRegister?.openSession) return { success: false, error: "Aucune session ouverte." };
+    if (!selectedRegister?.openSession) return { success: false, error: "La caisse n'est pas ouverte." };
     const res = await correctOpeningFloat({ sessionId: selectedRegister.openSession.id, newOpeningFloat, reason });
     if (res.success) {
       await refreshSummary(selectedRegister.openSession.id);
@@ -316,17 +312,17 @@ export default function CaisseView({
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-slate-800 dark:text-slate-200">{r.name}</span>
                   {isOpen ? (
-                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-[10px] gap-1">
+                    <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20 text-xs gap-1">
                       <CircleDot className="h-3 w-3" /> Ouverte
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="bg-slate-500/10 text-slate-500 border-slate-500/20 text-[10px] gap-1">
+                    <Badge variant="outline" className="bg-slate-500/10 text-slate-500 border-slate-500/20 text-xs gap-1">
                       <Circle className="h-3 w-3" /> Fermée
                     </Badge>
                   )}
                 </div>
                 {isOpen && r.openSession && (
-                  <p className="text-[11px] text-slate-500 mt-1.5">
+                  <p className="text-xs text-slate-500 mt-1.5">
                     Par {r.openSession.openedBy.firstName} {r.openSession.openedBy.lastName} depuis {formatDateTime(r.openSession.openedAt)}
                   </p>
                 )}
@@ -343,7 +339,7 @@ export default function CaisseView({
             <div>
               <CardTitle className="text-lg font-bold">{selectedRegister.name}</CardTitle>
               <CardDescription>
-                {selectedRegister.openSession ? "Session en cours" : "Aucune session ouverte pour le moment."}
+                {selectedRegister.openSession ? "Caisse ouverte" : "La caisse n'est pas encore ouverte."}
               </CardDescription>
             </div>
             {canOperate && (
@@ -364,13 +360,13 @@ export default function CaisseView({
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60">
                       <div className="flex items-center justify-between gap-1">
-                        <p className="text-[10px] font-bold uppercase text-slate-400">Fond de départ</p>
+                        <p className="text-xs font-bold uppercase text-slate-400">Fond de départ</p>
                         {canOperate && (
                           <EditOpeningFloatDialog
                             currentOpeningFloat={summary.session.openingFloat}
                             disabledReason={
                               summary.transactionsTotal > 0 && !canManageRegisters
-                                ? "Des opérations ont déjà été enregistrées sur cette session : seul un coordinateur peut encore corriger le fond de départ."
+                                ? "Des opérations ont déjà été faites depuis l'ouverture de la caisse : seul un coordinateur peut encore corriger le fond de départ."
                                 : undefined
                             }
                             onSubmit={handleCorrectOpeningFloat}
@@ -380,15 +376,15 @@ export default function CaisseView({
                       <p className="text-sm font-extrabold mt-1">{formatFCFA(summary.session.openingFloat)}</p>
                     </div>
                     <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
-                      <p className="text-[10px] font-bold uppercase text-emerald-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" />Encaissements</p>
+                      <p className="text-xs font-bold uppercase text-emerald-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" />Encaissements</p>
                       <p className="text-sm font-extrabold mt-1 text-emerald-700 dark:text-emerald-400">+{formatFCFA(summary.totalIncome)}</p>
                     </div>
                     <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200/50 dark:border-rose-900/30">
-                      <p className="text-[10px] font-bold uppercase text-rose-600 flex items-center gap-1"><TrendingDown className="h-3 w-3" />Dépenses</p>
+                      <p className="text-xs font-bold uppercase text-rose-600 flex items-center gap-1"><TrendingDown className="h-3 w-3" />Dépenses</p>
                       <p className="text-sm font-extrabold mt-1 text-rose-700 dark:text-rose-400">-{formatFCFA(summary.totalExpenses)}</p>
                     </div>
                     <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/30">
-                      <p className="text-[10px] font-bold uppercase text-blue-600 flex items-center gap-1"><Wallet className="h-3 w-3" />Montant théorique</p>
+                      <p className="text-xs font-bold uppercase text-blue-600 flex items-center gap-1"><Wallet className="h-3 w-3" />Montant théorique</p>
                       <p className="text-sm font-extrabold mt-1 text-blue-700 dark:text-blue-400">{formatFCFA(summary.expectedAmount)}</p>
                     </div>
                   </div>
@@ -407,7 +403,7 @@ export default function CaisseView({
                           <Receipt className="h-3.5 w-3.5" />
                           Tickets impayés ({summary.pendingInvoicesTotal})
                         </p>
-                        <button type="button" onClick={() => setActiveTab("impayes")} className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline">
+                        <button type="button" onClick={() => setActiveTab("impayes")} className="text-xs font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1 hover:underline">
                           Voir tout <ArrowRight className="h-3 w-3" />
                         </button>
                       </div>
@@ -418,9 +414,9 @@ export default function CaisseView({
                           <div key={inv.id} className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-50/40 dark:bg-amber-950/10 border border-amber-200/50 dark:border-amber-900/30">
                             <div className="min-w-0">
                               <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{name}</p>
-                              <p className="text-[11px] text-slate-500">{formatDateTime(inv.createdAt)} • {formatFCFA(total)}</p>
+                              <p className="text-xs text-slate-500">{formatDateTime(inv.createdAt)} • {formatFCFA(total)}</p>
                             </div>
-                            <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
+                            <Badge variant="outline" className={`text-xs shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
                               {inv.status === "PARTIAL" ? "Partiel" : "Non payé"}
                             </Badge>
                           </div>
@@ -430,7 +426,7 @@ export default function CaisseView({
                   )}
 
                   <div className="space-y-2">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Mouvements de cette session ({summary.transactionsTotal})</p>
+                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Mouvements depuis l&apos;ouverture ({summary.transactionsTotal})</p>
                     {summary.transactions.length === 0 ? (
                       <p className="text-sm text-slate-500 py-4 text-center">Aucun mouvement pour l&apos;instant.</p>
                     ) : (
@@ -441,7 +437,7 @@ export default function CaisseView({
                             <div key={t.id} className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/60 text-sm">
                               <div className="min-w-0">
                                 <p className="font-medium text-slate-700 dark:text-slate-300 truncate">{t.description}</p>
-                                <p className="text-[10px] text-slate-400">{formatDateTime(t.createdAt)}</p>
+                                <p className="text-xs text-slate-400">{formatDateTime(t.createdAt)}</p>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
                                 <span className={`font-bold ${isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
@@ -496,19 +492,19 @@ export default function CaisseView({
                 return (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-1">
                     <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60">
-                      <p className="text-[10px] font-bold uppercase text-slate-400">Tickets impayés</p>
+                      <p className="text-xs font-bold uppercase text-slate-400">Tickets impayés</p>
                       <p className="text-sm font-extrabold mt-1">{unpaidTotal}{partialCount > 0 && <span className="font-medium text-slate-400"> · {partialCount} partiel{partialCount > 1 ? "s" : ""}</span>}</p>
                     </div>
                     <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-900/30">
-                      <p className="text-[10px] font-bold uppercase text-blue-600 flex items-center gap-1"><Wallet className="h-3 w-3" />Valeur totale des tickets</p>
+                      <p className="text-xs font-bold uppercase text-blue-600 flex items-center gap-1"><Wallet className="h-3 w-3" />Valeur totale des tickets</p>
                       <p className="text-sm font-extrabold mt-1 text-blue-700 dark:text-blue-400">{formatFCFA(totalValue)}</p>
                     </div>
                     <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30">
-                      <p className="text-[10px] font-bold uppercase text-amber-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" />Montant total impayé</p>
+                      <p className="text-xs font-bold uppercase text-amber-600 flex items-center gap-1"><AlertCircle className="h-3 w-3" />Montant total impayé</p>
                       <p className="text-sm font-extrabold mt-1 text-amber-700 dark:text-amber-400">{formatFCFA(totalUnpaid)}</p>
                     </div>
                     <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
-                      <p className="text-[10px] font-bold uppercase text-emerald-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" />Déjà encaissé</p>
+                      <p className="text-xs font-bold uppercase text-emerald-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" />Déjà encaissé</p>
                       <p className="text-sm font-extrabold mt-1 text-emerald-700 dark:text-emerald-400">{formatFCFA(totalPaid)}</p>
                     </div>
                   </div>
@@ -530,11 +526,11 @@ export default function CaisseView({
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{name}</p>
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.patient?.user ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" : "bg-slate-500/10 text-slate-500 border-slate-500/20"}`}>
+                        <Badge variant="outline" className={`text-xs shrink-0 ${inv.patient?.user ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" : "bg-slate-500/10 text-slate-500 border-slate-500/20"}`}>
                           {inv.patient?.user ? "Patient" : "Client comptant"}
                         </Badge>
                         {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
+                        <Badge variant="outline" className={`text-xs shrink-0 ${inv.status === "PARTIAL" ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"}`}>
                           {inv.status === "PARTIAL" ? "Partiel" : "Non payé"}
                         </Badge>
                         {!inv.patient && !inv.customPatientName?.trim() && !inv.customPatientPhone?.trim() && (
@@ -545,13 +541,13 @@ export default function CaisseView({
                           />
                         )}
                       </div>
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-xs text-slate-500">
                         {formatDateTime(inv.createdAt)} • Total {formatFCFA(invoiceTotalAmount)}
                         {inv.status === "PARTIAL" && ` • Réglé ${formatFCFA(inv.amountPaid)} • Reste ${formatFCFA(invoiceTotalAmount - inv.amountPaid)}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {discountable(inv) && <InvoiceDiscountDialog pendingInvoice={inv} patientName={name} onSuccess={() => handleMutationSuccess()} />}
+
                       {canOperate && openSessionId && (
                         inv.status === "PARTIAL" ? (
                           <RecordPaymentDialog
@@ -564,50 +560,16 @@ export default function CaisseView({
                           <CaisseCartDialog mode="pay" cashSessionId={openSessionId} pharmacyItems={pharmacyItems} pendingInvoice={inv} onSuccess={handleMutationSuccess} canDispense={canDispense && hasUndispensedPharmacy(inv)} />
                         )
                       )}
-                      {/* Ne nécessite pas de caisse ouverte : aucun mouvement d'argent, simple
-                          clôture de statut — cf. closeUnpaidInvoice. */}
-                      {canOperate && (
-                        <CloseInvoiceDialog
-                          pendingInvoice={{
-                            id: inv.id,
-                            invoiceTotalAmount,
-                            amountPaid: inv.amountPaid,
-                            patient: inv.patient,
-                            customPatientName: inv.customPatientName,
-                            customPatientPhone: inv.customPatientPhone,
-                            cartLines: inv.cartLines,
-                            labLines: inv.labLines,
-                            labConsumablesDispensedAt: inv.labConsumablesDispensedAt,
-                          }}
-                          onSuccess={handleMutationSuccess}
-                        />
-                      )}
-                      {canManageStatus && (
-                        <>
-                          <EditInvoiceStatusDialog
-                            pendingInvoice={{
-                              id: inv.id,
-                              status: inv.status,
-                              amountPaid: inv.amountPaid,
-                              invoiceTotalAmount,
-                              patient: inv.patient,
-                              customPatientName: inv.customPatientName,
-                            }}
-                            onSuccess={handleMutationSuccess}
-                          />
-                          {/* Bouton de suppression temporaire (commenté)
-                          <DeleteInvoiceDialog
-                            pendingInvoice={{
-                              id: inv.id,
-                              amountPaid: inv.amountPaid,
-                              invoiceTotalAmount,
-                              patient: inv.patient,
-                              customPatientName: inv.customPatientName,
-                            }}
-                            onSuccess={handleMutationSuccess}
-                          /> */}
-                        </>
-                      )}
+                      {/* Actions secondaires (réduction, abandon du reste, correction du statut) : menu « … ». */}
+                      <TicketActionsMenu
+                        invoice={inv}
+                        invoiceTotalAmount={invoiceTotalAmount}
+                        patientName={name}
+                        canDiscount={canDiscount}
+                        canClose={canOperate}
+                        canManageStatus={canManageStatus}
+                        onSuccess={() => handleMutationSuccess()}
+                      />
                     </div>
                   </div>
                 );
@@ -720,21 +682,21 @@ export default function CaisseView({
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-bold text-slate-800 dark:text-slate-200">{name}</p>
-                            <Badge variant="outline" className={`text-[10px] shrink-0 ${inv.patient?.user ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" : "bg-slate-500/10 text-slate-500 border-slate-500/20"}`}>
+                            <Badge variant="outline" className={`text-xs shrink-0 ${inv.patient?.user ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20" : "bg-slate-500/10 text-slate-500 border-slate-500/20"}`}>
                               {inv.patient?.user ? "Patient" : "Client comptant"}
                             </Badge>
                             {phone && <span className="text-xs font-medium text-slate-500 font-mono">({phone})</span>}
-                            <Badge variant="outline" className="text-[10px] font-mono bg-slate-500/10 text-slate-500 border-slate-500/20">
+                            <Badge variant="outline" className="text-xs font-mono bg-slate-500/10 text-slate-500 border-slate-500/20">
                               #{ticketNum}
                             </Badge>
                             <PaymentStatusBadge status={inv.status} amountPaid={inv.amountPaid} totalAmount={total} />
                             {isPharmacy && (
                               isDispensed ? (
-                                <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1">
+                                <Badge variant="outline" className="text-xs bg-emerald-500/10 text-emerald-600 border-emerald-500/20 gap-1">
                                   <CheckCircle2 className="h-2.5 w-2.5" /> Remis
                                 </Badge>
                               ) : inv.status !== "CANCELLED" ? (
-                                <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 border-blue-500/20 gap-1">
+                                <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/20 gap-1">
                                   <Clock className="h-2.5 w-2.5" /> Attente remise
                                 </Badge>
                               ) : null
@@ -748,7 +710,7 @@ export default function CaisseView({
                               />
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
+                          <p className="text-xs text-slate-500 mt-0.5">
                             Créé le {formatDateTime(inv.createdAt)} • Total {formatFCFA(total)}
                             {inv.status === "PARTIAL" && ` • Réglé ${formatFCFA(inv.amountPaid)} • Reste ${formatFCFA(total - inv.amountPaid)}`}
                             {inv.status === "CANCELLED" && (
@@ -768,13 +730,6 @@ export default function CaisseView({
                             <Printer className="h-3.5 w-3.5 text-blue-600" />
                             Imprimer
                           </Button>
-                          {discountable(inv) && (
-                            <InvoiceDiscountDialog
-                              pendingInvoice={inv}
-                              patientName={inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : inv.customPatientName || "Client comptant"}
-                              onSuccess={() => handleMutationSuccess()}
-                            />
-                          )}
                           {canOperate && selectedRegister?.openSession && !["PAID", "CANCELLED"].includes(inv.status) && (
                             inv.status === "PARTIAL" ? (
                               <RecordPaymentDialog
@@ -801,32 +756,15 @@ export default function CaisseView({
                               />
                             )
                           )}
-                          {canManageStatus && (
-                            <>
-                              <EditInvoiceStatusDialog
-                                pendingInvoice={{
-                                  id: inv.id,
-                                  status: inv.status,
-                                  amountPaid: inv.amountPaid,
-                                  invoiceTotalAmount: total,
-                                  patient: inv.patient,
-                                  customPatientName: inv.customPatientName,
-                                }}
-                                onSuccess={handleMutationSuccess}
-                              />
-                              {/* Bouton de suppression temporaire (commenté)
-                              <DeleteInvoiceDialog
-                                pendingInvoice={{
-                                  id: inv.id,
-                                  amountPaid: inv.amountPaid,
-                                  invoiceTotalAmount: total,
-                                  patient: inv.patient,
-                                  customPatientName: inv.customPatientName,
-                                }}
-                                onSuccess={handleMutationSuccess}
-                              /> */}
-                            </>
-                          )}
+                          <TicketActionsMenu
+                            invoice={inv}
+                            invoiceTotalAmount={total}
+                            patientName={inv.patient?.user ? `${inv.patient.user.lastName} ${inv.patient.user.firstName}` : inv.customPatientName || "Client comptant"}
+                            canDiscount={canDiscount}
+                            canClose={false}
+                            canManageStatus={canManageStatus}
+                            onSuccess={() => handleMutationSuccess()}
+                          />
                         </div>
                       </div>
 

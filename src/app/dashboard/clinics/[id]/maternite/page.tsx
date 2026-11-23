@@ -100,7 +100,7 @@ export default async function MaternitePage({ params, searchParams }: MaterniteP
                         {r.ipp ? `${r.ipp} • ` : ""}G{r.gravidity}P{r.parity} • {r.gestationalWeeks} SA • DPA {formatDate(r.expectedDueDate)}
                       </p>
                     </div>
-                    <span className={`shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-bold ${STATUS_CLASS[r.status]}`}>
+                    <span className={`shrink-0 rounded-md border px-2 py-0.5 text-xs font-bold ${STATUS_CLASS[r.status]}`}>
                       {PRENATAL_FOLLOW_UP_LABELS[r.status]}
                       {r.daysLate > 0 ? ` (${r.daysLate} j)` : ""}
                     </span>
@@ -114,7 +114,7 @@ export default async function MaternitePage({ params, searchParams }: MaterniteP
                   {r.riskFactors.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {r.riskFactors.map((f) => (
-                        <span key={f} className="rounded border border-amber-500/30 bg-amber-500/5 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">{f}</span>
+                        <span key={f} className="rounded border border-amber-500/30 bg-amber-500/5 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-300">{f}</span>
                       ))}
                     </div>
                   )}

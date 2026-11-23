@@ -62,26 +62,26 @@ export default function CatalogView({ labTests: initial, pharmacyItems, organiza
                 <div className="min-w-0">
                   <p className="font-semibold text-sm">{test.name}</p>
                   <div className="flex flex-wrap gap-1.5 mt-1.5">
-                    {test.department && <Badge variant="outline" className="text-[10px]">{test.department}</Badge>}
-                    <Badge variant="secondary" className="text-[10px]">{formatFCFA(test.totalPrice ?? test.basePrice ?? 0)}</Badge>
+                    {test.department && <Badge variant="outline" className="text-xs">{test.department}</Badge>}
+                    <Badge variant="secondary" className="text-xs">{formatFCFA(test.totalPrice ?? test.basePrice ?? 0)}</Badge>
                     {test.partnerPrice != null && (
-                      <Badge variant="outline" className="text-[10px] border-violet-500/30 text-violet-700 dark:text-violet-300">
+                      <Badge variant="outline" className="text-xs border-violet-500/30 text-violet-700 dark:text-violet-300">
                         Partenaire : {formatFCFA(test.partnerPrice)}
                       </Badge>
                     )}
                     {Number(test.baseCost) > 0 && (
-                      <Badge variant="outline" className="text-[10px] bg-slate-500/10 text-slate-600 border-slate-500/20">
+                      <Badge variant="outline" className="text-xs bg-slate-500/10 text-slate-600 border-slate-500/20">
                         Coût base : {formatFCFA(test.baseCost)}
                       </Badge>
                     )}
-                    {test.durationMinutes != null && <Badge variant="outline" className="text-[10px]">{test.durationMinutes} min</Badge>}
+                    {test.durationMinutes != null && <Badge variant="outline" className="text-xs">{test.durationMinutes} min</Badge>}
                     {(test.criticalLow != null || test.criticalHigh != null) && (
-                      <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20">
+                      <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-500/20">
                         Seuils : {test.criticalLow ?? "—"} / {test.criticalHigh ?? "—"}
                       </Badge>
                     )}
                     {Array.isArray(test.consumables) && test.consumables.length > 0 && (
-                      <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">
+                      <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
                         {test.consumables.length} consommable{test.consumables.length > 1 ? "s" : ""}
                       </Badge>
                     )}

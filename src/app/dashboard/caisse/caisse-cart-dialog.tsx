@@ -363,10 +363,10 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
             <div className="flex items-center gap-2 border-b border-slate-200/60 dark:border-slate-800/60 pb-2">
               <span className="hidden text-xs font-bold text-slate-500 uppercase tracking-wider sm:inline">Ajouter un article :</span>
               <div className="grid w-full grid-cols-2 gap-1 sm:ml-auto sm:flex sm:w-auto">
-                <button type="button" onClick={() => setAddItemMode("PHARMACY")} className={`px-3 py-2 sm:py-1 text-sm sm:text-xs font-semibold rounded-lg transition-all ${addItemMode === "PHARMACY" ? "bg-blue-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
+                <button type="button" onClick={() => setAddItemMode("PHARMACY")} className={`px-3 py-2 sm:py-1 text-sm sm:text-sm font-semibold rounded-lg transition-all ${addItemMode === "PHARMACY" ? "bg-blue-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
                   + Médicament
                 </button>
-                <button type="button" onClick={() => setAddItemMode("SERVICE")} className={`px-3 py-2 sm:py-1 text-sm sm:text-xs font-semibold rounded-lg transition-all ${addItemMode === "SERVICE" ? "bg-emerald-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
+                <button type="button" onClick={() => setAddItemMode("SERVICE")} className={`px-3 py-2 sm:py-1 text-sm sm:text-sm font-semibold rounded-lg transition-all ${addItemMode === "SERVICE" ? "bg-emerald-600 text-white shadow-xs" : "bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400"}`}>
                   + Autres frais
                 </button>
               </div>
@@ -407,7 +407,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                           setAddPharmacyQty(1);
                         }
                       }}
-                      className="h-11 text-base sm:h-9 sm:text-xs rounded-xl"
+                      className="h-11 text-base sm:h-9 sm:text-sm rounded-xl"
                     />
                   </div>
                   <div className="col-span-2 sm:col-span-3">
@@ -418,11 +418,11 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                 <div className="grid grid-cols-2 sm:grid-cols-12 gap-3 items-end">
                   <div className="col-span-2 sm:col-span-6 space-y-1">
                     <Label htmlFor="addServiceDesc" className="text-xs">Motif / Description de l&apos;acte *</Label>
-                    <Input id="addServiceDesc" required placeholder="ex: Frais de consultation" value={addServiceDesc} onChange={(e) => setAddServiceDesc(e.target.value)} className="h-11 text-base sm:h-9 sm:text-xs rounded-xl" />
+                    <Input id="addServiceDesc" required placeholder="ex: Frais de consultation" value={addServiceDesc} onChange={(e) => setAddServiceDesc(e.target.value)} className="h-11 text-base sm:h-9 sm:text-sm rounded-xl" />
                   </div>
                   <div className="col-span-1 sm:col-span-3 space-y-1">
                     <Label htmlFor="addServiceAmount" className="text-xs">Montant (FCFA) *</Label>
-                    <Input id="addServiceAmount" type="number" min="1" required placeholder="5000" value={addServiceAmount} onChange={(e) => setAddServiceAmount(e.target.value)} className="h-11 text-base sm:h-9 sm:text-xs rounded-xl" />
+                    <Input id="addServiceAmount" type="number" min="1" required placeholder="5000" value={addServiceAmount} onChange={(e) => setAddServiceAmount(e.target.value)} className="h-11 text-base sm:h-9 sm:text-sm rounded-xl" />
                   </div>
                   <div className="col-span-1 sm:col-span-3">
                     <Button type="submit" disabled={!addServiceDesc.trim() || !addServiceAmount} className="w-full h-11 sm:h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs">+ Ajouter au Panier</Button>
@@ -433,7 +433,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
           </div>
 
           <div className="rounded-xl border border-slate-200/80 dark:border-slate-800/80 overflow-hidden text-xs">
-            <div className="hidden sm:grid grid-cols-12 bg-slate-100 dark:bg-slate-800/80 p-2.5 font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider text-[10px]">
+            <div className="hidden sm:grid grid-cols-12 bg-slate-100 dark:bg-slate-800/80 p-2.5 font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider text-xs">
               <div className="col-span-5">Désignation</div>
               <div className="col-span-2 text-center">Qté</div>
               <div className="col-span-2 text-right">P.U (FCFA)</div>
@@ -446,20 +446,20 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
               cartItems.map((item) => (
                 <div key={item.id} className={`grid grid-cols-[1fr_auto] sm:grid-cols-12 gap-x-2 gap-y-1 p-3 font-medium border-t first:border-t-0 sm:first:border-t border-slate-100 dark:border-slate-800 items-center ${item.amount <= 0 ? "bg-amber-50/60 dark:bg-amber-950/20" : ""}`}>
                   {/* Mobile : designation + corbeille, puis qte x P.U et total */}
-                  <div className="min-w-0 break-words text-sm sm:text-xs sm:col-span-5 font-semibold text-slate-900 dark:text-white">
-                    <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-[9px] font-bold rounded ${item.type === "PHARMACY" ? "bg-blue-500/10 text-blue-600" : "bg-emerald-500/10 text-emerald-600"}`}>
+                  <div className="min-w-0 break-words text-sm sm:text-sm sm:col-span-5 font-semibold text-slate-900 dark:text-white">
+                    <span className={`inline-block px-1.5 py-0.5 mr-1.5 text-xs font-bold rounded ${item.type === "PHARMACY" ? "bg-blue-500/10 text-blue-600" : "bg-emerald-500/10 text-emerald-600"}`}>
                       {item.type === "PHARMACY" ? "Pharma" : item.type === "LAB" ? "Labo" : "Acte"}
                     </span>
                     {item.description}
                     <DiscountNote discount={item.discount} reason={item.discountReason} />
                     {canDiscount && item.amount > 0 && discountingId !== item.id && (
-                      <button type="button" onClick={() => setDiscountingId(item.id)} className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-violet-700 hover:underline dark:text-violet-300">
+                      <button type="button" onClick={() => setDiscountingId(item.id)} className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-violet-700 hover:underline dark:text-violet-300">
                         <BadgePercent className="h-3 w-3" />
                         {item.discount ? "Modifier la réduction" : "Réduction"}
                       </button>
                     )}
                     {canDiscount && !!item.discount && discountingId !== item.id && (
-                      <button type="button" onClick={() => applyDiscount(item.id, 0, "")} className="text-[11px] text-muted-foreground hover:underline">
+                      <button type="button" onClick={() => applyDiscount(item.id, 0, "")} className="text-xs text-muted-foreground hover:underline">
                         Retirer la réduction
                       </button>
                     )}
@@ -469,7 +469,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                   </div>
                   <div className="hidden sm:block sm:col-span-2 text-center">{item.quantity}</div>
                   <div className="hidden sm:block sm:col-span-2 text-right">{formatFCFA(item.unitPrice)}</div>
-                  <div className={`col-start-2 row-start-2 sm:row-start-auto sm:col-start-auto sm:col-span-2 text-sm sm:text-xs text-right font-bold ${item.amount <= 0 ? "text-amber-600" : "text-slate-900 dark:text-white"}`}>
+                  <div className={`col-start-2 row-start-2 sm:row-start-auto sm:col-start-auto sm:col-span-2 text-sm sm:text-sm text-right font-bold ${item.amount <= 0 ? "text-amber-600" : "text-slate-900 dark:text-white"}`}>
                     {item.amount <= 0 && !item.discount ? "À définir" : formatFCFA(item.amount)}
                   </div>
                   <div className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto sm:col-span-1 text-right sm:text-center">
@@ -520,7 +520,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                         value={customPatientNameInput}
                         onChange={(e) => setCustomPatientNameInput(e.target.value)}
                         placeholder="ex: M. Yao Alain"
-                        className="h-11 text-base sm:h-9 sm:text-xs rounded-xl"
+                        className="h-11 text-base sm:h-9 sm:text-sm rounded-xl"
                       />
                     </div>
                     <div className="space-y-1">
@@ -530,7 +530,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                         value={customPatientPhoneInput}
                         onChange={(e) => setCustomPatientPhoneInput(e.target.value)}
                         placeholder="ex: 07 00 00 00 00"
-                        className="h-11 text-base sm:h-9 sm:text-xs rounded-xl"
+                        className="h-11 text-base sm:h-9 sm:text-sm rounded-xl"
                       />
                     </div>
                   </div>

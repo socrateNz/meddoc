@@ -399,7 +399,7 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {holding.name}
-              <Badge variant="outline" className={`text-[10px] uppercase font-bold tracking-wider ${holding.plan === "ENTERPRISE" ? "border-purple-500/30 text-purple-600 bg-purple-500/10" :
+              <Badge variant="outline" className={`text-xs uppercase font-bold tracking-wider ${holding.plan === "ENTERPRISE" ? "border-purple-500/30 text-purple-600 bg-purple-500/10" :
                 holding.plan === "PREMIUM" ? "border-blue-500/30 text-blue-600 bg-blue-500/10" :
                   "border-slate-500/30 text-slate-600 bg-slate-500/10"
                 }`}>
@@ -415,24 +415,24 @@ export default function HoldingActionsMenu({ holding }: HoldingActionsMenuProps)
               <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-800/50">
                 <Building2 className="h-4 w-4 mx-auto text-slate-400 mb-1" />
                 <p className="text-lg font-bold">{holding._count?.children ?? 0}</p>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Cliniques</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Cliniques</p>
               </div>
               <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-800/50">
                 <Users className="h-4 w-4 mx-auto text-slate-400 mb-1" />
                 <p className="text-lg font-bold">{holding._count?.users ?? 0}</p>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Utilisateurs</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Utilisateurs</p>
               </div>
               <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-800/50">
                 <Activity className="h-4 w-4 mx-auto text-slate-400 mb-1" />
                 <p className="text-lg font-bold">{holding._count?.patients ?? 0}</p>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Patients</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Patients</p>
               </div>
             </div>
 
             <div className="space-y-2 text-sm">
               <div className="flex justify-between border-b pb-2">
                 <span className="text-slate-500">Statut</span>
-                <Badge variant={holding.subscriptionStatus === "ACTIVE" ? "default" : "secondary"} className="uppercase text-[10px] font-bold">
+                <Badge variant={holding.subscriptionStatus === "ACTIVE" ? "default" : "secondary"} className="uppercase text-xs font-bold">
                   {holding.subscriptionStatus}
                 </Badge>
               </div>

@@ -282,7 +282,7 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[11px] text-muted-foreground">Une alerte de stock faible sera déclenchée si le stock descend au niveau du seuil d'alerte ou en-dessous.</p>
+            <p className="text-xs text-muted-foreground">Une alerte de stock faible sera déclenchée si le stock descend au niveau du seuil d'alerte ou en-dessous.</p>
           </div>
 
           {item && (
@@ -306,7 +306,7 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
                   />
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Quantité : un écart avec le stock affiché ({item.stockQuantity ?? 0}) est enregistré comme un inventaire (perte ou surplus), visible dans
                 l&apos;historique et en comptabilité. Prix d&apos;achat : corrige le coût de tout le stock restant (marges, valeur du stock) ; les achats
                 passés ne changent pas.

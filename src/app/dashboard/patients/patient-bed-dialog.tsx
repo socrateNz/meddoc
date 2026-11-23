@@ -134,10 +134,10 @@ export default function PatientBedDialog({ clinicId, patientId, patientName, cur
               </SelectContent>
             </Select>
             {bedId && !chosenStillFree && !isFetching && (
-              <p className="text-[11px] text-red-600">Ce lit n&apos;est plus libre. Choisissez-en un autre.</p>
+              <p className="text-xs text-red-600">Ce lit n&apos;est plus libre. Choisissez-en un autre.</p>
             )}
             {!isLoading && options.length === 0 && (
-              <p className="text-[11px] text-muted-foreground">Aucun lit libre dans cette clinique. Libérez un lit ou créez-en dans « Chambres &amp; Lits ».</p>
+              <p className="text-xs text-muted-foreground">Aucun lit libre dans cette clinique. Libérez un lit ou créez-en dans « Chambres &amp; Lits ».</p>
             )}
           </div>
         </div>

@@ -14,6 +14,7 @@ import WardOccupancyChart from "@/components/dashboard/ward-occupancy-chart";
 import { buildDayBuckets, buildWeekBuckets, computeStockStatus, countByBucket, startOfDay, sumByBucket } from "@/lib/dashboard-stats";
 import { COUNTS_IN_KPI_WHERE, countsInKpi } from "@/lib/finance-reversal";
 import { modulesOfUser } from "@/lib/modules-server";
+import QuickActions from "@/components/dashboard/quick-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -262,7 +263,10 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
     return (
       <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white/60 p-8 text-center dark:border-slate-800 dark:bg-slate-900/50">
         <h1 className="text-xl font-semibold">Bienvenue</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Utilisez le menu pour ouvrir les pages de votre rôle.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Choisissez une action, ou utilisez le menu.</p>
+        <div className="mt-6 text-left">
+          <QuickActions clinicId={params.id} user={user} modules={modulesOfUser(user)} />
+        </div>
       </div>
     );
   }
@@ -404,6 +408,9 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
           </p>
         </div>
       </div>
+
+      {/* Gros boutons des tâches courantes du rôle (pas pour la consultation en lecture seule). */}
+      {!isReadOnlyOverview && <QuickActions clinicId={clinic.id} user={user} modules={modulesOfUser(user)} />}
 
       {/* Cartes de raccourci : SUPER_ADMIN / ADMIN (lecture seule) / COORDINATOR (gestion complète) */}
       {(isReadOnlyOverview || isCoordinator) && (
@@ -694,7 +701,7 @@ export default async function ClinicDetailsPage(props: { params: Promise<{ id: s
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-slate-850 dark:text-slate-200">{member.firstName} {member.lastName}</p>
-                        <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                        <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">
                           {member.role === "MEDECIN" ? "Médecin" : member.role === "CAREGIVER" ? "Infirmier(e)" : "Coordinateur Clinique"}
                         </p>
                       </div>

@@ -88,7 +88,7 @@ export function OfflineBanner() {
                 <p className="font-semibold">
                   {ACTION_LABELS[a.type] || a.type} — {a.label}
                 </p>
-                <p className="text-[11px] opacity-90">{a.lastError}</p>
+                <p className="text-xs opacity-90">{a.lastError}</p>
               </div>
               <button
                 onClick={() => discardAction(a.id)}

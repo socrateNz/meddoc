@@ -5,7 +5,7 @@ function SusceptibilityTable({ title, values }: { title: string; values: Record<
   if (Object.keys(values).length === 0) return null;
   return (
     <div className="space-y-1">
-      <p className="text-[11px] font-bold uppercase text-slate-500">{title}</p>
+      <p className="text-xs font-bold uppercase text-slate-500">{title}</p>
       <div className="grid grid-cols-3 gap-2 text-xs">
         {(["S", "I", "R"] as const).map((s) => (
           <div key={s} className="rounded-lg border border-slate-200/70 p-2 dark:border-slate-800">
@@ -31,7 +31,7 @@ export default function StructuredResultView({ result }: { result: StoredResultD
         if (rows.length === 0) return null;
         return (
           <div key={si}>
-            {section.title && <p className="text-[11px] font-bold uppercase text-slate-500">{section.title}</p>}
+            {section.title && <p className="text-xs font-bold uppercase text-slate-500">{section.title}</p>}
             <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
               {rows.map((f) => {
                 const v = result.values[f.key];
@@ -44,7 +44,7 @@ export default function StructuredResultView({ result }: { result: StoredResultD
                     <span className={abnormal ? "font-bold text-red-600" : "font-medium"}>
                       {v}
                       {unit}
-                      {ref && <span className="ml-1 text-[10px] font-normal text-muted-foreground">({ref})</span>}
+                      {ref && <span className="ml-1 text-xs font-normal text-muted-foreground">({ref})</span>}
                     </span>
                   </p>
                 );

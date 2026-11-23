@@ -23,13 +23,21 @@ export default function InvoiceDiscountDialog({
   pendingInvoice,
   patientName,
   onSuccess,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
 }: {
   pendingInvoice: { id: string; items: Item[] };
   patientName: string;
   onSuccess?: () => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  // Ouverte depuis un menu « … » (cf. ticket-actions-menu.tsx) : pilotée par le parent, sans bouton.
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : innerOpen;
+  const setOpen = (v: boolean) => (controlled ? onOpenChangeProp?.(v) : setInnerOpen(v));
   const [items, setItems] = useState<Item[]>(pendingInvoice.items || []);
   // Ligne en cours de réduction, ou "all" : tout le ticket.
   const [editing, setEditing] = useState<number | "all" | null>(null);
@@ -76,10 +84,12 @@ export default function InvoiceDiscountDialog({
         setEditing(null);
       }}
     >
-      <DialogTrigger render={<Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg border-violet-200 text-xs text-violet-700 hover:bg-violet-50 dark:border-violet-900/50 dark:text-violet-300" />}>
-        <BadgePercent className="h-3.5 w-3.5" />
-        Réduction
-      </DialogTrigger>
+      {!controlled && (
+        <DialogTrigger render={<Button variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg border-violet-200 text-xs text-violet-700 hover:bg-violet-50 dark:border-violet-900/50 dark:text-violet-300" />}>
+          <BadgePercent className="h-3.5 w-3.5" />
+          Réduction
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[92dvh] w-[calc(100%-1rem)] overflow-y-auto p-4 sm:max-w-xl sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

@@ -101,7 +101,7 @@ function WardDialog({ clinicId, ward, onSuccess }: { clinicId: string; ward?: { 
           <div className="space-y-1.5">
             <Label>Tarif de la nuitée (FCFA)</Label>
             <Input inputMode="numeric" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="ex: 15000" className="rounded-xl" />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Appliqué à toutes les chambres du service, sauf celles qui ont leur propre tarif. Vide = séjour non facturé.
               Un changement de tarif ne vaut que pour les nouvelles hospitalisations et les transferts.
             </p>
@@ -189,8 +189,8 @@ export default function RoomsView({ clinicId, wards, patients }: RoomsViewProps)
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Building2 className="h-5 w-5 text-blue-500 shrink-0" />
                   <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">{ward.name}</h3>
-                  <Badge variant="outline" className="text-[10px] shrink-0">{ward.code}</Badge>
-                  <Badge variant="outline" className={`text-[10px] shrink-0 ${ward.nightlyRate != null ? "text-emerald-700 border-emerald-500/30 bg-emerald-500/5" : "text-slate-500"}`}>
+                  <Badge variant="outline" className="text-xs shrink-0">{ward.code}</Badge>
+                  <Badge variant="outline" className={`text-xs shrink-0 ${ward.nightlyRate != null ? "text-emerald-700 border-emerald-500/30 bg-emerald-500/5" : "text-slate-500"}`}>
                     {ward.nightlyRate != null ? `${formatRate(ward.nightlyRate)} / nuit` : "Sans tarif"}
                   </Badge>
                 </div>
@@ -223,7 +223,7 @@ export default function RoomsView({ clinicId, wards, patients }: RoomsViewProps)
                           <DoorOpen className="h-4 w-4 text-slate-400 shrink-0" />
                           <p className="font-semibold text-sm truncate">{room.name}</p>
                           {room.nightlyRate != null && (
-                            <Badge variant="outline" className="text-[10px] shrink-0 text-indigo-700 border-indigo-500/30 bg-indigo-500/5">
+                            <Badge variant="outline" className="text-xs shrink-0 text-indigo-700 border-indigo-500/30 bg-indigo-500/5">
                               {formatRate(room.nightlyRate)} / nuit
                             </Badge>
                           )}
@@ -247,7 +247,7 @@ export default function RoomsView({ clinicId, wards, patients }: RoomsViewProps)
                       </div>
 
                       {room.beds.length === 0 ? (
-                        <p className="text-[11px] text-muted-foreground">Aucun lit dans cette chambre.</p>
+                        <p className="text-xs text-muted-foreground">Aucun lit dans cette chambre.</p>
                       ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                           {room.beds.map((bed: any) => {
@@ -268,7 +268,7 @@ export default function RoomsView({ clinicId, wards, patients }: RoomsViewProps)
                                       </button>
                                     )}
                                   </div>
-                                  <span className="text-[11px] text-red-600/90 dark:text-red-400/80 truncate">
+                                  <span className="text-xs text-red-600/90 dark:text-red-400/80 truncate">
                                     {occupant.user.lastName} {occupant.user.firstName}
                                   </span>
                                 </div>
@@ -281,7 +281,7 @@ export default function RoomsView({ clinicId, wards, patients }: RoomsViewProps)
                               >
                                 <BedSingle className="h-4 w-4 text-emerald-600" />
                                 <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">{bed.label}</span>
-                                <span className="text-[10px] text-emerald-600/70">Libre</span>
+                                <span className="text-xs text-emerald-600/70">Libre</span>
                                 {(canOperate || canStructure) && (
                                   <div className="flex items-center gap-0.5 mt-0.5">
                                     {canOperate && <AssignBedDialog bedId={bed.id} bedLabel={bed.label} patients={patients} onSuccess={refresh} />}

@@ -42,7 +42,7 @@ export default function OperatingRoomsManager({ clinicId, rooms }: { clinicId: s
     <div className="space-y-4 max-w-xl">
       <form onSubmit={add} className="flex items-end gap-2">
         <div className="flex-1 space-y-1">
-          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Nouvelle salle</label>
+          <label className="text-xs uppercase tracking-wider font-bold text-slate-400">Nouvelle salle</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: Salle 1, Salle de césarienne" className="h-9 rounded-xl" maxLength={60} />
         </div>
         <Button type="submit" disabled={saving || !name.trim()} className="h-9 gap-1.5 rounded-xl">

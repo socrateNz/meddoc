@@ -83,7 +83,7 @@ export default function AssignBedDialog({ bedId, bedLabel, patients, onSuccess }
               </SelectContent>
             </Select>
             {patientOptions.length === 0 && (
-              <p className="text-[11px] text-muted-foreground">Aucun patient disponible dans cette clinique.</p>
+              <p className="text-xs text-muted-foreground">Aucun patient disponible dans cette clinique.</p>
             )}
           </div>
           <DialogFooter>

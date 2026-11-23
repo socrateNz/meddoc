@@ -26,7 +26,7 @@ const selectClass = "h-9 w-full px-2.5 text-sm rounded-xl border border-slate-20
 function Info({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{label}</p>
+      <p className="text-xs uppercase tracking-wider font-bold text-slate-400">{label}</p>
       <p className="text-sm font-medium">{value || "-"}</p>
     </div>
   );
@@ -202,11 +202,11 @@ export default function SurgeryCaseDetail({ surgery, clinicId, rooms }: { surger
                 <div className="space-y-3 text-sm">
                   <p className="whitespace-pre-wrap">{surgery.operativeReport}</p>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Incidents / complications</p>
+                    <p className="text-xs uppercase tracking-wider font-bold text-slate-400">Incidents / complications</p>
                     <p className="whitespace-pre-wrap">{surgery.complications || "Aucun"}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Consignes post-opératoires</p>
+                    <p className="text-xs uppercase tracking-wider font-bold text-slate-400">Consignes post-opératoires</p>
                     <p className="whitespace-pre-wrap">{surgery.postOpInstructions}</p>
                   </div>
                   <p className="text-xs text-muted-foreground">

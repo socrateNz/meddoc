@@ -182,7 +182,7 @@ export default function NewPatientDialog({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Sans e-mail, le dossier est créé sans compte de connexion patient.
               </p>
             </div>

@@ -160,7 +160,7 @@ export default async function ClinicTeamPage({ params, searchParams }: PageProps
                 {(member.extraRoleIds ?? []).some((id: string) => roleNameById.has(id)) && (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {(member.extraRoleIds as string[]).filter((id) => roleNameById.has(id)).map((id) => (
-                      <Badge key={id} variant="outline" className="text-[11px]">+ {roleNameById.get(id)}</Badge>
+                      <Badge key={id} variant="outline" className="text-xs">+ {roleNameById.get(id)}</Badge>
                     ))}
                   </div>
                 )}

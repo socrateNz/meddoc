@@ -68,7 +68,7 @@ function SusceptibilityGrid({
   return (
     <div className="space-y-1.5">
       <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{title}</p>
-      <p className="text-[11px] text-muted-foreground">Ne renseignez que les molécules testées.</p>
+      <p className="text-xs text-muted-foreground">Ne renseignez que les molécules testées.</p>
       <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
         {drugs.map((drug) => (
           <div key={drug} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200/70 px-2 py-1 dark:border-slate-800">
@@ -173,7 +173,7 @@ export default function ResultTemplateForm({
           />
         </div>
       )}
-      {template.note && <p className="rounded-lg bg-amber-500/5 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-300">N.B. : {template.note}</p>}
+      {template.note && <p className="rounded-lg bg-amber-500/5 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">N.B. : {template.note}</p>}
     </div>
   );
 }

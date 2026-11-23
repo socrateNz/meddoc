@@ -83,8 +83,8 @@ export default function HoldingModulesDialog({
                 <input type="checkbox" checked={checked} disabled={forced} onChange={() => toggle(key)} className="mt-1 h-4 w-4" />
                 <span className="min-w-0">
                   <span className="text-sm font-semibold">{mod.label}</span>
-                  {mod.requires.length > 0 && <span className="text-[11px] text-muted-foreground"> — nécessite {mod.requires.map((r) => MODULES[r].label).join(", ")}</span>}
-                  {forced && <span className="text-[11px] text-blue-600"> (requis par un module coché)</span>}
+                  {mod.requires.length > 0 && <span className="text-xs text-muted-foreground"> — nécessite {mod.requires.map((r) => MODULES[r].label).join(", ")}</span>}
+                  {forced && <span className="text-xs text-blue-600"> (requis par un module coché)</span>}
                   <span className="block text-xs text-muted-foreground">{mod.description}</span>
                 </span>
               </label>

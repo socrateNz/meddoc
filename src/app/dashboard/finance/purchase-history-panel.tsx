@@ -171,7 +171,7 @@ export default function PurchaseHistoryPanel({ organizationId, canCancel: canCan
                     <TableCell className="text-xs text-muted-foreground">{p.supplier || "—"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {isInventoryAdjustment ? (
-                        <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20">
+                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20">
                           Surplus d&apos;inventaire
                         </Badge>
                       ) : (
@@ -198,7 +198,7 @@ export default function PurchaseHistoryPanel({ organizationId, canCancel: canCan
                                 : "Impossible d'annuler : une partie de ce lot a déjà été vendue, remise ou consommée."
                             }
                             onClick={() => setCancellingPurchase(p)}
-                            className={`h-7 text-[11px] gap-1 rounded-lg ${isUntouched ? "text-rose-600 hover:bg-rose-500/10" : "text-slate-300"}`}
+                            className={`h-7 text-xs gap-1 rounded-lg ${isUntouched ? "text-rose-600 hover:bg-rose-500/10" : "text-slate-300"}`}
                           >
                             <Undo2 className="h-3 w-3" />
                             Annuler

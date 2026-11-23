@@ -244,7 +244,7 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
                 </Button>
               )}
               {useOfflineCatalog && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
                   <WifiOff className="h-3 w-3" /> Catalogue hors-ligne (tarifs estimatifs)
                 </span>
               )}
@@ -282,7 +282,7 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-sm font-medium">{t.name}</span>
-                          {t.department && <Badge variant="outline" className="text-[10px]">{t.department}</Badge>}
+                          {t.department && <Badge variant="outline" className="text-xs">{t.department}</Badge>}
                         </div>
                       </div>
                       <span className="text-xs font-semibold text-muted-foreground shrink-0">{formatFCFA(priceOf(t))}</span>

@@ -68,11 +68,11 @@ export default function RadiologyCatalog({ clinicId, exams }: { clinicId: string
       </div>
       <form onSubmit={save} className="flex flex-wrap items-end gap-2 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 p-4 bg-slate-50/50 dark:bg-slate-900/40">
         <div className="space-y-1 flex-1 min-w-48">
-          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Examen</label>
+          <label className="text-xs uppercase tracking-wider font-bold text-slate-400">Examen</label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="ex: Radiographie du thorax (face)" className="h-9 rounded-xl" />
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Modalité</label>
+          <label className="text-xs uppercase tracking-wider font-bold text-slate-400">Modalité</label>
           <select value={modality} onChange={(e) => setModality(e.target.value as RadiologyModality)} className={selectClass}>
             {RADIOLOGY_MODALITIES.map((m) => (
               <option key={m} value={m}>
@@ -82,7 +82,7 @@ export default function RadiologyCatalog({ clinicId, exams }: { clinicId: string
           </select>
         </div>
         <div className="space-y-1 w-36">
-          <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Tarif (FCFA)</label>
+          <label className="text-xs uppercase tracking-wider font-bold text-slate-400">Tarif (FCFA)</label>
           <Input inputMode="numeric" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="ex: 15000" className="h-9 rounded-xl" />
         </div>
         <Button type="submit" disabled={saving} className="h-9 gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white">
@@ -104,10 +104,10 @@ export default function RadiologyCatalog({ clinicId, exams }: { clinicId: string
             <div key={exam.id} className={`flex items-center gap-3 px-4 py-2.5 ${exam.isActive ? "" : "opacity-50"}`}>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{exam.name}</p>
-                <p className="text-[11px] text-muted-foreground">{RADIOLOGY_MODALITY_LABELS[exam.modality as RadiologyModality] || exam.modality}</p>
+                <p className="text-xs text-muted-foreground">{RADIOLOGY_MODALITY_LABELS[exam.modality as RadiologyModality] || exam.modality}</p>
               </div>
               <span className="text-sm font-semibold">{formatFCFA(exam.basePrice)}</span>
-              {!exam.isActive && <Badge variant="outline" className="text-[10px]">Désactivé</Badge>}
+              {!exam.isActive && <Badge variant="outline" className="text-xs">Désactivé</Badge>}
               <Button size="sm" variant="ghost" className="h-8 rounded-lg" onClick={() => startEdit(exam)}>
                 <Pencil className="h-3.5 w-3.5" />
               </Button>

@@ -73,7 +73,7 @@ export default function ResultTemplateEditor({ value, onChange }: { value: Resul
             </optgroup>
           ))}
         </select>
-        <p className="text-[11px] text-muted-foreground">Partez d&apos;un modèle puis adaptez-le à vos réactifs et valeurs de référence.</p>
+        <p className="text-xs text-muted-foreground">Partez d&apos;un modèle puis adaptez-le à vos réactifs et valeurs de référence.</p>
       </div>
 
       {value && (

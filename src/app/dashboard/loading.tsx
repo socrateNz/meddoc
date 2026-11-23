@@ -231,12 +231,12 @@ function SuperAdminPreview({ data }: { data: SuperAdminDashboardPreview }) {
                     <span className="font-medium text-slate-700 dark:text-slate-300 truncate">{h.name}</span>
                     <div className="flex gap-1.5 shrink-0">
                       {h.reasons.includes("EXPIRING") && (
-                        <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/20">
+                        <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/20">
                           {h.licenseExpiresAt && new Date(h.licenseExpiresAt) < new Date() ? "Expirée" : "Expire bientôt"}
                         </Badge>
                       )}
                       {h.reasons.includes("INACTIVE") && (
-                        <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 border-red-500/20">
+                        <Badge variant="outline" className="text-xs bg-red-500/10 text-red-600 border-red-500/20">
                           {h.subscriptionStatus === "CANCELLED" ? "Annulé" : "Inactif"}
                         </Badge>
                       )}
@@ -263,7 +263,7 @@ function SuperAdminPreview({ data }: { data: SuperAdminDashboardPreview }) {
                 {data.recentHoldings.map((h) => (
                   <div key={h.id} className="flex items-center justify-between text-sm">
                     <span className="font-medium text-slate-700 dark:text-slate-300 truncate">{h.name}</span>
-                    <span className="text-[10px] text-slate-400 shrink-0 ml-2">{new Date(h.createdAt).toLocaleDateString("fr-FR")}</span>
+                    <span className="text-xs text-slate-400 shrink-0 ml-2">{new Date(h.createdAt).toLocaleDateString("fr-FR")}</span>
                   </div>
                 ))}
               </div>
@@ -285,9 +285,9 @@ function SuperAdminPreview({ data }: { data: SuperAdminDashboardPreview }) {
                   <div key={m.id} className="flex items-center justify-between gap-2 text-sm rounded-lg p-1.5 -m-1.5">
                     <span className="min-w-0">
                       <span className="font-medium text-slate-700 dark:text-slate-300 truncate block">{m.subject}</span>
-                      <span className="text-[10px] text-slate-400">{m.name}</span>
+                      <span className="text-xs text-slate-400">{m.name}</span>
                     </span>
-                    {m.status === "NEW" && <Badge className="text-[10px] bg-blue-500/10 text-blue-600 border-blue-500/20 shrink-0" variant="outline">Nouveau</Badge>}
+                    {m.status === "NEW" && <Badge className="text-xs bg-blue-500/10 text-blue-600 border-blue-500/20 shrink-0" variant="outline">Nouveau</Badge>}
                   </div>
                 ))}
               </div>
@@ -327,7 +327,7 @@ function RegularPreview({ data }: { data: DashboardPreview }) {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-3xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight mt-1">{data.patientsCount}</div>
-            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1.5">Enregistrés dans le système</p>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1.5">Enregistrés dans le système</p>
           </CardContent>
         </Card>
 
@@ -340,7 +340,7 @@ function RegularPreview({ data }: { data: DashboardPreview }) {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-3xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight mt-1">{data.appointmentsCount}</div>
-            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1.5">Rendez-vous à venir</p>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1.5">Rendez-vous à venir</p>
           </CardContent>
         </Card>
 
@@ -353,7 +353,7 @@ function RegularPreview({ data }: { data: DashboardPreview }) {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-3xl font-extrabold text-red-600 dark:text-red-400 tracking-tight mt-1">{data.openIncidentsCount}</div>
-            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1.5">Nécessitent une action urgente</p>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1.5">Nécessitent une action urgente</p>
           </CardContent>
         </Card>
 
@@ -366,7 +366,7 @@ function RegularPreview({ data }: { data: DashboardPreview }) {
           </CardHeader>
           <CardContent className="pt-0">
             <div className="text-3xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight mt-1">{data.activePlansCount}</div>
-            <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1.5">Protocoles cliniques en cours</p>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1.5">Protocoles cliniques en cours</p>
           </CardContent>
         </Card>
       </div>
@@ -397,7 +397,7 @@ function RegularPreview({ data }: { data: DashboardPreview }) {
                     <div className="space-y-1 min-w-0 flex-1">
                       <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-tight truncate">{n.title}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{n.message}</p>
-                      <p className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold mt-1">
+                      <p className="text-xs text-slate-400 dark:text-slate-500 font-semibold mt-1">
                         {new Date(n.createdAt).toLocaleDateString("fr-FR")} à {new Date(n.createdAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
                       </p>
                     </div>
@@ -438,7 +438,7 @@ function RegularPreview({ data }: { data: DashboardPreview }) {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-extrabold text-slate-800 dark:text-slate-100">{stat.count}</div>
-                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1">Patients suivis</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1">Patients suivis</p>
                 </CardContent>
               </Card>
             ))}

@@ -567,17 +567,17 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
                     {/* Status & Blood badges */}
                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                       {isDischarged ? (
-                        <Badge variant="outline" className="bg-muted text-muted-foreground text-[10px] py-0 px-2">
+                        <Badge variant="outline" className="bg-muted text-muted-foreground text-xs py-0 px-2">
                           Clôturé
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] py-0 px-2 font-medium">
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-xs py-0 px-2 font-medium">
                           Actif
                         </Badge>
                       )}
 
                       {patient.bloodType && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 text-[11px] font-bold">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 text-xs font-bold">
                           <Droplet className="h-2.5 w-2.5 fill-rose-500 text-rose-500" />
                           {patient.bloodType}
                         </span>
@@ -590,10 +590,10 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
                     <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2">
                       <ShieldAlert className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
                       <div className="min-w-0 flex-1">
-                        <span className="font-bold block text-[11px] uppercase tracking-wide">Allergies connues :</span>
+                        <span className="font-bold block text-xs uppercase tracking-wide">Allergies connues :</span>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {patient.allergies!.map((all, i) => (
-                            <span key={i} className="px-1.5 py-0.2 rounded bg-rose-500/20 font-semibold text-[10px]">
+                            <span key={i} className="px-1.5 py-0.2 rounded bg-rose-500/20 font-semibold text-xs">
                               {all}
                             </span>
                           ))}
@@ -605,25 +605,25 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
                   {/* Dependency & Pathologies */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground font-medium text-[11px]">Dépendance :</span>
+                      <span className="text-muted-foreground font-medium text-xs">Dépendance :</span>
                       {getGirBadge(patient.dependencyLevel)}
                     </div>
 
                     {patient.pathologies && patient.pathologies.length > 0 && (
                       <div className="space-y-1">
-                        <span className="text-muted-foreground font-medium text-[11px] block">Pathologies :</span>
+                        <span className="text-muted-foreground font-medium text-xs block">Pathologies :</span>
                         <div className="flex flex-wrap gap-1">
                           {patient.pathologies.slice(0, 3).map((patho, idx) => (
                             <Badge
                               key={idx}
                               variant="outline"
-                              className="text-[10px] font-medium bg-blue-500/5 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/40"
+                              className="text-xs font-medium bg-blue-500/5 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/40"
                             >
                               {patho}
                             </Badge>
                           ))}
                           {patient.pathologies.length > 3 && (
-                            <span className="text-[10px] text-muted-foreground self-center">
+                            <span className="text-xs text-muted-foreground self-center">
                               +{patient.pathologies.length - 3}
                             </span>
                           )}
@@ -635,13 +635,13 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
                   {/* Latest Vitals Snapshot (if available) */}
                   {latestVitals && (
                     <div className="p-2.5 rounded-xl bg-muted/30 border border-border/50 text-xs space-y-1">
-                      <div className="flex items-center justify-between text-muted-foreground text-[10px]">
+                      <div className="flex items-center justify-between text-muted-foreground text-xs">
                         <span className="flex items-center gap-1 font-medium">
                           <HeartPulse className="h-3 w-3 text-primary" /> Dernières constantes
                         </span>
                         <span>{formatDate(latestVitals.createdAt || new Date())}</span>
                       </div>
-                      <div className="flex items-center justify-between font-mono text-[11px] font-semibold text-foreground pt-0.5">
+                      <div className="flex items-center justify-between font-mono text-xs font-semibold text-foreground pt-0.5">
                         {latestVitals.bloodPressure && <span>TA: {latestVitals.bloodPressure}</span>}
                         {latestVitals.heartRate && <span>Pouls: {latestVitals.heartRate} bpm</span>}
                         {latestVitals.temperature && <span>T°: {latestVitals.temperature}°C</span>}
@@ -765,12 +765,12 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
                     <TableCell className="py-3">
                       <div className="flex flex-wrap gap-1 max-w-xs">
                         {(patient.pathologies || []).slice(0, 2).map((patho, idx) => (
-                          <Badge key={idx} variant="outline" className="text-[10px] font-medium bg-blue-500/5 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/40">
+                          <Badge key={idx} variant="outline" className="text-xs font-medium bg-blue-500/5 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/40">
                             {patho}
                           </Badge>
                         ))}
                         {(patient.pathologies || []).length > 2 && (
-                          <span className="text-[10px] text-muted-foreground self-center">
+                          <span className="text-xs text-muted-foreground self-center">
                             +{patient.pathologies.length - 2}
                           </span>
                         )}
@@ -779,7 +779,7 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
 
                     <TableCell className="py-3 text-xs text-muted-foreground">
                       {displayPatientEmail(patient.user.email) && <p>{displayPatientEmail(patient.user.email)}</p>}
-                      {patient.user.phone && <p className="font-mono text-[11px]">{patient.user.phone}</p>}
+                      {patient.user.phone && <p className="font-mono text-xs">{patient.user.phone}</p>}
                     </TableCell>
 
                     <TableCell className="py-3 text-right">

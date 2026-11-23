@@ -55,7 +55,7 @@ export default function MedicalFileList({ files, showPreviews = false, onChanged
                 )}
               </a>
               <div className="flex items-center justify-between gap-1 px-2 py-1.5">
-                <span className="text-[11px] text-muted-foreground truncate" title={f.originalName}>
+                <span className="text-xs text-muted-foreground truncate" title={f.originalName}>
                   {formatDate(f.createdAt)}
                 </span>
                 {f.canRemove && (
@@ -76,7 +76,7 @@ export default function MedicalFileList({ files, showPreviews = false, onChanged
               <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:text-primary truncate block">
                 {f.title || f.originalName}
               </a>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {f.format.toUpperCase()} • {formatFileSize(f.bytes)} • {formatDate(f.createdAt)}
                 {f.uploadedBy ? ` • ${f.uploadedBy}` : ""}
               </p>

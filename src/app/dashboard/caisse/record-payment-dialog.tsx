@@ -100,15 +100,15 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
 
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/60">
-              <p className="text-[10px] font-bold uppercase text-slate-400">Total facture</p>
+              <p className="text-xs font-bold uppercase text-slate-400">Total facture</p>
               <p className="text-sm font-extrabold mt-1">{formatFCFA(pendingInvoice.invoiceTotalAmount)}</p>
             </div>
             <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/50 dark:border-emerald-900/30">
-              <p className="text-[10px] font-bold uppercase text-emerald-600">Déjà réglé</p>
+              <p className="text-xs font-bold uppercase text-emerald-600">Déjà réglé</p>
               <p className="text-sm font-extrabold mt-1 text-emerald-700 dark:text-emerald-400">{formatFCFA(pendingInvoice.amountPaid)}</p>
             </div>
             <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-900/30 col-span-2">
-              <p className="text-[10px] font-bold uppercase text-amber-600">Reste à payer</p>
+              <p className="text-xs font-bold uppercase text-amber-600">Reste à payer</p>
               <p className="text-sm font-extrabold mt-1 text-amber-700 dark:text-amber-400">{formatFCFA(remainingDue)}</p>
             </div>
           </div>

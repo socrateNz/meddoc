@@ -297,7 +297,7 @@ export default function Loading() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-slate-850 dark:text-slate-200">{member.firstName} {member.lastName}</p>
-                        <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                        <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">
                           {member.role === "MEDECIN" ? "Médecin" : member.role === "CAREGIVER" ? "Infirmier(e)" : "Coordinateur Clinique"}
                         </p>
                       </div>

@@ -93,7 +93,7 @@ export function DeleteInvoiceDialog({
               <DialogTitle className="text-base font-bold text-rose-600 dark:text-rose-400">
                 Supprimer le ticket (Temporaire)
               </DialogTitle>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded-full border border-rose-200 dark:border-rose-800">
+              <span className="px-2 py-0.5 text-xs font-semibold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 rounded-full border border-rose-200 dark:border-rose-800">
                 ADMIN / COORD
               </span>
             </div>

@@ -385,15 +385,15 @@ export default function InventoryPanel({ organizationId, canWrite = true }: Inve
                       </TableCell>
                       <TableCell className="py-3">
                         {variance === 0 ? (
-                          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[11px]">
+                          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-xs">
                             Conforme
                           </Badge>
                         ) : variance < 0 ? (
-                          <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/20 gap-1 text-[11px]">
+                          <Badge variant="outline" className="bg-rose-500/10 text-rose-600 border-rose-500/20 gap-1 text-xs">
                             <AlertTriangle className="h-3 w-3" /> {variance}
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[11px]">
+                          <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-xs">
                             +{variance}
                           </Badge>
                         )}

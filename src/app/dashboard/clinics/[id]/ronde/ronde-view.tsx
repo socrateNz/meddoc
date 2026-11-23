@@ -87,7 +87,7 @@ function RoundEntriesTable({ entries, sessionOpen, onOpen }: { entries: RoundEnt
                 </TableCell>
                 <TableCell className="text-sm font-semibold">
                   {p ? `${p.lastName} ${p.firstName}` : "Patient introuvable"}
-                  {p && p.allergies.length > 0 && <span className="ml-2 text-[10px] font-normal text-red-600 dark:text-red-400">allergies</span>}
+                  {p && p.allergies.length > 0 && <span className="ml-2 text-xs font-normal text-red-600 dark:text-red-400">allergies</span>}
                 </TableCell>
                 <TableCell className="text-xs">{p ? `${p.age} ans · GIR ${p.dependencyLevel}` : "—"}</TableCell>
                 <TableCell>
@@ -147,11 +147,11 @@ function RoundGrid({ entries, onOpen }: { entries: RoundEntryView[]; onOpen: (en
                 onClick={() => onOpen(entry.id)}
                 className={`text-left rounded-xl border p-3 transition-colors ${STATUS_TILE[entry.status] ?? ""}`}
               >
-                <p className="text-[11px] font-semibold text-slate-500">Lit {entry.bedNumber ?? "—"}</p>
+                <p className="text-xs font-semibold text-slate-500">Lit {entry.bedNumber ?? "—"}</p>
                 <p className="font-semibold text-sm text-slate-900 dark:text-white truncate">
                   {entry.patient ? `${entry.patient.lastName} ${entry.patient.firstName}` : "Patient d'un autre service"}
                 </p>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-xs text-slate-500">
                   {STATUS_LABEL[entry.status] ?? entry.status}
                   {entry.patient && entry.patient.allergies.length > 0 ? " · allergies" : ""}
                   {entry.patient && entry.patient.openIncidents > 0 ? " · incident" : ""}
@@ -276,7 +276,7 @@ export default function RondeView({
               }`}
             >
               {present ? "✓ " : ""}
-              {m.firstName} {m.lastName} <span className="text-[10px] opacity-70">({ROLE_LABEL[m.role] ?? m.role})</span>
+              {m.firstName} {m.lastName} <span className="text-xs opacity-70">({ROLE_LABEL[m.role] ?? m.role})</span>
             </button>
           );
         })}
@@ -428,7 +428,7 @@ export default function RondeView({
 
           {mode === "grille" ? (
             <div className="space-y-2">
-              <p className="text-[11px] text-slate-500">Grille des patients affichés sur cette page.</p>
+              <p className="text-xs text-slate-500">Grille des patients affichés sur cette page.</p>
               <RoundGrid entries={round.entries} onOpen={setActiveEntryId} />
             </div>
           ) : (

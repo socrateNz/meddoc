@@ -61,7 +61,7 @@ export default function AuditLogTable({ logs }: { logs: AuditLogRow[] }) {
                   <p className="text-xs text-muted-foreground">{log.user.email}</p>
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline" className="font-mono text-[11px]">
+                  <Badge variant="outline" className="font-mono text-xs">
                     {log.action}
                   </Badge>
                 </TableCell>
