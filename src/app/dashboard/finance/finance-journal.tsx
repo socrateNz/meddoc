@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -166,7 +167,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/40">
         <div className="space-y-1">
           <Label className="text-xs uppercase tracking-wider font-bold text-slate-400">Catégorie</Label>
-          <select
+          <SearchSelect
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className="w-full h-9 px-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
@@ -175,7 +176,7 @@ export default function FinanceJournal({ organizationId, onSelectTransaction, da
             {Object.entries(TRANSACTION_CATEGORY_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}
-          </select>
+          </SearchSelect>
         </div>
         <div className="space-y-1">
           <Label className="text-xs uppercase tracking-wider font-bold text-slate-400">Montant min (FCFA)</Label>

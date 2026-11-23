@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -142,7 +143,7 @@ export default function ReceivePurchaseOrderDialog({ order, onSuccess, openRegis
                   Aucune caisse n'est actuellement ouverte. Ouvrez une session de caisse pour pouvoir décaisser cette réception.
                 </p>
               ) : (
-                <select
+                <SearchSelect
                   required
                   value={cashSessionId}
                   onChange={(e) => setCashSessionId(e.target.value)}
@@ -154,7 +155,7 @@ export default function ReceivePurchaseOrderDialog({ order, onSuccess, openRegis
                       {r.name}
                     </option>
                   ))}
-                </select>
+                </SearchSelect>
               )
             )}
           </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { PaginationNav } from "@/components/ui/pagination-nav";
@@ -430,7 +431,7 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
           </button>
 
           {/* Sort Selector */}
-          <select
+          <SearchSelect
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
             className="h-9 px-3 rounded-xl border border-border/70 bg-card text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -441,7 +442,7 @@ export default function PatientTable({ patients, total, page, pageSize, counts, 
             <option value="age-asc">Plus jeunes d'abord</option>
             <option value="gir-asc">Dépendance lourde (GIR 1 ➔ 6)</option>
             <option value="gir-desc">Autonomie (GIR 6 ➔ 1)</option>
-          </select>
+          </SearchSelect>
         </div>
 
         {/* View Mode & Export */}

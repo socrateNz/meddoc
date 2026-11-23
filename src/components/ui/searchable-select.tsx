@@ -21,6 +21,12 @@ interface SearchableSelectProps {
   className?: string;
   id?: string;
   disabled?: boolean;
+  // Classes du champ lui-même (hauteur, taille du texte, bordure) — className va sur le conteneur.
+  inputClassName?: string;
+  // Bouton « × » pour vider le choix : à retirer quand aucune valeur vide n'est permise.
+  clearable?: boolean;
+  // Champ obligatoire dans un <form> : bloque l'envoi tant qu'aucune valeur n'est choisie.
+  required?: boolean;
 }
 
 // Select avec recherche intégrée (filtrage au fil de la frappe) — utilisé partout où un <select>
@@ -36,6 +42,9 @@ export default function SearchableSelect({
   className,
   id,
   disabled,
+  inputClassName,
+  clearable = true,
+  required,
 }: SearchableSelectProps) {
   const selected = React.useMemo(() => options.find((o) => o.value === value) || null, [options, value]);
 
@@ -52,11 +61,29 @@ export default function SearchableSelect({
         <Combobox.Input
           id={id}
           placeholder={placeholder}
-          className="w-full h-11 sm:h-9 pl-2.5 pr-14 text-base sm:text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          className={cn(
+            "w-full h-11 sm:h-9 pl-2.5 text-base sm:text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed",
+            inputClassName,
+            clearable ? "pr-14" : "pr-8",
+          )}
         />
-        <Combobox.Clear className="absolute right-7 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-          <X className="h-3.5 w-3.5" />
-        </Combobox.Clear>
+        {required && (
+          // Porte la validation native du formulaire (« Veuillez sélectionner… ») : invisible, mais
+          // pas en lecture seule — le navigateur ne vérifie pas les champs readonly.
+          <input
+            tabIndex={-1}
+            aria-hidden
+            required
+            value={value}
+            onChange={() => {}}
+            className="absolute inset-x-0 bottom-0 h-px w-full opacity-0 pointer-events-none"
+          />
+        )}
+        {clearable && (
+          <Combobox.Clear className="absolute right-7 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+            <X className="h-3.5 w-3.5" />
+          </Combobox.Clear>
+        )}
         <Combobox.Icon className="absolute right-2.5 pointer-events-none text-slate-400">
           <ChevronDown className="h-3.5 w-3.5" />
         </Combobox.Icon>

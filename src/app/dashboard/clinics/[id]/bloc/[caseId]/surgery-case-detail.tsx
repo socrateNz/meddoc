@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -277,13 +278,13 @@ export default function SurgeryCaseDetail({ surgery, clinicId, rooms }: { surger
                   </Button>
                   {showReschedule && (
                     <div className="grid grid-cols-2 gap-2">
-                      <select className={`${selectClass} col-span-2`} value={slot.operatingRoomId} onChange={(e) => setSlot((s) => ({ ...s, operatingRoomId: e.target.value }))}>
+                      <SearchSelect className={`${selectClass} col-span-2`} value={slot.operatingRoomId} onChange={(e) => setSlot((s) => ({ ...s, operatingRoomId: e.target.value }))}>
                         {rooms.map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.name}
                           </option>
                         ))}
-                      </select>
+                      </SearchSelect>
                       <Input type="date" value={slot.date} onChange={(e) => setSlot((s) => ({ ...s, date: e.target.value }))} className="h-9 rounded-xl" />
                       <Input type="time" value={slot.time} onChange={(e) => setSlot((s) => ({ ...s, time: e.target.value }))} className="h-9 rounded-xl" />
                       <Input type="number" min={10} step={5} value={slot.duration} onChange={(e) => setSlot((s) => ({ ...s, duration: e.target.value }))} className="h-9 rounded-xl" aria-label="Durée en minutes" />

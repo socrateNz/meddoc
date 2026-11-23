@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useModules } from "@/components/modules-provider";
@@ -499,7 +500,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
         <label className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block px-2">
           Clinique active
         </label>
-        <select
+        <SearchSelect
           value={activeClinicId}
           onChange={(e) => handleClinicChange(e.target.value)}
           className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-background/50 text-slate-800 dark:text-slate-200 px-3 py-2 text-xs font-semibold shadow-xs focus:ring-1 focus:ring-primary focus:outline-none transition-all cursor-pointer"
@@ -510,7 +511,7 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
               🏥 {c.name}
             </option>
           ))}
-        </select>
+        </SearchSelect>
       </div>
     );
   };

@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -181,7 +182,7 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="category">Catégorie *</Label>
-              <select
+              <SearchSelect
                 id="category"
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
@@ -190,7 +191,7 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
                 {CATEGORY_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
           </div>
 

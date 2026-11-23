@@ -4,7 +4,72 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { cn } from "@/lib/utils"
-import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+import { ChevronDownIcon, CheckIcon, ChevronUpIcon, SearchIcon } from "lucide-react"
+
+// Recherche dans la liste ouverte : chaque SelectItem lit le texte tapé et se masque s'il ne
+// correspond pas (sans accents ni casse). Les éléments masqués restent montés (désactivés) pour
+// que la valeur choisie garde son libellé dans le déclencheur pendant la recherche.
+const SelectSearchContext = React.createContext("")
+
+function normalizeSearch(text: string) {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
+}
+
+// Contenu de la liste ouverte : champ de recherche + options. Monté seulement quand la liste est
+// ouverte (Portal) : la recherche repart de zéro à chaque ouverture.
+function SearchableList({ children }: { children: React.ReactNode }) {
+  const [query, setQuery] = React.useState("")
+  const [hasResults, setHasResults] = React.useState(true)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const listRef = React.useRef<HTMLDivElement>(null)
+
+  React.useEffect(() => {
+    // Curseur directement dans la recherche à la souris ; pas sur écran tactile (le clavier
+    // virtuel couvrirait la liste).
+    if (typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches) {
+      const id = requestAnimationFrame(() => inputRef.current?.focus())
+      return () => cancelAnimationFrame(id)
+    }
+  }, [])
+
+  React.useLayoutEffect(() => {
+    const list = listRef.current
+    setHasResults(!list || list.querySelector("[data-slot=select-item]:not([hidden])") !== null)
+  }, [query, children])
+
+  return (
+    <SelectSearchContext.Provider value={normalizeSearch(query)}>
+      <div className="sticky top-0 z-20 bg-popover p-1 pb-0">
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              // Les flèches, Échap et Tab restent à la liste ; les autres touches servent à la saisie
+              // (sinon la liste les intercepte pour sa recherche par première lettre).
+              if (["ArrowDown", "ArrowUp", "Escape", "Tab"].includes(e.key)) return
+              e.stopPropagation()
+              if (e.key === "Enter") {
+                e.preventDefault()
+                const first = listRef.current?.querySelector<HTMLElement>("[data-slot=select-item]:not([hidden]):not([data-disabled])")
+                first?.click()
+              }
+            }}
+            placeholder="Rechercher…"
+            aria-label="Rechercher dans la liste"
+            className="h-8 w-full rounded-md border border-input bg-transparent pl-7 pr-2 text-sm outline-none focus:border-ring"
+          />
+        </div>
+      </div>
+      <div ref={listRef}>
+        <SelectPrimitive.List>{children}</SelectPrimitive.List>
+        {!hasResults && <p className="px-2 py-3 text-center text-xs text-muted-foreground">Aucun résultat.</p>}
+      </div>
+    </SelectSearchContext.Provider>
+  )
+}
 
 const Select = SelectPrimitive.Root
 
@@ -87,7 +152,7 @@ function SelectContent({
           {...props}
         >
           <SelectScrollUpButton />
-          <SelectPrimitive.List>{children}</SelectPrimitive.List>
+          <SearchableList>{children}</SearchableList>
           <SelectScrollDownButton />
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>
@@ -126,14 +191,19 @@ function getTextFromChildren(children: React.ReactNode): string {
 function SelectItem({
   className,
   children,
+  disabled,
   ...props
 }: SelectPrimitive.Item.Props) {
   const label = getTextFromChildren(children).trim();
-  
+  const query = React.useContext(SelectSearchContext);
+  const hidden = query !== "" && !normalizeSearch(label).includes(query);
+
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
       label={label || undefined}
+      hidden={hidden}
+      disabled={disabled || hidden}
       className={cn(
         "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className

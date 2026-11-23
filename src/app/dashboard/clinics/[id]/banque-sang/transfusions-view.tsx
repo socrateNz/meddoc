@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -108,13 +109,13 @@ function CompleteDialog({ t, onClose }: { t: Transfusion; onClose: () => void })
       <div className="space-y-3">
         <div className="space-y-1.5">
           <Label>Effet indésirable</Label>
-          <select value={reaction} onChange={(e) => setReaction(e.target.value as TransfusionReaction)} className="h-9 w-full px-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+          <SearchSelect value={reaction} onChange={(e) => setReaction(e.target.value as TransfusionReaction)} className="h-9 w-full px-2.5 text-sm rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
             {TRANSFUSION_REACTIONS.map((r) => (
               <option key={r} value={r}>
                 {REACTION_LABELS[r]}
               </option>
             ))}
-          </select>
+          </SearchSelect>
         </div>
         {reaction !== "NONE" && (
           <div className="space-y-1.5">

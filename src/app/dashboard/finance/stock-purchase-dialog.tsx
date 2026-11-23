@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -192,7 +193,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
           ) : (
             <div className="space-y-1.5">
               <Label htmlFor="pharmacyItemId">Produit *</Label>
-              <select
+              <SearchSelect
                 id="pharmacyItemId"
                 required
                 value={formData.pharmacyItemId}
@@ -205,7 +206,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
                     {item.name}{item.dosage ? ` (${item.dosage})` : ""}{item.saleBlockedAt ? " — bloqué par le coordinateur" : ""}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
           )}
 
@@ -316,7 +317,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
                   Aucune caisse n'est actuellement ouverte. Ouvrez une session de caisse pour pouvoir décaisser cet achat.
                 </p>
               ) : (
-                <select
+                <SearchSelect
                   required
                   value={formData.cashSessionId}
                   onChange={(e) => setFormData({ ...formData, cashSessionId: e.target.value })}
@@ -328,14 +329,14 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
                       {r.name}
                     </option>
                   ))}
-                </select>
+                </SearchSelect>
               )
             ) : (
               <div className="space-y-1">
                 <Label htmlFor="linkedExpense" className="text-xs text-slate-500">
                   Cet achat provient-il d&apos;un retrait déjà enregistré (« Nouvelle dépense ») ?
                 </Label>
-                <select
+                <SearchSelect
                   id="linkedExpense"
                   value={formData.linkedExpenseTransactionId}
                   onChange={(e) => setFormData({ ...formData, linkedExpenseTransactionId: e.target.value })}
@@ -348,7 +349,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
                       {formatDate(w.createdAt)} · {w.description} ({formatFCFA(w.amount)})
                     </option>
                   ))}
-                </select>
+                </SearchSelect>
                 {formData.linkedExpenseTransactionId && (
                   <p className="text-xs text-slate-400">
                     Ce retrait sera marqué comme réglé par cet achat et ne comptera plus dans les dépenses totales à part.

@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useEffect, useState } from "react";
 import { Loader2, Search, Ticket, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -207,18 +208,18 @@ export default function RegisterVisitDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="destination">Orientation *</Label>
-              <select id="destination" value={destination} onChange={(e) => setDestination(e.target.value as VisitDestination)} className={selectClass}>
+              <SearchSelect id="destination" value={destination} onChange={(e) => setDestination(e.target.value as VisitDestination)} className={selectClass}>
                 {destinations.map((d) => (
                   <option key={d} value={d}>
                     {VISIT_DESTINATION_LABELS[d]}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             {needsService && (
               <div className="space-y-1.5">
                 <Label htmlFor="service">Service *</Label>
-                <select
+                <SearchSelect
                   id="service"
                   value={serviceId}
                   onChange={(e) => {
@@ -234,12 +235,12 @@ export default function RegisterVisitDialog({
                       {sv.name}
                     </option>
                   ))}
-                </select>
+                </SearchSelect>
               </div>
             )}
             <div className={`space-y-1.5 ${needsService ? "sm:col-span-2" : ""}`}>
               <Label htmlFor="doctor">Médecin</Label>
-              <select
+              <SearchSelect
                 id="doctor"
                 value={assignedToId}
                 onChange={(e) => setAssignedToId(e.target.value)}
@@ -252,7 +253,7 @@ export default function RegisterVisitDialog({
                     {d.name}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
           </div>
 

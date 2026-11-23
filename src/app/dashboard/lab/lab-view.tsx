@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useCan } from "@/components/permissions-provider";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -244,7 +245,7 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
 
           {/* File de travail par paillasse */}
           {benches.length > 0 && (
-            <select
+            <SearchSelect
               value={query.paillasse ?? ""}
               onChange={(e) => navigate({ paillasse: e.target.value || undefined, page: undefined })}
               className="h-9 rounded-xl border border-border/70 bg-card px-2.5 text-xs font-semibold"
@@ -256,7 +257,7 @@ export default function LabView({ labOrders, total, page, pageSize, stats, query
                   {b}
                 </option>
               ))}
-            </select>
+            </SearchSelect>
           )}
 
           {/* Catalog link */}

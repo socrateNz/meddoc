@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRightLeft, History, Layers, Loader2 } from "lucide-react";
@@ -106,7 +107,7 @@ export default function PatientServicePanel({
                 ) : services.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Aucun autre service actif dans cette clinique.</p>
                 ) : (
-                  <select
+                  <SearchSelect
                     id="transfer-target"
                     value={target}
                     onChange={(e) => setTarget(e.target.value)}
@@ -119,7 +120,7 @@ export default function PatientServicePanel({
                         {s.name}
                       </option>
                     ))}
-                  </select>
+                  </SearchSelect>
                 )}
               </div>
               <div className="space-y-1.5">

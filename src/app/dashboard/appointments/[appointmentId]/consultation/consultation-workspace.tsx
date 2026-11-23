@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
@@ -677,7 +678,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                   {!isCompleted && (
                     <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-dashed bg-slate-50/50 dark:bg-slate-900/40">
                       <Label className="text-xs shrink-0">Modèle d&apos;ordonnance :</Label>
-                      <select
+                      <SearchSelect
                         value={selectedTemplateId}
                         onChange={(e) => handleLoadTemplate(e.target.value)}
                         className="h-8 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
@@ -686,7 +687,7 @@ export default function ConsultationWorkspace({ patient, appointment, draft }: {
                         {templates.map((t) => (
                           <option key={t.id} value={t.id}>{t.name}{t.pathology ? ` (${t.pathology})` : ""}</option>
                         ))}
-                      </select>
+                      </SearchSelect>
                       <Button type="button" variant="ghost" size="sm" className="h-8 text-xs ml-auto" onClick={() => setShowSaveTemplate((v) => !v)}>
                         {showSaveTemplate ? "Annuler" : "Enregistrer comme modèle"}
                       </Button>

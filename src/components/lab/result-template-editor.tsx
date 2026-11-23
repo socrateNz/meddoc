@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +50,7 @@ export default function ResultTemplateEditor({ value, onChange }: { value: Resul
     <div className="space-y-3">
       <div className="space-y-1.5">
         <p className="text-sm font-medium">Modèle de compte rendu</p>
-        <select
+        <SearchSelect
           value=""
           onChange={(e) => {
             const id = e.target.value;
@@ -72,7 +73,7 @@ export default function ResultTemplateEditor({ value, onChange }: { value: Resul
               ))}
             </optgroup>
           ))}
-        </select>
+        </SearchSelect>
         <p className="text-xs text-muted-foreground">Partez d&apos;un modèle puis adaptez-le à vos réactifs et valeurs de référence.</p>
       </div>
 
@@ -92,7 +93,7 @@ export default function ResultTemplateEditor({ value, onChange }: { value: Resul
                   value={section.title ?? ""}
                   onChange={(e) => update((t) => void (t.sections[si].title = e.target.value || undefined))}
                 />
-                <select
+                <SearchSelect
                   value={section.layout ?? "lines"}
                   onChange={(e) => update((t) => void (t.sections[si].layout = e.target.value as "table" | "lines"))}
                   className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs dark:border-slate-800 dark:bg-slate-900"
@@ -100,7 +101,7 @@ export default function ResultTemplateEditor({ value, onChange }: { value: Resul
                 >
                   <option value="lines">Lignes</option>
                   <option value="table">Tableau</option>
-                </select>
+                </SearchSelect>
                 {value.sections.length > 1 && (
                   <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => update((t) => void t.sections.splice(si, 1))}>
                     <Trash2 className="h-4 w-4 text-red-500" />
@@ -111,7 +112,7 @@ export default function ResultTemplateEditor({ value, onChange }: { value: Resul
                 <div key={f.key} className="space-y-1.5 rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900">
                   <div className="flex gap-2">
                     <Input className={small} value={f.label} onChange={(e) => setField(si, fi, { label: e.target.value })} placeholder="Paramètre" />
-                    <select
+                    <SearchSelect
                       value={f.type}
                       onChange={(e) => setField(si, fi, { type: e.target.value as ResultField["type"] })}
                       className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs dark:border-slate-800 dark:bg-slate-900"
@@ -119,7 +120,7 @@ export default function ResultTemplateEditor({ value, onChange }: { value: Resul
                       <option value="number">Chiffre</option>
                       <option value="choice">Choix</option>
                       <option value="text">Texte</option>
-                    </select>
+                    </SearchSelect>
                     <Button
                       type="button"
                       variant="ghost"

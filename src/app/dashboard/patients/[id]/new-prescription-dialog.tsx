@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -133,7 +134,7 @@ export default function NewPrescriptionDialog({
           {templates.length > 0 && (
             <div className="space-y-1">
               <Label htmlFor="rx-template" className="text-xs">Charger un modèle</Label>
-              <select
+              <SearchSelect
                 id="rx-template"
                 value=""
                 onChange={(e) => e.target.value && loadTemplate(e.target.value)}
@@ -143,7 +144,7 @@ export default function NewPrescriptionDialog({
                 {templates.map((t: any) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
           )}
 

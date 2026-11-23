@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -206,7 +207,7 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
             <div className="grid grid-cols-1 gap-3 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="lab-partner">Demande de {partnerOnly ? "*" : ""}</Label>
-                <select
+                <SearchSelect
                   id="lab-partner"
                   value={partnerId}
                   onChange={(e) => setPartnerId(e.target.value)}
@@ -219,7 +220,7 @@ export default function NewLabOrderDialog({ patients, defaultPatientId, appointm
                       {p.name}
                     </option>
                   ))}
-                </select>
+                </SearchSelect>
               </div>
               {partnerId && (
                 <div className="space-y-1.5">

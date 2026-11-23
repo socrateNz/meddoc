@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +52,7 @@ export function LineDiscountEditor({
               className="h-9 w-24 rounded-r-none text-right text-sm"
               autoFocus
             />
-            <select
+            <SearchSelect
               value={unit}
               onChange={(e) => setUnit(e.target.value as "FCFA" | "PERCENT")}
               className="h-9 rounded-r-md border border-l-0 border-input bg-background px-2 text-xs"
@@ -59,7 +60,7 @@ export function LineDiscountEditor({
             >
               <option value="FCFA">FCFA</option>
               <option value="PERCENT">%</option>
-            </select>
+            </SearchSelect>
           </div>
         </div>
         <div className="min-w-40 flex-1 space-y-1">

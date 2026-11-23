@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -220,7 +221,7 @@ function RoundVisitBody({ clinicId, entry, sessionOpen, onDone }: { clinicId: st
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Décision</p>
-              <select
+              <SearchSelect
                 value={decision}
                 onChange={(e) => setDecision(e.target.value)}
                 disabled={!editable}
@@ -232,7 +233,7 @@ function RoundVisitBody({ clinicId, entry, sessionOpen, onDone }: { clinicId: st
                     {ROUND_DECISION_LABELS[d]}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1">
               <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Conduite à tenir</p>

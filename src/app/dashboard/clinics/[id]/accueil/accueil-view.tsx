@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useCan } from "@/components/permissions-provider";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -216,7 +217,7 @@ export default function AccueilView({ clinicId, currentUserId, currentUserRole, 
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <select
+          <SearchSelect
             value={destinationFilter}
             onChange={(e) => setDestinationFilter(e.target.value as "ALL" | VisitDestination)}
             className="h-9 px-2.5 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
@@ -227,7 +228,7 @@ export default function AccueilView({ clinicId, currentUserId, currentUserRole, 
                 {label}
               </option>
             ))}
-          </select>
+          </SearchSelect>
           {currentUserRole === "MEDECIN" && (
             <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
               <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} className="h-4 w-4" />

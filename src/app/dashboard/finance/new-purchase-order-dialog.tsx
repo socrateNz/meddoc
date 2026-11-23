@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -121,7 +122,7 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Fournisseur *</Label>
-              <select
+              <SearchSelect
                 required
                 value={supplierId}
                 onChange={(e) => setSupplierId(e.target.value)}
@@ -129,7 +130,7 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
               >
                 <option value="">-- Choisir --</option>
                 {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Date attendue (optionnel)</Label>
@@ -151,7 +152,7 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
               {mode === "EXISTING" ? (
                 <div className="col-span-2 space-y-1">
                   <Label className="text-xs">Produit</Label>
-                  <select
+                  <SearchSelect
                     value={pharmacyItemId}
                     onChange={(e) => setPharmacyItemId(e.target.value)}
                     className="w-full h-9 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
@@ -162,7 +163,7 @@ export default function NewPurchaseOrderDialog({ suppliers, pharmacyItems, organ
                         {p.name}{p.saleBlockedAt ? " — bloqué par le coordinateur" : ""}
                       </option>
                     ))}
-                  </select>
+                  </SearchSelect>
                 </div>
               ) : (
                 <div className="col-span-2 space-y-1">

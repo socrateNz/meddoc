@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Pencil, Plus } from "lucide-react";
@@ -73,13 +74,13 @@ export default function RadiologyCatalog({ clinicId, exams }: { clinicId: string
         </div>
         <div className="space-y-1">
           <label className="text-xs uppercase tracking-wider font-bold text-slate-400">Modalité</label>
-          <select value={modality} onChange={(e) => setModality(e.target.value as RadiologyModality)} className={selectClass}>
+          <SearchSelect value={modality} onChange={(e) => setModality(e.target.value as RadiologyModality)} className={selectClass}>
             {RADIOLOGY_MODALITIES.map((m) => (
               <option key={m} value={m}>
                 {RADIOLOGY_MODALITY_LABELS[m]}
               </option>
             ))}
-          </select>
+          </SearchSelect>
         </div>
         <div className="space-y-1 w-36">
           <label className="text-xs uppercase tracking-wider font-bold text-slate-400">Tarif (FCFA)</label>

@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -30,7 +31,7 @@ export default function WithdrawalCategorySelect({ organizationId, transactionId
 
   return (
     <div className="flex items-center gap-2">
-      <select
+      <SearchSelect
         value={current}
         disabled={disabled || busy}
         onChange={(e) => change(e.target.value)}
@@ -46,7 +47,7 @@ export default function WithdrawalCategorySelect({ organizationId, transactionId
             <option key={key} value={key}>{c.label}</option>
           ))}
         </optgroup>
-      </select>
+      </SearchSelect>
       {busy && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,7 +159,7 @@ export default function ChatInterface({ patients }: { patients: Patient[] }) {
       <div className="w-full md:w-72 border-r bg-muted/20 p-5 flex flex-col gap-5 shrink-0">
         <div className="space-y-2">
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Patient à analyser</label>
-          <select
+          <SearchSelect
             value={selectedPatientId}
             onChange={(e) => setSelectedPatientId(e.target.value)}
             className="w-full rounded-xl border bg-background px-3 py-2 text-sm shadow-sm focus:ring-1 focus:ring-primary focus:outline-none"
@@ -169,7 +170,7 @@ export default function ChatInterface({ patients }: { patients: Patient[] }) {
                 {p.user.lastName} {p.user.firstName}
               </option>
             ))}
-          </select>
+          </SearchSelect>
         </div>
 
         {selectedPatientId ? (

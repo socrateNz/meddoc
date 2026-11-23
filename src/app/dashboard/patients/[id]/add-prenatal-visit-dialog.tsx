@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -20,11 +21,11 @@ const SELECT = "h-11 w-full rounded-xl border border-input bg-background px-3 te
 // Choix Oui / Non / non renseigné.
 function YesNo({ id, value, onChange }: { id: string; value: string; onChange: (v: string) => void }) {
   return (
-    <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className={SELECT}>
+    <SearchSelect id={id} value={value} onChange={(e) => onChange(e.target.value)} className={SELECT}>
       <option value="">—</option>
       <option value="yes">Oui</option>
       <option value="no">Non</option>
-    </select>
+    </SearchSelect>
   );
 }
 
@@ -140,17 +141,17 @@ export default function AddPrenatalVisitDialog({ pregnancyId, nextCpnNumber }: {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pv-prot">Albumine (BU)</Label>
-                <select id="pv-prot" value={urineProtein} onChange={(e) => setUrineProtein(e.target.value)} className={SELECT}>
+                <SearchSelect id="pv-prot" value={urineProtein} onChange={(e) => setUrineProtein(e.target.value)} className={SELECT}>
                   <option value="">—</option>
                   {URINE_DIPSTICK_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                </SearchSelect>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pv-glu">Sucre (BU)</Label>
-                <select id="pv-glu" value={urineGlucose} onChange={(e) => setUrineGlucose(e.target.value)} className={SELECT}>
+                <SearchSelect id="pv-glu" value={urineGlucose} onChange={(e) => setUrineGlucose(e.target.value)} className={SELECT}>
                   <option value="">—</option>
                   {URINE_DIPSTICK_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
+                </SearchSelect>
               </div>
             </div>
           </fieldset>
@@ -168,10 +169,10 @@ export default function AddPrenatalVisitDialog({ pregnancyId, nextCpnNumber }: {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pv-pres">Présentation</Label>
-                <select id="pv-pres" value={fetalPresentation} onChange={(e) => setFetalPresentation(e.target.value)} className={SELECT}>
+                <SearchSelect id="pv-pres" value={fetalPresentation} onChange={(e) => setFetalPresentation(e.target.value)} className={SELECT}>
                   <option value="">—</option>
                   {Object.entries(FETAL_PRESENTATION_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+                </SearchSelect>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="pv-maf">Mouvements actifs</Label>

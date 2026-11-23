@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, Loader2 } from "lucide-react";
@@ -118,33 +119,33 @@ export default function ScheduleSurgeryDialog({ clinicId, rooms, defaultDate }: 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="space-y-1.5 col-span-2">
               <Label>Salle *</Label>
-              <select value={form.operatingRoomId} onChange={(e) => set("operatingRoomId", e.target.value)} className={selectClass}>
+              <SearchSelect value={form.operatingRoomId} onChange={(e) => set("operatingRoomId", e.target.value)} className={selectClass}>
                 {rooms.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Côté</Label>
-              <select value={form.laterality} onChange={(e) => set("laterality", e.target.value as Laterality)} className={selectClass}>
+              <SearchSelect value={form.laterality} onChange={(e) => set("laterality", e.target.value as Laterality)} className={selectClass}>
                 {LATERALITIES.map((l) => (
                   <option key={l} value={l}>
                     {LATERALITY_LABELS[l]}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Anesthésie</Label>
-              <select value={form.anesthesiaType} onChange={(e) => set("anesthesiaType", e.target.value as AnesthesiaType)} className={selectClass}>
+              <SearchSelect value={form.anesthesiaType} onChange={(e) => set("anesthesiaType", e.target.value as AnesthesiaType)} className={selectClass}>
                 {ANESTHESIA_TYPES.map((a) => (
                   <option key={a} value={a}>
                     {ANESTHESIA_LABELS[a]}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Date *</Label>
@@ -166,18 +167,18 @@ export default function ScheduleSurgeryDialog({ clinicId, rooms, defaultDate }: 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label>Chirurgien *</Label>
-              <select required value={form.surgeonId} onChange={(e) => set("surgeonId", e.target.value)} className={selectClass}>
+              <SearchSelect required value={form.surgeonId} onChange={(e) => set("surgeonId", e.target.value)} className={selectClass}>
                 <option value="">{staff ? "Choisir..." : "Chargement..."}</option>
                 {staff?.doctors.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Anesthésiste</Label>
-              <select value={form.anesthetistId} onChange={(e) => set("anesthetistId", e.target.value)} className={selectClass}>
+              <SearchSelect value={form.anesthetistId} onChange={(e) => set("anesthetistId", e.target.value)} className={selectClass}>
                 <option value="">—</option>
                 {staff?.doctors
                   .filter((d) => d.id !== form.surgeonId)
@@ -186,18 +187,18 @@ export default function ScheduleSurgeryDialog({ clinicId, rooms, defaultDate }: 
                       {d.name}
                     </option>
                   ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Infirmier(e) de bloc</Label>
-              <select value={form.scrubNurseId} onChange={(e) => set("scrubNurseId", e.target.value)} className={selectClass}>
+              <SearchSelect value={form.scrubNurseId} onChange={(e) => set("scrubNurseId", e.target.value)} className={selectClass}>
                 <option value="">—</option>
                 {staff?.nurses.map((n) => (
                   <option key={n.id} value={n.id}>
                     {n.name}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
           </div>
           <div className="space-y-1.5">

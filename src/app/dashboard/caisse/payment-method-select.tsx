@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { Label } from "@/components/ui/label";
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type PaymentMethod } from "@/lib/accounting/plan";
 
@@ -17,7 +18,7 @@ export default function PaymentMethodSelect({
   return (
     <div className="flex items-center justify-between gap-2">
       <Label htmlFor={id} className="text-xs whitespace-nowrap">Moyen de paiement</Label>
-      <select
+      <SearchSelect
         id={id}
         value={value}
         onChange={(e) => onChange(e.target.value as PaymentMethod)}
@@ -28,7 +29,7 @@ export default function PaymentMethodSelect({
             {PAYMENT_METHOD_LABELS[m]}
           </option>
         ))}
-      </select>
+      </SearchSelect>
     </div>
   );
 }

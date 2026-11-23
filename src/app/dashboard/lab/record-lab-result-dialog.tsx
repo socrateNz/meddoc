@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -107,7 +108,7 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
           <div className="space-y-1.5">
             <Label>Analyse *</Label>
             {labOrder.tests.length > 0 ? (
-              <select
+              <SearchSelect
                 required
                 value={testName}
                 onChange={(e) => selectTest(e.target.value)}
@@ -116,7 +117,7 @@ export default function RecordLabResultDialog({ labOrder, onSuccess }: RecordLab
                 {labOrder.tests.map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
-              </select>
+              </SearchSelect>
             ) : (
               <Input required value={testName} onChange={(e) => setTestName(e.target.value)} className="rounded-xl" />
             )}

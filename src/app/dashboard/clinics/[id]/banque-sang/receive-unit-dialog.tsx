@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, PackagePlus } from "lucide-react";
@@ -72,33 +73,33 @@ export default function ReceiveUnitDialog({ clinicId }: { clinicId: string }) {
             </div>
             <div className="space-y-1.5 col-span-2">
               <Label>Produit *</Label>
-              <select value={form.product} onChange={(e) => set("product", e.target.value as BloodProduct)} className={selectClass}>
+              <SearchSelect value={form.product} onChange={(e) => set("product", e.target.value as BloodProduct)} className={selectClass}>
                 {BLOOD_PRODUCTS.map((p) => (
                   <option key={p} value={p}>
                     {BLOOD_PRODUCT_LABELS[p]}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Groupe ABO *</Label>
-              <select value={form.aboGroup} onChange={(e) => set("aboGroup", e.target.value as AboGroup)} className={selectClass}>
+              <SearchSelect value={form.aboGroup} onChange={(e) => set("aboGroup", e.target.value as AboGroup)} className={selectClass}>
                 {ABO_GROUPS.map((g) => (
                   <option key={g} value={g}>
                     {g}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Rhésus *</Label>
-              <select value={form.rhesus} onChange={(e) => set("rhesus", e.target.value as Rhesus)} className={selectClass}>
+              <SearchSelect value={form.rhesus} onChange={(e) => set("rhesus", e.target.value as Rhesus)} className={selectClass}>
                 {RHESUS.map((r) => (
                   <option key={r} value={r}>
                     {r === "POS" ? "RhD positif (+)" : "RhD négatif (-)"}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Prélevée le</Label>

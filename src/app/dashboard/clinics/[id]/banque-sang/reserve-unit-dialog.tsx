@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Droplet, Loader2 } from "lucide-react";
@@ -102,52 +103,52 @@ export default function ReserveUnitDialog({ clinicId }: { clinicId: string }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5 col-span-2">
               <Label>Produit *</Label>
-              <select value={product} onChange={(e) => setProduct(e.target.value as BloodProduct)} className={selectClass}>
+              <SearchSelect value={product} onChange={(e) => setProduct(e.target.value as BloodProduct)} className={selectClass}>
                 {BLOOD_PRODUCTS.map((p) => (
                   <option key={p} value={p}>
                     {BLOOD_PRODUCT_LABELS[p]}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Groupe du patient (confirmé) *</Label>
-              <select value={abo} onChange={(e) => setAbo(e.target.value as AboGroup)} className={selectClass}>
+              <SearchSelect value={abo} onChange={(e) => setAbo(e.target.value as AboGroup)} className={selectClass}>
                 <option value="">—</option>
                 {ABO_GROUPS.map((g) => (
                   <option key={g} value={g}>
                     {g}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>Rhésus du patient *</Label>
-              <select value={rh} onChange={(e) => setRh(e.target.value as Rhesus)} className={selectClass}>
+              <SearchSelect value={rh} onChange={(e) => setRh(e.target.value as Rhesus)} className={selectClass}>
                 <option value="">—</option>
                 {RHESUS.map((r) => (
                   <option key={r} value={r}>
                     {r === "POS" ? "RhD +" : "RhD -"}
                   </option>
                 ))}
-              </select>
+              </SearchSelect>
             </div>
             <div className="space-y-1.5">
               <Label>RAI (Coombs indirect) *</Label>
-              <select value={antibodyScreen} onChange={(e) => setAntibodyScreen(e.target.value as "NEGATIVE" | "POSITIVE")} className={selectClass}>
+              <SearchSelect value={antibodyScreen} onChange={(e) => setAntibodyScreen(e.target.value as "NEGATIVE" | "POSITIVE")} className={selectClass}>
                 <option value="">—</option>
                 <option value="NEGATIVE">Négative</option>
                 <option value="POSITIVE">Positive</option>
-              </select>
+              </SearchSelect>
             </div>
             {needsCrossmatch && (
               <div className="space-y-1.5">
                 <Label>Cross-match *</Label>
-                <select value={crossmatch} onChange={(e) => setCrossmatch(e.target.value as "COMPATIBLE" | "INCOMPATIBLE")} className={selectClass}>
+                <SearchSelect value={crossmatch} onChange={(e) => setCrossmatch(e.target.value as "COMPATIBLE" | "INCOMPATIBLE")} className={selectClass}>
                   <option value="">—</option>
                   <option value="COMPATIBLE">Compatible</option>
                   <option value="INCOMPATIBLE">Incompatible</option>
-                </select>
+                </SearchSelect>
               </div>
             )}
           </div>

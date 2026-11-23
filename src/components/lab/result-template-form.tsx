@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,7 +24,7 @@ function FieldInput({ field, value, onChange }: { field: ResultField; value: str
   const ring = abnormal ? "border-red-400 ring-1 ring-red-300 dark:border-red-700" : "";
   if (field.type === "choice") {
     return (
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={`${selectClass} ${ring}`}>
+      <SearchSelect value={value} onChange={(e) => onChange(e.target.value)} className={`${selectClass} ${ring}`}>
         <option value="">—</option>
         {/* Valeur hors liste (modèle modifié depuis) : gardée telle quelle. */}
         {value && !field.options.includes(value) && <option value={value}>{value}</option>}
@@ -32,7 +33,7 @@ function FieldInput({ field, value, onChange }: { field: ResultField; value: str
             {o}
           </option>
         ))}
-      </select>
+      </SearchSelect>
     );
   }
   if (field.type === "text" && field.multiline) {

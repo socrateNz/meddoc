@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Wallet } from "lucide-react";
@@ -76,13 +77,13 @@ export default function SettlementForm({
       </div>
       <div className="space-y-1">
         <label className="text-xs font-semibold text-slate-500">Mode</label>
-        <select value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-800 dark:bg-slate-900">
+        <SearchSelect value={method} onChange={(e) => setMethod(e.target.value as typeof method)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-800 dark:bg-slate-900">
           {methods.map(([v, l]) => (
             <option key={v} value={v}>
               {l}
             </option>
           ))}
-        </select>
+        </SearchSelect>
       </div>
       {method === "CASH" && (
         <div className="space-y-1">
@@ -90,13 +91,13 @@ export default function SettlementForm({
           {openSessions.length === 0 ? (
             <p className="h-10 text-xs leading-10 text-red-600">Aucune caisse ouverte</p>
           ) : (
-            <select value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-800 dark:bg-slate-900">
+            <SearchSelect value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm dark:border-slate-800 dark:bg-slate-900">
               {openSessions.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
                 </option>
               ))}
-            </select>
+            </SearchSelect>
           )}
         </div>
       )}

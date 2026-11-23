@@ -1,5 +1,6 @@
 "use client";
 
+import SearchSelect from "@/components/ui/search-select";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Trash2 } from "lucide-react";
@@ -127,13 +128,13 @@ export default function BloodStockView({ units, canManage }: { units: Unit[]; ca
                   {canManage && u.status === "AVAILABLE" &&
                     (discarding === u.id ? (
                       <>
-                        <select value={reason} onChange={(e) => setReason(e.target.value as (typeof DISCARD_REASONS)[number])} className="h-8 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                        <SearchSelect value={reason} onChange={(e) => setReason(e.target.value as (typeof DISCARD_REASONS)[number])} className="h-8 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
                           {DISCARD_REASONS.map((r) => (
                             <option key={r} value={r}>
                               {DISCARD_REASON_LABELS[r]}
                             </option>
                           ))}
-                        </select>
+                        </SearchSelect>
                         <Button size="sm" variant="destructive" onClick={() => discard(u)}>
                           Confirmer
                         </Button>
