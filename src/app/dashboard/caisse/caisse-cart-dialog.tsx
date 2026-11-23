@@ -402,11 +402,6 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
                       required
                       value={addPharmacyQty}
                       onChange={(e) => setAddPharmacyQty(e.target.value)}
-                      onBlur={() => {
-                        if (addPharmacyQty === "" || Number(addPharmacyQty) < 1) {
-                          setAddPharmacyQty(1);
-                        }
-                      }}
                       className="h-11 text-base sm:h-9 sm:text-sm rounded-xl"
                     />
                   </div>

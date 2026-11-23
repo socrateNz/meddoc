@@ -205,11 +205,6 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
                 placeholder="500"
                 value={formData.unitPrice}
                 onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value })}
-                onBlur={() => {
-                  if (formData.unitPrice === "" || Number(formData.unitPrice) < 0) {
-                    setFormData((prev) => ({ ...prev, unitPrice: "0" }));
-                  }
-                }}
                 className="rounded-xl"
               />
             </div>
@@ -224,11 +219,6 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
                 placeholder="10"
                 value={formData.reorderLevel}
                 onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value })}
-                onBlur={() => {
-                  if (formData.reorderLevel === "" || Number(formData.reorderLevel) < 1) {
-                    setFormData((prev) => ({ ...prev, reorderLevel: "1" }));
-                  }
-                }}
                 className="rounded-xl"
               />
             </div>

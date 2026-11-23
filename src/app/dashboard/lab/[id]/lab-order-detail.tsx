@@ -70,7 +70,9 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
   // Examens décochés pour le prochain tube (ils iront dans un autre prélèvement).
   const [excludedTests, setExcludedTests] = useState<string[]>([]);
   const [savingSample, setSavingSample] = useState(false);
-  const [labelCopies, setLabelCopies] = useState(1);
+  // Saisie libre (champ vidable) ; le nombre utilisé est borné entre 1 et MAX_TUBE_LABELS.
+  const [labelCopiesInput, setLabelCopiesInput] = useState("1");
+  const labelCopies = Math.min(MAX_TUBE_LABELS, Math.max(1, Math.floor(Number(labelCopiesInput)) || 1));
   const [busy, setBusy] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<{ summary: string; trends: string[]; flags: string[] } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -375,8 +377,8 @@ export default function LabOrderDetail({ order: initialOrder }: { order: any; cu
                 type="number"
                 min={1}
                 max={MAX_TUBE_LABELS}
-                value={labelCopies}
-                onChange={(e) => setLabelCopies(Math.min(MAX_TUBE_LABELS, Math.max(1, Math.floor(Number(e.target.value)) || 1)))}
+                value={labelCopiesInput}
+                onChange={(e) => setLabelCopiesInput(e.target.value)}
                 className="h-9 w-20 rounded-lg text-base sm:text-sm"
               />
             </div>
