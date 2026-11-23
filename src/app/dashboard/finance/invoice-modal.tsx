@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Printer, Download, Receipt, FileText, CheckCircle2 } from "lucide-react";
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 import { displayPatientEmail } from "@/lib/patient-identity";
+import { cleanupPrint, printElement } from "@/lib/print-element";
 
 interface InvoiceModalProps {
   transaction: any;
@@ -31,6 +32,12 @@ export default function InvoiceModal({ transaction, organizationName, organizati
       setInternalOpen(val);
     }
   };
+
+  // Copie d'impression retirée à la fermeture du ticket (cf. print-element.ts).
+  useEffect(() => {
+    if (!open) cleanupPrint();
+    return () => cleanupPrint();
+  }, [open]);
 
   if (!transaction) return null;
 
@@ -134,7 +141,9 @@ export default function InvoiceModal({ transaction, organizationName, organizati
   const isCancelled = transaction.status === "CANCELLED";
 
   const handlePrint = () => {
-    window.print();
+    const receipt = document.getElementById("printable-receipt");
+    if (receipt) printElement(receipt, viewFormat);
+    else window.print();
   };
 
   return (
@@ -145,7 +154,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
         </DialogTrigger>
       )}
 
-      <DialogContent className="print-anchor-top sm:max-w-[580px] max-h-[92vh] rounded-3xl p-0 overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex flex-col text-slate-100">
+      <DialogContent className="sm:max-w-[580px] max-h-[92vh] rounded-3xl p-0 overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex flex-col text-slate-100">
         {/* Header with Format Switcher */}
         <DialogHeader className="p-5 pb-3 bg-slate-950 border-b border-slate-800 flex flex-row items-center justify-between">
           <div>

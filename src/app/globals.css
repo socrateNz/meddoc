@@ -205,54 +205,51 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Print styles for thermal POS ticket & A4 invoices */
+/* Impression d'un ticket / d'une facture seul (cf. src/lib/print-element.ts) : sa copie est posée
+   dans #print-root, à la racine de <body> ; tout le reste sort de la mise en page — pas de pages
+   blanches, pas de décalage dû à la boîte de dialogue. Ne touche pas aux autres impressions
+   (relevé partenaire, manuel), faites hors de cette classe. */
+@media screen {
+  #print-root {
+    display: none !important;
+  }
+}
 @media print {
-  body * {
-    visibility: hidden !important;
-    /* Le ticket est affiché dans une boîte de dialogue à hauteur limitée (max-h-[92vh]) avec un
-       conteneur scrollable (overflow-y-auto) — sans neutraliser ça aussi à l'impression, un long
-       ticket restait rogné à la hauteur visible du modal à l'écran, même une fois #printable-
-       receipt sorti du flux normal ci-dessous. Sans effet visuel ici puisque ces éléments sont
-       de toute façon invisible ci-dessus. */
-    overflow: visible !important;
-    max-height: none !important;
+  html.printing-element body > *:not(#print-root) {
+    display: none !important;
   }
-  #printable-receipt, #printable-receipt * {
-    visibility: visible !important;
-  }
-  /* La boîte de dialogue qui contient le ticket est centrée à l'écran (position fixe + translation) :
-     #printable-receipt, positionné par rapport à elle, s'imprimait aussi bas qu'elle, avec un grand
-     blanc au-dessus du ticket. À l'impression, elle est ramenée tout en haut de la page. */
-  .print-anchor-top {
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: auto !important;
-    bottom: auto !important;
+  html.printing-element,
+  html.printing-element body {
     margin: 0 !important;
-    transform: none !important;
-    translate: none !important;
-    scale: none !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+  #print-root {
+    display: block !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  #print-root > * {
+    margin: 0 !important;
     width: 100% !important;
     max-width: none !important;
-  }
-  #printable-receipt {
-    /* absolute, pas fixed : un élément fixed est répété à l'identique sur chaque page et son
-       contenu est rogné à la hauteur d'une page plutôt que de continuer sur la suivante — les
-       longs tickets (beaucoup de lignes) se coupaient net en bas de la première page. absolute
-       se positionne au même endroit mais laisse le contenu se répartir normalement sur plusieurs
-       pages quand il dépasse une page. */
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    margin: 0 !important;
-    padding: 10px !important;
     box-shadow: none !important;
     border: none !important;
+    border-radius: 0 !important;
     background: #ffffff !important;
     color: #000000 !important;
-    width: 100% !important;
-    max-width: 80mm !important;
+  }
+  /* Papier thermique : petites marges intérieures, et tout en noir — les gris s'impriment pâles,
+     voire pas du tout, sur une imprimante thermique. */
+  #print-root[data-format="thermal"] > * {
+    padding: 2mm 3mm 6mm !important;
+  }
+  #print-root[data-format="thermal"] * {
+    color: #000000 !important;
+    border-color: #000000 !important;
   }
 }
 
