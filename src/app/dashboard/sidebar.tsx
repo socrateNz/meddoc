@@ -555,15 +555,15 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
       );
     };
 
-    // Peu d'entrées (accueil, laborantin, caissier...) : tout reste déplié, rien à chercher.
-    const collapsible = filteredNavItems.length > 10;
+    // Même menu pour tous les profils : groupes en accordéon (celui de la page ouverte reste déplié,
+    // « Aperçu » toujours ouvert).
     return (
       <nav className="grid items-start gap-3">
         {SECTION_ORDER.map((section) => {
           const items = filteredNavItems.filter((item: any) => item.section === section);
           if (items.length === 0) return null;
           const hasActive = items.some((item: any) => isActive(item));
-          const canCollapse = collapsible && section !== "Aperçu";
+          const canCollapse = section !== "Aperçu";
           const open = !canCollapse || hasActive || openSections.has(section);
           // Total des compteurs de ses entrées (incidents, messages...) : visible même replié.
           const groupCount = items.reduce((sum: number, item: any) => sum + (item.count > 0 ? item.count : 0), 0);
