@@ -83,7 +83,7 @@ export function parseStoredResult(raw: unknown): StoredResultData | null {
 }
 
 // Paillasses du laboratoire (LabTest.department) : liste proposée, la clinique peut en saisir d'autres.
-export const LAB_BENCHES = ["Biochimie", "Hématologie", "Sérologie", "Immunologie", "Parasitologie", "Bactériologie"];
+export const LAB_BENCHES = ["Biochimie", "Hématologie", "Sérologie", "Immunologie", "Parasitologie", "Bactériologie", "Hormonologie"];
 
 export const ANTIBIOTICS = [
   "Amoxicilline",
@@ -664,7 +664,343 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       antifungigram: true,
     },
   },
+  ...extraPresets(),
 ];
+
+// Modèles ajoutés pour couvrir le catalogue courant d'un laboratoire de clinique (biochimie,
+// hémostase, sérologies, bactériologie, hormonologie). Valeurs de référence adulte usuelles,
+// indicatives : à ajuster par le biologiste selon les réactifs et automates du laboratoire.
+function extraPresets(): TemplatePreset[] {
+  const table = (fields: ResultField[], extra: Partial<ResultTemplate> = {}): ResultTemplate => ({ version: 1, sections: [{ layout: "table", fields }], ...extra });
+  const igmIgg = (id: string, name: string): TemplatePreset => ({
+    id,
+    name,
+    bench: "Sérologie",
+    template: {
+      version: 1,
+      sections: [
+        {
+          fields: [
+            choice("igm", "IgM", NEG_POS, { default: "Négatif", abnormal: ["Positif"] }),
+            choice("igg", "IgG", NEG_POS, { default: "Négatif" }),
+          ],
+        },
+      ],
+      conclusion: true,
+    },
+  });
+  const hormone = (id: string, name: string, unit: string, refText: string, refLow?: number, refHigh?: number): TemplatePreset => ({
+    id,
+    name,
+    bench: "Hormonologie",
+    template: table([num(id, name, unit, refLow, refHigh, refText)], { technique: "Immunodosage" }),
+  });
+  const presenceSection = (title: string, fields: ResultField[]) => ({ title, fields });
+
+  return [
+    // --- Biochimie ---
+    { id: "asat", name: "ASAT (TGO)", bench: "Biochimie", template: table([num("asat", "ASAT (TGO)", "UI/L", 0, 40)]) },
+    { id: "alat", name: "ALAT (TGP)", bench: "Biochimie", template: table([num("alat", "ALAT (TGP)", "UI/L", 0, 40)]) },
+    { id: "urea", name: "Urée", bench: "Biochimie", template: table([num("urea", "Urée", "g/L", 0.15, 0.45)]) },
+    { id: "creatinine", name: "Créatinine", bench: "Biochimie", template: table([num("creat", "Créatinine", "mg/L", 6, 13, "H : 7 – 13 ; F : 6 – 11")]) },
+    { id: "ggt", name: "Gamma-GT", bench: "Biochimie", template: table([num("ggt", "Gamma-GT", "UI/L", undefined, 55, "H < 55 ; F < 38")]) },
+    {
+      id: "bilirubin",
+      name: "Bilirubine (totale / directe)",
+      bench: "Biochimie",
+      template: table([
+        num("total", "Bilirubine totale", "mg/L", undefined, 12, "< 12"),
+        num("direct", "Bilirubine directe (conjuguée)", "mg/L", undefined, 3, "< 3"),
+        num("indirect", "Bilirubine indirecte (libre)", "mg/L", undefined, 9, "< 9"),
+      ]),
+    },
+    {
+      id: "iono-simple",
+      name: "Ionogramme simple",
+      bench: "Biochimie",
+      template: table([num("na", "Sodium (Na⁺)", "mmol/L", 135, 145), num("k", "Potassium (K⁺)", "mmol/L", 3.5, 5), num("cl", "Chlore (Cl⁻)", "mmol/L", 98, 107)]),
+    },
+    {
+      id: "iono-complet",
+      name: "Ionogramme complet",
+      bench: "Biochimie",
+      template: table([
+        num("na", "Sodium (Na⁺)", "mmol/L", 135, 145),
+        num("k", "Potassium (K⁺)", "mmol/L", 3.5, 5),
+        num("cl", "Chlore (Cl⁻)", "mmol/L", 98, 107),
+        num("hco3", "Bicarbonates (HCO₃⁻)", "mmol/L", 22, 29),
+        num("ca", "Calcium", "mmol/L", 2.2, 2.6),
+        num("mg", "Magnésium", "mmol/L", 0.7, 1.05),
+        num("p", "Phosphore", "mmol/L", 0.8, 1.45),
+      ]),
+    },
+    {
+      id: "lipid-profile",
+      name: "Profil lipidique",
+      bench: "Biochimie",
+      template: table([
+        num("chol", "Cholestérol total", "g/L", undefined, 2, "< 2,00"),
+        num("hdl", "HDL-cholestérol", "g/L", 0.4, undefined, "> 0,40"),
+        num("ldl", "LDL-cholestérol", "g/L", undefined, 1.6, "< 1,60"),
+        num("tg", "Triglycérides", "g/L", undefined, 1.5, "< 1,50"),
+        num("ratio", "Rapport CT / HDL", undefined, undefined, 5, "< 5"),
+      ]),
+    },
+    { id: "hba1c", name: "Hémoglobine glyquée (HbA1c)", bench: "Biochimie", template: table([num("hba1c", "HbA1c", "%", 4, 6, "4 – 6 (objectif du diabétique < 7)")]) },
+
+    // --- Hématologie / hémostase ---
+    {
+      id: "tp-inr",
+      name: "TP / INR (taux de prothrombine)",
+      bench: "Hématologie",
+      template: table([
+        num("patient", "Temps du patient", "s"),
+        num("control", "Temps du témoin", "s"),
+        num("tp", "Taux de prothrombine (TP)", "%", 70, 100),
+        num("inr", "INR", undefined, 0.8, 1.2, "0,8 – 1,2 (hors traitement anticoagulant)"),
+      ]),
+    },
+    {
+      id: "tck",
+      name: "TCK (temps de céphaline activée)",
+      bench: "Hématologie",
+      template: table([num("patient", "Temps du patient", "s"), num("control", "Temps du témoin", "s"), num("ratio", "Rapport patient / témoin", undefined, undefined, 1.2, "< 1,2")]),
+    },
+    {
+      id: "esr",
+      name: "VS (vitesse de sédimentation)",
+      bench: "Hématologie",
+      template: table([num("h1", "1re heure", "mm", undefined, 20, "H < 15 ; F < 20"), num("h2", "2e heure", "mm")], { technique: "Méthode de Westergren" }),
+    },
+    { id: "bleeding-time", name: "TS (temps de saignement)", bench: "Hématologie", template: table([num("ts", "Temps de saignement", "min", 2, 4)], { technique: "Méthode de Duke" }) },
+    { id: "clotting-time", name: "TC (temps de coagulation)", bench: "Hématologie", template: table([num("tc", "Temps de coagulation", "min", 5, 10)], { technique: "Méthode de Lee et White" }) },
+    { id: "hemoglobin", name: "Taux d'hémoglobine", bench: "Hématologie", template: table([num("hb", "Hémoglobine", "g/dL", 12, 17, "H : 13 – 17 ; F : 12 – 16")]) },
+
+    // --- Parasitologie ---
+    {
+      id: "microfilaria",
+      name: "Recherche de microfilaires",
+      bench: "Parasitologie",
+      template: {
+        version: 1,
+        technique: "Frottis / leucoconcentration, coloration au Giemsa",
+        sections: [
+          {
+            fields: [
+              choice("result", "Résultat", NEG_POS, { default: "Négatif", abnormal: ["Positif"] }),
+              choice("species", "Espèce", ["/", "Loa loa", "Mansonella perstans", "Wuchereria bancrofti", "Autre"], { default: "/" }),
+              num("density", "Densité", "microfilaires/mL"),
+            ],
+          },
+        ],
+        conclusion: true,
+      },
+    },
+
+    // --- Sérologie ---
+    {
+      id: "malaria-rdt",
+      name: "TDR paludisme",
+      bench: "Sérologie",
+      template: rapidTest("rdt", "TDR paludisme (antigène HRP2 / pLDH)", "Test de diagnostic rapide", ["Négatif", "Positif"], "Positif"),
+    },
+    {
+      id: "pregnancy-test",
+      name: "Test de grossesse (β-hCG urinaire)",
+      bench: "Sérologie",
+      template: { version: 1, technique: "Test rapide immunochromatographique", sections: [{ fields: [choice("hcg", "β-hCG urinaire", NEG_POS, { default: "Négatif" })] }], conclusion: true },
+    },
+    {
+      id: "chlamydia-rapid",
+      name: "Chlamydia trachomatis (test rapide)",
+      bench: "Sérologie",
+      template: rapidTest("chlamydia", "Chlamydia trachomatis", "Test rapide", ["Négatif", "Positif"], "Positif"),
+    },
+    igmIgg("igm-igg-hsv1", "Herpès type 1 (HSV 1) (IgM / IgG)"),
+    igmIgg("igm-igg-hsv2", "Herpès type 2 (HSV 2) (IgM / IgG)"),
+
+    // --- Bactériologie ---
+    {
+      id: "mycoplasma",
+      name: "Mycoplasmes urogénitaux",
+      bench: "Bactériologie",
+      template: {
+        version: 1,
+        title: "RECHERCHE DE MYCOPLASMES UROGÉNITAUX",
+        sections: [
+          {
+            layout: "table",
+            fields: [
+              choice("uu", "Ureaplasma urealyticum", ["Négatif", "Positif < 10⁴ UCC/mL", "Positif ≥ 10⁴ UCC/mL"], { default: "Négatif", abnormal: ["Positif ≥ 10⁴ UCC/mL"] }),
+              choice("mh", "Mycoplasma hominis", ["Négatif", "Positif < 10⁴ UCC/mL", "Positif ≥ 10⁴ UCC/mL"], { default: "Négatif", abnormal: ["Positif ≥ 10⁴ UCC/mL"] }),
+            ],
+          },
+        ],
+        conclusion: true,
+        antibiogram: true,
+      },
+    },
+    {
+      id: "spermogram",
+      name: "Spermogramme",
+      bench: "Bactériologie",
+      template: {
+        version: 1,
+        title: "SPERMOGRAMME",
+        sections: [
+          { title: "Renseignements", fields: [text("abstinence", "Délai d'abstinence", "3 jours")] },
+          {
+            title: "Examen macroscopique",
+            layout: "table",
+            fields: [
+              num("volume", "Volume", "mL", 1.5, undefined, "≥ 1,5"),
+              num("ph", "pH", undefined, 7.2, 8),
+              choice("viscosity", "Viscosité", ["Normale", "Augmentée"], { default: "Normale", abnormal: ["Augmentée"] }),
+              text("liquefaction", "Liquéfaction", "Complète en 30 min"),
+              text("color", "Aspect / couleur", "Blanc opalescent"),
+            ],
+          },
+          {
+            title: "Examen microscopique",
+            layout: "table",
+            fields: [
+              num("concentration", "Numération", "millions/mL", 15, undefined, "≥ 15"),
+              num("total", "Numération totale", "millions/éjaculat", 39, undefined, "≥ 39"),
+              num("progressive", "Mobilité progressive", "%", 32, undefined, "≥ 32"),
+              num("motility", "Mobilité totale", "%", 40, undefined, "≥ 40"),
+              num("vitality", "Vitalité", "%", 58, undefined, "≥ 58"),
+              num("morphology", "Formes normales", "%", 4, undefined, "≥ 4"),
+              num("leuco", "Leucocytes", "millions/mL", undefined, 1, "< 1"),
+              choice("agglutination", "Agglutinats", ["Absents", "Présents"], { default: "Absents", abnormal: ["Présents"] }),
+            ],
+          },
+        ],
+        conclusion: true,
+        note: "Valeurs de référence OMS 2010.",
+      },
+    },
+    {
+      id: "spermoculture",
+      name: "Spermoculture",
+      bench: "Bactériologie",
+      template: {
+        version: 1,
+        title: "SPERMOCULTURE",
+        sections: [
+          presenceSection("Examen microscopique", [presence("leuco", "Leucocytes"), presence("rbc", "Hématies", true), presence("yeast", "Levures", true), text("other", "Autres éléments", "/")]),
+          presenceSection("Coloration de Gram", [presence("bgp", "Bacilles à Gram positif"), presence("bgn", "Bacilles à Gram négatif"), presence("cgp", "Cocci à Gram positif")]),
+          { title: "Culture", fields: [text("culture", "Culture", "Absence de croissance microbienne"), text("count", "Numération (UFC/mL)", "/")] },
+        ],
+        conclusion: true,
+        antibiogram: true,
+      },
+    },
+    {
+      id: "urethral-swab",
+      name: "PU (prélèvement urétral)",
+      bench: "Bactériologie",
+      template: {
+        version: 1,
+        title: "PRÉLÈVEMENT URÉTRAL",
+        sections: [
+          { title: "Examen macroscopique", fields: [text("discharge", "Écoulement", "Absent")] },
+          presenceSection("État frais", [presence("leuco", "Leucocytes"), presence("rbc", "Hématies", true), presence("yeast", "Levures", true), presence("tricho", "Trichomonas vaginalis")]),
+          presenceSection("Coloration de Gram", [
+            presence("neisseria", "Diplocoques à Gram négatif intracellulaires"),
+            presence("bgn", "Bacilles à Gram négatif"),
+            presence("cgp", "Cocci à Gram positif"),
+            presence("bgp", "Bacilles à Gram positif"),
+          ]),
+          { title: "Culture", fields: [text("culture", "Culture", "Négative")] },
+        ],
+        conclusion: true,
+        antibiogram: true,
+      },
+    },
+    {
+      id: "pus",
+      name: "Pus / plaie (examen cytobactériologique)",
+      bench: "Bactériologie",
+      template: {
+        version: 1,
+        title: "EXAMEN CYTOBACTÉRIOLOGIQUE DU PUS",
+        sections: [
+          { title: "Prélèvement", fields: [text("site", "Site", "/"), text("aspect", "Aspect", "Purulent")] },
+          presenceSection("Examen microscopique", [presence("leuco", "Leucocytes"), presence("rbc", "Hématies", true)]),
+          presenceSection("Coloration de Gram", [presence("cgp", "Cocci à Gram positif"), presence("bgn", "Bacilles à Gram négatif"), presence("bgp", "Bacilles à Gram positif")]),
+          { title: "Culture", fields: [text("culture", "Culture", "Négative")] },
+        ],
+        conclusion: true,
+        antibiogram: true,
+      },
+    },
+    {
+      id: "blood-culture",
+      name: "Hémoculture",
+      bench: "Bactériologie",
+      template: {
+        version: 1,
+        title: "HÉMOCULTURE",
+        sections: [
+          { title: "Prélèvement", fields: [text("bottles", "Flacons", "1 aérobie + 1 anaérobie"), text("temperature", "Température au prélèvement", "/")] },
+          { title: "Résultat", fields: [text("gram", "Examen direct (Gram)", "/"), text("culture", "Culture", "Absence de croissance après 7 jours d'incubation")] },
+        ],
+        conclusion: true,
+        antibiogram: true,
+      },
+    },
+
+    {
+      id: "catheter-tip",
+      name: "Bout de sonde / cathéter (culture)",
+      bench: "Bactériologie",
+      template: {
+        version: 1,
+        title: "CULTURE DE BOUT DE SONDE / CATHÉTER",
+        sections: [
+          {
+            title: "Prélèvement",
+            fields: [
+              choice("device", "Matériel", ["Sonde urinaire", "Cathéter veineux périphérique", "Cathéter veineux central", "Sonde d'intubation", "Drain", "Autre"], { default: "Sonde urinaire" }),
+              text("length", "Longueur reçue", "/"),
+            ],
+          },
+          { title: "Examen direct", fields: [text("gram", "Coloration de Gram", "Absence de germes")] },
+          {
+            title: "Culture",
+            fields: [
+              choice("method", "Méthode", ["Brun-Buisson (quantitative)", "Maki (semi-quantitative)"], { default: "Brun-Buisson (quantitative)" }),
+              text("culture", "Culture", "Absence de croissance microbienne après 48 heures d'incubation"),
+              text("count", "Numération", "/", false),
+            ],
+          },
+        ],
+        conclusion: true,
+        antibiogram: true,
+        antifungigram: true,
+        note: "Culture significative : ≥ 10³ UFC/mL (Brun-Buisson) ou ≥ 15 colonies (Maki).",
+      },
+    },
+
+    // --- Hormonologie ---
+    hormone("lh", "LH", "mUI/mL", "H : 1,7 – 8,6 ; F : variable selon la phase du cycle"),
+    hormone("fsh", "FSH", "mUI/mL", "H : 1,5 – 12,4 ; F : variable selon la phase du cycle"),
+    hormone("tsh", "TSH", "µUI/mL", "0,27 – 4,2", 0.27, 4.2),
+    hormone("t4", "T4 libre", "pmol/L", "12 – 22", 12, 22),
+    hormone("t3", "T3 libre", "pmol/L", "3,1 – 6,8", 3.1, 6.8),
+    hormone("testosterone", "Testostérone totale", "ng/mL", "H : 2,8 – 8,0 ; F : 0,06 – 0,82"),
+    hormone("free-testosterone", "Testostérone libre", "pg/mL", "H : 8,7 – 25 ; F : < 4,1"),
+    hormone("psa", "PSA total", "ng/mL", "< 4", undefined, 4),
+    {
+      id: "free-psa",
+      name: "PSA libre",
+      bench: "Hormonologie",
+      template: table([num("free", "PSA libre", "ng/mL"), num("ratio", "Rapport PSA libre / total", "%", 25, undefined, "> 25")], { technique: "Immunodosage" }),
+    },
+    hormone("estradiol", "Oestradiol", "pg/mL", "F : variable selon la phase du cycle ; H : 11 – 44"),
+    hormone("prolactin", "Prolactine", "ng/mL", "H : 4 – 15 ; F : 5 – 25"),
+  ];
+}
 
 export function presetById(id: string): TemplatePreset | undefined {
   return TEMPLATE_PRESETS.find((p) => p.id === id);
