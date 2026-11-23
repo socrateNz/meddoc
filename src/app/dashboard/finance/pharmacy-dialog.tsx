@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, Package, Edit, Loader2 } from "lucide-react";
 import { adjustPharmacyItemStock, createOrUpdatePharmacyItem, getPharmacyItemCost } from "@/actions/finance";
 import { toast } from "sonner";
+import { toErrorMessage } from "@/lib/utils";
 
 const CATEGORY_OPTIONS = [
   { value: "MEDICATION", label: "Médicament" },
@@ -117,7 +118,7 @@ export default function PharmacyDialog({ item, organizationId, triggerBtn }: Pha
         setError(res.error || "Erreur lors de l'enregistrement.");
       }
     } catch (err: any) {
-      setError(err.message || "Une erreur est survenue.");
+      setError(toErrorMessage(err, "Une erreur est survenue."));
     } finally {
       setLoading(false);
     }

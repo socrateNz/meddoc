@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AlertCircle, Loader2, RotateCcw, ShieldAlert } from "lucide-react";
 import { changeInvoiceStatus } from "@/actions/finance";
 import { toast } from "sonner";
+import { toErrorMessage } from "@/lib/utils";
 
 interface EditInvoiceStatusDialogProps {
   pendingInvoice: {
@@ -101,7 +102,7 @@ export function EditInvoiceStatusDialog({
         toast.error(res.error || "Erreur lors du changement de statut.");
       }
     } catch (err: any) {
-      toast.error(err.message || "Une erreur est survenue.");
+      toast.error(toErrorMessage(err, "Une erreur est survenue."));
     } finally {
       setSubmitting(false);
     }

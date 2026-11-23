@@ -6,6 +6,7 @@ import { Loader2, FileDown } from "lucide-react";
 import { toast } from "sonner";
 import { getSessionSummary } from "@/actions/registers";
 import { fetchAllPages } from "@/lib/fetch-all-pages";
+import { toErrorMessage } from "@/lib/utils";
 
 interface ZReportDownloadButtonProps {
   sessionId: string;
@@ -69,7 +70,7 @@ export default function ZReportDownloadButton({ sessionId, registerName, organiz
       toast.success("Rapport Z téléchargé !");
     } catch (error: any) {
       console.error("Erreur lors de la génération du rapport Z:", error);
-      toast.error(error.message || "Impossible de générer le rapport Z.");
+      toast.error(toErrorMessage(error, "Impossible de générer le rapport Z."));
     } finally {
       setIsGenerating(false);
     }

@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 import { deletePendingInvoice } from "@/actions/finance";
 import { toast } from "sonner";
+import { toErrorMessage } from "@/lib/utils";
 
 interface DeleteInvoiceDialogProps {
   pendingInvoice: {
@@ -65,7 +66,7 @@ export function DeleteInvoiceDialog({
         toast.error(res.error || "Erreur lors de la suppression du ticket.");
       }
     } catch (err: any) {
-      toast.error(err.message || "Une erreur est survenue.");
+      toast.error(toErrorMessage(err, "Une erreur est survenue."));
     } finally {
       setSubmitting(false);
     }

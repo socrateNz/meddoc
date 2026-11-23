@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Trash2, Loader2, AlertTriangle, Ban } from "lucide-react";
 import { getPharmacyItemDeletionInfo, deletePharmacyItem } from "@/actions/stock";
+import { toErrorMessage } from "@/lib/utils";
 
 interface DeletionInfo {
   name: string;
@@ -49,7 +50,7 @@ export default function DeletePharmacyItemDialog({
         if (res.success && res.data) setInfo(res.data as DeletionInfo);
         else setError(res.error || "Impossible de vérifier ce produit.");
       })
-      .catch((err) => !cancelled && setError(err?.message || "Erreur de connexion."))
+      .catch((err) => !cancelled && setError(toErrorMessage(err, "Erreur de connexion.")))
       .finally(() => !cancelled && setLoadingInfo(false));
     return () => {
       cancelled = true;
@@ -74,7 +75,7 @@ export default function DeletePharmacyItemDialog({
       if (res.success && res.data) setInfo(res.data as DeletionInfo);
       else setError(res.error || "Impossible de vérifier ce produit.");
     } catch (err: any) {
-      setError(err.message || "Erreur de connexion.");
+      setError(toErrorMessage(err, "Erreur de connexion."));
     } finally {
       setLoadingInfo(false);
     }
@@ -92,7 +93,7 @@ export default function DeletePharmacyItemDialog({
         setError(res.error || "Erreur lors de la suppression.");
       }
     } catch (err: any) {
-      setError(err.message || "Erreur de connexion.");
+      setError(toErrorMessage(err, "Erreur de connexion."));
     } finally {
       setDeleting(false);
     }

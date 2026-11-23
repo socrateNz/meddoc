@@ -149,7 +149,7 @@ et allergies listés ci-dessus. Si aucun risque identifié, renvoyez severity "N
             severity: "NONE",
             warnings: [],
             checkedAt: new Date().toISOString(),
-            error: error?.message || "Erreur lors de la vérification IA.",
+            error: toErrorMessage(error, "Erreur lors de la vérification IA."),
           },
         },
       });

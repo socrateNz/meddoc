@@ -35,7 +35,7 @@ const TECHNICAL_ERROR_NAMES = new Set([
   "RangeError",
 ]);
 
-const TECHNICAL_MESSAGE = /invocation|prisma|Server selection timeout|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|os error|MongoServer|Mongo(Network|Server)Error|fetch failed|socket hang up|Cannot read propert|is not a function|undefined is not|stack trace/i;
+const TECHNICAL_MESSAGE = /invocation|prisma|Server selection timeout|Failed to fetch|NetworkError|Load failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|os error|MongoServer|Mongo(Network|Server)Error|fetch failed|socket hang up|Cannot read propert|is not a function|undefined is not|stack trace/i;
 
 export function isTechnicalError(error: any): boolean {
   if (!error) return false;
@@ -46,5 +46,5 @@ export function isTechnicalError(error: any): boolean {
 // Base de données ou réseau injoignable (plutôt qu'un bug) : on invite à réessayer.
 export function isUnavailableError(error: any): boolean {
   const text = `${error?.name ?? ""} ${error?.message ?? ""}`;
-  return /PrismaClientInitializationError|Server selection timeout|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|os error|fetch failed|socket hang up|No available servers|Can't reach database/i.test(text);
+  return /PrismaClientInitializationError|Server selection timeout|Failed to fetch|NetworkError|Load failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|os error|fetch failed|socket hang up|No available servers|Can't reach database/i.test(text);
 }

@@ -338,7 +338,7 @@ export async function deactivateTeamMember(userId: string) {
 
     return { success: true, data: updatedUser };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la désactivation." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la désactivation.") };
   }
 }
 
@@ -361,7 +361,7 @@ export async function reactivateTeamMember(userId: string) {
 
     return { success: true, data: updatedUser };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de la réactivation." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la réactivation.") };
   }
 }
 

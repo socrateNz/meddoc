@@ -82,7 +82,7 @@ export async function getHoldings(options?: { page?: number; pageSize?: number }
     return { holdings, error: null, total, page, pageSize };
   } catch (error: any) {
     console.error("Error fetching holdings:", error);
-    return { holdings: [], error: error.message || "Failed to fetch holdings", total: 0, page: 1, pageSize: MAX_PAGE_SIZE };
+    return { holdings: [], error: toErrorMessage(error, "Failed to fetch holdings"), total: 0, page: 1, pageSize: MAX_PAGE_SIZE };
   }
 }
 

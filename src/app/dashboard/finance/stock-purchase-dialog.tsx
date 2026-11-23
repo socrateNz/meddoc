@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ShoppingCart, Truck, Loader2, Info } from "lucide-react";
 import { recordStockPurchase, getAvailableExpenseWithdrawals } from "@/actions/stock";
+import { toErrorMessage } from "@/lib/utils";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -116,7 +117,7 @@ export default function StockPurchaseDialog({ pharmacyItems, organizationId, ope
         setError(res.error || "Erreur lors de l'enregistrement de l'achat.");
       }
     } catch (err: any) {
-      setError(err.message || "Une erreur est survenue.");
+      setError(toErrorMessage(err, "Une erreur est survenue."));
     }
   };
 

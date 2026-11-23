@@ -11,6 +11,7 @@ import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import PaymentMethodSelect from "./payment-method-select";
 import { DispenseNowCheckbox, dispenseAfterPayment } from "./dispense-now";
 import type { PaymentMethod } from "@/lib/accounting/plan";
+import { toErrorMessage } from "@/lib/utils";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -72,7 +73,7 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
         setMsg(res.error || "Erreur lors de l'encaissement.");
       }
     } catch (err: any) {
-      setMsg(err.message || "Erreur de connexion.");
+      setMsg(toErrorMessage(err, "Erreur de connexion."));
     }
   };
 

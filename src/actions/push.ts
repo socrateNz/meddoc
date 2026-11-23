@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { toErrorMessage } from "@/lib/utils";
 
 const subscribeSchema = z.object({
   endpoint: z.string().min(1),
@@ -30,7 +31,7 @@ export async function subscribeToPush(subscription: { endpoint: string; keys: { 
 
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors de l'abonnement aux notifications push." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de l'abonnement aux notifications push.") };
   }
 }
 
@@ -45,6 +46,6 @@ export async function unsubscribeFromPush(endpoint: string) {
 
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du désabonnement des notifications push." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors du désabonnement des notifications push.") };
   }
 }

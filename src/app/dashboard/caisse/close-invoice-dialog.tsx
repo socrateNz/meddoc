@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from "@/components/ui/button";
 import { XCircle, Loader2 } from "lucide-react";
 import { closeUnpaidInvoice } from "@/actions/finance";
+import { toErrorMessage } from "@/lib/utils";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -66,7 +67,7 @@ export default function CloseInvoiceDialog({ pendingInvoice, onSuccess, open: op
         setMsg(res.error || "Erreur lors de l'enregistrement.");
       }
     } catch (err: any) {
-      setMsg(err.message || "Erreur de connexion.");
+      setMsg(toErrorMessage(err, "Erreur de connexion."));
     } finally {
       setLoading(false);
     }

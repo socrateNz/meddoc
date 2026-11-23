@@ -42,6 +42,7 @@ import SuppliersPanel from "@/app/dashboard/finance/suppliers-panel";
 import { dispensePendingInvoice, cancelDispense } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { FormMessage } from "@/components/ui/form-message";
+import { toErrorMessage } from "@/lib/utils";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -196,7 +197,7 @@ export default function PharmacieView({
         setFinalizeError(res.error || "Erreur lors de la remise des médicaments.");
       }
     } catch (err: any) {
-      setFinalizeError(err.message || "Erreur de connexion.");
+      setFinalizeError(toErrorMessage(err, "Erreur de connexion."));
     }
   };
 
@@ -228,7 +229,7 @@ export default function PharmacieView({
         setCancelError(res.error || "Erreur lors de l'annulation de la remise.");
       }
     } catch (err: any) {
-      setCancelError(err.message || "Erreur de connexion.");
+      setCancelError(toErrorMessage(err, "Erreur de connexion."));
     } finally {
       setCancelling(false);
     }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runSchedulerTasks } from "@/lib/scheduler";
+import { toErrorMessage } from "@/lib/utils";
 
 // Déclenché par un service de cron externe (ex. cron-job.org, GitHub Actions
 // scheduled workflow, ou Vercel Cron sur les plans qui le permettent) toutes
@@ -18,6 +19,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: true, ranAt: new Date().toISOString() });
   } catch (error: any) {
     console.error("Scheduler cron error:", error);
-    return NextResponse.json({ success: false, error: error.message || "Erreur du planificateur" }, { status: 500 });
+    return NextResponse.json({ success: false, error: toErrorMessage(error, "Erreur du planificateur") }, { status: 500 });
   }
 }

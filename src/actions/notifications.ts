@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { toErrorMessage } from "@/lib/utils";
 
 /** Mark a single notification as read */
 export async function markNotificationRead(notificationId: string) {
@@ -18,7 +19,7 @@ export async function markNotificationRead(notificationId: string) {
     revalidatePath("/dashboard/notifications");
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: toErrorMessage(error, "Une erreur est survenue.") };
   }
 }
 
@@ -36,7 +37,7 @@ export async function markAllNotificationsRead() {
     revalidatePath("/dashboard/notifications");
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: toErrorMessage(error, "Une erreur est survenue.") };
   }
 }
 
@@ -53,7 +54,7 @@ export async function deleteNotification(notificationId: string) {
     revalidatePath("/dashboard/notifications");
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: toErrorMessage(error, "Une erreur est survenue.") };
   }
 }
 
@@ -70,6 +71,6 @@ export async function deleteReadNotifications() {
     revalidatePath("/dashboard/notifications");
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: toErrorMessage(error, "Une erreur est survenue.") };
   }
 }

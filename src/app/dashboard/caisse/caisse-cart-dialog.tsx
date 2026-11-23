@@ -18,6 +18,7 @@ import { submitOrQueueOffline } from "@/lib/offline-submit";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { toast } from "sonner";
 import { FormMessage } from "@/components/ui/form-message";
+import { toErrorMessage } from "@/lib/utils";
 
 function formatFCFA(val: number) {
   const num = Math.round(Number(val) || 0);
@@ -310,7 +311,7 @@ export default function CaisseCartDialog({ mode, cashSessionId, pharmacyItems, p
         await dispenseAfterPayment(isPay ? pendingInvoice!.id : result.data?.pendingInvoice?.id);
       }
     } catch (err: any) {
-      setMsg({ type: "error", text: err.message || "Erreur de connexion." });
+      setMsg({ type: "error", text: toErrorMessage(err, "Erreur de connexion.") });
     }
   };
 

@@ -11,6 +11,7 @@ import { recordExpense } from "@/actions/finance";
 import { useSubmitGuard } from "@/hooks/use-submit-guard";
 import { EXPENSE_CATEGORIES, WITHDRAWAL_CATEGORIES, type CashOutCategory } from "@/lib/accounting/plan";
 import { FormMessage } from "@/components/ui/form-message";
+import { toErrorMessage } from "@/lib/utils";
 
 // Catégories proposées à la caisse : une vraie dépense (compte de charge) ou un retrait qui n'en est
 // pas une (propriétaire, banque, avance...) et n'entre donc pas dans le résultat.
@@ -58,7 +59,7 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
         setMsg({ type: "error", text: res.error || "Erreur d'enregistrement." });
       }
     } catch (err: any) {
-      setMsg({ type: "error", text: err.message || "Erreur de connexion." });
+      setMsg({ type: "error", text: toErrorMessage(err, "Erreur de connexion.") });
     }
   };
 

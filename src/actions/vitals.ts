@@ -110,6 +110,6 @@ export async function getPatientVitalSigns(patientId: string, options?: { page?:
 
     return { success: true as const, data: vitals, total, page, pageSize };
   } catch (error: any) {
-    return { success: false as const, error: error.message || "Erreur lors de la récupération des constantes." };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de la récupération des constantes.") };
   }
 }

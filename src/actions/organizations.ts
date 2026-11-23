@@ -45,7 +45,7 @@ export async function getClinics(options?: { page?: number; pageSize?: number })
     return { clinics, error: null, total, page, pageSize };
   } catch (error: any) {
     console.error("Error fetching clinics:", error);
-    return { clinics: [], error: error.message || "Failed to fetch clinics", total: 0, page: 1, pageSize: 20 };
+    return { clinics: [], error: toErrorMessage(error, "Failed to fetch clinics"), total: 0, page: 1, pageSize: 20 };
   }
 }
 

@@ -565,6 +565,8 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
           const hasActive = items.some((item: any) => isActive(item));
           const canCollapse = collapsible && section !== "Aperçu";
           const open = !canCollapse || hasActive || openSections.has(section);
+          // Total des compteurs de ses entrées (incidents, messages...) : visible même replié.
+          const groupCount = items.reduce((sum: number, item: any) => sum + (item.count > 0 ? item.count : 0), 0);
           return (
             <div key={section} className="grid gap-1">
               {canCollapse ? (
@@ -575,10 +577,24 @@ export default function Sidebar({ currentUser, unreadCounts, clinics = [], super
                   className="flex items-center justify-between rounded-lg px-3 py-1 text-xs font-bold uppercase tracking-wider text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/60"
                 >
                   {section}
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+                  <span className="flex items-center gap-1.5">
+                    {groupCount > 0 && (
+                      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold normal-case tracking-normal text-white">
+                        {groupCount}
+                      </span>
+                    )}
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+                  </span>
                 </button>
               ) : (
-                <p className="px-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{section}</p>
+                <p className="flex items-center justify-between px-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  {section}
+                  {groupCount > 0 && section !== "Aperçu" && (
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold normal-case tracking-normal text-white">
+                      {groupCount}
+                    </span>
+                  )}
+                </p>
               )}
               {open && items.map(renderLink)}
             </div>

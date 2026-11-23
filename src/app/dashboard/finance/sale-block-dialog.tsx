@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Ban, ShieldCheck, Loader2 } from "lucide-react";
 import { setPharmacyItemSaleBlock } from "@/actions/stock";
+import { toErrorMessage } from "@/lib/utils";
 
 interface SaleBlockDialogProps {
   item: { id: string; name: string; dosage?: string | null; saleBlockedAt?: unknown; saleBlockedReason?: string | null };
@@ -55,7 +56,7 @@ export default function SaleBlockDialog({ item, autoOpen = false, onClosed }: Sa
         setError(res.error || "Erreur lors de la modification du blocage.");
       }
     } catch (err: any) {
-      setError(err.message || "Erreur de connexion.");
+      setError(toErrorMessage(err, "Erreur de connexion."));
     } finally {
       setLoading(false);
     }

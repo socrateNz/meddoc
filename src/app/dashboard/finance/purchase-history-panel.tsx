@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Search, Loader2, ShoppingCart, Undo2 } from "lucide-react";
 import { getStockPurchaseHistory, cancelStockPurchase } from "@/actions/stock";
+import { toErrorMessage } from "@/lib/utils";
 
 function formatFCFA(amount: number) {
   return new Intl.NumberFormat("fr-FR").format(Math.round(amount || 0)) + " FCFA";
@@ -85,7 +86,7 @@ export default function PurchaseHistoryPanel({ organizationId, canCancel: canCan
         setCancelError(res.error || "Erreur lors de l'annulation de l'achat.");
       }
     } catch (err: any) {
-      setCancelError(err.message || "Erreur de connexion.");
+      setCancelError(toErrorMessage(err, "Erreur de connexion."));
     } finally {
       setCancelling(false);
     }

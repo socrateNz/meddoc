@@ -153,7 +153,7 @@ export async function getPharmacyItems(organizationId?: string) {
     const docs = (rawRes.cursor?.firstBatch || []).map(formatMongoDoc);
     return { success: true, data: docs };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du chargement des médicaments." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement des médicaments.") };
   }
 }
 
@@ -2042,7 +2042,7 @@ export async function getFinanceSummary(organizationId?: string, periodInput?: P
       }
     };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du calcul du bilan financier." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors du calcul du bilan financier.") };
   }
 }
 
@@ -2376,7 +2376,7 @@ export async function listPharmacyDispenseQueue(organizationId?: string, options
     const data = await loadInvoicesInOrder(ids);
     return { success: true as const, data, total, page, pageSize };
   } catch (error: any) {
-    return { success: false as const, error: error.message || "Erreur lors du chargement de la file d'attente pharmacie." };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement de la file d'attente pharmacie.") };
   }
 }
 
@@ -2409,7 +2409,7 @@ export async function listPharmacyDispenseHistory(organizationId?: string, optio
     const data = await loadInvoicesInOrder(ids);
     return { success: true as const, data, total, page, pageSize };
   } catch (error: any) {
-    return { success: false as const, error: error.message || "Erreur lors du chargement de l'historique." };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement de l'historique.") };
   }
 }
 
@@ -2466,7 +2466,7 @@ export async function listPendingInvoices(organizationId?: string, options?: { p
 
     return { success: true as const, data: withLines, total, page, pageSize, summary };
   } catch (error: any) {
-    return { success: false as const, error: error.message || "Erreur lors du chargement des factures en attente." };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des factures en attente.") };
   }
 }
 
@@ -2539,6 +2539,6 @@ export async function listCaisseHistoryInvoices(
 
     return { success: true, data: await attachAmountPaid(invoices), total, page, pageSize };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du chargement de l'historique des tickets." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de l'historique des tickets.") };
   }
 }

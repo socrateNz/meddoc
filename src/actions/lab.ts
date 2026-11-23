@@ -386,7 +386,7 @@ export async function listLabOrders(options?: LabOrderListOptions) {
 
     return { success: true as const, data: labOrders, total, page, pageSize };
   } catch (error: any) {
-    return { success: false as const, error: error.message || "Erreur lors du chargement des demandes d'analyse." };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement des demandes d'analyse.") };
   }
 }
 
@@ -416,7 +416,7 @@ export async function getLabOrderStats(options?: { organizationId?: string; orde
 
     return { success: true as const, data: { pending, inAnalysis, toValidate, validatedToday, urgent, critical, open } };
   } catch (error: any) {
-    return { success: false as const, error: error.message || "Erreur lors du calcul des indicateurs de laboratoire." };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du calcul des indicateurs de laboratoire.") };
   }
 }
 
@@ -462,7 +462,7 @@ export async function getLabOrder(labOrderId: string) {
 
     return { success: true, data: { ...order, templates } };
   } catch (error: any) {
-    return { success: false, error: error.message || "Erreur lors du chargement de la demande d'analyse." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de la demande d'analyse.") };
   }
 }
 
@@ -839,7 +839,7 @@ export async function listLabTests(organizationId?: string, options?: { page?: n
     ]);
     return { success: true as const, data: await priceLabTests(labTests, modulesOfUser(activeUser).includes("PHARMACIE")), total, page, pageSize };
   } catch (error: any) {
-    return { success: false as const, error: error.message || "Erreur lors du chargement du catalogue." };
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors du chargement du catalogue.") };
   }
 }
 

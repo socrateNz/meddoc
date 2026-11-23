@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { Role } from "@prisma/client";
 import { requestPasswordResetSchema, resetPasswordSchema } from "@/validators/auth";
 import crypto from "crypto";
+import { toErrorMessage } from "@/lib/utils";
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1h
 
@@ -108,6 +109,6 @@ export async function resetPassword(token: string, password: string) {
     if (error?.name === "ZodError") {
       return { success: false, error: error.issues?.[0]?.message || "Données invalides." };
     }
-    return { success: false, error: error.message || "Erreur lors de la réinitialisation." };
+    return { success: false, error: toErrorMessage(error, "Erreur lors de la réinitialisation.") };
   }
 }

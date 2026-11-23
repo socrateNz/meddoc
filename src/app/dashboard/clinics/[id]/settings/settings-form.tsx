@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { toErrorMessage } from "@/lib/utils";
 
 // Redimensionne l'image côté client avant l'envoi (aucun logo de clinique n'a besoin de dépasser
 // quelques centaines de pixels) et la rasterise en PNG — évite un SVG que @react-pdf/renderer ne
@@ -76,7 +77,7 @@ export default function ClinicSettingsForm({ clinic, readOnly = false }: ClinicS
       const resized = await fileToResizedDataUrl(file);
       setLogoUrl(resized);
     } catch (error: any) {
-      toast.error(error.message || "Impossible de traiter cette image.");
+      toast.error(toErrorMessage(error, "Impossible de traiter cette image."));
     } finally {
       setIsProcessingLogo(false);
     }

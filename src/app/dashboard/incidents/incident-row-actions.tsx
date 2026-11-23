@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, Loader2 } from "lucide-react";
+import { toErrorMessage } from "@/lib/utils";
 
 interface IncidentRowActionsProps {
   incidentId: string;
@@ -31,7 +32,7 @@ export default function IncidentRowActions({ incidentId, currentStatus }: Incide
       {
         loading: "Mise à jour du statut...",
         success: "Statut mis à jour avec succès !",
-        error: (err) => err.message || "Erreur de mise à jour.",
+        error: (err) => toErrorMessage(err, "Erreur de mise à jour."),
       }
     );
   };

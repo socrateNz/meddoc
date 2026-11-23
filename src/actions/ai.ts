@@ -8,6 +8,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { assertUserModule } from "@/lib/modules-server";
+import { toErrorMessage } from "@/lib/utils";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
@@ -77,7 +78,7 @@ Règle impérative : ne retranscrivez QUE ce qui est réellement dit dans l'enre
       };
     }
 
-    return { success: false, error: error.message || "Impossible de transcrire l'enregistrement audio." };
+    return { success: false, error: toErrorMessage(error, "Impossible de transcrire l'enregistrement audio.") };
   }
 }
 
@@ -227,6 +228,6 @@ Générez votre rapport d'analyse clinique au format JSON strict. Le JSON doit s
       };
     }
 
-    return { success: false, error: error.message || "Impossible de générer l'analyse IA" };
+    return { success: false, error: toErrorMessage(error, "Impossible de générer l'analyse IA") };
   }
 }

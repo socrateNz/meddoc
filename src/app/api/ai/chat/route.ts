@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { rateLimitOrResponse } from "@/middlewares/rateLimiter";
 import { modulesOfUser } from "@/lib/modules-server";
 import { MODULE_DISABLED_MESSAGE } from "@/lib/modules";
+import { toErrorMessage } from "@/lib/utils";
 
 export async function POST(req: NextRequest) {
   try {
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof RateLimitError) {
       return NextResponse.json(
         {
-          error: error.message,
+          error: toErrorMessage(error, "Une erreur est survenue."),
           retryAfterSeconds: error.retryAfterSeconds,
           rateLimited: true,
         },
@@ -101,13 +102,13 @@ export async function POST(req: NextRequest) {
     // Surface 503 overload errors so the UI can show a friendly retry message
     if (error instanceof ServiceUnavailableError) {
       return NextResponse.json(
-        { error: error.message, serviceUnavailable: true },
+        { error: toErrorMessage(error, "Une erreur est survenue."), serviceUnavailable: true },
         { status: 503 }
       );
     }
 
     return NextResponse.json(
-      { error: error.message || "Erreur interne de traitement IA" },
+      { error: toErrorMessage(error, "Erreur interne de traitement IA") },
       { status: 500 }
     );
   }

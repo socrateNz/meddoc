@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, Loader2 } from "lucide-react";
+import { toErrorMessage } from "@/lib/utils";
 
 const STATUS_LABELS: Record<string, string> = {
   ACTIVE: "Actif",
@@ -36,7 +37,7 @@ export default function ContractRowActions({ contractId, currentStatus }: Contra
       {
         loading: "Mise à jour du contrat...",
         success: "Statut du contrat mis à jour.",
-        error: (err) => err.message || "Erreur de mise à jour.",
+        error: (err) => toErrorMessage(err, "Erreur de mise à jour."),
       }
     );
   };

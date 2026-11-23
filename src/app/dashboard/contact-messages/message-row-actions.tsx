@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, Loader2 } from "lucide-react";
+import { toErrorMessage } from "@/lib/utils";
 
 const STATUS_LABELS: Record<string, string> = {
   NEW: "Nouveau",
@@ -30,7 +31,7 @@ export default function MessageRowActions({ messageId, currentStatus }: { messag
       {
         loading: "Mise à jour...",
         success: "Statut mis à jour.",
-        error: (err) => err.message || "Erreur de mise à jour.",
+        error: (err) => toErrorMessage(err, "Erreur de mise à jour."),
       }
     );
   };

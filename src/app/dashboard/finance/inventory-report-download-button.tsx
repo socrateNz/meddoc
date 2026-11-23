@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { getInventoryReport } from "@/actions/stock";
 import { fetchAllPages } from "@/lib/fetch-all-pages";
 import { buildInventoryReport } from "@/lib/inventory-report";
+import { toErrorMessage } from "@/lib/utils";
 
 interface InventoryReportDownloadButtonProps {
   inventoryCountId: string;
@@ -67,7 +68,7 @@ export default function InventoryReportDownloadButton({ inventoryCountId, label 
       toast.success("Rapport d'inventaire téléchargé !");
     } catch (error: any) {
       console.error("Erreur lors de la génération du rapport d'inventaire:", error);
-      toast.error(error.message || "Impossible de générer le rapport d'inventaire.");
+      toast.error(toErrorMessage(error, "Impossible de générer le rapport d'inventaire."));
     } finally {
       setIsGenerating(false);
     }

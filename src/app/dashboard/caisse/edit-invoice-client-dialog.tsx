@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { UserCog, Loader2 } from "lucide-react";
 import { updateInvoicePatientInfo } from "@/actions/finance";
 import { toast } from "sonner";
+import { toErrorMessage } from "@/lib/utils";
 
 interface EditInvoiceClientDialogProps {
   pendingInvoiceId: string;
@@ -50,7 +51,7 @@ export function EditInvoiceClientDialog({
         setError(res.error || "Erreur lors de la mise à jour.");
       }
     } catch (err: any) {
-      setError(err.message || "Erreur lors de la mise à jour.");
+      setError(toErrorMessage(err, "Erreur lors de la mise à jour."));
     } finally {
       setLoading(false);
     }
