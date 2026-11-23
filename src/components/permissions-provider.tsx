@@ -7,10 +7,20 @@ import type { Permission } from "@/lib/permissions-catalog";
 // par le layout du tableau de bord aux composants client : afficher ou non un bouton, un onglet...
 // Ne fait que masquer : le contrôle réel est dans les actions serveur.
 const PermissionsContext = createContext<ReadonlySet<string>>(new Set());
+// Nom de l'utilisateur connecté (« Prénom Nom ») : imprimé sur les reçus (« Imprimé par »).
+const UserNameContext = createContext<string>("");
 
-export function PermissionsProvider({ permissions, children }: { permissions: readonly string[]; children: React.ReactNode }) {
+export function PermissionsProvider({ permissions, userName = "", children }: { permissions: readonly string[]; userName?: string; children: React.ReactNode }) {
   const value = useMemo(() => new Set(permissions), [permissions]);
-  return <PermissionsContext.Provider value={value}>{children}</PermissionsContext.Provider>;
+  return (
+    <PermissionsContext.Provider value={value}>
+      <UserNameContext.Provider value={userName}>{children}</UserNameContext.Provider>
+    </PermissionsContext.Provider>
+  );
+}
+
+export function useCurrentUserName(): string {
+  return useContext(UserNameContext);
 }
 
 export function usePermissions(): ReadonlySet<string> {

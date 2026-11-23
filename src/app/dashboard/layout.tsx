@@ -35,7 +35,7 @@ export default async function DashboardLayout({
 
   return (
     <ModulesProvider modules={modulesOfUser(currentUser)}>
-    <PermissionsProvider permissions={currentUser?.permissions ?? []}>
+    <PermissionsProvider permissions={currentUser?.permissions ?? []} userName={currentUser ? `${currentUser.firstName ?? ""} ${currentUser.lastName ?? ""}`.trim() : ""}>
     <ConfirmProvider>
     <div className="flex flex-col lg:flex-row h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-slate-50/80 to-blue-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/20 relative">
       {/* Decorative background glow circles */}

@@ -64,6 +64,7 @@ export default function PDFDownloadButton({
             organizationName={data.organizationName}
             organizationLogoUrl={data.organizationLogoUrl}
             organizationContact={data.organizationContact}
+            printedBy={data.printedBy}
             format={data.format}
           />
         );

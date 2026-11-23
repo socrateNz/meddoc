@@ -452,10 +452,12 @@ interface InvoicePDFProps {
   organizationName?: string;
   organizationLogoUrl?: string | null;
   organizationContact?: { phone?: string | null; address?: string | null } | null;
+  // Personne qui imprime / télécharge le reçu.
+  printedBy?: string;
   format?: "thermal" | "a4";
 }
 
-export default function InvoicePDFDocument({ transaction, organizationName, organizationLogoUrl, organizationContact, format = "thermal" }: InvoicePDFProps) {
+export default function InvoicePDFDocument({ transaction, organizationName, organizationLogoUrl, organizationContact, printedBy, format = "thermal" }: InvoicePDFProps) {
   const formatFCFA = (val: number) => {
     const num = Math.round(Number(val) || 0);
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " FCFA";
@@ -548,7 +550,7 @@ Réduction -${formatFCFA(discount)}${item.discountReason ? ` (${item.discountRea
 
   // Thermal 80mm format (default)
   if (format === "thermal") {
-    const pageHeight = Math.max(320, 220 + itemList.length * 18 + (hasRemainingDue ? 40 : 0));
+    const pageHeight = Math.max(320, 220 + itemList.length * 18 + (hasRemainingDue ? 40 : 0) + (printedBy ? 12 : 0));
 
     return (
       <Document>
@@ -573,6 +575,11 @@ Réduction -${formatFCFA(discount)}${item.discountReason ? ` (${item.discountRea
             <Text>CAISSE: {transaction.recordedBy ? `${transaction.recordedBy.lastName}` : "Caissier 01"}</Text>
             <Text>HEURE: {formattedTime}</Text>
           </View>
+          {printedBy ? (
+            <View style={thermalStyles.metaLine}>
+              <Text>IMPRIMÉ PAR: {printedBy}</Text>
+            </View>
+          ) : null}
 
           {(transaction.patient?.user || (transaction as any).customPatientName || (transaction as any).customPatientPhone) && (
             <View style={thermalStyles.metaLine}>
@@ -696,6 +703,7 @@ Réduction -${formatFCFA(discount)}${item.discountReason ? ` (${item.discountRea
             <Text style={a4Styles.infoTitle}>Émis par</Text>
             <Text style={a4Styles.infoText}>Caissier / Agent: {transaction.recordedBy ? `${transaction.recordedBy.firstName} ${transaction.recordedBy.lastName}` : "Personnel de caisse"}</Text>
             <Text style={a4Styles.infoText}>Mode de règlement: Espèces / Caisse Directe</Text>
+            {printedBy ? <Text style={a4Styles.infoText}>Imprimé par : {printedBy}</Text> : null}
           </View>
         </View>
 

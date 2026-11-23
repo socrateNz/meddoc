@@ -7,6 +7,7 @@ import { Printer, Download, Receipt, FileText, CheckCircle2 } from "lucide-react
 import PDFDownloadButton from "@/components/pdf/pdf-download-button";
 import { displayPatientEmail } from "@/lib/patient-identity";
 import { cleanupPrint, printElement } from "@/lib/print-element";
+import { useCurrentUserName } from "@/components/permissions-provider";
 
 interface InvoiceModalProps {
   transaction: any;
@@ -22,6 +23,9 @@ interface InvoiceModalProps {
 export default function InvoiceModal({ transaction, organizationName, organizationLogoUrl, organizationContact, open: externalOpen, onOpenChange: externalOnOpenChange, triggerBtn }: InvoiceModalProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [viewFormat, setViewFormat] = useState<"thermal" | "a4">("thermal");
+
+  // Personne qui imprime / télécharge le reçu (pas forcément celle qui a encaissé).
+  const printedBy = useCurrentUserName();
 
   const isControlled = externalOpen !== undefined;
   const open = isControlled ? externalOpen : internalOpen;
@@ -230,6 +234,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                   <span>CAISSE: {transaction.recordedBy ? `${transaction.recordedBy.lastName}` : "Caissier 01"}</span>
                   <span>HEURE: {formattedTime}</span>
                 </div>
+                {printedBy && <div className="text-slate-700">IMPRIMÉ PAR: {printedBy}</div>}
                 {(transaction.patient?.user || transaction.customPatientName || transaction.customPatientPhone) && (
                   <div className="text-slate-800 font-medium truncate pt-0.5">
                     CLIENT: {transaction.patient?.user
@@ -373,6 +378,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
                     {transaction.recordedBy ? `${transaction.recordedBy.firstName} ${transaction.recordedBy.lastName}` : "Personnel de caisse"}
                   </p>
                   <p className="text-slate-500">Mode : Espèces / Caisse Directe</p>
+                  {printedBy && <p className="text-slate-500">Imprimé par : {printedBy}</p>}
                 </div>
               </div>
 
@@ -446,7 +452,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
             <PDFDownloadButton
               documentName={`Ticket_${invoiceNum}`}
               type="invoice"
-              data={{ transaction, organizationName, organizationLogoUrl, organizationContact, format: viewFormat }}
+              data={{ transaction, organizationName, organizationLogoUrl, organizationContact, printedBy, format: viewFormat }}
               buttonText="Télécharger PDF"
               variant="outline"
               size="default"
