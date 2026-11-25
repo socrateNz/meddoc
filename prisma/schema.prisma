@@ -802,6 +802,10 @@ model Notification {
   message   String
   isRead    Boolean  @default(false)
   type      String   @default("INFO")
+  // Page de destination (chemin interne, ex. /dashboard/lab/<id>) ouverte au clic sur la
+  // notification — dans la liste, sur le tableau de bord et depuis la notification push.
+  // Facultatif : les anciennes notifications n'en ont pas.
+  link      String?
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])

@@ -24,7 +24,7 @@ function ensureConfigured(): boolean {
 // mutedNotificationTypes (même préférence que la cloche en base, cf. User.mutedNotificationTypes)
 // avant d'envoyer, pour ne jamais pousser un type que l'utilisateur a explicitement masqué.
 export async function sendPushToUsers(
-  entries: { userId: string; title: string; message: string; type: string }[]
+  entries: { userId: string; title: string; message: string; type: string; link?: string | null }[]
 ) {
   try {
     if (!ensureConfigured() || entries.length === 0) return;
@@ -55,7 +55,8 @@ export async function sendPushToUsers(
         try {
           await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify({ title: entry.title, body: entry.message })
+            // url : page ouverte au clic sur la notification (cf. public/sw.js).
+            JSON.stringify({ title: entry.title, body: entry.message, url: entry.link || "/dashboard/notifications" })
           );
         } catch (err: any) {
           if (err?.statusCode === 404 || err?.statusCode === 410) {

@@ -19,6 +19,7 @@ import {
   Pill,
   PackageX,
   CalendarClock,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,8 @@ interface Notification {
   message: string;
   isRead: boolean;
   type: string;
+  // Page de destination (cf. Notification.link) : la notification devient cliquable.
+  link?: string | null;
   createdAt: Date;
 }
 
@@ -166,6 +169,13 @@ export default function NotificationsClient({
         toast.error("Impossible de marquer comme lu.");
       }
     });
+  };
+
+  // Ouvre la page de destination ; la notification est marquée comme lue au passage.
+  const handleOpen = (n: Notification) => {
+    if (!n.link) return;
+    if (!n.isRead) void markNotificationRead(n.id);
+    router.push(n.link);
   };
 
   const handleMarkAllRead = () => {
@@ -312,8 +322,23 @@ export default function NotificationsClient({
                   <Icon className={`h-4 w-4 ${config.text}`} />
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
+                {/* Content — cliquable quand la notification a une page de destination. */}
+                <div
+                  className={`flex-1 min-w-0 ${n.link ? "cursor-pointer group" : ""}`}
+                  {...(n.link
+                    ? {
+                        role: "link",
+                        tabIndex: 0,
+                        onClick: () => handleOpen(n),
+                        onKeyDown: (e: React.KeyboardEvent) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleOpen(n);
+                          }
+                        },
+                      }
+                    : {})}
+                >
                   <p className={`text-sm font-semibold leading-snug wrap-break-word ${n.isRead ? "text-foreground/70" : "text-foreground"}`}>
                     {n.title}
                   </p>
@@ -330,6 +355,11 @@ export default function NotificationsClient({
                     <span className="text-xs text-muted-foreground/70">
                       {formatDate(n.createdAt)}
                     </span>
+                    {n.link && (
+                      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-primary group-hover:underline">
+                        Ouvrir <ChevronRight className="h-3 w-3" />
+                      </span>
+                    )}
                   </div>
                 </div>
 

@@ -64,8 +64,8 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Web Push : aucune notification actuelle ne porte de lien de destination propre (cf.
-// src/lib/push.ts), le clic ouvre donc toujours la page notifications.
+// Web Push : le clic ouvre la page de destination de la notification (url, cf. src/lib/push.ts),
+// sinon la page des notifications. Seuls les chemins internes sont acceptés.
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -78,7 +78,7 @@ self.addEventListener('push', (event) => {
       body: data.body || '',
       icon: '/icon.svg',
       badge: '/icon.svg',
-      data: { url: '/dashboard/notifications' },
+      data: { url: typeof data.url === 'string' && data.url.startsWith('/') && !data.url.startsWith('//') ? data.url : '/dashboard/notifications' },
     })
   );
 });

@@ -812,8 +812,10 @@ export default async function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {notifications.map((n) => (
-                  <div key={n.id} className="flex items-start gap-4 border-b border-slate-100 dark:border-slate-800/40 pb-4 last:border-0 last:pb-0 transition-all duration-300 hover:bg-slate-50/20 dark:hover:bg-slate-800/10 rounded-lg p-1.5 -m-1.5">
+                {notifications.map((n) => {
+                  const rowClass = "flex items-start gap-4 border-b border-slate-100 dark:border-slate-800/40 pb-4 last:border-0 last:pb-0 transition-all duration-300 hover:bg-slate-50/20 dark:hover:bg-slate-800/10 rounded-lg p-1.5 -m-1.5";
+                  const content = (
+                    <>
                     <div className={`p-2 rounded-xl shrink-0 ${n.type === "INCIDENT" ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-blue-500/10 text-blue-600 dark:text-blue-400"}`}>
                       {n.type === "INCIDENT" ? <AlertCircle className="h-4 w-4" /> : <Calendar className="h-4 w-4" />}
                     </div>
@@ -824,8 +826,19 @@ export default async function DashboardPage() {
                         {n.createdAt.toLocaleDateString("fr-FR")} à {n.createdAt.toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                  </div>
-                ))}
+                    </>
+                  );
+                  // Notification avec page de destination (cf. Notification.link) : la ligne y mène.
+                  return n.link ? (
+                    <Link key={n.id} href={n.link} className={`${rowClass} hover:bg-slate-50 dark:hover:bg-slate-800/30`}>
+                      {content}
+                    </Link>
+                  ) : (
+                    <div key={n.id} className={rowClass}>
+                      {content}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>

@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { notificationLinks, type NotificationEntry } from "./notification-links";
 import { getOrganizationModules } from "@/lib/modules-server";
 
 // Anciennement déclenché par un setInterval démarré au chargement de
@@ -87,6 +88,7 @@ async function sendDailyAgenda(now: Date) {
             title: `📅 Votre agenda du jour (${todayString})`,
             message: `Bonjour ${caregiver.user.firstName}, vous avez ${appointments.length} intervention(s) aujourd'hui :\n${listText}`,
             type: "APPOINTMENT",
+            link: notificationLinks.appointments(appointments[0].patient.organizationId),
           },
         ]);
 
@@ -146,7 +148,7 @@ export async function sendAppointmentReminders(now: Date) {
         // rendez-vous distincts d'un même destinataire au même créneau de rappel.
         const reminderTitle = `⏰ Rappel ${rem.label} : ${app.title}`;
         const timeStr = app.scheduledAt.toLocaleTimeString("fr-FR", { hour: '2-digit', minute: '2-digit' });
-        const entries: { userId: string; title: string; message: string; type: string }[] = [];
+        const entries: NotificationEntry[] = [];
 
         if (app.caregiver?.user) {
           const existing = await prisma.notification.findFirst({
@@ -158,7 +160,8 @@ export async function sendAppointmentReminders(now: Date) {
               userId: app.caregiver.userId,
               title: reminderTitle,
               message: `Rappel : Votre intervention "${app.title}" pour le patient ${patientName} est planifiée dans ${rem.label} (à ${timeStr}).`,
-              type: "APPOINTMENT"
+              type: "APPOINTMENT",
+              link: notificationLinks.appointments(app.patient.organizationId)
             });
           }
         }
@@ -172,7 +175,8 @@ export async function sendAppointmentReminders(now: Date) {
               userId: app.patient.userId,
               title: reminderTitle,
               message: `Bonjour ${app.patient.user.firstName}, rappel : votre rendez-vous "${app.title}" est prévu dans ${rem.label} (à ${timeStr}).`,
-              type: "APPOINTMENT"
+              type: "APPOINTMENT",
+              link: notificationLinks.portal()
             });
           }
         }

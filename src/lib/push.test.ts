@@ -80,11 +80,11 @@ describe("sendPushToUsers", () => {
     expect(sendNotification).toHaveBeenCalledTimes(2);
     expect(sendNotification).toHaveBeenCalledWith(
       { endpoint: "https://push.example.com/device1", keys: { p256dh: "p1", auth: "a1" } },
-      JSON.stringify({ title: ENTRY.title, body: ENTRY.message })
+      JSON.stringify({ title: ENTRY.title, body: ENTRY.message, url: "/dashboard/notifications" })
     );
     expect(sendNotification).toHaveBeenCalledWith(
       { endpoint: "https://push.example.com/device2", keys: { p256dh: "p2", auth: "a2" } },
-      JSON.stringify({ title: ENTRY.title, body: ENTRY.message })
+      JSON.stringify({ title: ENTRY.title, body: ENTRY.message, url: "/dashboard/notifications" })
     );
   });
 

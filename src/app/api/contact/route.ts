@@ -68,7 +68,8 @@ export async function POST(req: Request) {
           userId: user.id,
           title: `Nouveau message de contact : ${validatedData.subject}`,
           message: `${validatedData.name} (${validatedData.email}) a envoyé un message via le formulaire de contact.`,
-          type: "INFO"
+          type: "INFO",
+          link: "/dashboard/contact-messages"
         }))
       });
     } catch (e) {

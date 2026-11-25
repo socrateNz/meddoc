@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { prisma } from "./db";
 import { Role } from "@prisma/client";
 import { sendPushToUsers } from "./push";
+import { notificationLinks, type NotificationEntry } from "./notification-links";
 
 class AppEventEmitter extends EventEmitter { }
 
@@ -13,7 +14,7 @@ export const appEvents = new AppEventEmitter();
 // push) : persiste en base (comportement inchangé) puis tente un envoi Web Push best-effort pour
 // les mêmes destinataires (cf. src/lib/push.ts — respecte mutedNotificationTypes, ne relance
 // jamais).
-export async function notifyUsers(entries: { userId: string; title: string; message: string; type: string }[]) {
+export async function notifyUsers(entries: NotificationEntry[]) {
   if (entries.length === 0) return;
   await prisma.notification.createMany({ data: entries });
   await sendPushToUsers(entries);
@@ -44,6 +45,7 @@ appEvents.on("incident.created", async (data: { incidentId: string; patientId: s
       title: `Alerte Incident : ${data.title}`,
       message: `Un nouvel incident concernant le patient ${patientName} a été signalé.`,
       type: "INCIDENT",
+      link: notificationLinks.incidents(data.organizationId!),
     }));
 
     await notifyUsers(notificationsData);
@@ -71,12 +73,13 @@ appEvents.on("appointment.scheduled", async (data: { appointmentId: string; pati
     const dateStr = scheduledDate.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
     const timeStr = scheduledDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
-    const entries: { userId: string; title: string; message: string; type: string }[] = [
+    const entries: NotificationEntry[] = [
       {
         userId: patient.userId,
         title: `Rendez-vous confirmé : ${data.title}`,
         message: `Bonjour ${patient.user.firstName}, votre rendez-vous "${data.title}" est prévu le ${dateStr} à ${timeStr}.`,
         type: "APPOINTMENT",
+        link: notificationLinks.portal(),
       },
     ];
 
@@ -91,6 +94,7 @@ appEvents.on("appointment.scheduled", async (data: { appointmentId: string; pati
           title: `Nouveau Rendez-vous : ${data.title}`,
           message: `Vous avez été assigné(e) à une visite pour le patient ${patientName}.`,
           type: "APPOINTMENT",
+          link: notificationLinks.appointments(patient.organizationId),
         });
       }
     }
@@ -133,6 +137,7 @@ appEvents.on("lab.result.critical", async (data: {
         title: `Résultat critique : ${data.testName}`,
         message: `Valeur critique détectée (${data.value}) pour ${patientName}. Vérification urgente requise.`,
         type: "LAB_CRITICAL",
+        link: notificationLinks.labOrder(data.labOrderId),
       }))
     );
   } catch (error) {
@@ -172,6 +177,7 @@ appEvents.on("prescription.interaction.high", async (data: {
         title: `Interaction médicamenteuse à risque élevé`,
         message: `${summary} (patient : ${patientName}). Vérification IA consultative — à valider cliniquement.`,
         type: "DRUG_INTERACTION",
+        link: notificationLinks.patient(data.patientId, data.organizationId),
       }))
     );
   } catch (error) {
@@ -205,6 +211,7 @@ appEvents.on("stock.low", async (data: {
         title: `Rupture de stock : ${data.itemName}`,
         message: `Stock restant : ${data.stockQuantity} (seuil de réapprovisionnement : ${data.reorderLevel}). Pensez à commander.`,
         type: "STOCK_LOW",
+        link: notificationLinks.pharmacy(data.organizationId!),
       }))
     );
   } catch (error) {
@@ -236,6 +243,7 @@ appEvents.on("stock.expiring", async (data: {
         title: `Expiration proche : ${data.itemName}`,
         message: `Un lot expire le ${expiryStr}. Vérifiez le stock et priorisez son écoulement (FEFO).`,
         type: "STOCK_EXPIRY",
+        link: notificationLinks.pharmacy(data.organizationId!),
       }))
     );
   } catch (error) {
