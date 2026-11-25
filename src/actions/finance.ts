@@ -1,6 +1,7 @@
 "use server";
 
 import { assertCan, can, type PermissionSubject } from "@/lib/permissions-catalog";
+import { assertDrawerNotOverdrawn } from "@/lib/cash-drawer";
 import { applyItemDiscounts, totalDiscount, withDiscount } from "@/lib/invoice-discount";
 
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
@@ -589,18 +590,23 @@ async function recordExpenseOnce(data: { cashSessionId: string; description: str
 
     const amount = Number(data.amount);
 
-    const transaction = await prisma.financialTransaction.create({
-      data: {
-        type: "EXPENSE",
-        category: "OPERATIONAL_EXPENSE",
-        amount,
-        description: data.description.trim(),
-        recordedById: activeUser.id,
-        organizationId: session.organizationId,
-        cashSessionId: session.id,
-        paymentMethod: "CASH",
-        expenseCategory: isCashOutCategory(data.category) ? data.category : "other",
-      },
+    // Pas de retrait au-delà des espèces du tiroir (cf. src/lib/cash-drawer.ts).
+    const transaction = await prisma.$transaction(async (tx) => {
+      const created = await tx.financialTransaction.create({
+        data: {
+          type: "EXPENSE",
+          category: "OPERATIONAL_EXPENSE",
+          amount,
+          description: data.description.trim(),
+          recordedById: activeUser.id,
+          organizationId: session.organizationId,
+          cashSessionId: session.id,
+          paymentMethod: "CASH",
+          expenseCategory: isCashOutCategory(data.category) ? data.category : "other",
+        },
+      });
+      await assertDrawerNotOverdrawn(tx, session.id, amount);
+      return created;
     });
 
     // « Une dépense n'existe pas sans son écriture » : si la comptabilité est active et que
@@ -2540,5 +2546,89 @@ export async function listCaisseHistoryInvoices(
     return { success: true, data: await attachAmountPaid(invoices), total, page, pageSize };
   } catch (error: any) {
     return { success: false, error: toErrorMessage(error, "Erreur lors du chargement de l'historique des tickets.") };
+  }
+}
+
+// ─── TEMPORAIRE — correction d'un retrait déjà saisi (à retirer, avec EditExpenseButton) ───
+// Une écriture financière n'est jamais modifiée (cf. src/lib/finance-reversal.ts) : le retrait
+// d'origine est contrepassé (marqué reversedAt + écriture inverse REVERSAL) et un nouveau retrait
+// est enregistré avec les valeurs corrigées, dans la même séance — le tiroir et la comptabilité
+// restent justes, et l'historique garde la trace de l'erreur. Séance encore ouverte uniquement.
+// Réservé aux rectifications (permission invoices.manage : coordinateur, administrateur).
+const correctCashExpenseSchema = z.object({
+  transactionId: z.string().min(1),
+  description: z.string().trim().min(1, "Le motif est requis"),
+  amount: z.number().positive("Le montant doit être supérieur à zéro"),
+  category: z.string().optional(),
+  reason: z.string().trim().max(200).optional(),
+});
+
+export async function correctCashExpense(data: z.input<typeof correctCashExpenseSchema>) {
+  try {
+    const input = correctCashExpenseSchema.parse(data);
+    const activeUser = await getCurrentUser();
+    if (!activeUser) throw new Error("Non authentifié.");
+    if (!can(activeUser, "invoices.manage")) throw new Error("Non autorisé. Seul le coordonnateur ou un administrateur peut corriger un retrait.");
+
+    const original = await prisma.financialTransaction.findUnique({
+      where: { id: input.transactionId },
+      include: { cashSession: { select: { id: true, status: true } } },
+    });
+    if (!original || original.type !== "EXPENSE" || original.category !== "OPERATIONAL_EXPENSE") throw new Error("Seuls les retraits / dépenses de caisse peuvent être corrigés.");
+    if (!original.organizationId) throw new Error("Retrait sans établissement.");
+    await assertOrganizationAccess(activeUser, original.organizationId, "Ce retrait n'appartient pas à votre établissement.");
+    if (original.reversedAt) throw new Error("Ce retrait a déjà été annulé ou corrigé.");
+    if (original.absorbedByPurchaseId) throw new Error("Ce retrait règle un achat de stock : annulez plutôt l'achat.");
+    if (!original.cashSession || original.cashSession.status !== "OPEN") throw new Error("La séance de caisse de ce retrait est clôturée : il ne peut plus être corrigé.");
+    const sessionId = original.cashSession.id;
+    const category = isCashOutCategory(input.category) ? input.category : original.expenseCategory ?? "other";
+
+    const { reversal, corrected } = await prisma.$transaction(async (tx) => {
+      // Conditionné à « pas encore annulé » : deux corrections simultanées ne passent pas toutes les deux.
+      const marked = await tx.financialTransaction.updateMany({
+        where: { id: original.id, OR: [{ reversedAt: null }, { reversedAt: { isSet: false } }] },
+        data: { reversedAt: new Date(), reversedById: activeUser.id },
+      });
+      if (marked.count === 0) throw new Error("Ce retrait a déjà été annulé ou corrigé.");
+      const reversal = await tx.financialTransaction.create({
+        data: buildReversalEntry(original, { userId: activeUser.id, label: "Correction de retrait", reason: input.reason || null }),
+      });
+      const corrected = await tx.financialTransaction.create({
+        data: {
+          type: "EXPENSE",
+          category: "OPERATIONAL_EXPENSE",
+          amount: input.amount,
+          description: input.description,
+          recordedById: activeUser.id,
+          organizationId: original.organizationId,
+          cashSessionId: sessionId,
+          paymentMethod: "CASH",
+          expenseCategory: category,
+        },
+      });
+      // Une correction à la hausse ne peut pas dépasser les espèces du tiroir ; à la baisse, elle
+      // est toujours permise (elle remet de l'argent, même si le tiroir était déjà en négatif).
+      if (input.amount > original.amount) await assertDrawerNotOverdrawn(tx, sessionId, input.amount - original.amount);
+      return { reversal, corrected };
+    });
+
+    await accountSafely("Correction d'un retrait", original.organizationId, async () => {
+      await accountTransaction(reversal.id);
+      await accountTransaction(corrected.id);
+    });
+
+    await logAuditAction(activeUser.id, "CORRECT_CASH_EXPENSE", "FinancialTransaction", corrected.id, {
+      originalId: original.id,
+      oldAmount: original.amount,
+      newAmount: input.amount,
+      oldDescription: original.description,
+      newDescription: input.description,
+      reason: input.reason ?? null,
+    });
+    revalidatePath(`/dashboard/clinics/${original.organizationId}/caisse`);
+    revalidatePath("/dashboard/finance");
+    return { success: true as const, data: corrected };
+  } catch (error) {
+    return { success: false as const, error: toErrorMessage(error, "Erreur lors de la correction du retrait.") };
   }
 }

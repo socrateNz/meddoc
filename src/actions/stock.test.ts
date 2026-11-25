@@ -96,13 +96,23 @@ describe("consumeStockLots", () => {
 // donc réutilise directement l'import statique du haut de fichier — pas besoin de
 // vi.resetModules()/vi.doMock ici.
 describe("applyStockReceipt — décaissement conditionnel", () => {
-  function createFakeReceiptTx(currentStockAfterIncrement = 20) {
+  function createFakeReceiptTx(currentStockAfterIncrement = 20, drawer = { openingFloat: 50000, cashIncome: 0, expenses: 3000 }) {
     return {
       stockPurchase: { create: vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data })) },
       // update() renvoie déjà la valeur APRÈS incrément (comportement réel de Prisma) — c'est ce
       // qu'applyStockReceipt lit pour déduire stockBefore/stockAfter sans lecture supplémentaire.
       pharmacyItem: { update: vi.fn(async () => ({ stockQuantity: currentStockAfterIncrement })) },
-      financialTransaction: { create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })) },
+      financialTransaction: {
+        create: vi.fn(async ({ data }: any) => ({ id: "tx1", ...data })),
+        // Solde du tiroir (cf. src/lib/cash-drawer.ts) : expenses inclut déjà l'achat enregistré.
+        aggregate: vi.fn(async ({ where }: any) => ({
+          _sum: { amount: where.type === "EXPENSE" ? drawer.expenses : where.paymentMethod ? 0 : drawer.cashIncome },
+        })),
+      },
+      cashSession: {
+        findUnique: vi.fn(async () => ({ openingFloat: drawer.openingFloat })),
+        update: vi.fn(async () => ({})),
+      },
     };
   }
 
@@ -137,6 +147,23 @@ describe("applyStockReceipt — décaissement conditionnel", () => {
 
     const [[{ data }]] = tx.financialTransaction.create.mock.calls;
     expect(data.cashSessionId).toBe("sess1");
+  });
+
+  it("refuse de payer en caisse plus que les espèces du tiroir", async () => {
+    // Fond 2 000 F, aucun encaissement ; l'achat de 3 000 F mettrait le tiroir à −1 000 F.
+    const tx = createFakeReceiptTx(20, { openingFloat: 2000, cashIncome: 0, expenses: 3000 });
+
+    await expect(
+      applyStockReceipt(tx, {
+        pharmacyItemId: "item1",
+        itemName: "Paracétamol",
+        quantity: 10,
+        purchasePrice: 300,
+        purchasedById: "user1",
+        organizationId: "org1",
+        cashSessionId: "sess1",
+      })
+    ).rejects.toThrow(/Fonds insuffisants en caisse/);
   });
 
   it("déduit stockBefore/stockAfter de la valeur déjà incrémentée et lie la dépense au lot via stockPurchaseId", async () => {
@@ -215,7 +242,11 @@ describe("recordStockPurchase — deductFromCash", () => {
         update: vi.fn(async () => ({})),
       },
       stockPurchase: { create: vi.fn(async ({ data }: any) => ({ id: "purchase1", ...data })) },
-      financialTransaction: { create: financialTransactionCreate },
+      financialTransaction: {
+        create: financialTransactionCreate,
+        aggregate: vi.fn(async ({ where }: any) => ({ _sum: { amount: where.type === "EXPENSE" ? 3000 : 0 } })),
+      },
+      cashSession: { findUnique: vi.fn(async () => ({ openingFloat: 10000 })), update: vi.fn(async () => ({})) },
     };
     vi.doMock("@/lib/db", () => ({
       prisma: {

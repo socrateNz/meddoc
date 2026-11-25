@@ -1,6 +1,7 @@
 "use server";
 
 import { can } from "@/lib/permissions-catalog";
+import { assertDrawerNotOverdrawn } from "@/lib/cash-drawer";
 
 import { accountSafely, accountTransaction } from "@/lib/accounting/postings";
 import { runIdempotent, type IdempotentInput } from "@/lib/idempotency";
@@ -175,6 +176,9 @@ export async function applyStockReceipt(
       ...(data.cashSessionId ? { cashSessionId: data.cashSessionId } : {}),
     },
   });
+
+  // Payé en caisse : pas au-delà des espèces du tiroir (cf. src/lib/cash-drawer.ts).
+  if (data.cashSessionId) await assertDrawerNotOverdrawn(tx, data.cashSessionId, totalCost);
 
   return { purchase, transaction };
 }

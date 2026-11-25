@@ -1,6 +1,8 @@
 "use client";
 
 import { useCan } from "@/components/permissions-provider";
+// TEMPORAIRE — correction des retraits déjà saisis (à retirer).
+import EditExpenseButton from "./edit-expense-button";
 import { useState, useEffect, useCallback } from "react";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -457,6 +459,11 @@ export default function CaisseView({
                                     <Printer className="h-3.5 w-3.5" />
                                   </Button>
                                 )}
+                                {/* TEMPORAIRE — correction d'un retrait déjà saisi (à retirer). */}
+                                {!isIncome && canManageStatus && t.category === "OPERATIONAL_EXPENSE" && !t.reversedAt && !t.absorbedByPurchaseId && (
+                                  <EditExpenseButton transaction={t} onDone={() => refreshSummary(summary.session.id, summaryPage)} />
+                                )}
+                                {t.reversedAt && <span className="text-xs text-slate-400">annulé</span>}
                               </div>
                             </div>
                           );
