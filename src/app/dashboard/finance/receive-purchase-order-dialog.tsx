@@ -160,7 +160,7 @@ export default function ReceivePurchaseOrderDialog({ order, onSuccess, openRegis
             )}
           </div>
 
-          <div className="flex justify-end gap-2 pt-4">
+          <div className="dialog-actions flex justify-end gap-2 pt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Annuler</Button>
             <Button type="submit" disabled={loading} className="gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}

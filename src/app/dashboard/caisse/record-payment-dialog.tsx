@@ -131,13 +131,15 @@ export default function RecordPaymentDialog({ cashSessionId, pendingInvoice, onS
           <PaymentMethodSelect value={paymentMethod} onChange={setPaymentMethod} id="installmentPaymentMethod" />
           {canDispense && <DispenseNowCheckbox checked={dispenseNow} onChange={setDispenseNow} id="installmentDispenseNow" />}
 
-          <Button onClick={handleSubmit} disabled={loading || amount <= 0} className="w-full h-12 sm:h-auto bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
-            {loading ? (
-              <><Loader2 className="h-4 w-4 animate-spin mr-2" />Encaissement...</>
-            ) : (
-              <><Printer className="h-4 w-4 mr-2" />Encaisser & imprimer le ticket ({formatFCFA(amount)})</>
-            )}
-          </Button>
+          <div className="dialog-actions">
+            <Button onClick={handleSubmit} disabled={loading || amount <= 0} className="w-full h-12 sm:h-auto bg-blue-600 hover:bg-blue-700 text-white rounded-xl py-2.5 font-bold shadow-xs text-sm">
+              {loading ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" />Encaissement...</>
+              ) : (
+                <><Printer className="h-4 w-4 mr-2" />Encaisser & imprimer le ticket ({formatFCFA(amount)})</>
+              )}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

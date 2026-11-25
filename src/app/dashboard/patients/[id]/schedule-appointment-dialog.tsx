@@ -187,7 +187,7 @@ export default function ScheduleAppointmentDialog({ patientId, caregivers }: Sch
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t">
+          <div className="dialog-actions flex justify-end gap-3 pt-4 border-t">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
               Annuler
             </Button>

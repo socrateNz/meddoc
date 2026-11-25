@@ -278,3 +278,20 @@
 ::-webkit-scrollbar-thumb:hover {
   background-color: #6d28d9;
 }
+
+/* Rangée de boutons d'un dialogue (DialogFooter et rangées personnalisées) : reste collée en bas
+   de la fenêtre pendant le défilement, sur mobile comme sur ordinateur — inutile de faire défiler
+   pour atteindre « Enregistrer ». Le fond (filet du haut compris) est prolongé sur toute la largeur
+   du dialogue par border-image (sans changer la mise en page), pour masquer le contenu qui passe
+   dessous, même quand la rangée est plus étroite que le dialogue (marges intérieures). */
+@layer components {
+  .dialog-actions {
+    --dialog-actions-bg: var(--popover);
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    padding-block: 0.75rem;
+    background-color: var(--dialog-actions-bg);
+    border-image: linear-gradient(var(--border) 0 1px, var(--dialog-actions-bg) 1px) fill 0 / 0 / 0 100vw;
+  }
+}

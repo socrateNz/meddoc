@@ -187,7 +187,7 @@ function EventForm({ event, defaultDate, onOpenChange, onSuccess }: EventFormPro
           <Textarea id="event-description" value={description} onChange={(e) => setDescription(e.target.value)} className="min-h-16" />
         </div>
 
-        <div className="flex justify-between items-center gap-2.5 pt-4 border-t">
+        <div className="dialog-actions flex justify-between items-center gap-2.5 pt-4 border-t">
           {isEdit ? (
             <Button type="button" variant="ghost" onClick={handleDelete} disabled={deleteLoading || loading} className="gap-2 text-destructive hover:text-destructive">
               {deleteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}

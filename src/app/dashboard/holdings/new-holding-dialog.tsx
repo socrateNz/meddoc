@@ -329,7 +329,7 @@ export default function NewHoldingDialog() {
               </div>
             </div>
 
-            <div className="pt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <div className="dialog-actions pt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>Annuler</Button>
               <Button type="submit" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

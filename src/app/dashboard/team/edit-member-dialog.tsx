@@ -120,7 +120,7 @@ export default function EditMemberDialog({ member, open, onOpenChange }: EditMem
             </div>
           )}
 
-          <div className="pt-4 flex justify-end">
+          <div className="dialog-actions pt-4 flex justify-end">
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Enregistrer

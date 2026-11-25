@@ -106,7 +106,7 @@ export default function AppointmentDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[560px] p-0 overflow-hidden bg-card border border-border/70 shadow-2xl rounded-2xl">
+        <DialogContent className="sm:max-w-[560px] p-0 bg-card border border-border/70 shadow-2xl rounded-2xl">
           {/* Outlook accent header bar */}
           <div className={`h-2.5 w-full ${colorMeta.border.replace("border-l-", "bg-")}`} />
 
@@ -252,7 +252,7 @@ export default function AppointmentDetailDialog({
             </div>
 
             {/* Actions footer */}
-            <div className="pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="dialog-actions pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
               {confirmDelete ? (
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <span className="text-xs text-destructive font-medium">Confirmer ?</span>

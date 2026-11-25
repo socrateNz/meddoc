@@ -92,7 +92,7 @@ export default function NewSupplierDialog({ organizationId, onSuccess }: NewSupp
             <Input id="address" placeholder="ex: Douala, Cameroun" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="rounded-xl" />
           </div>
 
-          <div className="flex justify-end gap-2 pt-4">
+          <div className="dialog-actions flex justify-end gap-2 pt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="rounded-xl">Annuler</Button>
             <Button type="submit" disabled={loading} className="gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}

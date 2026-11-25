@@ -267,7 +267,7 @@ export default function NewAppointmentModal({
             </div>
           </div>
 
-          <div className="flex justify-end gap-2.5 pt-4 border-t">
+          <div className="dialog-actions flex justify-end gap-2.5 pt-4 border-t">
             <Button
               type="button"
               variant="outline"

@@ -329,7 +329,7 @@ export default function ChatPanel({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex justify-end gap-3 pt-3 border-t">
+                <div className="dialog-actions flex justify-end gap-3 pt-3 border-t">
                   <Button type="button" variant="outline" className="flex flex-row gap-2" onClick={() => setOpenNewChat(false)} disabled={newChatLoading}>
                     Annuler
                   </Button>

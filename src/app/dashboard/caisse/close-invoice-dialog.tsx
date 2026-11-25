@@ -137,13 +137,15 @@ export default function CloseInvoiceDialog({ pendingInvoice, onSuccess, open: op
             </div>
           )}
 
-          <Button onClick={handleSubmit} disabled={loading} variant="outline" className="w-full rounded-xl py-2.5 font-bold text-sm border-slate-300 dark:border-slate-700">
-            {loading ? (
-              <><Loader2 className="h-4 w-4 animate-spin mr-2" />Enregistrement...</>
-            ) : (
-              <><XCircle className="h-4 w-4 mr-2" />Confirmer l&apos;abandon</>
-            )}
-          </Button>
+          <div className="dialog-actions">
+            <Button onClick={handleSubmit} disabled={loading} variant="outline" className="w-full rounded-xl py-2.5 font-bold text-sm border-slate-300 dark:border-slate-700">
+              {loading ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" />Enregistrement...</>
+              ) : (
+                <><XCircle className="h-4 w-4 mr-2" />Confirmer l&apos;abandon</>
+              )}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

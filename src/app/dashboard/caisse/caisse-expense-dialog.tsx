@@ -108,7 +108,7 @@ export default function CaisseExpenseDialog({ cashSessionId, organizationId, onS
             depuis Pharmacie → Achats en répondant « Non » à « Prélever sur une caisse ouverte ? »
             — l&apos;argent a déjà été sorti ici, une seconde déduction compterait la dépense deux fois.
           </p>
-          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+          <div className="dialog-actions flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="h-11 rounded-xl sm:h-9">Annuler</Button>
             <Button type="submit" disabled={loading} className="h-12 bg-rose-600 hover:bg-rose-700 text-white rounded-xl sm:h-9">
               {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <MinusCircle className="h-4 w-4 mr-2" />}
