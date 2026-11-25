@@ -39,6 +39,30 @@ function DialogOverlay({
   )
 }
 
+// Le bouton de fermeture (×) est rendu dans l'en-tête quand il y en a un : l'en-tête reste collé en
+// haut pendant le défilement et le × reste donc visible avec lui. Sans en-tête, il est posé sur le
+// dialogue (masqué par CSS dès qu'un en-tête existe, cf. globals.css).
+const DialogCloseButtonContext = React.createContext(false)
+
+function DialogCloseButton({ fallback = false }: { fallback?: boolean }) {
+  return (
+    <DialogPrimitive.Close
+      data-slot={fallback ? "dialog-close-fallback" : "dialog-close"}
+      render={
+        <Button
+          variant="ghost"
+          className="absolute top-2 right-2"
+          size="icon-sm"
+        />
+      }
+    >
+      <XIcon
+      />
+      <span className="sr-only">Close</span>
+    </DialogPrimitive.Close>
+  )
+}
+
 function DialogContent({
   className,
   children,
@@ -58,35 +82,29 @@ function DialogContent({
         )}
         {...props}
       >
-        {children}
-        {showCloseButton && (
-          <DialogPrimitive.Close
-            data-slot="dialog-close"
-            render={
-              <Button
-                variant="ghost"
-                className="absolute top-2 right-2"
-                size="icon-sm"
-              />
-            }
-          >
-            <XIcon
-            />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        )}
+        <DialogCloseButtonContext.Provider value={showCloseButton}>
+          {children}
+        </DialogCloseButtonContext.Provider>
+        {showCloseButton && <DialogCloseButton fallback />}
       </DialogPrimitive.Popup>
     </DialogPortal>
   )
 }
 
-function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+function DialogHeader({ className, children, ...props }: React.ComponentProps<"div">) {
+  const showCloseButton = React.useContext(DialogCloseButtonContext)
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2", className)}
+      // dialog-header (globals.css) : reste visible en haut du dialogue même si le contenu défile.
+      // -mt-4 pt-4 : l'en-tête part du bord haut du dialogue (marge intérieure p-4), pour que le ×
+      // garde sa place et que rien ne dépasse au-dessus quand il est collé.
+      className={cn("dialog-header -mt-4 flex flex-col gap-2 pt-4 pb-1", showCloseButton && "pr-8", className)}
       {...props}
-    />
+    >
+      {children}
+      {showCloseButton && <DialogCloseButton />}
+    </div>
   )
 }
 

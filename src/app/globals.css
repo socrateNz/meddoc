@@ -294,4 +294,18 @@
     background-color: var(--dialog-actions-bg);
     border-image: linear-gradient(var(--border) 0 1px, var(--dialog-actions-bg) 1px) fill 0 / 0 / 0 100vw;
   }
+
+  /* En-tête d'un dialogue (titre + ×) : reste collé en haut pendant le défilement, même principe. */
+  .dialog-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: var(--popover);
+    border-image: conic-gradient(var(--popover) 0 0) fill 0 / 0 / 0 100vw;
+  }
+
+  /* Le × est dans l'en-tête quand il y en a un (cf. DialogHeader). */
+  [data-slot="dialog-content"]:has([data-slot="dialog-header"]) > [data-slot="dialog-close-fallback"] {
+    display: none;
+  }
 }

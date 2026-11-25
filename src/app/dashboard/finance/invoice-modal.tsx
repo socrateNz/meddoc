@@ -160,7 +160,7 @@ export default function InvoiceModal({ transaction, organizationName, organizati
 
       <DialogContent className="sm:max-w-[580px] max-h-[92vh] rounded-3xl p-0 overflow-hidden bg-slate-900 border border-slate-800 shadow-2xl flex flex-col text-slate-100">
         {/* Header with Format Switcher */}
-        <DialogHeader className="p-5 pb-3 bg-slate-950 border-b border-slate-800 flex flex-row items-center justify-between">
+        <DialogHeader className="static mt-0 p-5 pb-3 [border-image:none] bg-slate-950 border-b border-slate-800 flex flex-row items-center justify-between">
           <div>
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-white">
               <Receipt className="h-5 w-5 text-emerald-400" />

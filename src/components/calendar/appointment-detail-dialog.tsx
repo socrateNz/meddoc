@@ -111,8 +111,8 @@ export default function AppointmentDetailDialog({
           <div className={`h-2.5 w-full ${colorMeta.border.replace("border-l-", "bg-")}`} />
 
           <div className="p-6 space-y-6">
-            {/* Header info */}
-            <div className="flex items-start justify-between gap-4">
+            {/* Header info — en-tête collé en haut pendant le défilement (cf. DialogHeader). */}
+            <DialogHeader className="-mt-6 pt-6 pb-3 pr-10 flex-row items-start justify-between gap-4">
               <div className="space-y-1.5 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   {getStatusBadge(appointment.status)}
@@ -134,7 +134,7 @@ export default function AppointmentDetailDialog({
                 <Pencil className="h-3.5 w-3.5" />
                 Modifier
               </Button>
-            </div>
+            </DialogHeader>
 
             {/* Time information block - Outlook style */}
             <div className="flex items-start gap-3.5 p-3.5 rounded-xl bg-muted/40 border border-border/50">
