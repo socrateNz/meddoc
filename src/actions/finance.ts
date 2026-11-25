@@ -2549,18 +2549,19 @@ export async function listCaisseHistoryInvoices(
   }
 }
 
-// ─── TEMPORAIRE — correction d'un retrait déjà saisi (à retirer, avec EditExpenseButton) ───
-// Une écriture financière n'est jamais modifiée (cf. src/lib/finance-reversal.ts) : le retrait
+// Correction d'un retrait déjà saisi (bouton crayon des mouvements de la caisse, cf.
+// src/app/dashboard/caisse/edit-expense-button.tsx). Une écriture financière n'est jamais modifiée (cf. src/lib/finance-reversal.ts) : le retrait
 // d'origine est contrepassé (marqué reversedAt + écriture inverse REVERSAL) et un nouveau retrait
 // est enregistré avec les valeurs corrigées, dans la même séance — le tiroir et la comptabilité
 // restent justes, et l'historique garde la trace de l'erreur. Séance encore ouverte uniquement.
+// La raison est obligatoire : elle figure sur l'écriture d'annulation et dans le journal d'audit.
 // Réservé aux rectifications (permission invoices.manage : coordinateur, administrateur).
 const correctCashExpenseSchema = z.object({
   transactionId: z.string().min(1),
   description: z.string().trim().min(1, "Le motif est requis"),
   amount: z.number().positive("Le montant doit être supérieur à zéro"),
   category: z.string().optional(),
-  reason: z.string().trim().max(200).optional(),
+  reason: z.string().trim().min(3, "Indiquez la raison de la correction.").max(200),
 });
 
 export async function correctCashExpense(data: z.input<typeof correctCashExpenseSchema>) {
@@ -2591,7 +2592,7 @@ export async function correctCashExpense(data: z.input<typeof correctCashExpense
       });
       if (marked.count === 0) throw new Error("Ce retrait a déjà été annulé ou corrigé.");
       const reversal = await tx.financialTransaction.create({
-        data: buildReversalEntry(original, { userId: activeUser.id, label: "Correction de retrait", reason: input.reason || null }),
+        data: buildReversalEntry(original, { userId: activeUser.id, label: "Correction de retrait", reason: input.reason }),
       });
       const corrected = await tx.financialTransaction.create({
         data: {
@@ -2623,7 +2624,7 @@ export async function correctCashExpense(data: z.input<typeof correctCashExpense
       newAmount: input.amount,
       oldDescription: original.description,
       newDescription: input.description,
-      reason: input.reason ?? null,
+      reason: input.reason,
     });
     revalidatePath(`/dashboard/clinics/${original.organizationId}/caisse`);
     revalidatePath("/dashboard/finance");

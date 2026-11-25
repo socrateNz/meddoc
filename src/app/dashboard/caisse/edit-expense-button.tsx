@@ -1,8 +1,8 @@
 "use client";
 
-// ─── TEMPORAIRE — à retirer avec correctCashExpense (src/actions/finance.ts) ───
 // Bouton « Modifier » sur un retrait / une dépense de la séance de caisse ouverte : le retrait
-// d'origine est annulé (contrepassé) et remplacé par un retrait aux valeurs corrigées.
+// d'origine est annulé (contrepassé) et remplacé par un retrait aux valeurs corrigées (cf.
+// correctCashExpense, src/actions/finance.ts). La raison est obligatoire.
 
 import { useState } from "react";
 import { Loader2, Pencil } from "lucide-react";
@@ -48,8 +48,12 @@ export default function EditExpenseButton({ transaction, onDone }: { transaction
       setError("Motif et montant (supérieur à zéro) requis.");
       return;
     }
+    if (reason.trim().length < 3) {
+      setError("Indiquez la raison de la correction.");
+      return;
+    }
     setSaving(true);
-    const res = await correctCashExpense({ transactionId: transaction.id, description: description.trim(), amount: value, category, reason: reason.trim() || undefined });
+    const res = await correctCashExpense({ transactionId: transaction.id, description: description.trim(), amount: value, category, reason: reason.trim() });
     setSaving(false);
     if (res.success) {
       setOpen(false);
@@ -88,8 +92,8 @@ export default function EditExpenseButton({ transaction, onDone }: { transaction
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-expense-reason">Raison de la correction</Label>
-              <Input id="edit-expense-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="ex: erreur de montant" className="h-9 rounded-xl" />
+              <Label htmlFor="edit-expense-reason">Raison de la correction *</Label>
+              <Input id="edit-expense-reason" required minLength={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="ex: erreur de montant" className="h-9 rounded-xl" />
             </div>
             {error && <FormMessage type="error" text={error} />}
             <DialogFooter>
